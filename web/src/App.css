@@ -1,0 +1,13 @@
+.app-shell {
+  display: grid;
+  min-height: 100vh;
+  place-content: center;
+  gap: 0.75rem;
+  padding: 2rem;
+  text-align: center;
+}
+
+.app-shell h1,
+.app-shell p {
+  margin: 0;
+}

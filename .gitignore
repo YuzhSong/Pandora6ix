@@ -1,0 +1,35 @@
+# Build output
+**/build/
+**/target/
+
+# Dependency directories
+**/node_modules/
+
+# IDE and local editor state
+.idea/
+*.iml
+.vscode/
+.classpath
+.project
+.settings/
+
+# Android local SDK and build state
+android/local.properties
+android/.gradle/
+*.apk
+*.aab
+
+# Environment files and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.jks
+secrets.properties
+
+# OS files and logs
+.DS_Store
+Thumbs.db
+*.log

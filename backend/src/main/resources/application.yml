@@ -1,0 +1,8 @@
+spring:
+  application:
+    name: pandora6ix-backend
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
