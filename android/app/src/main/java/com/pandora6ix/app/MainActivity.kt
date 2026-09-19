@@ -163,17 +163,24 @@ fun PandoraApp() {
 
 @Composable private fun MonthWeekRow(week: List<DemoDate>, month: Int, onSelectDate: (DemoDate) -> Unit) {
     val visibleTasks = MockData.companyTasks.filter { it.end >= week.first() && it.start <= week.last() }
-    Column(Modifier.fillMaxWidth().height(150.dp).drawBehind { val guide = PathEffect.dashPathEffect(floatArrayOf(5.dp.toPx(), 5.dp.toPx())); for (i in 1..6) { val x = size.width * i / 7f; drawLine(color = Coral.copy(alpha = .2f), start = androidx.compose.ui.geometry.Offset(x, 0f), end = androidx.compose.ui.geometry.Offset(x, size.height), strokeWidth = 1.dp.toPx(), pathEffect = guide) }; drawLine(color = Coral.copy(alpha = .2f), start = androidx.compose.ui.geometry.Offset(0f, size.height - 1.dp.toPx()), end = androidx.compose.ui.geometry.Offset(size.width, size.height - 1.dp.toPx()), strokeWidth = 1.dp.toPx(), pathEffect = guide) }) {
+    Column(Modifier.fillMaxWidth().height(180.dp).drawBehind { val guide = PathEffect.dashPathEffect(floatArrayOf(5.dp.toPx(), 5.dp.toPx())); for (i in 1..6) { val x = size.width * i / 7f; drawLine(color = Coral.copy(alpha = .2f), start = androidx.compose.ui.geometry.Offset(x, 0f), end = androidx.compose.ui.geometry.Offset(x, size.height), strokeWidth = 1.dp.toPx(), pathEffect = guide) }; drawLine(color = Coral.copy(alpha = .2f), start = androidx.compose.ui.geometry.Offset(0f, size.height - 1.dp.toPx()), end = androidx.compose.ui.geometry.Offset(size.width, size.height - 1.dp.toPx()), strokeWidth = 1.dp.toPx(), pathEffect = guide) }) {
         Row(Modifier.fillMaxWidth().height(34.dp)) { week.forEach { date -> Column(Modifier.weight(1f).fillMaxHeight().clickable { onSelectDate(date) }.padding(4.dp)) { Text("${date.day}", fontSize = 14.sp, color = if (date.month == month) Ink else Ink.copy(alpha = .3f)) } } }
-        visibleTasks.take(3).forEach { task -> MonthTaskBar(task, week, onSelectDate) }
-        Row(Modifier.fillMaxWidth().height(24.dp)) { week.forEach { date -> val count = MockData.companyTasks.count { date >= it.start && date <= it.end }; Box(Modifier.weight(1f).fillMaxHeight().padding(horizontal = 3.dp), contentAlignment = Alignment.CenterStart) { if (count > 3) Text("+${count - 3}条计划", fontSize = 10.sp, color = Ink.copy(alpha = .65f), maxLines = 1, overflow = TextOverflow.Ellipsis) } } }
+        Column(Modifier.fillMaxWidth().weight(1f)) {
+            if (visibleTasks.size <= 4) {
+                visibleTasks.forEach { task -> MonthTaskBar(task, week, onSelectDate, Modifier.weight(1f)) }
+                repeat(4 - visibleTasks.size) { Spacer(Modifier.weight(1f)) }
+            } else {
+                visibleTasks.take(3).forEach { task -> MonthTaskBar(task, week, onSelectDate, Modifier.weight(1f)) }
+                Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) { Text("+${visibleTasks.size - 3}条计划", fontSize = 13.sp, color = Ink.copy(alpha = .65f)) }
+            }
+        }
     }
 }
 
-@Composable private fun MonthTaskBar(task: WorkTask, dates: List<DemoDate>, onSelectDate: (DemoDate) -> Unit) {
+@Composable private fun MonthTaskBar(task: WorkTask, dates: List<DemoDate>, onSelectDate: (DemoDate) -> Unit, modifier: Modifier = Modifier) {
     val startIndex = maxOf(0, daysBetween(dates.first(), task.start)); val endIndex = minOf(6, daysBetween(dates.first(), task.end)); val span = endIndex - startIndex + 1
     if (span <= 0) return
-    Row(Modifier.fillMaxWidth().height(23.dp), verticalAlignment = Alignment.CenterVertically) { if (startIndex > 0) Spacer(Modifier.weight(startIndex.toFloat())); Box(Modifier.weight(span.toFloat()).fillMaxHeight().padding(horizontal = 2.dp, vertical = 2.dp).clip(RoundedCornerShape(4.dp)).background(Peach.copy(alpha = .75f)).clickable { onSelectDate(if (task.start < dates.first()) dates.first() else task.start) }, contentAlignment = Alignment.CenterStart) { Text(task.title, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 3.dp)) }; if (endIndex < 6) Spacer(Modifier.weight((6 - endIndex).toFloat())) }
+    Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { if (startIndex > 0) Spacer(Modifier.weight(startIndex.toFloat())); Box(Modifier.weight(span.toFloat()).fillMaxHeight().padding(horizontal = 2.dp, vertical = 3.dp).clip(RoundedCornerShape(6.dp)).background(Peach.copy(alpha = .75f)).clickable { onSelectDate(if (task.start < dates.first()) dates.first() else task.start) }, contentAlignment = Alignment.CenterStart) { Text(task.title, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 5.dp)) }; if (endIndex < 6) Spacer(Modifier.weight((6 - endIndex).toFloat())) }
 }
 
 @Composable private fun DayView(cursor: DemoDate, onCursorChange: (DemoDate) -> Unit, onOpen: (String) -> Unit) {
