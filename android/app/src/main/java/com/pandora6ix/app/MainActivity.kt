@@ -54,7 +54,13 @@ fun PandoraApp() {
         var detail by rememberSaveable { mutableStateOf<String?>(null) }
         val date = dateKey.split("-").map(String::toInt).let { DemoDate(it[0], it[1], it[2]) }
         val current = Route.valueOf(route)
-        val nav = listOf(NavItem(Route.HOME, "首页", Icons.Default.Home), NavItem(Route.VIEW, "视图", Icons.Default.Menu), NavItem(Route.LOGS, "日志", Icons.Default.List), NavItem(Route.AI, "AI地图", Icons.Default.Info), NavItem(Route.ME, "我的", Icons.Default.AccountCircle))
+        val nav = listOf(
+            NavItem(Route.HOME, "首页", Icons.Default.GridView),
+            NavItem(Route.VIEW, "视图", Icons.Default.CalendarMonth),
+            NavItem(Route.LOGS, "日志", Icons.Default.NoteAlt),
+            NavItem(Route.AI, "AI地图", Icons.Default.Psychology),
+            NavItem(Route.ME, "我的", Icons.Default.PersonOutline)
+        )
         Scaffold(containerColor = Cream, bottomBar = { NavigationBar(containerColor = CreamDeep) { nav.forEach { item -> NavigationBarItem(selected = current == item.route, onClick = { route = item.route.name; detail = null }, icon = { Icon(item.icon, item.label) }, label = { Text(item.label, fontSize = 11.sp) }, colors = NavigationBarItemDefaults.colors(selectedIconColor = WarmOrange, selectedTextColor = WarmOrange, indicatorColor = CreamDeep)) } } }) { padding ->
             Surface(Modifier.padding(padding).fillMaxSize(), color = Cream) {
                 if (detail != null) DetailScreen(detail!!, onBack = { detail = null }) else AnimatedContent(current, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "page") { target ->
