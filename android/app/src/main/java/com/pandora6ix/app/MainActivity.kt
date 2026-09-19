@@ -6,6 +6,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
@@ -198,15 +199,24 @@ fun PandoraApp() {
     var overlay by rememberSaveable { mutableStateOf<String?>(null) }
     var notifications by rememberSaveable { mutableStateOf(false) }
     var draftLog by rememberSaveable { mutableStateOf("") }
+    var draftDate by rememberSaveable { mutableStateOf(MockData.demoToday.shortLabelWithWeekday()) }
+    var draftTask by rememberSaveable { mutableStateOf("不关联任务") }
+    var savedDraft by rememberSaveable { mutableStateOf(false) }
+    var confirmPublish by rememberSaveable { mutableStateOf(false) }
+    var confirmExit by rememberSaveable { mutableStateOf(false) }
     val historyLogs = MockData.logs
     val filteredHistory = if (historyFilter == "全部日期") historyLogs else historyLogs.filter { it.date.shortLabel() == historyFilter }
     Box(Modifier.fillMaxSize()) {
       Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         PageHeader("日志", "工作日志与任务管理", actions = { IconButton({ notifications = true }) { Icon(Icons.Default.Email, "消息") } })
-        Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf("工作日志", "任务管理").forEach { option ->
-                val selected = section == option
-                Button(onClick = { section = option }, colors = ButtonDefaults.buttonColors(containerColor = if (selected) WarmOrange else Color.White, contentColor = Ink), shape = RoundedCornerShape(14.dp), modifier = Modifier.weight(1f)) { Text(option) }
+        BoxWithConstraints(Modifier.fillMaxWidth().padding(vertical = 10.dp).height(48.dp).clip(RoundedCornerShape(24.dp)).background(CreamDeep)) {
+            val sliderOffset by animateDpAsState(if (section == "任务管理") maxWidth / 2 else 0.dp, label = "logs-section-slider")
+            Box(Modifier.offset(x = sliderOffset).fillMaxWidth(.5f).fillMaxHeight().padding(3.dp).clip(RoundedCornerShape(21.dp)).background(WarmOrange))
+            Row(Modifier.fillMaxSize()) {
+                listOf("工作日志", "任务管理").forEach { option ->
+                    val selected = section == option
+                    Box(Modifier.weight(1f).fillMaxHeight().clickable { section = option }, contentAlignment = Alignment.Center) { Text(option, color = if (selected) Ink else Ink.copy(alpha = .65f), fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal) }
+                }
             }
         }
         if (section == "工作日志") {
@@ -223,33 +233,47 @@ fun PandoraApp() {
                 item { Text("我的任务", fontWeight = FontWeight.Bold, fontSize = 18.sp) }
                 items(MockData.companyTasks.take(if (expandedTasks) 10 else 5)) { task -> DetailCard(task.title, "${task.start.shortLabel()}—${task.end.shortLabel()} · ${task.status}", Peach) { onOpen(task.title) } }
                 if (MockData.companyTasks.size > 5) item { Text(if (expandedTasks) "收起" else "展开", color = CoralDark, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().clickable { expandedTasks = !expandedTasks }.padding(vertical = 8.dp)) }
-                item { Text("任务派发与审核入口", fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.padding(top = 8.dp)) }
-                item { DetailCard("任务派发 · 无权限", "普通员工无法派发任务，请联系管理员。", Color.White) { overlay = "dispatch" } }
-                item { DetailCard("待我审核 · 无权限", "普通员工无法审核下属日报。", Color.White) { overlay = "review" } }
+                item { Text("任务派发与审核", fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.padding(top = 8.dp)) }
+                item { DetailCard("任务派发", "向团队长派发任务 · ${MockData.teamLeaders.size} 个团队", Peach) { overlay = "dispatch" } }
+                item { DetailCard("待我审核", "3 条团队日报待审核", Mint) { overlay = "review" } }
             }
         }
       }
       if (overlay != null || notifications) Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .38f)).clickable { overlay = null; notifications = false })
       overlay?.let { kind ->
-          Card(Modifier.align(Alignment.Center).fillMaxWidth(.88f).fillMaxHeight(.58f).clickable { }, shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = WarmCard), elevation = CardDefaults.cardElevation(12.dp)) {
+          Card(Modifier.align(Alignment.Center).fillMaxWidth(.88f).fillMaxHeight(if (kind == "new-log") .72f else .58f).clickable { }, shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = WarmCard), elevation = CardDefaults.cardElevation(12.dp)) {
               Column(Modifier.fillMaxSize().padding(22.dp)) {
-                  Row(verticalAlignment = Alignment.CenterVertically) { Text(if (kind == "new-log") "记录今天的工作" else "权限提示", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f)); IconButton({ overlay = null }) { Icon(Icons.Default.Close, "关闭") } }
-                  if (kind == "new-log") { Text("今天 · ${MockData.demoToday.shortLabelWithWeekday()}", color = Ink.copy(alpha = .65f)); OutlinedTextField(value = draftLog, onValueChange = { draftLog = it }, modifier = Modifier.fillMaxWidth().padding(top = 18.dp).weight(1f), placeholder = { Text("记录今天完成的工作…") }, minLines = 5); Button({ draftLog = ""; overlay = null }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Ink)) { Text("保存演示日志") } }
-                  else { Icon(Icons.Default.Lock, null, Modifier.size(54.dp).align(Alignment.CenterHorizontally), tint = Coral); Text(if (kind == "dispatch") "当前身份为普通员工，暂无任务派发权限。" else "当前身份为普通员工，暂无日报审核权限。", modifier = Modifier.fillMaxWidth().padding(top = 24.dp), textAlign = TextAlign.Center, fontSize = 17.sp); Text("该入口已保留，后续接入角色权限后可使用。", modifier = Modifier.fillMaxWidth().padding(top = 12.dp), textAlign = TextAlign.Center, color = Ink.copy(alpha = .65f)); Spacer(Modifier.weight(1f)); Button({ overlay = null }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Ink)) { Text("知道了") } }
+                  Row(verticalAlignment = Alignment.CenterVertically) { Text(if (kind == "new-log") "记录今天的工作" else if (kind == "dispatch") "任务派发" else "待我审核", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f)); IconButton({ if (kind == "new-log" && draftLog.isNotBlank() && !savedDraft) confirmExit = true else { overlay = null; draftLog = "" } }) { Icon(Icons.Default.Close, "关闭") } }
+                  if (kind == "new-log") {
+                      Text("第一步 · 选择日期", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 16.dp))
+                      OutlinedButton({ draftDate = MockData.demoToday.shortLabelWithWeekday() }, modifier = Modifier.fillMaxWidth().padding(top = 6.dp), shape = RoundedCornerShape(12.dp)) { Icon(Icons.Default.Event, null); Spacer(Modifier.width(8.dp)); Text(draftDate, modifier = Modifier.weight(1f), textAlign = TextAlign.Start) }
+                      Text("第二步 · 关联任务（可选）", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp))
+                      var taskMenu by rememberSaveable { mutableStateOf(false) }
+                      Box { OutlinedButton({ taskMenu = true }, modifier = Modifier.fillMaxWidth().padding(top = 6.dp), shape = RoundedCornerShape(12.dp)) { Text(draftTask, modifier = Modifier.weight(1f), textAlign = TextAlign.Start); Icon(Icons.Default.ArrowDropDown, null) }; DropdownMenu(taskMenu, { taskMenu = false }) { (listOf("不关联任务") + MockData.companyTasks.take(5).map { it.title }).forEach { option -> DropdownMenuItem({ Text(option) }, { draftTask = option; taskMenu = false }) } } }
+                      Text("第三步 · 一句话记录完成的任务", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp))
+                      OutlinedTextField(value = draftLog, onValueChange = { draftLog = it; savedDraft = false }, modifier = Modifier.fillMaxWidth().padding(top = 6.dp).weight(1f), placeholder = { Text("例如：完成登录模块的页面联调") }, minLines = 3)
+                      Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) { OutlinedButton({ savedDraft = true; overlay = null }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp)) { Text("保存为草稿") }; Button({ if (draftLog.isBlank()) overlay = null else confirmPublish = true }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.buttonColors(containerColor = Ink)) { Text("发布") } }
+                  } else if (kind == "dispatch") {
+                      Text("向团队长派发演示任务", color = Ink.copy(alpha = .7f), modifier = Modifier.padding(top = 18.dp)); OutlinedTextField(value = "完成阶段性汇报", onValueChange = {}, readOnly = true, modifier = Modifier.fillMaxWidth().padding(top = 12.dp), label = { Text("任务内容") }); Text("接收团队", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 14.dp)); MockData.teamLeaders.forEach { leader -> Text("□  $leader", modifier = Modifier.padding(top = 8.dp), fontSize = 15.sp) }; Spacer(Modifier.weight(1f)); Button({ overlay = null }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Ink)) { Text("确认派发（演示）") }
+                  } else {
+                      Text("以下团队日报等待你的审核", color = Ink.copy(alpha = .7f), modifier = Modifier.padding(top = 18.dp)); DetailCard("周岚 · 前端团队", "登录模块已完成联调，请审核", Peach); Spacer(Modifier.height(10.dp)); DetailCard("陈默 · 后端团队", "数据库设计已提交，请审核", Sky); Spacer(Modifier.height(10.dp)); DetailCard("许安 · 测试团队", "需求评审记录已更新，请审核", Mint); Spacer(Modifier.weight(1f)); Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) { OutlinedButton({ overlay = null }, modifier = Modifier.weight(1f)) { Text("退回") }; Button({ overlay = null }, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = Ink)) { Text("全部通过") } }
+                  }
               }
           }
       }
+      if (confirmPublish) AlertDialog(onDismissRequest = { confirmPublish = false }, title = { Text("确认发布？") }, text = { Text("发布后这条工作日志会进入历史记录，是否继续？") }, confirmButton = { TextButton({ confirmPublish = false; savedDraft = false; draftLog = ""; overlay = null }) { Text("确认发布") } }, dismissButton = { TextButton({ confirmPublish = false }) { Text("取消") } })
+      if (confirmExit) AlertDialog(onDismissRequest = { confirmExit = false }, title = { Text("放弃未保存内容？") }, text = { Text("退出后当前填写内容会被清空。") }, confirmButton = { TextButton({ confirmExit = false; draftLog = ""; savedDraft = false; overlay = null }) { Text("放弃并退出") } }, dismissButton = { TextButton({ confirmExit = false }) { Text("继续编辑") } })
       if (notifications) NotificationDrawer(onClose = { notifications = false })
     }
 }
 
 @Composable private fun BoxScope.NotificationDrawer(onClose: () -> Unit) {
-    Card(Modifier.align(Alignment.CenterEnd).fillMaxWidth(.75f).fillMaxHeight(), shape = RoundedCornerShape(topStart = 24.dp, bottomStart = 24.dp), colors = CardDefaults.cardColors(containerColor = WarmCard), elevation = CardDefaults.cardElevation(14.dp)) {
+    Card(Modifier.align(Alignment.CenterEnd).fillMaxWidth(.75f).fillMaxHeight(), shape = RoundedCornerShape(0.dp), colors = CardDefaults.cardColors(containerColor = WarmCard), elevation = CardDefaults.cardElevation(14.dp)) {
         Column(Modifier.fillMaxSize().padding(18.dp)) { Row(verticalAlignment = Alignment.CenterVertically) { Text("消息", fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f)); IconButton(onClose) { Icon(Icons.Default.Close, "关闭") } }; Text("今天收到的更新", color = Ink.copy(alpha = .6f), fontSize = 13.sp, modifier = Modifier.padding(bottom = 12.dp)); DetailCard("新任务", "完成登录模块 · 已派发", Peach); Spacer(Modifier.height(10.dp)); DetailCard("审核结果", "阶段汇报已通过", Mint); Spacer(Modifier.height(10.dp)); DetailCard("下属日报", "暂无新的日报更新", Color.White) }
     }
 }
 @Composable private fun AiMapScreen() { Column(Modifier.fillMaxSize().padding(16.dp)) { PageHeader("AI地图"); Spacer(Modifier.height(48.dp)); Icon(Icons.Default.Info, null, Modifier.size(70.dp).align(Alignment.CenterHorizontally), tint = Coral); Text("AI 地图", Modifier.fillMaxWidth().padding(top = 18.dp), textAlign = TextAlign.Center, fontSize = 28.sp, fontWeight = FontWeight.Bold); Text("功能规划中", Modifier.fillMaxWidth().padding(top = 8.dp), textAlign = TextAlign.Center, color = Ink.copy(alpha = .6f)) } }
-@Composable private fun ProfileScreen() { Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) { PageHeader("我的", "个人资料"); Card(Modifier.fillMaxWidth().padding(top = 20.dp), colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(20.dp)) { Column(Modifier.padding(22.dp)) { Icon(Icons.Default.AccountCircle, null, Modifier.size(64.dp), tint = Coral); Text(MockData.userName, fontSize = 24.sp, fontWeight = FontWeight.Bold); Text(MockData.department, color = Ink.copy(alpha = .65f)); Text(MockData.position, color = Ink.copy(alpha = .65f)); Spacer(Modifier.height(18.dp)); Text("企业：Pandora 演示企业"); Text("当前身份：普通员工（模拟）") } } } }
+@Composable private fun ProfileScreen() { Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) { PageHeader("我的", "个人资料"); Card(Modifier.fillMaxWidth().padding(top = 20.dp), colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(20.dp)) { Column(Modifier.padding(22.dp)) { Icon(Icons.Default.AccountCircle, null, Modifier.size(64.dp), tint = Coral); Text(MockData.userName, fontSize = 24.sp, fontWeight = FontWeight.Bold); Text(MockData.department, color = Ink.copy(alpha = .65f)); Text(MockData.position, color = Ink.copy(alpha = .65f)); Spacer(Modifier.height(18.dp)); Text("企业：Pandora 演示企业"); Text("当前身份：部门老总（模拟）"); Text("管理团队：${MockData.teamLeaders.joinToString("、")}", fontSize = 13.sp, color = Ink.copy(alpha = .65f)) } } } }
 @Composable private fun DetailCard(title: String, body: String, color: Color, onClick: () -> Unit = {}) { Card(Modifier.fillMaxWidth().clickable(onClick = onClick), colors = CardDefaults.cardColors(containerColor = color.copy(alpha = .78f)), shape = RoundedCornerShape(16.dp)) { Column(Modifier.padding(14.dp)) { Text(title, fontWeight = FontWeight.Bold); Text(body, fontSize = 13.sp, color = Ink.copy(alpha = .75f), maxLines = 2, overflow = TextOverflow.Ellipsis) } } }
 @Composable private fun DetailScreen(title: String, onBack: () -> Unit) {
     Column(Modifier.fillMaxSize()) {

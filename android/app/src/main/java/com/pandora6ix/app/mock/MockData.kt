@@ -54,7 +54,8 @@ object MockData {
     val demoToday = DemoDate(2026, 9, 19)
     const val userName = "林小满"
     const val department = "产品研发部"
-    const val position = "项目专员"
+    const val position = "产品研发部总经理"
+    val teamLeaders = listOf("前端团队长 · 周岚", "后端团队长 · 陈默", "测试团队长 · 许安")
 
     val companyHighlights = listOf(
         "本周项目验收",
@@ -69,16 +70,16 @@ object MockData {
         "安排下周计划"
     )
     val companyTasks = listOf(
-        WorkTask("t1", "完成登录模块", DemoDate(2026, 9, 16), DemoDate(2026, 9, 20), "进行中", userName, 0),
-        WorkTask("t2", "提交数据库设计", DemoDate(2026, 9, 18), DemoDate(2026, 9, 22), "待开始", userName, 1),
-        WorkTask("t3", "完成需求评审", DemoDate(2026, 9, 19), DemoDate(2026, 9, 21), "进行中", userName, 2),
-        WorkTask("t4", "准备演示材料", DemoDate(2026, 9, 23), DemoDate(2026, 9, 26), "待开始", userName, 3),
-        WorkTask("t5", "发布测试版本", DemoDate(2026, 9, 27), DemoDate(2026, 9, 30), "待开始", userName, 1),
-        WorkTask("t6", "完善埋点方案", DemoDate(2026, 9, 20), DemoDate(2026, 9, 24), "待开始", userName, 2),
-        WorkTask("t7", "编写用户手册", DemoDate(2026, 9, 22), DemoDate(2026, 9, 25), "待开始", userName, 3),
-        WorkTask("t8", "整理反馈清单", DemoDate(2026, 9, 24), DemoDate(2026, 9, 28), "待开始", userName, 0),
-        WorkTask("t9", "准备发布检查", DemoDate(2026, 9, 26), DemoDate(2026, 9, 29), "待开始", userName, 1),
-        WorkTask("t10", "版本复盘会议", DemoDate(2026, 9, 29), DemoDate(2026, 10, 1), "待开始", userName, 2)
+        WorkTask("t1", "完成登录模块", DemoDate(2026, 9, 16), DemoDate(2026, 9, 20), "进行中", "周岚", 0),
+        WorkTask("t2", "提交数据库设计", DemoDate(2026, 9, 18), DemoDate(2026, 9, 22), "待开始", "陈默", 1),
+        WorkTask("t3", "完成需求评审", DemoDate(2026, 9, 19), DemoDate(2026, 9, 21), "进行中", "许安", 2),
+        WorkTask("t4", "准备演示材料", DemoDate(2026, 9, 23), DemoDate(2026, 9, 26), "待开始", "周岚", 3),
+        WorkTask("t5", "发布测试版本", DemoDate(2026, 9, 27), DemoDate(2026, 9, 30), "待开始", "陈默", 1),
+        WorkTask("t6", "完善埋点方案", DemoDate(2026, 9, 20), DemoDate(2026, 9, 24), "待开始", "许安", 2),
+        WorkTask("t7", "编写用户手册", DemoDate(2026, 9, 22), DemoDate(2026, 9, 25), "待开始", "周岚", 3),
+        WorkTask("t8", "整理反馈清单", DemoDate(2026, 9, 24), DemoDate(2026, 9, 28), "待开始", "陈默", 0),
+        WorkTask("t9", "准备发布检查", DemoDate(2026, 9, 26), DemoDate(2026, 9, 29), "待开始", "许安", 1),
+        WorkTask("t10", "版本复盘会议", DemoDate(2026, 9, 29), DemoDate(2026, 10, 1), "待开始", "周岚", 2)
     )
     val logs = listOf(
         WorkLog("l1", "梳理首页四象限交互，确认面板文案。", userName, DemoDate(2026, 9, 19), "09:30"),
