@@ -84,16 +84,16 @@ fun PandoraApp() {
         "个人十大重要事项" to MockData.personalImportant,
         "个人日志" to MockData.logs.map { it.content }
     )
-    Box(Modifier.fillMaxSize().background(Cream)) {
-      Column(Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
+    Box(Modifier.fillMaxSize().background(WarmDashboard)) {
+      Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(MockData.demoToday.shortLabel(), fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
             IconButton(onClick = { }) { Surface(shape = RoundedCornerShape(50), color = CreamDeep) { Icon(Icons.Default.Email, "邮箱", Modifier.padding(9.dp), tint = Ink) } }
         }
         Text("工作总览", fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 10.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) { HomePanel(panels[0].first, panels[0].second, Modifier.weight(1f)) { expandedPanel = panels[0].first }; HomePanel(panels[1].first, panels[1].second, Modifier.weight(1f)) { expandedPanel = panels[1].first } }
-        Spacer(Modifier.height(10.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) { HomePanel(panels[2].first, panels[2].second, Modifier.weight(1f)) { expandedPanel = panels[2].first }; HomePanel(panels[3].first, panels[3].second, Modifier.weight(1f)) { expandedPanel = panels[3].first } }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) { HomePanel(panels[0].first, panels[0].second, Modifier.weight(1f)) { expandedPanel = panels[0].first }; HomePanel(panels[1].first, panels[1].second, Modifier.weight(1f)) { expandedPanel = panels[1].first } }
+        Spacer(Modifier.height(14.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) { HomePanel(panels[2].first, panels[2].second, Modifier.weight(1f)) { expandedPanel = panels[2].first }; HomePanel(panels[3].first, panels[3].second, Modifier.weight(1f)) { expandedPanel = panels[3].first } }
         Text("点击板块可展开查看完整十条内容", color = Ink.copy(alpha = .65f), fontSize = 13.sp, modifier = Modifier.padding(vertical = 16.dp))
       }
       val selected = panels.firstOrNull { it.first == expandedPanel }
@@ -113,7 +113,7 @@ fun PandoraApp() {
 
 @Composable private fun HomePanel(title: String, items: List<String>, modifier: Modifier, onClick: () -> Unit) {
     Card(modifier.height(310.dp).clickable(onClick = onClick).border(2.dp, WarmOrange, RoundedCornerShape(22.dp)), shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = WarmCard)) {
-        Column(Modifier.padding(13.dp)) { Text(title, fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 2, overflow = TextOverflow.Ellipsis); Spacer(Modifier.height(5.dp)); Column(Modifier.weight(1f)) { items.take(10).forEachIndexed { i, text -> Text("${i + 1}. $text", fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(vertical = 2.dp)) } }; Text("展开查看 →", color = Color(0xFFB34E4A), fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp)) }
+        Column(Modifier.padding(14.dp)) { Text(title, fontWeight = FontWeight.Bold, fontSize = 16.sp, maxLines = 2, overflow = TextOverflow.Ellipsis); Spacer(Modifier.height(7.dp)); Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) { items.take(10).forEachIndexed { i, text -> Text("${i + 1}. $text", fontSize = 13.sp, lineHeight = 18.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.fillMaxWidth().padding(vertical = 7.dp)); if (i < items.take(10).lastIndex) Text("· · · · · · · · ·", color = WarmOrange.copy(alpha = .65f), fontSize = 11.sp, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center) } }; Text("展开查看 →", color = Color(0xFFB34E4A), fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp)) }
     }
 }
 
@@ -134,7 +134,7 @@ fun PandoraApp() {
 
 @Composable private fun WeekView(cursor: DemoDate, onCursorChange: (DemoDate) -> Unit, onSelectDate: (DemoDate) -> Unit) {
     val start = mondayOfWeek(cursor); val dates = (0..6).map { start.plusDays(it) }; val names = listOf("一", "二", "三", "四", "五", "六", "日")
-    Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp)) { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Text("${start.shortLabel()}—${dates.last().shortLabel()}", fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.weight(1f)); IconButton({ onCursorChange(cursor.plusDays(-7)) }) { Icon(Icons.Default.ArrowBack, "上周") }; IconButton({ onCursorChange(cursor.plusDays(7)) }) { Icon(Icons.Default.ArrowForward, "下周") } }; Row(Modifier.fillMaxWidth().padding(vertical = 12.dp)) { dates.forEachIndexed { i, date -> Text("${date.day}\n周${names[i]}", Modifier.weight(1f).clickable { onSelectDate(date) }, fontSize = 12.sp, textAlign = TextAlign.Center) } }; Text("任务横条", color = Ink.copy(alpha = .6f), fontSize = 13.sp); MockData.companyTasks.forEach { TaskBar(it, dates, onSelectDate) } }
+    Column(Modifier.verticalScroll(rememberScrollState()).padding(20.dp)) { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Text("${start.shortLabel()}—${dates.last().shortLabel()}", fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.weight(1f)); IconButton({ onCursorChange(cursor.plusDays(-7)) }) { Icon(Icons.Default.ArrowBack, "上周") }; IconButton({ onCursorChange(cursor.plusDays(7)) }) { Icon(Icons.Default.ArrowForward, "下周") } }; Row(Modifier.fillMaxWidth().padding(vertical = 16.dp)) { dates.forEachIndexed { i, date -> Text("${date.day}\n周${names[i]}", Modifier.weight(1f).clickable { onSelectDate(date) }, fontSize = 12.sp, textAlign = TextAlign.Center) } }; Text("任务横条", color = Ink.copy(alpha = .6f), fontSize = 13.sp, modifier = Modifier.padding(bottom = 4.dp)); MockData.companyTasks.forEach { TaskBar(it, dates, onSelectDate) } }
 }
 
 @Composable private fun TaskBar(task: WorkTask, dates: List<DemoDate>, onSelectDate: (DemoDate) -> Unit) {
@@ -142,7 +142,7 @@ fun PandoraApp() {
     val first = dates.first(); val last = dates.last()
     if (task.end < first || task.start > last) return
     val startIndex = maxOf(0, daysBetween(first, task.start)); val endIndex = minOf(6, daysBetween(first, task.end)); val span = endIndex - startIndex + 1
-    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
         if (startIndex > 0) Spacer(Modifier.weight(startIndex.toFloat()))
         Box(Modifier.weight(span.toFloat()).height(34.dp).padding(1.dp).clip(RoundedCornerShape(8.dp)).background(colors[task.colorIndex]).clickable { onSelectDate(task.start) }, contentAlignment = Alignment.CenterStart) { Text(task.title, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 8.dp)) }
         if (endIndex < 6) Spacer(Modifier.weight((6 - endIndex).toFloat()))
@@ -151,12 +151,12 @@ fun PandoraApp() {
 
 @Composable private fun MonthView(cursor: DemoDate, onCursorChange: (DemoDate) -> Unit, onSelectDate: (DemoDate) -> Unit) {
     val first = DemoDate(cursor.year, cursor.month, 1); val offset = first.ordinal() - mondayOfWeek(first).ordinal(); val cells = (0 until 42).map { first.plusDays(it - offset) }
-    Column(Modifier.verticalScroll(rememberScrollState()).padding(12.dp)) { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Text(cursor.monthLabel(), fontSize = 20.sp, fontWeight = FontWeight.Bold); Spacer(Modifier.weight(1f)); IconButton({ onCursorChange(cursor.plusMonths(-1)) }) { Icon(Icons.Default.ArrowBack, "上月") }; IconButton({ onCursorChange(cursor.plusMonths(1)) }) { Icon(Icons.Default.ArrowForward, "下月") } }; Row(Modifier.fillMaxWidth()) { listOf("一", "二", "三", "四", "五", "六", "日").forEach { Text(it, Modifier.weight(1f), textAlign = TextAlign.Center, fontSize = 12.sp) } }; cells.chunked(7).forEach { week -> Row(Modifier.fillMaxWidth()) { week.forEach { MonthCell(it, cursor.month, onSelectDate) } } } }
+    Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp)) { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Text(cursor.monthLabel(), fontSize = 20.sp, fontWeight = FontWeight.Bold); Spacer(Modifier.weight(1f)); IconButton({ onCursorChange(cursor.plusMonths(-1)) }) { Icon(Icons.Default.ArrowBack, "上月") }; IconButton({ onCursorChange(cursor.plusMonths(1)) }) { Icon(Icons.Default.ArrowForward, "下月") } }; Row(Modifier.fillMaxWidth().padding(vertical = 8.dp)) { listOf("一", "二", "三", "四", "五", "六", "日").forEach { Text(it, Modifier.weight(1f), textAlign = TextAlign.Center, fontSize = 12.sp) } }; cells.chunked(7).forEach { week -> Row(Modifier.fillMaxWidth()) { week.forEach { MonthCell(it, cursor.month, onSelectDate) } } } }
 }
 
 @Composable private fun RowScope.MonthCell(date: DemoDate, month: Int, onSelectDate: (DemoDate) -> Unit) {
     val tasks = MockData.companyTasks.filter { date >= it.start && date <= it.end }
-    Column(Modifier.weight(1f).height(82.dp).border(.5.dp, Coral.copy(alpha = .2f)).padding(3.dp).clickable { onSelectDate(date) }) { Text("${date.day}", fontSize = 12.sp, color = if (date.month == month) Ink else Ink.copy(alpha = .3f)); tasks.take(2).forEach { task -> Text(task.title, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(4.dp)).background(Peach.copy(alpha = .75f)).padding(horizontal = 2.dp).clickable { onSelectDate(date) }) } }
+    Column(Modifier.weight(1f).height(88.dp).border(.5.dp, Coral.copy(alpha = .2f)).padding(4.dp).clickable { onSelectDate(date) }) { Text("${date.day}", fontSize = 12.sp, color = if (date.month == month) Ink else Ink.copy(alpha = .3f)); tasks.take(2).forEach { task -> Text(task.title, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(4.dp)).background(Peach.copy(alpha = .75f)).padding(horizontal = 2.dp).clickable { onSelectDate(date) }) } }
 }
 
 @Composable private fun DayView(cursor: DemoDate, onCursorChange: (DemoDate) -> Unit, onOpen: (String) -> Unit) {
