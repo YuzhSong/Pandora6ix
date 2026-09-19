@@ -117,29 +117,38 @@ fun PandoraApp() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable private fun ViewScreen(mode: ViewMode, onModeChange: (ViewMode) -> Unit, cursor: DemoDate, onCursorChange: (DemoDate) -> Unit, onOpen: (String) -> Unit) {
     var expanded by rememberSaveable { mutableStateOf(false) }
+    val move = { delta: Int -> onCursorChange(if (mode == ViewMode.MONTH) cursor.plusMonths(delta) else cursor.plusDays(delta)) }
     Column(Modifier.fillMaxSize()) {
         PageHeader("工作视图", "任务与日志共用演示数据")
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
             Box { Card(Modifier.clickable { expanded = true }, shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) { Row(Modifier.padding(horizontal = 14.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) { Text(mode.label, fontWeight = FontWeight.Bold); Icon(Icons.Default.ArrowDropDown, null, Modifier.size(18.dp)) } }; DropdownMenu(expanded, { expanded = false }) { ViewMode.values().forEach { option -> DropdownMenuItem({ Text(option.label) }, { onModeChange(option); expanded = false }) } } }
-            Spacer(Modifier.weight(1f)); IconButton({ onCursorChange(cursor.plusDays(-1)) }) { Icon(Icons.Default.ArrowBack, "上一个") }; IconButton({ onCursorChange(cursor.plusDays(1)) }) { Icon(Icons.Default.ArrowForward, "下一个") }
+            Spacer(Modifier.weight(1f)); IconButton({ move(-1) }) { Icon(Icons.Default.ArrowBack, "上一个") }; IconButton({ move(1) }) { Icon(Icons.Default.ArrowForward, "下一个") }
         }
         when (mode) { ViewMode.DAY -> DayView(cursor, onOpen); ViewMode.WEEK -> WeekView(cursor, onOpen); ViewMode.MONTH -> MonthView(cursor, onCursorChange, onOpen) }
+        if (cursor != MockData.demoToday) Button(onClick = { onCursorChange(MockData.demoToday) }, modifier = Modifier.align(Alignment.End).padding(horizontal = 16.dp, vertical = 8.dp), shape = RoundedCornerShape(18.dp), colors = ButtonDefaults.buttonColors(containerColor = Ink)) { Text("回到今天", color = Color.White) }
     }
 }
 
 @Composable private fun WeekView(cursor: DemoDate, onOpen: (String) -> Unit) {
     val start = mondayOfWeek(cursor); val dates = (0..6).map { start.plusDays(it) }; val names = listOf("一", "二", "三", "四", "五", "六", "日")
-    Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp)) { Text("${start.monthLabel()} · ${start.shortLabel()}—${dates.last().shortLabel()}", fontWeight = FontWeight.Bold, fontSize = 18.sp); Row(Modifier.fillMaxWidth().padding(vertical = 12.dp)) { dates.forEachIndexed { i, date -> Text("${date.day}\n周${names[i]}", Modifier.weight(1f), fontSize = 12.sp, textAlign = TextAlign.Center) } }; Text("任务横条", color = Ink.copy(alpha = .6f), fontSize = 13.sp); MockData.companyTasks.forEach { TaskBar(it, dates, onOpen) } }
+    Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp)) { Text("${start.shortLabel()}—${dates.last().shortLabel()}", fontWeight = FontWeight.Bold, fontSize = 18.sp); Row(Modifier.fillMaxWidth().padding(vertical = 12.dp)) { dates.forEachIndexed { i, date -> Text("${date.day}\n周${names[i]}", Modifier.weight(1f), fontSize = 12.sp, textAlign = TextAlign.Center) } }; Text("任务横条", color = Ink.copy(alpha = .6f), fontSize = 13.sp); MockData.companyTasks.forEach { TaskBar(it, dates, onOpen) } }
 }
 
 @Composable private fun TaskBar(task: WorkTask, dates: List<DemoDate>, onOpen: (String) -> Unit) {
     val colors = listOf(Peach, Sky, Mint, Lilac)
-    Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) { dates.forEachIndexed { i, date -> val active = date >= task.start && date <= task.end; Box(Modifier.weight(1f).height(34.dp).padding(1.dp).clip(RoundedCornerShape(6.dp)).background(if (active) colors[task.colorIndex] else Color.White.copy(alpha = .35f)).clickable(enabled = active) { onOpen(task.title) }, contentAlignment = Alignment.Center) { if (active && (date == task.start || i == 0)) Text(task.title, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(3.dp)) } } }
+    val first = dates.first(); val last = dates.last()
+    if (task.end < first || task.start > last) return
+    val startIndex = maxOf(0, daysBetween(first, task.start)); val endIndex = minOf(6, daysBetween(first, task.end)); val span = endIndex - startIndex + 1
+    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (startIndex > 0) Spacer(Modifier.weight(startIndex.toFloat()))
+        Box(Modifier.weight(span.toFloat()).height(34.dp).padding(1.dp).clip(RoundedCornerShape(8.dp)).background(colors[task.colorIndex]).clickable { onOpen(task.title) }, contentAlignment = Alignment.CenterStart) { Text(task.title, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 8.dp)) }
+        if (endIndex < 6) Spacer(Modifier.weight((6 - endIndex).toFloat()))
+    }
 }
 
 @Composable private fun MonthView(cursor: DemoDate, onCursorChange: (DemoDate) -> Unit, onOpen: (String) -> Unit) {
     val first = DemoDate(cursor.year, cursor.month, 1); val offset = first.ordinal() - mondayOfWeek(first).ordinal(); val cells = (0 until 42).map { first.plusDays(it - offset) }
-    Column(Modifier.verticalScroll(rememberScrollState()).padding(12.dp)) { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Text(cursor.monthLabel(), fontSize = 20.sp, fontWeight = FontWeight.Bold); Spacer(Modifier.weight(1f)); IconButton({ onCursorChange(cursor.plusDays(-28)) }) { Icon(Icons.Default.ArrowBack, "上月") }; IconButton({ onCursorChange(cursor.plusDays(35)) }) { Icon(Icons.Default.ArrowForward, "下月") } }; Row(Modifier.fillMaxWidth()) { listOf("一", "二", "三", "四", "五", "六", "日").forEach { Text(it, Modifier.weight(1f), textAlign = TextAlign.Center, fontSize = 12.sp) } }; cells.chunked(7).forEach { week -> Row(Modifier.fillMaxWidth()) { week.forEach { MonthCell(it, cursor.month, onOpen) } } } }
+    Column(Modifier.verticalScroll(rememberScrollState()).padding(12.dp)) { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Text(cursor.monthLabel(), fontSize = 20.sp, fontWeight = FontWeight.Bold); Spacer(Modifier.weight(1f)); IconButton({ onCursorChange(cursor.plusMonths(-1)) }) { Icon(Icons.Default.ArrowBack, "上月") }; IconButton({ onCursorChange(cursor.plusMonths(1)) }) { Icon(Icons.Default.ArrowForward, "下月") } }; Row(Modifier.fillMaxWidth()) { listOf("一", "二", "三", "四", "五", "六", "日").forEach { Text(it, Modifier.weight(1f), textAlign = TextAlign.Center, fontSize = 12.sp) } }; cells.chunked(7).forEach { week -> Row(Modifier.fillMaxWidth()) { week.forEach { MonthCell(it, cursor.month, onOpen) } } } }
 }
 
 @Composable private fun RowScope.MonthCell(date: DemoDate, month: Int, onOpen: (String) -> Unit) {

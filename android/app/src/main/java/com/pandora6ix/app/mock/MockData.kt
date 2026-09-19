@@ -12,6 +12,10 @@ data class DemoDate(val year: Int, val month: Int, val day: Int) : Comparable<De
         set(year, month - 1, day, 12, 0, 0)
         add(Calendar.DAY_OF_MONTH, days)
     }.let { DemoDate(it.get(Calendar.YEAR), it.get(Calendar.MONTH) + 1, it.get(Calendar.DAY_OF_MONTH)) }
+    fun plusMonths(months: Int): DemoDate = Calendar.getInstance().apply {
+        set(year, month - 1, 1, 12, 0, 0)
+        add(Calendar.MONTH, months)
+    }.let { DemoDate(it.get(Calendar.YEAR), it.get(Calendar.MONTH) + 1, day) }
     fun monthLabel(): String = "${year}年${month}月"
     fun shortLabel(): String = "${month}月${day}日"
 }
