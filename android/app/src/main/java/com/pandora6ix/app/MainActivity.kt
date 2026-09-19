@@ -55,7 +55,7 @@ fun PandoraApp() {
         val date = dateKey.split("-").map(String::toInt).let { DemoDate(it[0], it[1], it[2]) }
         val current = Route.valueOf(route)
         val nav = listOf(NavItem(Route.HOME, "首页", Icons.Default.Home), NavItem(Route.VIEW, "视图", Icons.Default.Menu), NavItem(Route.LOGS, "日志", Icons.Default.List), NavItem(Route.AI, "AI地图", Icons.Default.Info), NavItem(Route.ME, "我的", Icons.Default.AccountCircle))
-        Scaffold(containerColor = Cream, bottomBar = { NavigationBar(containerColor = CreamDeep) { nav.forEach { item -> NavigationBarItem(selected = current == item.route, onClick = { route = item.route.name; detail = null }, icon = { Icon(item.icon, item.label) }, label = { Text(item.label, fontSize = 11.sp) }) } } }) { padding ->
+        Scaffold(containerColor = Cream, bottomBar = { NavigationBar(containerColor = CreamDeep) { nav.forEach { item -> NavigationBarItem(selected = current == item.route, onClick = { route = item.route.name; detail = null }, icon = { Icon(item.icon, item.label) }, label = { Text(item.label, fontSize = 11.sp) }, colors = NavigationBarItemDefaults.colors(selectedIconColor = WarmOrange, selectedTextColor = WarmOrange, indicatorColor = CreamDeep)) } } }) { padding ->
             Surface(Modifier.padding(padding).fillMaxSize(), color = Cream) {
                 if (detail != null) DetailScreen(detail!!, onBack = { detail = null }) else AnimatedContent(current, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "page") { target ->
                     when (target) {
@@ -72,8 +72,8 @@ fun PandoraApp() {
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable private fun PageHeader(title: String, subtitle: String? = null, onBack: (() -> Unit)? = null) {
-    TopAppBar(title = { Column { Text(title, fontWeight = FontWeight.Bold); subtitle?.let { Text(it, fontSize = 12.sp, color = Ink.copy(alpha = .6f)) } } }, navigationIcon = { if (onBack != null) IconButton(onBack) { Icon(Icons.Default.ArrowBack, "返回") } }, colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent))
+@Composable private fun PageHeader(title: String, subtitle: String? = null, onBack: (() -> Unit)? = null, actions: @Composable RowScope.() -> Unit = {}) {
+    TopAppBar(title = { Column { Text(title, fontWeight = FontWeight.Bold); subtitle?.let { Text(it, fontSize = 12.sp, color = Ink.copy(alpha = .6f)) } } }, navigationIcon = { if (onBack != null) IconButton(onBack) { Icon(Icons.Default.ArrowBack, "返回") } }, actions = actions, colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent))
 }
 
 @Composable private fun HomeScreen(onOpen: (String) -> Unit) {
@@ -91,10 +91,9 @@ fun PandoraApp() {
             IconButton(onClick = { }) { Surface(shape = RoundedCornerShape(50), color = CreamDeep) { Icon(Icons.Default.Email, "邮箱", Modifier.padding(9.dp), tint = Ink) } }
         }
         Text("工作总览", fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 10.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) { HomePanel(panels[0].first, panels[0].second, Modifier.weight(1f)) { expandedPanel = panels[0].first }; HomePanel(panels[1].first, panels[1].second, Modifier.weight(1f)) { expandedPanel = panels[1].first } }
-        Spacer(Modifier.height(14.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) { HomePanel(panels[2].first, panels[2].second, Modifier.weight(1f)) { expandedPanel = panels[2].first }; HomePanel(panels[3].first, panels[3].second, Modifier.weight(1f)) { expandedPanel = panels[3].first } }
-        Text("点击板块可展开查看完整十条内容", color = Ink.copy(alpha = .65f), fontSize = 13.sp, modifier = Modifier.padding(vertical = 16.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { HomePanel(panels[0].first, panels[0].second, Modifier.weight(1f)) { expandedPanel = panels[0].first }; HomePanel(panels[1].first, panels[1].second, Modifier.weight(1f)) { expandedPanel = panels[1].first } }
+        Spacer(Modifier.height(8.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { HomePanel(panels[2].first, panels[2].second, Modifier.weight(1f)) { expandedPanel = panels[2].first }; HomePanel(panels[3].first, panels[3].second, Modifier.weight(1f)) { expandedPanel = panels[3].first } }
       }
       val selected = panels.firstOrNull { it.first == expandedPanel }
       if (selected != null) {
@@ -112,8 +111,8 @@ fun PandoraApp() {
 }
 
 @Composable private fun HomePanel(title: String, items: List<String>, modifier: Modifier, onClick: () -> Unit) {
-    Card(modifier.height(310.dp).clickable(onClick = onClick).border(2.dp, WarmOrange, RoundedCornerShape(22.dp)), shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = WarmCard)) {
-        Column(Modifier.padding(14.dp)) { Text(title, fontWeight = FontWeight.Bold, fontSize = 16.sp, maxLines = 2, overflow = TextOverflow.Ellipsis); Spacer(Modifier.height(7.dp)); Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) { items.take(10).forEachIndexed { i, text -> Text("${i + 1}. $text", fontSize = 13.sp, lineHeight = 18.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.fillMaxWidth().padding(vertical = 7.dp)); if (i < items.take(10).lastIndex) Text("· · · · · · · · ·", color = WarmOrange.copy(alpha = .65f), fontSize = 11.sp, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center) } }; Text("展开查看 →", color = Color(0xFFB34E4A), fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp)) }
+    Card(modifier.height(350.dp).clickable(onClick = onClick).border(2.dp, WarmOrange, RoundedCornerShape(22.dp)), shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = WarmCard)) {
+        Column(Modifier.padding(14.dp)) { Text(title, fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis); Spacer(Modifier.height(5.dp)); Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) { items.take(10).forEachIndexed { i, text -> Text("${i + 1}. $text", fontSize = 15.sp, lineHeight = 19.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)); if (i < items.take(10).lastIndex) Text("· · · · · · · · ·", color = WarmOrange.copy(alpha = .65f), fontSize = 10.sp, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center) } }; Text("展开查看 →", color = Color(0xFFB34E4A), fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp)) }
     }
 }
 
@@ -122,13 +121,12 @@ fun PandoraApp() {
     var expanded by rememberSaveable { mutableStateOf(false) }
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
-            PageHeader("工作视图", "任务与日志共用演示数据")
-            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box { Card(Modifier.clickable { expanded = true }, shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) { Row(Modifier.padding(horizontal = 14.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) { Text(mode.label, fontWeight = FontWeight.Bold); Icon(Icons.Default.ArrowDropDown, null, Modifier.size(18.dp)) } }; DropdownMenu(expanded, { expanded = false }) { ViewMode.values().forEach { option -> DropdownMenuItem({ Text(option.label) }, { onModeChange(option); expanded = false }) } } }
-            }
+            PageHeader("工作视图", "任务与日志共用演示数据", actions = {
+                Box { Card(Modifier.clickable { expanded = true }, shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) { Row(Modifier.padding(horizontal = 10.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) { Text(mode.label, fontWeight = FontWeight.Bold, fontSize = 13.sp); Icon(Icons.Default.ArrowDropDown, null, Modifier.size(17.dp)) } }; DropdownMenu(expanded, { expanded = false }) { ViewMode.values().forEach { option -> DropdownMenuItem({ Text(option.label) }, { onModeChange(option); expanded = false }) } } }
+            })
             when (mode) { ViewMode.DAY -> DayView(cursor, onCursorChange, onOpen); ViewMode.WEEK -> WeekView(cursor, onCursorChange) { selected -> onModeChange(ViewMode.DAY); onCursorChange(selected) }; ViewMode.MONTH -> MonthView(cursor, onCursorChange) { selected -> onModeChange(ViewMode.DAY); onCursorChange(selected) } }
         }
-        if (cursor != MockData.demoToday) Button(onClick = { onCursorChange(MockData.demoToday) }, modifier = Modifier.align(Alignment.BottomEnd).padding(end = 0.dp, bottom = 8.dp).width(185.dp).height(52.dp), shape = RoundedCornerShape(topStart = 28.dp, bottomStart = 28.dp), colors = ButtonDefaults.buttonColors(containerColor = Ink)) { Text("回到今天", color = Color.White, fontSize = 16.sp) }
+        if (cursor != MockData.demoToday) Button(onClick = { onCursorChange(MockData.demoToday) }, modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 0.dp).fillMaxWidth(.2f).height(36.dp), shape = RoundedCornerShape(topStart = 20.dp, bottomStart = 20.dp), colors = ButtonDefaults.buttonColors(containerColor = Ink)) { Text("回到今天", color = Color.White, fontSize = 11.sp, maxLines = 1) }
     }
 }
 
