@@ -39,7 +39,9 @@ data class WorkTask(
     val end: DemoDate,
     val status: String,
     val assignee: String,
-    val colorIndex: Int
+    val colorIndex: Int,
+    val priority: String = "普通",
+    val note: String = "演示任务说明：请按时间节点完成并及时更新进度。"
 )
 
 data class WorkLog(
@@ -56,6 +58,7 @@ object MockData {
     const val department = "产品研发部"
     const val position = "产品研发部总经理"
     val teamLeaders = listOf("前端团队长 · 周岚", "后端团队长 · 陈默", "测试团队长 · 许安")
+    val managedMembers = teamLeaders + listOf("前端员工 · 林晓", "后端员工 · 赵宁", "测试员工 · 唐果")
 
     val companyHighlights = listOf(
         "本周项目验收",
