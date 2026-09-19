@@ -2,7 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application
         android:allowBackup="true"
-        android:label="Pandora6ix"
+        android:label="Pandora"
         android:supportsRtl="true"
         android:theme="@style/Theme.Pandora6ix">
         <activity
