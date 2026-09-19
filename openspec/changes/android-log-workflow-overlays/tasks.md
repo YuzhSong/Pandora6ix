@@ -7,6 +7,7 @@
 
 - [x] 2.1 Add restricted dispatch/review states with compact permission overlay.
 - [x] 2.2 Add compact new-log overlay and right-side notification drawer.
+- [x] 2.3 Reuse the notification drawer on Home and widen it to three quarters of the screen.
 
 ## 3. Verification
 

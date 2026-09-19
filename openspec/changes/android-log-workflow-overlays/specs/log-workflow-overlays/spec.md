@@ -25,5 +25,5 @@ Ordinary employees SHALL not be able to dispatch tasks or approve reports.
 New log entry and notifications SHALL appear in layered UI over the current page without replacing the entire page.
 
 #### Scenario: Add a log or read mail
-- **WHEN** the user taps 记录今天的工作 or the mail button
-- **THEN** a centered compact form or a right-side half-width drawer appears above a scrim
+- **WHEN** the user taps 记录今天的工作 or the mail button on Home or Logs
+- **THEN** a centered compact form or a right-side drawer occupying three quarters of the screen width appears above a scrim
