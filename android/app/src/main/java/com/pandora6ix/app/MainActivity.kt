@@ -158,21 +158,17 @@ fun PandoraApp() {
 
 @Composable private fun MonthView(cursor: DemoDate, onCursorChange: (DemoDate) -> Unit, onSelectDate: (DemoDate) -> Unit) {
     val first = DemoDate(cursor.year, cursor.month, 1); val offset = first.ordinal() - mondayOfWeek(first).ordinal(); val last = first.plusMonths(1).plusDays(-1); val cellCount = ((offset + last.day + 6) / 7) * 7; val cells = (0 until cellCount).map { first.plusDays(it - offset) }
-    Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 8.dp)) { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Text(cursor.monthLabel(), fontSize = 20.sp, fontWeight = FontWeight.Bold); Spacer(Modifier.weight(1f)); IconButton({ onCursorChange(cursor.plusMonths(-1)) }) { Icon(Icons.Default.ArrowBack, "上月") }; IconButton({ onCursorChange(cursor.plusMonths(1)) }) { Icon(Icons.Default.ArrowForward, "下月") } }; Row(Modifier.fillMaxWidth().padding(vertical = 8.dp)) { listOf("一", "二", "三", "四", "五", "六", "日").forEach { Text(it, Modifier.weight(1f), textAlign = TextAlign.Center, fontSize = 14.sp) } }; cells.chunked(7).forEach { week -> MonthWeekRow(week, cursor.month, onSelectDate) } }
+    Column(Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 8.dp)) { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Text(cursor.monthLabel(), fontSize = 20.sp, fontWeight = FontWeight.Bold); Spacer(Modifier.weight(1f)); IconButton({ onCursorChange(cursor.plusMonths(-1)) }) { Icon(Icons.Default.ArrowBack, "上月") }; IconButton({ onCursorChange(cursor.plusMonths(1)) }) { Icon(Icons.Default.ArrowForward, "下月") } }; Row(Modifier.fillMaxWidth().padding(vertical = 8.dp)) { listOf("一", "二", "三", "四", "五", "六", "日").forEach { Text(it, Modifier.weight(1f), textAlign = TextAlign.Center, fontSize = 14.sp) } }; Column(Modifier.fillMaxWidth().weight(1f)) { cells.chunked(7).take(5).forEach { week -> MonthWeekRow(week, cursor.month, onSelectDate, Modifier.weight(1f)) } } }
 }
 
-@Composable private fun MonthWeekRow(week: List<DemoDate>, month: Int, onSelectDate: (DemoDate) -> Unit) {
+@Composable private fun MonthWeekRow(week: List<DemoDate>, month: Int, onSelectDate: (DemoDate) -> Unit, modifier: Modifier = Modifier) {
     val visibleTasks = MockData.companyTasks.filter { it.end >= week.first() && it.start <= week.last() }
-    Column(Modifier.fillMaxWidth().height(180.dp).drawBehind { val guide = PathEffect.dashPathEffect(floatArrayOf(5.dp.toPx(), 5.dp.toPx())); for (i in 1..6) { val x = size.width * i / 7f; drawLine(color = Coral.copy(alpha = .2f), start = androidx.compose.ui.geometry.Offset(x, 0f), end = androidx.compose.ui.geometry.Offset(x, size.height), strokeWidth = 1.dp.toPx(), pathEffect = guide) }; drawLine(color = Coral.copy(alpha = .2f), start = androidx.compose.ui.geometry.Offset(0f, size.height - 1.dp.toPx()), end = androidx.compose.ui.geometry.Offset(size.width, size.height - 1.dp.toPx()), strokeWidth = 1.dp.toPx(), pathEffect = guide) }) {
+    Column(modifier.fillMaxWidth().drawBehind { val guide = PathEffect.dashPathEffect(floatArrayOf(5.dp.toPx(), 5.dp.toPx())); for (i in 1..6) { val x = size.width * i / 7f; drawLine(color = Coral.copy(alpha = .2f), start = androidx.compose.ui.geometry.Offset(x, 0f), end = androidx.compose.ui.geometry.Offset(x, size.height), strokeWidth = 1.dp.toPx(), pathEffect = guide) }; drawLine(color = Coral.copy(alpha = .2f), start = androidx.compose.ui.geometry.Offset(0f, size.height - 1.dp.toPx()), end = androidx.compose.ui.geometry.Offset(size.width, size.height - 1.dp.toPx()), strokeWidth = 1.dp.toPx(), pathEffect = guide) }) {
         Row(Modifier.fillMaxWidth().height(34.dp)) { week.forEach { date -> Column(Modifier.weight(1f).fillMaxHeight().clickable { onSelectDate(date) }.padding(4.dp)) { Text("${date.day}", fontSize = 14.sp, color = if (date.month == month) Ink else Ink.copy(alpha = .3f)) } } }
         Column(Modifier.fillMaxWidth().weight(1f)) {
-            if (visibleTasks.size <= 4) {
-                visibleTasks.forEach { task -> MonthTaskBar(task, week, onSelectDate, Modifier.weight(1f)) }
-                repeat(4 - visibleTasks.size) { Spacer(Modifier.weight(1f)) }
-            } else {
-                visibleTasks.take(3).forEach { task -> MonthTaskBar(task, week, onSelectDate, Modifier.weight(1f)) }
-                Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) { Text("+${visibleTasks.size - 3}条计划", fontSize = 13.sp, color = Ink.copy(alpha = .65f)) }
-            }
+            visibleTasks.take(2).forEach { task -> MonthTaskBar(task, week, onSelectDate, Modifier.weight(1f)) }
+            repeat(maxOf(0, 2 - visibleTasks.size)) { Spacer(Modifier.weight(1f)) }
+            Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) { if (visibleTasks.size > 2) Text("+${visibleTasks.size - 2}条计划", fontSize = 13.sp, color = Ink.copy(alpha = .65f)) }
         }
     }
 }
