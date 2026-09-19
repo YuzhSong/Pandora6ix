@@ -151,7 +151,7 @@ fun PandoraApp() {
     val startIndex = maxOf(0, daysBetween(first, task.start)); val endIndex = minOf(6, daysBetween(first, task.end)); val span = endIndex - startIndex + 1
     Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
         if (startIndex > 0) Spacer(Modifier.weight(startIndex.toFloat()))
-        Box(Modifier.weight(span.toFloat()).height(34.dp).padding(1.dp).clip(RoundedCornerShape(8.dp)).background(colors[task.colorIndex]).clickable { onSelectDate(task.start) }, contentAlignment = Alignment.CenterStart) { Text(task.title, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 8.dp)) }
+        Box(Modifier.weight(span.toFloat()).height(44.dp).padding(1.dp).clip(RoundedCornerShape(8.dp)).background(colors[task.colorIndex]).clickable { onSelectDate(task.start) }, contentAlignment = Alignment.CenterStart) { Text(task.title, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Clip, modifier = Modifier.padding(horizontal = 8.dp)) }
         if (endIndex < 6) Spacer(Modifier.weight((6 - endIndex).toFloat()))
     }
 }
