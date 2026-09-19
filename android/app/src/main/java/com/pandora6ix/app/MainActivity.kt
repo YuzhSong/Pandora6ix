@@ -73,7 +73,7 @@ fun PandoraApp() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable private fun PageHeader(title: String, subtitle: String? = null, onBack: (() -> Unit)? = null) {
-    TopAppBar(title = { Column { Text(title, fontWeight = FontWeight.Bold); subtitle?.let { Text(it, fontSize = 12.sp, color = Ink.copy(alpha = .6f)) } } }, navigationIcon = { if (onBack != null) IconButton(onBack) { Icon(Icons.Default.ArrowBack, "返回") } }, colors = TopAppBarDefaults.topAppBarColors(containerColor = Cream))
+    TopAppBar(title = { Column { Text(title, fontWeight = FontWeight.Bold); subtitle?.let { Text(it, fontSize = 12.sp, color = Ink.copy(alpha = .6f)) } } }, navigationIcon = { if (onBack != null) IconButton(onBack) { Icon(Icons.Default.ArrowBack, "返回") } }, colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent))
 }
 
 @Composable private fun HomeScreen(onOpen: (String) -> Unit) {
@@ -85,7 +85,7 @@ fun PandoraApp() {
         "个人日志" to MockData.logs.map { it.content }
     )
     Box(Modifier.fillMaxSize().background(WarmDashboard)) {
-      Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 12.dp)) {
+      Column(Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
         PageHeader("Pandora", "今天 · ${MockData.demoToday.shortLabel()}")
         Text("工作总览", fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 10.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) { HomePanel(panels[0].first, panels[0].second, Modifier.weight(1f)) { expandedPanel = panels[0].first }; HomePanel(panels[1].first, panels[1].second, Modifier.weight(1f)) { expandedPanel = panels[1].first } }
