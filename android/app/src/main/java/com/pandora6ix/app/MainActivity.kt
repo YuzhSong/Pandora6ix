@@ -85,15 +85,15 @@ fun PandoraApp() {
         "个人日志" to MockData.logs.map { it.content }
     )
     Box(Modifier.fillMaxSize().background(WarmDashboard)) {
-      Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
+      Column(Modifier.fillMaxSize().padding(horizontal = 10.dp)) {
         Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(MockData.demoToday.shortLabel(), fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
             IconButton(onClick = { }) { Surface(shape = RoundedCornerShape(50), color = CreamDeep) { Icon(Icons.Default.Email, "邮箱", Modifier.padding(9.dp), tint = Ink) } }
         }
         Text("工作总览", fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 10.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { HomePanel(panels[0].first, panels[0].second, Modifier.weight(1f)) { expandedPanel = panels[0].first }; HomePanel(panels[1].first, panels[1].second, Modifier.weight(1f)) { expandedPanel = panels[1].first } }
-        Spacer(Modifier.height(8.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { HomePanel(panels[2].first, panels[2].second, Modifier.weight(1f)) { expandedPanel = panels[2].first }; HomePanel(panels[3].first, panels[3].second, Modifier.weight(1f)) { expandedPanel = panels[3].first } }
+        Row(Modifier.fillMaxWidth().height(350.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) { HomePanel(panels[0].first, panels[0].second, Modifier.weight(1f).fillMaxHeight()) { expandedPanel = panels[0].first }; HomePanel(panels[1].first, panels[1].second, Modifier.weight(1f).fillMaxHeight()) { expandedPanel = panels[1].first } }
+        Spacer(Modifier.height(6.dp))
+        Row(Modifier.fillMaxWidth().height(350.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) { HomePanel(panels[2].first, panels[2].second, Modifier.weight(1f).fillMaxHeight()) { expandedPanel = panels[2].first }; HomePanel(panels[3].first, panels[3].second, Modifier.weight(1f).fillMaxHeight()) { expandedPanel = panels[3].first } }
       }
       val selected = panels.firstOrNull { it.first == expandedPanel }
       if (selected != null) {
@@ -111,7 +111,7 @@ fun PandoraApp() {
 }
 
 @Composable private fun HomePanel(title: String, items: List<String>, modifier: Modifier, onClick: () -> Unit) {
-    Card(modifier.height(350.dp).clickable(onClick = onClick).border(2.dp, WarmOrange, RoundedCornerShape(22.dp)), shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = WarmCard)) {
+    Card(modifier.clickable(onClick = onClick).border(2.dp, WarmOrange, RoundedCornerShape(22.dp)), shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = WarmCard)) {
         Column(Modifier.padding(14.dp)) { Text(title, fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis); Spacer(Modifier.height(5.dp)); Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) { items.take(10).forEachIndexed { i, text -> Text("${i + 1}. $text", fontSize = 15.sp, lineHeight = 19.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)); if (i < items.take(10).lastIndex) Text("· · · · · · · · ·", color = WarmOrange.copy(alpha = .65f), fontSize = 10.sp, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center) } }; Text("展开查看 →", color = Color(0xFFB34E4A), fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp)) }
     }
 }
@@ -122,7 +122,7 @@ fun PandoraApp() {
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
             PageHeader("工作视图", "任务与日志共用演示数据", actions = {
-                Box { Card(Modifier.clickable { expanded = true }, shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) { Row(Modifier.padding(horizontal = 10.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) { Text(mode.label, fontWeight = FontWeight.Bold, fontSize = 13.sp); Icon(Icons.Default.ArrowDropDown, null, Modifier.size(17.dp)) } }; DropdownMenu(expanded, { expanded = false }) { ViewMode.values().forEach { option -> DropdownMenuItem({ Text(option.label) }, { onModeChange(option); expanded = false }) } } }
+                Box(Modifier.padding(end = 12.dp)) { Card(Modifier.clickable { expanded = true }, shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) { Row(Modifier.padding(horizontal = 10.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) { Text(mode.label, fontWeight = FontWeight.Bold, fontSize = 13.sp); Icon(Icons.Default.ArrowDropDown, null, Modifier.size(17.dp)) } }; DropdownMenu(expanded, { expanded = false }) { ViewMode.values().forEach { option -> DropdownMenuItem({ Text(option.label) }, { onModeChange(option); expanded = false }) } } }
             })
             when (mode) { ViewMode.DAY -> DayView(cursor, onCursorChange, onOpen); ViewMode.WEEK -> WeekView(cursor, onCursorChange) { selected -> onModeChange(ViewMode.DAY); onCursorChange(selected) }; ViewMode.MONTH -> MonthView(cursor, onCursorChange) { selected -> onModeChange(ViewMode.DAY); onCursorChange(selected) } }
         }
