@@ -186,8 +186,18 @@ fun PandoraApp() {
 
 @Composable private fun LogsScreen(onOpen: (String) -> Unit) {
     var section by rememberSaveable { mutableStateOf("工作日志") }
-    Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-        PageHeader("日志", "工作日志与任务管理")
+    var expandedLogs by rememberSaveable { mutableStateOf(false) }
+    var expandedTasks by rememberSaveable { mutableStateOf(false) }
+    var filterOpen by rememberSaveable { mutableStateOf(false) }
+    var historyFilter by rememberSaveable { mutableStateOf("全部日期") }
+    var overlay by rememberSaveable { mutableStateOf<String?>(null) }
+    var notifications by rememberSaveable { mutableStateOf(false) }
+    var draftLog by rememberSaveable { mutableStateOf("") }
+    val historyLogs = MockData.logs
+    val filteredHistory = if (historyFilter == "全部日期") historyLogs else historyLogs.filter { it.date.shortLabel() == historyFilter }
+    Box(Modifier.fillMaxSize()) {
+      Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
+        PageHeader("日志", "工作日志与任务管理", actions = { IconButton({ notifications = true }) { Icon(Icons.Default.Email, "消息") } })
         Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf("工作日志", "任务管理").forEach { option ->
                 val selected = section == option
@@ -196,19 +206,37 @@ fun PandoraApp() {
         }
         if (section == "工作日志") {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
-                item { Button(onClick = { onOpen("新建工作日志") }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Ink), shape = RoundedCornerShape(14.dp)) { Icon(Icons.Default.Add, null); Spacer(Modifier.width(6.dp)); Text("记录今天的工作") } }
-                item { Text("最近记录", fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.padding(top = 4.dp)) }
-                items(MockData.logs) { log -> DetailCard(log.time, log.content, Lilac) { onOpen("日志 · ${log.time}") } }
+                item { Button(onClick = { overlay = "new-log" }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Ink), shape = RoundedCornerShape(14.dp)) { Icon(Icons.Default.Add, null); Spacer(Modifier.width(6.dp)); Text("记录今天的工作") } }
+                item { Text("今日工作日志", fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.padding(top = 4.dp)) }
+                items(MockData.logs.filter { it.date == MockData.demoToday }) { log -> DetailCard(log.time, log.content, Lilac) { onOpen("日志 · ${log.time}") } }
+                item { Row(verticalAlignment = Alignment.CenterVertically) { Text("历史日志", fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.weight(1f)); Box { OutlinedButton({ filterOpen = true }, shape = RoundedCornerShape(12.dp), contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)) { Text(historyFilter, fontSize = 12.sp); Icon(Icons.Default.ArrowDropDown, null) }; DropdownMenu(filterOpen, { filterOpen = false }) { (listOf("全部日期") + historyLogs.map { it.date.shortLabel() }.distinct()).forEach { option -> DropdownMenuItem({ Text(option) }, { historyFilter = option; filterOpen = false; expandedLogs = false }) } } } } }
+                items(filteredHistory.take(if (expandedLogs) 10 else 5)) { log -> DetailCard("${log.date.shortLabel()} · ${log.time}", log.content, Color.White) { onOpen("日志 · ${log.time}") } }
+                if (filteredHistory.size > 5) item { Text(if (expandedLogs) "收起" else "展开", color = CoralDark, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().clickable { expandedLogs = !expandedLogs }.padding(vertical = 8.dp)) }
             }
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
                 item { Text("我的任务", fontWeight = FontWeight.Bold, fontSize = 18.sp) }
-                items(MockData.companyTasks) { task -> DetailCard(task.title, "${task.start.shortLabel()}—${task.end.shortLabel()} · ${task.status}", Peach) { onOpen(task.title) } }
+                items(MockData.companyTasks.take(if (expandedTasks) 10 else 5)) { task -> DetailCard(task.title, "${task.start.shortLabel()}—${task.end.shortLabel()} · ${task.status}", Peach) { onOpen(task.title) } }
+                if (MockData.companyTasks.size > 5) item { Text(if (expandedTasks) "收起" else "展开", color = CoralDark, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().clickable { expandedTasks = !expandedTasks }.padding(vertical = 8.dp)) }
                 item { Text("任务派发与审核入口", fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.padding(top = 8.dp)) }
-                item { DetailCard("任务派发", "查看已派发任务并创建演示任务", Color.White) { onOpen("任务派发") } }
-                item { DetailCard("待我审核", "查看需要确认的演示内容", Color.White) { onOpen("待我审核") } }
+                item { DetailCard("任务派发 · 无权限", "普通员工无法派发任务，请联系管理员。", Color.White) { overlay = "dispatch" } }
+                item { DetailCard("待我审核 · 无权限", "普通员工无法审核下属日报。", Color.White) { overlay = "review" } }
             }
         }
+      }
+      if (overlay != null || notifications) Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .38f)).clickable { overlay = null; notifications = false })
+      overlay?.let { kind ->
+          Card(Modifier.align(Alignment.Center).fillMaxWidth(.88f).fillMaxHeight(.58f).clickable { }, shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = WarmCard), elevation = CardDefaults.cardElevation(12.dp)) {
+              Column(Modifier.fillMaxSize().padding(22.dp)) {
+                  Row(verticalAlignment = Alignment.CenterVertically) { Text(if (kind == "new-log") "记录今天的工作" else "权限提示", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f)); IconButton({ overlay = null }) { Icon(Icons.Default.Close, "关闭") } }
+                  if (kind == "new-log") { Text("今天 · ${MockData.demoToday.shortLabelWithWeekday()}", color = Ink.copy(alpha = .65f)); OutlinedTextField(value = draftLog, onValueChange = { draftLog = it }, modifier = Modifier.fillMaxWidth().padding(top = 18.dp).weight(1f), placeholder = { Text("记录今天完成的工作…") }, minLines = 5); Button({ draftLog = ""; overlay = null }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Ink)) { Text("保存演示日志") } }
+                  else { Icon(Icons.Default.Lock, null, Modifier.size(54.dp).align(Alignment.CenterHorizontally), tint = Coral); Text(if (kind == "dispatch") "当前身份为普通员工，暂无任务派发权限。" else "当前身份为普通员工，暂无日报审核权限。", modifier = Modifier.fillMaxWidth().padding(top = 24.dp), textAlign = TextAlign.Center, fontSize = 17.sp); Text("该入口已保留，后续接入角色权限后可使用。", modifier = Modifier.fillMaxWidth().padding(top = 12.dp), textAlign = TextAlign.Center, color = Ink.copy(alpha = .65f)); Spacer(Modifier.weight(1f)); Button({ overlay = null }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Ink)) { Text("知道了") } }
+              }
+          }
+      }
+      if (notifications) Card(Modifier.align(Alignment.CenterEnd).fillMaxWidth(.5f).fillMaxHeight(), shape = RoundedCornerShape(topStart = 24.dp, bottomStart = 24.dp), colors = CardDefaults.cardColors(containerColor = WarmCard), elevation = CardDefaults.cardElevation(14.dp)) {
+          Column(Modifier.fillMaxSize().padding(18.dp)) { Row(verticalAlignment = Alignment.CenterVertically) { Text("消息", fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f)); IconButton({ notifications = false }) { Icon(Icons.Default.Close, "关闭") } }; Text("今天收到的更新", color = Ink.copy(alpha = .6f), fontSize = 13.sp, modifier = Modifier.padding(bottom = 12.dp)); DetailCard("新任务", "完成登录模块 · 已派发", Peach); Spacer(Modifier.height(10.dp)); DetailCard("审核结果", "阶段汇报已通过", Mint); Spacer(Modifier.height(10.dp)); DetailCard("下属日报", "暂无新的日报更新", Color.White) }
+      }
     }
 }
 @Composable private fun AiMapScreen() { Column(Modifier.fillMaxSize().padding(16.dp)) { PageHeader("AI地图"); Spacer(Modifier.height(48.dp)); Icon(Icons.Default.Info, null, Modifier.size(70.dp).align(Alignment.CenterHorizontally), tint = Coral); Text("AI 地图", Modifier.fillMaxWidth().padding(top = 18.dp), textAlign = TextAlign.Center, fontSize = 28.sp, fontWeight = FontWeight.Bold); Text("功能规划中", Modifier.fillMaxWidth().padding(top = 8.dp), textAlign = TextAlign.Center, color = Ink.copy(alpha = .6f)) } }
