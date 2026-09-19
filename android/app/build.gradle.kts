@@ -8,6 +8,11 @@ android {
     namespace = "com.pandora6ix.app"
     compileSdk = 35
 
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_21
+        targetCompatibility = JavaVersion.VERSION_21
+    }
+
     defaultConfig {
         applicationId = "com.pandora6ix.app"
         minSdk = 24
@@ -21,6 +26,10 @@ android {
     packaging {
         resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" }
     }
+}
+
+kotlin {
+    jvmToolchain(21)
 }
 
 dependencies {
