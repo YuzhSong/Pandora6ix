@@ -18,6 +18,10 @@ data class DemoDate(val year: Int, val month: Int, val day: Int) : Comparable<De
     }.let { DemoDate(it.get(Calendar.YEAR), it.get(Calendar.MONTH) + 1, day) }
     fun monthLabel(): String = "${year}年${month}月"
     fun shortLabel(): String = "${month}月${day}日"
+    fun weekdayLabel(): String = listOf("一", "二", "三", "四", "五", "六", "日")[((Calendar.getInstance().apply {
+        set(year, month - 1, day)
+    }.get(Calendar.DAY_OF_WEEK) + 5) % 7)]
+    fun shortLabelWithWeekday(): String = "${shortLabel()} 周${weekdayLabel()}"
 }
 
 fun daysBetween(start: DemoDate, end: DemoDate): Int = end.ordinal() - start.ordinal()
