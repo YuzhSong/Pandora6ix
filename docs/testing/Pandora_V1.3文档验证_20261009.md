@@ -1,6 +1,8 @@
 # Pandora V1.3文档验证记录
 
-日期2026-10-09；分支LoFi；OpenSpec change：[reconcile-confirmed-requirements-1009](../../openspec/changes/reconcile-confirmed-requirements-1009/proposal.md)。
+历史验证日期2026-10-09；当时分支LoFi；原文档基线OpenSpec change：[reconcile-confirmed-requirements-1009](../../openspec/changes/reconcile-confirmed-requirements-1009/proposal.md)。
+
+第1～5节记录V1.3文档整合前的历史验证，文件数、原件保留、分支及未提交状态仅描述当时，不代表本次整理后的工作区。当前整理验证见第6节。
 
 ## 1. 范围与方法
 
@@ -30,7 +32,7 @@
 
 预先记录且成功取得哈希的170个既有文件（排除允许修改的docs/README.md及本次新change）最终SHA256全部一致，包含Android18、Web19、Backend13个工程文件及其他120文件，含已有未提交Android内容与历史OpenSpec。
 
-初次基线命令对7个Git转义中文路径没有取得哈希，不能声称该7文件全部已做“前后哈希”验证。三份用户原件另外按之前已记录的SHA256复核一致；其他中文旧草案本轮未编辑，保留在历史索引。
+初次基线命令对7个Git转义中文路径没有取得哈希，不能声称该7文件全部已做“前后哈希”验证。三份用户原件另外按之前已记录的SHA256复核一致；其他中文旧草案本轮未编辑，当时保留在历史索引；本次整理后转由Git历史追溯。
 
 | 原件 | SHA256 |
 |---|---|
@@ -46,6 +48,23 @@ docs/README.md只切换新旧索引。没有删除、覆盖有效代码、签名
 
 ## 5. 未决项与交付状态
 
-Q-01最高级审核，Q-02驳回/批准后改动，Q-03草稿长存/同步，Q-04时间端点/时区，Q-05重要程度排序，Q-06已选条目失效联动，Q-07父子与整体统计，Q-08可选日志任务关联，Q-09标签历史/条目独立标签，仍在[需求2.12](../requirements/Pandora_第二章_20261009确认修订版_V1.3.md)和[修订说明](../requirements/Pandora_20261009_确认修订说明_V1.3.md)。
+Q-01最高级审核，Q-02驳回/批准后改动，Q-03草稿长存/同步，Q-04时间端点/时区，Q-05重要程度排序，Q-06已选条目失效联动，Q-07父子与整体统计，Q-08可选日志任务关联，Q-09标签历史/条目独立标签，仍在[需求2.12](../requirements/Pandora_产品需求与设计文档_20261009确认修订版_V1.3.md)和[修订说明](../requirements/Pandora_产品需求与设计文档_20261009确认修订版_V1.3.md#revision-notes)。
 
 日报层标签、REST路由、事务/索引与本机偏好为技术方案，不虚构独立甲方批准。消息审核只预留。本次OpenSpec七项任务完成表示文档交付完成，不表示V1.3的业务代码完成；未自动更新主规格、归档或提交远程。
+
+## 6. 最新文档精简验证（2026-10-09）
+
+本次分支为 backend-syz，先将 origin/dev 快进同步至基线 `ab32ced9a921d2ce7a087ac9877d9056d966b3d7`，再整理文档。OpenSpec：`consolidate-latest-design-documents`。本节描述本次结果，第1～5节仅为原V1.3设计交付的历史检查。
+
+| 检查项 | 本次结果 |
+|---|---|
+| 文件清单 | 由16份Markdown精简为6份：指定5份主文档及docs/README.md；文件名不变 |
+| 重复内容迁移 | 确认修订说明及交互V0.1有效正文迁入完整需求附录A/B，保留全部20项交互ID及9组验收场景 |
+| 需求保护 | 整理前后第二章正文逐字一致（仅统一读取时的换行比较）；48个唯一US、73个唯一FR定义及Q-01～09不变 |
+| 链接 | 当前文档相对文件链接与新增显式附录锚点均存在；无指向已删除文档的当前引用，不验证外部网页可用性 |
+| 历史恢复 | 删除10份受Git跟踪的旧版/重复Markdown；可从上述基线恢复；旧正文未改写后再删除 |
+| 目录 | 六个.gitkeep保留；meetings仅.gitkeep，无会议文档 |
+| 改动范围 | git diff与同步基线比较：android/web/backend及本次change以外的OpenSpec均无差异 |
+| 规格及格式 | openspec validate consolidate-latest-design-documents --strict、git diff --check通过；代码围栏与文档尾行空白另做检查 |
+
+此次未进行Android、Web、Backend构建或运行验证，也未进行数据库SQL/API测试，因为只整理文档而未修改业务代码。原Planned、Reserved及待确认结论不变。提交并推送backend-syz、PR到dev已获组长授权；合并仍需非作者审查，本次不自动合并或归档。
