@@ -15,7 +15,7 @@ data class DemoDate(val year: Int, val month: Int, val day: Int) : Comparable<De
     fun plusMonths(months: Int): DemoDate = Calendar.getInstance().apply {
         set(year, month - 1, 1, 12, 0, 0)
         add(Calendar.MONTH, months)
-    }.let { DemoDate(it.get(Calendar.YEAR), it.get(Calendar.MONTH) + 1, day) }
+    }.let { DemoDate(it.get(Calendar.YEAR), it.get(Calendar.MONTH) + 1, minOf(day, it.getActualMaximum(Calendar.DAY_OF_MONTH))) }
     fun monthLabel(): String = "${year}年${month}月"
     fun shortLabel(): String = "${month}月${day}日"
     fun weekdayLabel(): String = listOf("一", "二", "三", "四", "五", "六", "日")[((Calendar.getInstance().apply {
@@ -41,8 +41,13 @@ data class WorkTask(
     val assignee: String,
     val colorIndex: Int,
     val priority: String = "普通",
-    val note: String = "演示任务说明：请按时间节点完成并及时更新进度。"
+    val note: String = "演示任务说明：请按时间节点完成并及时更新进度。",
+    val startMinute: Int? = null,
+    val endMinute: Int? = null,
+    val priorityLevel: Int = 3
 )
+
+enum class DemoRole(val canCreateTasks: Boolean) { MANAGER(true), EMPLOYEE(false) }
 
 data class WorkLog(
     val id: String,
@@ -53,6 +58,7 @@ data class WorkLog(
 )
 
 object MockData {
+    val role = DemoRole.MANAGER
     val demoToday = DemoDate(2026, 9, 19)
     const val userName = "林小满"
     const val department = "产品研发部"
@@ -83,6 +89,11 @@ object MockData {
         WorkTask("t8", "整理反馈清单", DemoDate(2026, 9, 24), DemoDate(2026, 9, 28), "待开始", "陈默", 0),
         WorkTask("t9", "准备发布检查", DemoDate(2026, 9, 26), DemoDate(2026, 9, 29), "待开始", "许安", 1),
         WorkTask("t10", "版本复盘会议", DemoDate(2026, 9, 29), DemoDate(2026, 10, 1), "待开始", "周岚", 2)
+    )
+    val timedTasks = listOf(
+        WorkTask("time1", "项目晨会", demoToday, demoToday, "待开始", "周岚", 1, note = "同步本周项目进度与阻塞项。", startMinute = 9 * 60, endMinute = 9 * 60 + 45),
+        WorkTask("time2", "需求讨论", demoToday, demoToday, "待开始", "许安", 2, note = "核对日历与任务录入流程。", startMinute = 9 * 60 + 30, endMinute = 10 * 60 + 30),
+        WorkTask("time3", "阶段汇报", demoToday.plusDays(1), demoToday.plusDays(1), "待开始", "陈默", 0, startMinute = 14 * 60, endMinute = 15 * 60)
     )
     val logs = listOf(
         WorkLog("l1", "梳理首页四象限交互，确认面板文案。", userName, DemoDate(2026, 9, 19), "09:30"),
