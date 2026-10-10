@@ -26,6 +26,8 @@ data class DemoDate(val year: Int, val month: Int, val day: Int) : Comparable<De
 
 fun daysBetween(start: DemoDate, end: DemoDate): Int = end.ordinal() - start.ordinal()
 
+fun todayDate(): DemoDate = Calendar.getInstance().let { DemoDate(it.get(Calendar.YEAR), it.get(Calendar.MONTH) + 1, it.get(Calendar.DAY_OF_MONTH)) }
+
 fun mondayOfWeek(date: DemoDate): DemoDate {
     val calendar = Calendar.getInstance().apply { set(date.year, date.month - 1, date.day) }
     val offset = (calendar.get(Calendar.DAY_OF_WEEK) + 5) % 7
@@ -96,8 +98,7 @@ object MockData {
         WorkTask("time3", "阶段汇报", demoToday.plusDays(1), demoToday.plusDays(1), "待开始", "陈默", 0, startMinute = 14 * 60, endMinute = 15 * 60)
     )
     val logs = listOf(
-        WorkLog("l1", "梳理首页四象限交互，确认面板文案。", userName, DemoDate(2026, 9, 19), "09:30"),
-        WorkLog("l2", "完成登录模块的 Compose 页面骨架。", userName, DemoDate(2026, 9, 19), "14:10"),
+        WorkLog("l1", "梳理首页四象限交互，确认面板文案；完成登录模块的 Compose 页面骨架。", userName, DemoDate(2026, 9, 19), "14:10"),
         WorkLog("l3", "同步本周任务进度并记录风险事项。", userName, DemoDate(2026, 9, 18), "17:20"),
         WorkLog("l4", "参与产品需求评审，整理待确认问题。", userName, DemoDate(2026, 9, 17), "11:00"),
         WorkLog("l5", "准备演示数据和移动端测试环境。", userName, DemoDate(2026, 9, 16), "16:45"),
