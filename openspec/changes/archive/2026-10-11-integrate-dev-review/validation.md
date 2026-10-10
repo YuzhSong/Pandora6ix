@@ -44,3 +44,7 @@ Actual two-finger pinch injection and the complete device/landscape/font matrix 
 ## Delivery
 
 Remote heads are rechecked before the normal fast-forward push to dev. GitHub provider diagnostics could not connect in this session; no provider CI success is claimed. The repository currently has no checked-in workflow directory. Merge histories preserve all three reviewed source heads.
+
+Delivery verified: remote dev updated to `aed0160319d76c32ac9af2fe49041978406fdcb1`; GitHub reports PR #4 and #5 closed with `merged: true`. Merge-base ancestry checks confirm both PR heads and backend-xjy are included. OpenSpec archive/spec synchronization follows this verified integration; its commit changes documentation only.
+
+All three completed changes were archived with `openspec archive <name> --yes`, updating five main specifications. The CLI used the UTC date in its generated archive names; the three generated directories were renamed within the verified archive root to 2026-10-11 to match the user's Asia/Shanghai date. All five main specifications passed strict validation.

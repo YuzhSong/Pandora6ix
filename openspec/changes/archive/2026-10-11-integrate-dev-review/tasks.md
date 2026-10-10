@@ -11,4 +11,4 @@
 - [x] 2.2 Run backend tests including error regressions and local-profile startup coverage.
 - [x] 2.3 Run the independent Web production build.
 - [x] 2.4 Validate related OpenSpec changes strictly and record review/validation results.
-- [ ] 2.5 Recheck remote heads, update dev and verify both PRs are merged.
+- [x] 2.5 Recheck remote heads, update dev and verify both PRs are merged.
