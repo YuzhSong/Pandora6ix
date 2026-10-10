@@ -4,19 +4,19 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -24,17 +24,23 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pandora6ix.app.mock.*
@@ -47,6 +53,8 @@ class MainActivity : ComponentActivity() {
 
 private enum class Route { HOME, VIEW, LOGS, AI, ME }
 private data class NavItem(val route: Route, val label: String, val icon: ImageVector)
+private data class HomePanelDef(val title: String, val items: List<String>)
+private data class HomeDetail(val section: String, val index: Int, val text: String, val accent: Color)
 
 @Composable
 fun PandoraApp() {
@@ -55,6 +63,9 @@ fun PandoraApp() {
         var modeName by rememberSaveable { mutableStateOf(CalendarMode.WEEK.name) }
         var dateKey by rememberSaveable { mutableStateOf(todayDate().let { "${it.year}-${it.month}-${it.day}" }) }
         var detail by rememberSaveable { mutableStateOf<String?>(null) }
+        var homeDetail by remember { mutableStateOf<HomeDetail?>(null) }
+        var showSettings by rememberSaveable { mutableStateOf(false) }
+        var fontScale by rememberSaveable { mutableStateOf(1f) }
         val tasks = remember { mutableStateListOf<WorkTask>().apply { addAll(MockData.companyTasks); addAll(MockData.timedTasks) } }
         val date = dateKey.split("-").map(String::toInt).let { DemoDate(it[0], it[1], it[2]) }
         val current = Route.valueOf(route)
@@ -65,18 +76,27 @@ fun PandoraApp() {
             NavItem(Route.AI, "AI地图", Icons.Default.Psychology),
             NavItem(Route.ME, "我的", Icons.Default.PersonOutline)
         )
-        Scaffold(containerColor = Cream, bottomBar = { NavigationBar(containerColor = CreamDeep) { nav.forEach { item -> NavigationBarItem(selected = current == item.route, onClick = { route = item.route.name; detail = null }, icon = { Icon(item.icon, item.label) }, label = { Text(item.label, fontSize = 11.sp) }, colors = NavigationBarItemDefaults.colors(selectedIconColor = WarmOrange, selectedTextColor = WarmOrange, indicatorColor = CreamDeep)) } } }) { padding ->
+        val baseDensity = LocalDensity.current
+        val scaledDensity = remember(fontScale) { Density(baseDensity.density, baseDensity.fontScale * fontScale) }
+        CompositionLocalProvider(LocalDensity provides scaledDensity) {
+        Scaffold(containerColor = Cream, bottomBar = { NavigationBar(containerColor = CreamDeep) { nav.forEach { item -> NavigationBarItem(selected = current == item.route, onClick = { route = item.route.name; detail = null; homeDetail = null }, icon = { Icon(item.icon, item.label) }, label = { Text(item.label, fontSize = 11.sp) }, colors = NavigationBarItemDefaults.colors(selectedIconColor = WarmOrange, selectedTextColor = WarmOrange, indicatorColor = CreamDeep)) } } }) { padding ->
             Surface(Modifier.padding(padding).fillMaxSize(), color = Cream) {
-                if (detail != null) DetailScreen(detail!!, tasks, onBack = { detail = null }) else AnimatedContent(current, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "page") { target ->
-                    when (target) {
-                        Route.HOME -> HomeScreen(tasks) { detail = it }
-                        Route.VIEW -> CalendarScreen(CalendarMode.valueOf(modeName), date, tasks, MockData.role.canCreateTasks, { modeName = it.name }, { dateKey = "${it.year}-${it.month}-${it.day}" }, { if (MockData.role.canCreateTasks) tasks.add(it) }, { detail = it.id })
-                        Route.LOGS -> LogsScreen(tasks) { detail = it }
-                        Route.AI -> AiMapScreen()
-                        Route.ME -> ProfileScreen()
+                when {
+                    homeDetail != null -> HomeItemDetailScreen(homeDetail!!) { homeDetail = null }
+                    showSettings -> SettingsScreen(fontScale = fontScale, onFontScaleChange = { fontScale = it }, onClose = { showSettings = false })
+                    detail != null -> DetailScreen(detail!!, tasks, onBack = { detail = null })
+                    else -> AnimatedContent(current, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "page") { target ->
+                        when (target) {
+                            Route.HOME -> HomeScreen(tasks, onOpenHome = { homeDetail = it }, onOpenSettings = { showSettings = true })
+                            Route.VIEW -> CalendarScreen(CalendarMode.valueOf(modeName), date, tasks, MockData.role.canCreateTasks, { modeName = it.name }, { dateKey = "${it.year}-${it.month}-${it.day}" }, { if (MockData.role.canCreateTasks) tasks.add(it) }, { detail = it.id })
+                            Route.LOGS -> LogsScreen(tasks) { detail = it }
+                            Route.AI -> AiMapScreen()
+                            Route.ME -> ProfileScreen(onOpenSettings = { showSettings = true })
+                        }
                     }
                 }
             }
+        }
         }
     }
 }
@@ -86,37 +106,84 @@ fun PandoraApp() {
     TopAppBar(title = { Column { Text(title, fontWeight = FontWeight.Bold); subtitle?.let { Text(it, fontSize = 12.sp, color = Ink.copy(alpha = .6f)) } } }, navigationIcon = { if (onBack != null) IconButton(onBack) { Icon(Icons.Default.ArrowBack, "返回") } }, actions = actions, colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent))
 }
 
-@Composable private fun HomeScreen(tasks: List<WorkTask>, onOpen: (String) -> Unit) {
+@Composable private fun HomeScreen(tasks: List<WorkTask>, onOpenHome: (HomeDetail) -> Unit, onOpenSettings: () -> Unit) {
     var expandedPanel by rememberSaveable { mutableStateOf<String?>(null) }
     var notifications by rememberSaveable { mutableStateOf(false) }
+    var editingPersonal by remember { mutableStateOf(false) }
+    val personalItems = remember { mutableStateListOf<String>().apply { addAll(MockData.personalImportant) } }
     val panels = listOf(
-        "公司十大重要事项" to MockData.companyHighlights,
-        "公司十大派发任务" to tasks.filter { it.status != "草稿（演示）" }.take(10).map { it.title },
-        "个人十大重要事项" to MockData.personalImportant,
-        "个人日志" to MockData.logs.map { it.content }
+        HomePanelDef("公司十大重要事项", MockData.companyHighlights),
+        HomePanelDef("公司十大派发任务", tasks.filter { it.status != "草稿（演示）" }.take(10).map { it.title }),
+        HomePanelDef("个人十大重要事项", personalItems),
+        HomePanelDef("个人日志", MockData.logs.map { it.content })
     )
+    fun openItem(panel: HomePanelDef, index: Int, text: String) {
+        onOpenHome(HomeDetail(panel.title, index, text, WarmOrange))
+    }
     Box(Modifier.fillMaxSize().background(WarmDashboard)) {
       Column(Modifier.fillMaxSize().padding(horizontal = 10.dp)) {
         Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(MockData.demoToday.shortLabelWithWeekday(), fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
             IconButton(onClick = { notifications = true }) { Surface(shape = RoundedCornerShape(50), color = CreamDeep) { Icon(Icons.Default.Email, "邮箱", Modifier.padding(9.dp), tint = Ink) } }
+            Spacer(Modifier.width(4.dp))
+            IconButton(onClick = onOpenSettings) { Surface(shape = RoundedCornerShape(50), color = CreamDeep) { Icon(Icons.Default.Settings, "设置", Modifier.padding(9.dp), tint = Ink) } }
         }
         Column(Modifier.fillMaxWidth().weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(6.dp)) { HomePanel(panels[0].first, panels[0].second, Modifier.weight(1f).fillMaxHeight()) { expandedPanel = panels[0].first }; HomePanel(panels[1].first, panels[1].second, Modifier.weight(1f).fillMaxHeight()) { expandedPanel = panels[1].first } }
-            Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(6.dp)) { HomePanel(panels[2].first, panels[2].second, Modifier.weight(1f).fillMaxHeight(), trailing = { Box(Modifier.size(24.dp).clickable { }) { Icon(Icons.Default.Edit, "编辑", Modifier.size(17.dp).align(Alignment.Center), tint = Ink) } }) { expandedPanel = panels[2].first }; HomePanel(panels[3].first, panels[3].second, Modifier.weight(1f).fillMaxHeight()) { expandedPanel = panels[3].first } }
+            Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                HomePanel(panels[0], Modifier.weight(1f).fillMaxHeight(), onExpand = { expandedPanel = panels[0].title }, onItemClick = { i, t -> openItem(panels[0], i, t) })
+                HomePanel(panels[1], Modifier.weight(1f).fillMaxHeight(), onExpand = { expandedPanel = panels[1].title }, onItemClick = { i, t -> openItem(panels[1], i, t) })
+            }
+            Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                HomePanel(
+                    panels[2],
+                    Modifier.weight(1f).fillMaxHeight(),
+                    trailing = {
+                        Box(
+                            Modifier.size(26.dp).clip(CircleShape).background(WarmOrange.copy(alpha = .35f)).clickable { editingPersonal = true },
+                            contentAlignment = Alignment.Center
+                        ) { Icon(Icons.Default.Edit, "编辑个人事项", Modifier.size(15.dp), tint = Ink) }
+                    },
+                    onExpand = { expandedPanel = panels[2].title },
+                    onItemClick = { i, t -> openItem(panels[2], i, t) }
+                )
+                HomePanel(panels[3], Modifier.weight(1f).fillMaxHeight(), onExpand = { expandedPanel = panels[3].title }, onItemClick = { i, t -> openItem(panels[3], i, t) })
+            }
         }
       }
-      val selected = panels.firstOrNull { it.first == expandedPanel }
+      val selected = panels.firstOrNull { it.title == expandedPanel }
       if (selected != null) {
           Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .42f)).clickable { expandedPanel = null })
-          val scale by animateFloatAsState(1f, label = "panel-scale")
-          Card(Modifier.align(Alignment.Center).fillMaxWidth(.9f).fillMaxHeight(.78f).scale(scale).clickable { }, shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = WarmCard), elevation = CardDefaults.cardElevation(10.dp)) {
-              Column(Modifier.fillMaxSize().padding(18.dp)) {
-                  Row(verticalAlignment = Alignment.CenterVertically) { Text(selected.first, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f)); IconButton({ expandedPanel = null }) { Icon(Icons.Default.Close, "关闭") } }
-                  Text("共 ${selected.second.take(10).size} 条 · 演示数据", color = Ink.copy(alpha = .6f), fontSize = 12.sp, modifier = Modifier.padding(bottom = 8.dp))
-                  Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())) { selected.second.take(10).forEachIndexed { i, item -> Text("${i + 1}. $item", fontSize = 15.sp, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) } }
+          Card(Modifier.align(Alignment.Center).fillMaxWidth(.9f).fillMaxHeight(.82f).clickable { }, shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = WarmCard), elevation = CardDefaults.cardElevation(10.dp)) {
+              Column(Modifier.fillMaxSize().padding(20.dp)) {
+                  Row(verticalAlignment = Alignment.CenterVertically) {
+                      Box(Modifier.size(10.dp).clip(CircleShape).background(WarmOrange))
+                      Spacer(Modifier.width(10.dp))
+                      Text(selected.title, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                      IconButton({ expandedPanel = null }) { Icon(Icons.Default.Close, "关闭") }
+                  }
+                  Text("共 ${selected.items.take(10).size} 条", color = Ink.copy(alpha = .55f), fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp, bottom = 12.dp))
+                  Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())) {
+                      val list = selected.items.take(10)
+                      list.forEachIndexed { i, item ->
+                          Row(
+                              Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 10.dp),
+                              verticalAlignment = Alignment.CenterVertically
+                          ) {
+                              Box(Modifier.size(30.dp).clip(CircleShape).background(WarmOrange.copy(alpha = .25f)), contentAlignment = Alignment.Center) {
+                                  Text("${i + 1}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Ink)
+                              }
+                              Spacer(Modifier.width(12.dp))
+                              Text(item, fontSize = 16.sp, lineHeight = 23.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                          }
+                          if (i < list.lastIndex) DashedDivider(WarmOrange.copy(alpha = .5f))
+                      }
+                  }
               }
           }
+      }
+      if (editingPersonal) {
+          Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .42f)).clickable { editingPersonal = false })
+          PersonalImportantEditor(items = personalItems, onClose = { editingPersonal = false })
       }
       if (notifications) {
           Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .42f)).clickable { notifications = false; expandedPanel = null })
@@ -125,22 +192,309 @@ fun PandoraApp() {
     }
 }
 
-@Composable private fun HomePanel(title: String, items: List<String>, modifier: Modifier, trailing: @Composable RowScope.() -> Unit = {}, onClick: () -> Unit) {
-    Card(modifier.clickable(onClick = onClick).border(2.dp, WarmOrange, RoundedCornerShape(22.dp)), shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = WarmCard)) {
+@Composable private fun HomePanel(
+    panel: HomePanelDef,
+    modifier: Modifier,
+    accent: Color = WarmOrange,
+    trailing: @Composable RowScope.() -> Unit = {},
+    onExpand: () -> Unit,
+    onItemClick: (index: Int, text: String) -> Unit
+) {
+    val list = panel.items.take(10)
+    Card(
+        modifier.border(2.dp, accent, RoundedCornerShape(22.dp)),
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(containerColor = WarmCard)
+    ) {
         Column(Modifier.padding(14.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(title, fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f)); trailing()
+                Text(
+                    panel.title,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                trailing()
             }
-            HorizontalDivider(Modifier.padding(top = 7.dp, bottom = 4.dp), color = WarmOrange.copy(alpha = .65f))
+            HorizontalDivider(Modifier.padding(top = 7.dp, bottom = 4.dp), color = accent.copy(alpha = .65f))
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
-                items.take(10).forEachIndexed { i, text ->
-                    Text("${i + 1}. $text", fontSize = 15.sp, lineHeight = 19.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.fillMaxWidth().padding(vertical = 1.33.dp))
-                    if (i < items.take(10).lastIndex) Spacer(Modifier.fillMaxWidth().height(4.dp).drawBehind {
-                        drawLine(WarmOrange.copy(alpha = .65f), androidx.compose.ui.geometry.Offset(size.width * .25f, size.height / 2), androidx.compose.ui.geometry.Offset(size.width * .75f, size.height / 2), strokeWidth = 1.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(1.dp.toPx(), 4.dp.toPx())))
-                    })
+                list.forEachIndexed { i, text ->
+                    Row(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
+                            .clickable { onItemClick(i, text) }
+                            .padding(horizontal = 6.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "${i + 1}. $text",
+                            fontSize = 15.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    if (i < list.lastIndex) DashedDivider(accent)
                 }
             }
-            Text("展开查看 →", color = Color(0xFFB34E4A), fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
+                    .clickable(onClick = onExpand)
+                    .padding(vertical = 8.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("展开查看 →", color = accent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
+    }
+}
+
+@Composable private fun DashedDivider(color: Color) {
+    Spacer(
+        Modifier.fillMaxWidth().height(4.dp).drawBehind {
+            drawLine(color, Offset(size.width * .25f, size.height / 2), Offset(size.width * .75f, size.height / 2), strokeWidth = 1.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(1.dp.toPx(), 4.dp.toPx())))
+        }
+    )
+}
+
+@Composable private fun PersonalImportantEditor(items: SnapshotStateList<String>, onClose: () -> Unit) {
+    var editingIndex by remember { mutableStateOf<Int?>(null) }
+    var adding by remember { mutableStateOf(false) }
+    var editText by remember { mutableStateOf("") }
+    var newText by remember { mutableStateOf("") }
+    var confirmDelete by remember { mutableStateOf<Int?>(null) }
+    // drag-to-reorder state
+    var draggedIndex by remember { mutableStateOf<Int?>(null) }
+    var hoverIndex by remember { mutableStateOf<Int?>(null) }
+    var dragOffsetY by remember { mutableStateOf(0f) }
+    val rowHeights = remember { mutableMapOf<Int, Float>() }
+    val accent = WarmOrange
+
+    val onItemTap: (Int, String) -> Unit = { idx, t ->
+        editingIndex = idx
+        editText = t
+    }
+    val onLongPress: (Int) -> Unit = { idx ->
+        draggedIndex = idx
+        hoverIndex = idx
+        dragOffsetY = 0f
+    }
+    val onDragDelta: (Offset) -> Unit = { delta ->
+        dragOffsetY += delta.y
+        val from = draggedIndex
+        if (from != null) {
+            val draggedH = rowHeights[from] ?: 56f
+            // natural top of dragged item = cumulative height of rows before it
+            var naturalAcc = 0f
+            for (k in 0 until from) naturalAcc += rowHeights[k] ?: 56f
+            val draggedCenter = naturalAcc + draggedH / 2 + dragOffsetY
+            // pick the item whose natural center is closest to the dragged center
+            var bestTarget = from
+            var bestDist = Float.MAX_VALUE
+            var acc = 0f
+            for (i in items.indices) {
+                val h = rowHeights[i] ?: 56f
+                val itemCenter = acc + h / 2
+                val dist = kotlin.math.abs(itemCenter - draggedCenter)
+                if (dist < bestDist) {
+                    bestDist = dist
+                    bestTarget = i
+                }
+                acc += h
+            }
+            hoverIndex = bestTarget
+        }
+    }
+    val onDragEnd: () -> Unit = {
+        val from = draggedIndex
+        val to = hoverIndex
+        if (from != null && to != null && from != to && from in items.indices && to in items.indices) {
+            val moved = items.removeAt(from)
+            items.add(to, moved)
+        }
+        draggedIndex = null
+        hoverIndex = null
+        dragOffsetY = 0f
+    }
+
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Card(
+            Modifier.fillMaxWidth(.92f).fillMaxHeight(.88f).clickable { },
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = WarmCard),
+            elevation = CardDefaults.cardElevation(12.dp)
+        ) {
+            Column(Modifier.fillMaxSize().padding(18.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(10.dp).clip(CircleShape).background(accent))
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("编辑 · 个人十大重要事项", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                        Text("共 ${items.size}/10 · 长按整行拖动排序", color = Ink.copy(alpha = .6f), fontSize = 12.sp)
+                    }
+                    TextButton(onClick = onClose) { Text("完成", color = Ink, fontWeight = FontWeight.Bold) }
+                }
+                Spacer(Modifier.height(10.dp))
+                Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())) {
+                    if (items.isEmpty()) {
+                        Text("还没有事项，点击下方「添加新事项」开始记录。", color = Ink.copy(alpha = .55f), fontSize = 13.sp, modifier = Modifier.padding(vertical = 16.dp))
+                    }
+                    items.forEachIndexed { i, text ->
+                        val from = draggedIndex
+                        val to = hoverIndex
+                        val isDragged = from == i
+                        val draggedH = (from?.let { rowHeights[it] } ?: 56f)
+                        val displacement = when {
+                            from == null || to == null -> 0f
+                            from < to && i in (from + 1)..to -> -draggedH
+                            from > to && i in to..(from - 1) -> draggedH
+                            else -> 0f
+                        }
+                        val visualMod = Modifier
+                            .fillMaxWidth()
+                            .graphicsLayer {
+                                if (isDragged) {
+                                    translationY = dragOffsetY
+                                    shadowElevation = 12f
+                                    scaleX = 1.03f
+                                    scaleY = 1.03f
+                                } else {
+                                    translationY = displacement
+                                }
+                            }
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (i % 2 == 0) Color.Transparent else accent.copy(alpha = .07f))
+                        if (editingIndex == i) {
+                            Column(visualMod.padding(12.dp)) {
+                                OutlinedTextField(
+                                    editText, { editText = it },
+                                    Modifier.fillMaxWidth(),
+                                    label = { Text("第 ${i + 1} 条") },
+                                    singleLine = true
+                                )
+                                Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.End) {
+                                    TextButton({ editingIndex = null; editText = "" }) { Text("取消", color = Ink.copy(alpha = .7f)) }
+                                    Spacer(Modifier.width(8.dp))
+                                    Button({
+                                        val t = editText.trim()
+                                        if (t.isNotEmpty()) items[i] = t
+                                        editingIndex = null; editText = ""
+                                    }, colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = Ink)) { Text("保存") }
+                                }
+                            }
+                        } else {
+                            val rowMod = visualMod
+                                .onSizeChanged { rowHeights[i] = it.height.toFloat() }
+                                .pointerInput(items.size) {
+                                    detectDragGesturesAfterLongPress(
+                                        onDragStart = { onLongPress(i) },
+                                        onDrag = { change, dragAmount ->
+                                            onDragDelta(dragAmount)
+                                            change.consume()
+                                        },
+                                        onDragEnd = { onDragEnd() },
+                                        onDragCancel = { onDragEnd() }
+                                    )
+                                }
+                                .clickable { onItemTap(i, text) }
+                            Row(rowMod.padding(horizontal = 4.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Box(Modifier.size(26.dp).clip(CircleShape).background(accent.copy(alpha = .3f)), contentAlignment = Alignment.Center) {
+                                    Text("${i + 1}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Ink)
+                                }
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    text,
+                                    fontSize = 14.sp,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                IconButton({ confirmDelete = i }, Modifier.size(34.dp)) {
+                                    Icon(Icons.Default.Delete, "删除", Modifier.size(18.dp), tint = CoralDark)
+                                }
+                            }
+                        }
+                        if (i < items.lastIndex) DashedDivider(accent)
+                    }
+                    if (adding) {
+                        Spacer(Modifier.height(10.dp))
+                        Column(
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                                .background(accent.copy(alpha = .18f))
+                                .padding(12.dp)
+                        ) {
+                            Text("新增事项", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            OutlinedTextField(
+                                newText, { newText = it },
+                                Modifier.fillMaxWidth().padding(top = 6.dp),
+                                placeholder = { Text("输入要追踪的重要事项…") },
+                                singleLine = true
+                            )
+                            Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.End) {
+                                TextButton({ adding = false; newText = "" }) { Text("取消", color = Ink.copy(alpha = .7f)) }
+                                Spacer(Modifier.width(8.dp))
+                                Button({
+                                    val t = newText.trim()
+                                    if (t.isNotEmpty() && items.size < 10) items.add(t)
+                                    adding = false; newText = ""
+                                }, enabled = newText.isNotBlank() && items.size < 10, colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = Ink)) { Text("添加") }
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+                if (!adding) {
+                    if (items.size < 10) {
+                        OutlinedButton(
+                            { adding = true },
+                            Modifier.fillMaxWidth(),
+                            border = BorderStroke(1.dp, accent),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Ink)
+                        ) { Icon(Icons.Default.Add, null, tint = accent); Spacer(Modifier.width(6.dp)); Text("添加新事项") }
+                    } else {
+                        Text("已达 10 条上限", Modifier.fillMaxWidth(), textAlign = TextAlign.Center, color = Ink.copy(alpha = .55f), fontSize = 12.sp)
+                    }
+                }
+            }
+        }
+    }
+    if (confirmDelete != null) {
+        val idx = confirmDelete!!
+        AlertDialog(
+            onDismissRequest = { confirmDelete = null },
+            title = { Text("删除第 ${idx + 1} 条？") },
+            text = { Text("「${items.getOrNull(idx)?.take(24) ?: ""}」将被移除。") },
+            confirmButton = { TextButton({ items.removeAt(idx); confirmDelete = null }) { Text("删除", color = CoralDark) } },
+            dismissButton = { TextButton({ confirmDelete = null }) { Text("取消") } }
+        )
+    }
+}
+
+@Composable private fun HomeItemDetailScreen(detail: HomeDetail, onBack: () -> Unit) {
+    androidx.activity.compose.BackHandler(onBack = onBack)
+    Column(Modifier.fillMaxSize().background(WarmDashboard)) {
+        PageHeader(detail.section, onBack = onBack)
+        Column(
+            Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(20.dp)
+        ) {
+            Card(
+                Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = WarmCard),
+                elevation = CardDefaults.cardElevation(4.dp)
+            ) {
+                Column(Modifier.fillMaxWidth().padding(24.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+                    Box(
+                        Modifier.align(Alignment.CenterHorizontally).size(48.dp).clip(CircleShape).background(detail.accent.copy(alpha = .3f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("${detail.index + 1}", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Ink)
+                    }
+                    Text(detail.text, fontSize = 19.sp, lineHeight = 30.sp, fontWeight = FontWeight.Medium)
+                }
+            }
         }
     }
 }
@@ -232,10 +586,10 @@ fun PandoraApp() {
     }
 }
 @Composable private fun AiMapScreen() { Column(Modifier.fillMaxSize().padding(16.dp)) { PageHeader("AI地图"); Spacer(Modifier.height(48.dp)); Icon(Icons.Default.Info, null, Modifier.size(70.dp).align(Alignment.CenterHorizontally), tint = Coral); Text("AI 地图", Modifier.fillMaxWidth().padding(top = 18.dp), textAlign = TextAlign.Center, fontSize = 28.sp, fontWeight = FontWeight.Bold); Text("功能规划中", Modifier.fillMaxWidth().padding(top = 8.dp), textAlign = TextAlign.Center, color = Ink.copy(alpha = .6f)) } }
-@Composable private fun ProfileScreen() {
+@Composable private fun ProfileScreen(onOpenSettings: () -> Unit) {
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         PageHeader("我的", "个人资料")
-        Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = CreamDeep), shape = RoundedCornerShape(20.dp)) {
                 Row(Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.AccountCircle, null, Modifier.size(64.dp), tint = WarmOrange)
@@ -246,16 +600,26 @@ fun PandoraApp() {
                     }
                 }
             }
-            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(20.dp)) {
+            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = WarmCard), shape = RoundedCornerShape(20.dp)) {
                 Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     Text("组织信息", fontSize = 18.sp, fontWeight = FontWeight.Bold)
                     ProfileInfoRow("所属企业", "Pandora 演示企业")
-                    HorizontalDivider(color = Ink.copy(alpha = .1f))
+                    DashedDivider(Ink.copy(alpha = .18f))
                     ProfileInfoRow("所属部门", MockData.department)
                     ProfileInfoRow("当前角色", "部门老总（模拟）")
-                    HorizontalDivider(color = Ink.copy(alpha = .1f))
+                    DashedDivider(Ink.copy(alpha = .18f))
                     Text("管理团队", fontWeight = FontWeight.Bold)
                     MockData.teamLeaders.forEach { Text(it, color = Ink.copy(alpha = .75f)) }
+                }
+            }
+            SettingsSectionLabel("基础设置")
+            SettingsCard {
+                SettingsRow(icon = Icons.Default.Tune, title = "全部设置", onClick = onOpenSettings) {
+                    Icon(Icons.Default.ChevronRight, null, Modifier.size(20.dp), tint = Ink.copy(alpha = .4f))
+                }
+                DashedDivider(Ink.copy(alpha = .18f))
+                SettingsRow(icon = Icons.Default.Notifications, title = "消息通知", onClick = onOpenSettings) {
+                    Text("已开启", color = Ink.copy(alpha = .55f), fontSize = 13.sp)
                 }
             }
             Text("关于 Pandora", fontSize = 18.sp, fontWeight = FontWeight.Bold)
@@ -303,4 +667,201 @@ fun PandoraApp() {
             }
         }
     }
+}
+
+@Composable
+private fun SettingsScreen(
+    fontScale: Float,
+    onFontScaleChange: (Float) -> Unit,
+    onClose: () -> Unit
+) {
+    var notificationsEnabled by rememberSaveable { mutableStateOf(true) }
+    var showFontDialog by remember { mutableStateOf(false) }
+    var showClearCacheDialog by remember { mutableStateOf(false) }
+    var showAboutDialog by remember { mutableStateOf(false) }
+    var showLogoutDialog by remember { mutableStateOf(false) }
+    var toast by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(toast) {
+        if (toast != null) {
+            kotlinx.coroutines.delay(1800)
+            toast = null
+        }
+    }
+
+    Column(Modifier.fillMaxSize().background(WarmDashboard)) {
+        PageHeader("设置", onBack = onClose)
+        Box(Modifier.fillMaxWidth().weight(1f)) {
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp)) {
+                SettingsSectionLabel("通用")
+                SettingsCard {
+                    SettingsRow(
+                        icon = Icons.Default.TextFields,
+                        title = "字号大小",
+                        onClick = { showFontDialog = true }
+                    ) {
+                        Text(fontScaleLabel(fontScale), color = Ink.copy(alpha = 0.55f), fontSize = 13.sp)
+                    }
+                    DashedDivider(Ink.copy(alpha = 0.18f))
+                    SettingsRow(
+                        icon = Icons.Default.Notifications,
+                        title = "通知提醒",
+                        onClick = { notificationsEnabled = !notificationsEnabled }
+                    ) {
+                        Switch(
+                            checked = notificationsEnabled,
+                            onCheckedChange = { notificationsEnabled = it },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Cream,
+                                checkedTrackColor = WarmOrange,
+                                uncheckedThumbColor = Cream,
+                                uncheckedTrackColor = Ink.copy(alpha = 0.25f)
+                            )
+                        )
+                    }
+                }
+                Spacer(Modifier.height(18.dp))
+                SettingsSectionLabel("数据")
+                SettingsCard {
+                    SettingsRow(
+                        icon = Icons.Default.CleaningServices,
+                        title = "清除缓存",
+                        onClick = { showClearCacheDialog = true }
+                    ) {
+                        Text("12.3 MB", color = Ink.copy(alpha = 0.5f), fontSize = 13.sp)
+                    }
+                }
+                Spacer(Modifier.height(18.dp))
+                SettingsSectionLabel("关于")
+                SettingsCard {
+                    SettingsRow(
+                        icon = Icons.Default.Info,
+                        title = "关于我们",
+                        onClick = { showAboutDialog = true }
+                    ) {
+                        Text("v0.1.0", color = Ink.copy(alpha = 0.5f), fontSize = 13.sp)
+                    }
+                    DashedDivider(Ink.copy(alpha = 0.18f))
+                    SettingsRow(icon = Icons.Default.Logout, title = "退出登录", isDestructive = true, onClick = { showLogoutDialog = true })
+                }
+            }
+            if (toast != null) {
+                Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(20.dp)) {
+                    Card(
+                        shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.cardColors(containerColor = Ink.copy(alpha = 0.88f)),
+                        elevation = CardDefaults.cardElevation(6.dp)
+                    ) {
+                        Text(toast!!, color = Cream, fontSize = 14.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp))
+                    }
+                }
+            }
+        }
+    }
+
+    if (showFontDialog) {
+        AlertDialog(
+            onDismissRequest = { showFontDialog = false },
+            title = { Text("选择字号大小") },
+            text = {
+                Column {
+                    val options = listOf(0.9f to "小", 1.0f to "标准", 1.15f to "大")
+                    options.forEach { (v, label) ->
+                        Row(
+                            Modifier.fillMaxWidth().clickable { onFontScaleChange(v); showFontDialog = false }.padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = fontScale == v,
+                                onClick = { onFontScaleChange(v); showFontDialog = false },
+                                colors = RadioButtonDefaults.colors(selectedColor = WarmOrange)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(label, fontSize = 15.sp)
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton({ showFontDialog = false }) { Text("关闭", color = Ink) } }
+        )
+    }
+    if (showClearCacheDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearCacheDialog = false },
+            title = { Text("清除缓存？") },
+            text = { Text("将清除 12.3 MB 临时文件，不会影响你的数据。") },
+            confirmButton = { TextButton({ showClearCacheDialog = false; toast = "已清除缓存" }) { Text("清除", color = WarmOrange, fontWeight = FontWeight.Bold) } },
+            dismissButton = { TextButton({ showClearCacheDialog = false }) { Text("取消", color = Ink.copy(alpha = 0.7f)) } }
+        )
+    }
+    if (showAboutDialog) {
+        AlertDialog(
+            onDismissRequest = { showAboutDialog = false },
+            title = { Text("Pandora6ix") },
+            text = { Text("版本 v0.1.0\n一个温暖的六维工作生活导图。") },
+            confirmButton = { TextButton({ showAboutDialog = false }) { Text("好的", color = WarmOrange, fontWeight = FontWeight.Bold) } }
+        )
+    }
+    if (showLogoutDialog) {
+        AlertDialog(
+            onDismissRequest = { showLogoutDialog = false },
+            title = { Text("退出登录？") },
+            text = { Text("退出后需要重新登录才能使用。") },
+            confirmButton = { TextButton({ showLogoutDialog = false; onClose() }) { Text("退出", color = CoralDark, fontWeight = FontWeight.Bold) } },
+            dismissButton = { TextButton({ showLogoutDialog = false }) { Text("取消", color = Ink.copy(alpha = 0.7f)) } }
+        )
+    }
+}
+
+@Composable
+private fun SettingsSectionLabel(text: String) {
+    Text(
+        text,
+        fontSize = 12.sp,
+        color = Ink.copy(alpha = 0.55f),
+        fontWeight = FontWeight.SemiBold,
+        modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+    )
+}
+
+@Composable
+private fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
+    Card(
+        Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = WarmCard),
+        elevation = CardDefaults.cardElevation(2.dp)
+    ) {
+        Column(content = content)
+    }
+}
+
+@Composable
+private fun SettingsRow(
+    icon: ImageVector,
+    title: String,
+    isDestructive: Boolean = false,
+    onClick: () -> Unit,
+    trailing: @Composable () -> Unit = {}
+) {
+    val tint = if (isDestructive) CoralDark else WarmOrange
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            Modifier.size(36.dp).clip(CircleShape).background(tint.copy(alpha = 0.14f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(icon, null, Modifier.size(19.dp), tint = tint)
+        }
+        Spacer(Modifier.width(12.dp))
+        Text(title, fontSize = 15.sp, color = if (isDestructive) CoralDark else Ink, modifier = Modifier.weight(1f))
+        trailing()
+    }
+}
+
+private fun fontScaleLabel(s: Float): String = when {
+    s <= 0.9f -> "小"
+    s >= 1.15f -> "大"
+    else -> "标准"
 }
