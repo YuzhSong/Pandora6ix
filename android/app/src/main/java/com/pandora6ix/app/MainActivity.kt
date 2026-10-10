@@ -13,7 +13,6 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -54,7 +53,7 @@ fun PandoraApp() {
     PandoraTheme {
         var route by rememberSaveable { mutableStateOf(Route.HOME.name) }
         var modeName by rememberSaveable { mutableStateOf(CalendarMode.WEEK.name) }
-        var dateKey by rememberSaveable { mutableStateOf("2026-09-19") }
+        var dateKey by rememberSaveable { mutableStateOf(todayDate().let { "${it.year}-${it.month}-${it.day}" }) }
         var detail by rememberSaveable { mutableStateOf<String?>(null) }
         val tasks = remember { mutableStateListOf<WorkTask>().apply { addAll(MockData.companyTasks); addAll(MockData.timedTasks) } }
         val date = dateKey.split("-").map(String::toInt).let { DemoDate(it[0], it[1], it[2]) }
@@ -176,8 +175,8 @@ fun PandoraApp() {
                 item {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                         Box {
-                            OutlinedButton({ filterOpen = true }, contentPadding = PaddingValues(horizontal = 10.dp), border = BorderStroke(1.dp, MintDeep.copy(alpha = .65f)), colors = ButtonDefaults.outlinedButtonColors(contentColor = MintDeep)) { Text(historyFilter); Icon(Icons.Default.ArrowDropDown, null) }
-                            DropdownMenu(filterOpen, { filterOpen = false }, containerColor = Mint) {
+                            Button({ filterOpen = true }, contentPadding = PaddingValues(horizontal = 12.dp), colors = ButtonDefaults.buttonColors(containerColor = CreamDeep, contentColor = Ink), shape = RoundedCornerShape(12.dp)) { Text(historyFilter); Icon(Icons.Default.ArrowDropDown, null) }
+                            DropdownMenu(filterOpen, { filterOpen = false }, containerColor = CreamDeep) {
                                 Column(Modifier.heightIn(max = 300.dp).verticalScroll(rememberScrollState())) {
                                     (listOf("全部日期") + allLogs.map { it.date.shortLabel() }.distinct()).forEach { option -> DropdownMenuItem({ Text(option) }, { historyFilter = option; filterOpen = false; expandedLogs = false }) }
                                 }
@@ -186,7 +185,7 @@ fun PandoraApp() {
                     }
                 }
                 items(filteredLogs.take(if (expandedLogs) 10 else 5)) { log -> DetailCard("${log.date.shortLabel()} · ${log.time}", log.content, Color.White) { onOpen("日志 · ${log.time}§${log.content}") } }
-                if (filteredLogs.size > 5) item { TextButton({ expandedLogs = !expandedLogs }, Modifier.fillMaxWidth(), colors = ButtonDefaults.textButtonColors(contentColor = MintDeep)) { Text(if (expandedLogs) "收起" else "展开") } }
+                if (filteredLogs.size > 5) item { TextButton({ expandedLogs = !expandedLogs }, Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.textButtonColors(containerColor = CreamDeep, contentColor = Ink)) { Text(if (expandedLogs) "收起" else "展开") } }
                 if (filteredLogs.isEmpty()) item { Text("所选日期暂无日志", color = Ink.copy(alpha = .6f)) }
             }
         }
@@ -194,7 +193,7 @@ fun PandoraApp() {
         if (writing) {
             androidx.activity.compose.BackHandler { closeEditor() }
             val imeVisible = WindowInsets.isImeVisible
-            Card(Modifier.align(Alignment.Center).imePadding().fillMaxWidth(.9f).fillMaxHeight(if (imeVisible) .92f else .8f).clickable { }, shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = WarmCard)) {
+            Card(Modifier.align(Alignment.Center).imePadding().fillMaxWidth(.9f).fillMaxHeight(if (imeVisible) .92f else .8f).border(2.dp, CreamDeep, RoundedCornerShape(24.dp)).clickable { }, shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = WarmCard)) {
                 Column(Modifier.fillMaxSize().padding(20.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) { Text(if (todayReported) "补充今日工作" else "记录今日工作", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f)); IconButton({ closeEditor() }) { Icon(Icons.Default.Close, "关闭") } }
                     if (imeVisible) {
@@ -205,8 +204,8 @@ fun PandoraApp() {
                         Text("· 关联任务（可选）", fontWeight = FontWeight.Bold)
                         var taskMenu by remember { mutableStateOf(false) }
                         Box {
-                            OutlinedButton({ taskMenu = true }, Modifier.fillMaxWidth(), border = BorderStroke(1.dp, Ink.copy(alpha = .3f)), colors = ButtonDefaults.outlinedButtonColors(contentColor = Ink)) { Text(draftTask, Modifier.weight(1f), textAlign = TextAlign.Start); Icon(Icons.Default.ArrowDropDown, null) }
-                            DropdownMenu(taskMenu, { taskMenu = false }, containerColor = Mint) {
+                            Button({ taskMenu = true }, Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = CreamDeep, contentColor = Ink), shape = RoundedCornerShape(12.dp)) { Text(draftTask, Modifier.weight(1f), textAlign = TextAlign.Start); Icon(Icons.Default.ArrowDropDown, null) }
+                            DropdownMenu(taskMenu, { taskMenu = false }, containerColor = CreamDeep) {
                                 Column(Modifier.heightIn(max = 300.dp).verticalScroll(rememberScrollState())) {
                                     (listOf("不关联任务") + tasks.map { it.title }).forEach { option -> DropdownMenuItem({ Text(option) }, { draftTask = option; savedDraft = false; taskMenu = false }) }
                                 }
@@ -222,8 +221,8 @@ fun PandoraApp() {
                 }
             }
         }
-        if (confirmPublish) AlertDialog(onDismissRequest = { confirmPublish = false }, title = { Text("确认发布？") }, text = { Text(if (todayReported) "发布后将更新今日这一篇日志，不会新增第二条。" else "发布后将显示在日志列表中。") }, confirmButton = { TextButton({ val index = todayEntries.indexOfFirst { it.date.ordinal() == todayDate().ordinal() }; if (index >= 0) todayEntries[index] = todayEntries[index].copy(content = draftLog) else todayEntries.add(0, WorkLog("draft-${todayEntries.size + 1}", draftLog, MockData.userName, todayDate(), "刚刚")); confirmPublish = false; savedDraft = false; draftLog = ""; draftTask = "不关联任务"; writing = false }) { Text("确认发布") } }, dismissButton = { TextButton({ confirmPublish = false }) { Text("取消") } })
-        if (confirmExit) AlertDialog(onDismissRequest = { confirmExit = false }, title = { Text("放弃未保存内容？") }, text = { Text("退出后当前填写内容会被清空。") }, confirmButton = { TextButton({ confirmExit = false; draftLog = ""; draftTask = "不关联任务"; savedDraft = false; writing = false }) { Text("放弃并退出") } }, dismissButton = { TextButton({ confirmExit = false }) { Text("继续编辑") } })
+        if (confirmPublish) AlertDialog(onDismissRequest = { confirmPublish = false }, modifier = Modifier.border(2.dp, CreamDeep, RoundedCornerShape(28.dp)), shape = RoundedCornerShape(28.dp), containerColor = Color.White, titleContentColor = Ink, textContentColor = Ink.copy(alpha = .75f), title = { Text("确认发布？", fontWeight = FontWeight.Bold) }, text = { Text(if (todayReported) "发布后将更新今日这一篇日志，不会新增第二条。" else "发布后将显示在日志列表中。") }, confirmButton = { Button({ val time = nowTimeLabel(); val index = todayEntries.indexOfFirst { it.date.ordinal() == todayDate().ordinal() }; if (index >= 0) todayEntries[index] = todayEntries[index].copy(content = draftLog, time = time) else todayEntries.add(0, WorkLog("draft-${todayEntries.size + 1}", draftLog, MockData.userName, todayDate(), time)); confirmPublish = false; savedDraft = false; draftLog = ""; draftTask = "不关联任务"; writing = false }, colors = ButtonDefaults.buttonColors(containerColor = CreamDeep, contentColor = Ink), shape = RoundedCornerShape(14.dp)) { Text("确认发布", fontWeight = FontWeight.Bold) } }, dismissButton = { TextButton({ confirmPublish = false }, colors = ButtonDefaults.textButtonColors(contentColor = Ink)) { Text("取消") } })
+        if (confirmExit) AlertDialog(onDismissRequest = { confirmExit = false }, modifier = Modifier.border(2.dp, CreamDeep, RoundedCornerShape(28.dp)), shape = RoundedCornerShape(28.dp), containerColor = Color.White, titleContentColor = Ink, textContentColor = Ink.copy(alpha = .75f), title = { Text("放弃未保存内容？", fontWeight = FontWeight.Bold) }, text = { Text("退出后当前填写内容会被清空。") }, confirmButton = { TextButton({ confirmExit = false; draftLog = ""; draftTask = "不关联任务"; savedDraft = false; writing = false }, colors = ButtonDefaults.textButtonColors(contentColor = Ink)) { Text("放弃并退出") } }, dismissButton = { TextButton({ confirmExit = false }, colors = ButtonDefaults.textButtonColors(contentColor = Ink)) { Text("继续编辑") } })
     }
 }
 
