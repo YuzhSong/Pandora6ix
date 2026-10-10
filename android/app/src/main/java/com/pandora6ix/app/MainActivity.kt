@@ -182,7 +182,7 @@ fun PandoraApp() {
                         }
                     }
                 }
-                items(filteredLogs.take(if (expandedLogs) 10 else 5)) { log -> DetailCard("${log.date.shortLabel()} · ${log.time}", log.content, Color.White) { onOpen("日志 · ${log.time}") } }
+                items(filteredLogs.take(if (expandedLogs) 10 else 5)) { log -> DetailCard("${log.date.shortLabel()} · ${log.time}", log.content, Color.White) { onOpen("日志 · ${log.time}§${log.content}") } }
                 if (filteredLogs.size > 5) item { TextButton({ expandedLogs = !expandedLogs }, Modifier.fillMaxWidth()) { Text(if (expandedLogs) "收起" else "展开") } }
                 if (filteredLogs.isEmpty()) item { Text("所选日期暂无日志", color = Ink.copy(alpha = .6f)) }
             }
@@ -267,14 +267,15 @@ fun PandoraApp() {
 }
 @Composable private fun DetailCard(title: String, body: String, color: Color, onClick: () -> Unit = {}) { Card(Modifier.fillMaxWidth().clickable(onClick = onClick), colors = CardDefaults.cardColors(containerColor = color.copy(alpha = .78f)), shape = RoundedCornerShape(16.dp)) { Column(Modifier.padding(14.dp)) { Text(title, fontWeight = FontWeight.Bold); Text(body, fontSize = 13.sp, color = Ink.copy(alpha = .75f), maxLines = 2, overflow = TextOverflow.Ellipsis) } } }
 @Composable private fun DetailScreen(title: String, tasks: List<WorkTask>, onBack: () -> Unit) {
-    val task = tasks.firstOrNull { it.id == title || it.title == title }
-    val displayTitle = task?.title ?: title
+    val isLog = title.startsWith("日志 · ")
+    val logContent = if (isLog) title.substringAfter("§", "") else null
+    val task = if (!isLog) tasks.firstOrNull { it.id == title || it.title == title } else null
+    val displayTitle = task?.title ?: if (isLog) title.substringBefore("§") else title
     androidx.activity.compose.BackHandler(onBack = onBack)
     Column(Modifier.fillMaxSize()) {
-        PageHeader(displayTitle, if (displayTitle.startsWith("日志 · ")) null else "演示详情", onBack)
+        PageHeader(displayTitle, if (isLog) null else "演示详情", onBack)
         Column(Modifier.verticalScroll(rememberScrollState()).padding(20.dp)) {
-            Text("${displayTitle}详情", fontSize = 24.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(12.dp))
+            if (!isLog) { Text("${displayTitle}详情", fontSize = 24.sp, fontWeight = FontWeight.Bold); Spacer(Modifier.height(12.dp)) }
             if (task != null) {
                 Text("任务说明", fontWeight = FontWeight.Bold)
                 Text(task.note.ifBlank { "暂无备注" }, lineHeight = 22.sp)
@@ -285,10 +286,12 @@ fun PandoraApp() {
                 Spacer(Modifier.height(10.dp))
                 Text("接收人", fontWeight = FontWeight.Bold)
                 Text(task.assignee, lineHeight = 22.sp)
+            } else if (isLog) {
+                Text(logContent ?: "", color = Ink.copy(alpha = .75f), fontSize = 16.sp, lineHeight = 26.sp)
             } else {
                 Text("这里展示低保真原型中的可读内容和返回路径。\n\n真实任务、日志、权限和 AI 服务将在后续需求确认后接入。", color = Ink.copy(alpha = .75f), lineHeight = 24.sp)
             }
-            if (!displayTitle.startsWith("日志 · ")) {
+            if (!isLog) {
                 Spacer(Modifier.height(22.dp))
                 DetailCard("当前状态", "模拟数据 · 仅用于线下讨论", CreamDeep)
             }
