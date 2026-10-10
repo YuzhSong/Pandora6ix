@@ -5,6 +5,16 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CalendarLayoutTest {
+    @Test fun zoomNavigatesAllModesAndStopsAtBoundaries() {
+        assertEquals(CalendarMode.DAY, CalendarMode.DAY.zoomIn())
+        assertEquals(CalendarMode.DAY, CalendarMode.WEEK.zoomIn())
+        assertEquals(CalendarMode.WEEK, CalendarMode.MONTH.zoomIn())
+        assertEquals(CalendarMode.MONTH, CalendarMode.YEAR.zoomIn())
+        assertEquals(CalendarMode.WEEK, CalendarMode.DAY.zoomOut())
+        assertEquals(CalendarMode.MONTH, CalendarMode.WEEK.zoomOut())
+        assertEquals(CalendarMode.YEAR, CalendarMode.MONTH.zoomOut())
+        assertEquals(CalendarMode.YEAR, CalendarMode.YEAR.zoomOut())
+    }
     private val monday = DemoDate(2026, 9, 14)
     private val week = (0..6).map { monday.plusDays(it) }
     private fun task(id: String, first: Int, last: Int, priority: Int = 3) = WorkTask(id, id, monday.plusDays(first), monday.plusDays(last), "演示", "用户", 0, priorityLevel = priority)

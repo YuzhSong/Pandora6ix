@@ -23,4 +23,6 @@
 
 验证记录（2026-10-10）：使用 `F:\Android Studio\jbr` 执行 `gradlew :app:compileDebugKotlin` 得到 `BUILD SUCCESSFUL`，仅剩两条 deprecation 警告（`Icons.Filled.ArrowBack` 为既有、`Icons.Filled.Logout` 为本变更新引入），不影响功能。
 
-- [ ] 4.2 模拟器人工验证：拖动排序手感、展开浮层样式、字号切换实际观感。
+- [x] 4.2 模拟器交互验证：拖动排序、展开浮层样式、字号切换实际观感。
+
+集成验证（2026-10-11）：Pixel_9a 模拟器上验证长按将首条拖至第三条、新增事项及切换页面后保留；检查展开浮层截图与大字号设置页。通知开关与个人事项状态由应用层持有，页面切换后不再重置。详见 `integrate-dev-review/validation.md`。

@@ -51,35 +51,46 @@ fun CalendarScreen(
     onCreate: (WorkTask) -> Unit,
     onOpen: (WorkTask) -> Unit
 ) {
+    var menu by rememberSaveable { mutableStateOf(false) }
     var adding by rememberSaveable { mutableStateOf(false) }
     val today = todayDate()
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
             Row(Modifier.fillMaxWidth().height(44.dp).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(mode.label, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                Box {
+                    TextButton({ menu = true }, colors = ButtonDefaults.textButtonColors(contentColor = Ink)) {
+                        Text(mode.label, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                        Icon(Icons.Default.ArrowDropDown, "选择视图")
+                    }
+                    DropdownMenu(menu, { menu = false }) {
+                        CalendarMode.entries.forEach { option -> DropdownMenuItem({ Text(option.label) }, { menu = false; onModeChange(option) }) }
+                    }
+                }
             }
             val weekStart = mondayOfWeek(cursor)
             val dates = (0..6).map { weekStart.plusDays(it) }
-            val unit = when (mode) { CalendarMode.YEAR -> "年"; CalendarMode.MONTH -> "月"; CalendarMode.WEEK -> "周" }
+            val unit = when (mode) { CalendarMode.YEAR -> "年"; CalendarMode.MONTH -> "月"; CalendarMode.WEEK -> "周"; CalendarMode.DAY -> "天" }
             Row(Modifier.fillMaxWidth().height(44.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(when (mode) {
                     CalendarMode.YEAR -> "${cursor.year}年"
                     CalendarMode.MONTH -> cursor.monthLabel()
                     CalendarMode.WEEK -> "${weekStart.shortLabel()}—${dates.last().shortLabel()}"
+                    CalendarMode.DAY -> cursor.shortLabelWithWeekday()
                 }, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                IconButton({ onCursorChange(when (mode) { CalendarMode.YEAR -> cursor.plusYears(-1); CalendarMode.MONTH -> cursor.plusMonths(-1); CalendarMode.WEEK -> cursor.plusDays(-7) }) }) { Icon(Icons.Default.ArrowBack, "上一$unit", tint = Ink) }
-                IconButton({ onCursorChange(when (mode) { CalendarMode.YEAR -> cursor.plusYears(1); CalendarMode.MONTH -> cursor.plusMonths(1); CalendarMode.WEEK -> cursor.plusDays(7) }) }) { Icon(Icons.Default.ArrowForward, "下一$unit", tint = Ink) }
+                IconButton({ onCursorChange(when (mode) { CalendarMode.YEAR -> cursor.plusYears(-1); CalendarMode.MONTH -> cursor.plusMonths(-1); CalendarMode.WEEK -> cursor.plusDays(-7); CalendarMode.DAY -> cursor.plusDays(-1) }) }) { Icon(Icons.Default.ArrowBack, "上一$unit", tint = Ink) }
+                IconButton({ onCursorChange(when (mode) { CalendarMode.YEAR -> cursor.plusYears(1); CalendarMode.MONTH -> cursor.plusMonths(1); CalendarMode.WEEK -> cursor.plusDays(7); CalendarMode.DAY -> cursor.plusDays(1) }) }) { Icon(Icons.Default.ArrowForward, "下一$unit", tint = Ink) }
             }
             Box(Modifier.fillMaxWidth().weight(1f).pinchToZoom(mode, onModeChange)) {
                 when (mode) {
-                    CalendarMode.YEAR -> YearGrid(cursor, tasks, today, onSelectDate = { onCursorChange(it); onModeChange(CalendarMode.WEEK) }, onSelectMonth = { onCursorChange(it); onModeChange(CalendarMode.MONTH) })
-                    CalendarMode.MONTH -> CompactMonth(cursor, tasks, today) { date -> onCursorChange(date); onModeChange(CalendarMode.WEEK) }
-                    CalendarMode.WEEK -> Column(Modifier.fillMaxSize()) {
-                        WeekDates(dates, today) { date -> onCursorChange(date) }
-                        AllDayTasks(dates, tasks, onSelect = { task, date -> onCursorChange(date); onOpen(task) })
+                    CalendarMode.YEAR -> YearGrid(cursor, tasks, today, onSelectDate = onCursorChange, onSelectMonth = { onCursorChange(it); onModeChange(CalendarMode.MONTH) })
+                    CalendarMode.MONTH -> CompactMonth(cursor, tasks, today, onSelect = onCursorChange, onOpen = onOpen)
+                    CalendarMode.WEEK, CalendarMode.DAY -> Column(Modifier.fillMaxSize()) {
+                        val visibleDates = if (mode == CalendarMode.DAY) listOf(cursor) else dates
+                        WeekDates(visibleDates, today) { date -> onCursorChange(date) }
+                        AllDayTasks(visibleDates, tasks, onSelect = { task, date -> onCursorChange(date); onOpen(task) })
                         HorizontalDivider(color = Ink.copy(alpha = .08f))
-                        key(mode, weekStart) {
-                            TimeGrid(dates, tasks) { task, _ -> onOpen(task) }
+                        key(mode, if (mode == CalendarMode.DAY) cursor else weekStart) {
+                            TimeGrid(visibleDates, tasks, mode == CalendarMode.DAY) { task, _ -> onOpen(task) }
                         }
                     }
                 }
@@ -87,6 +98,7 @@ fun CalendarScreen(
         }
         if (canCreateTasks) FloatingActionButton(onClick = { adding = true }, modifier = Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 48.dp), shape = CircleShape, containerColor = WarmOrange, contentColor = Color.White) { Icon(Icons.Default.Add, "添加任务", Modifier.size(30.dp)) }
         val atToday = when (mode) {
+            CalendarMode.DAY -> cursor == today
             CalendarMode.WEEK -> mondayOfWeek(cursor) == mondayOfWeek(today)
             CalendarMode.MONTH -> cursor.year == today.year && cursor.month == today.month
             CalendarMode.YEAR -> cursor.year == today.year
@@ -102,14 +114,15 @@ fun CalendarScreen(
             Column(Modifier.weight(1f).clickable { onSelect(date) }, horizontalAlignment = Alignment.CenterHorizontally) {
                 Text("周${date.weekdayLabel()}", fontSize = 12.sp, color = Ink.copy(alpha = .65f))
                 Box(Modifier.padding(top = 3.dp).size(32.dp).clip(CircleShape).background(if (date == today) CreamDeep else Color.Transparent), contentAlignment = Alignment.Center) {
-                    Text("${date.day}", fontSize = 17.sp, fontWeight = if (date == today) FontWeight.Bold else FontWeight.Normal)
+                    Text("${date.day}", fontSize = 17.sp, lineHeight = 17.sp, fontWeight = if (date == today) FontWeight.Bold else FontWeight.Normal)
                 }
             }
         }
     }
 }
 
-@Composable private fun CompactMonth(cursor: DemoDate, tasks: List<WorkTask>, today: DemoDate, onSelect: (DemoDate) -> Unit) {
+@Composable private fun CompactMonth(cursor: DemoDate, tasks: List<WorkTask>, today: DemoDate, onSelect: (DemoDate) -> Unit, onOpen: (WorkTask) -> Unit) {
+    var overflowDates by remember { mutableStateOf<List<DemoDate>?>(null) }
     Column(Modifier.fillMaxSize().padding(horizontal = 8.dp)) {
         Row(Modifier.fillMaxWidth().height(20.dp)) { listOf("一", "二", "三", "四", "五", "六", "日").forEach { Text("周$it", Modifier.weight(1f), fontSize = 11.sp, textAlign = TextAlign.Center, color = Ink.copy(alpha = .6f)) } }
         monthWeeks(cursor).forEach { week ->
@@ -121,16 +134,25 @@ fun CalendarScreen(
                     Row(Modifier.fillMaxWidth().height(24.dp)) {
                         week.forEach { date ->
                             Box(Modifier.weight(1f).fillMaxHeight().clickable { onSelect(date) }, contentAlignment = Alignment.Center) {
-                                Text("${date.day}", fontSize = 15.sp, fontWeight = if (date == today) FontWeight.Bold else FontWeight.Normal, color = if (date.month == cursor.month) Ink else Ink.copy(alpha = .3f), modifier = Modifier.clip(CircleShape).background(if (date == today) Peach else Color.Transparent).padding(horizontal = 6.dp, vertical = 1.dp))
+                                Text("${date.day}", fontSize = 15.sp, lineHeight = 15.sp, fontWeight = if (date == today) FontWeight.Bold else FontWeight.Normal, color = if (date.month == cursor.month) Ink else Ink.copy(alpha = .3f), modifier = Modifier.clip(CircleShape).background(if (date == today) Peach else Color.Transparent).padding(horizontal = 6.dp, vertical = 1.dp))
                             }
                         }
                     }
-                    lanes.take(visible).forEach { lane -> DateLane(lane, week, 17, compact = true) { _, date -> onSelect(date) }; Spacer(Modifier.height(1.dp)) }
+                    lanes.take(visible).forEach { lane -> DateLane(lane, week, 17, compact = true) { task, _ -> onOpen(task) }; Spacer(Modifier.height(1.dp)) }
                     val remaining = lanes.drop(visible).sumOf { it.size }
-                    if (remaining > 0) Box(Modifier.fillMaxWidth().height(18.dp).clickable { onSelect(week.first()) }, contentAlignment = Alignment.CenterEnd) { Text("+$remaining 条计划 ›", Modifier.padding(end = 6.dp), fontSize = 11.sp, color = Ink.copy(alpha = .7f)) }
+                    if (remaining > 0) Box(Modifier.fillMaxWidth().height(18.dp).clickable { overflowDates = week }, contentAlignment = Alignment.CenterEnd) { Text("+$remaining 条计划 ›", Modifier.padding(end = 6.dp), fontSize = 11.sp, color = Ink.copy(alpha = .7f)) }
                 }
             }
         }
+    }
+    overflowDates?.let { dates ->
+        AlertDialog(onDismissRequest = { overflowDates = null }, title = { Text("本周计划") }, text = {
+            Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())) {
+                tasks.filter { it.end >= dates.first() && it.start <= dates.last() }.forEach { task ->
+                    TextButton({ overflowDates = null; onOpen(task) }, Modifier.fillMaxWidth()) { Text(task.title, Modifier.fillMaxWidth()) }
+                }
+            }
+        }, confirmButton = { TextButton({ overflowDates = null }) { Text("关闭") } })
     }
 }
 
@@ -165,8 +187,8 @@ private fun Modifier.calendarGuides(): Modifier = drawBehind {
     drawLine(Ink.copy(alpha = .08f), Offset(0f, size.height), Offset(size.width, size.height), pathEffect = effect)
 }
 
-@Composable private fun TimeGrid(dates: List<DemoDate>, tasks: List<WorkTask>, onSelect: (WorkTask, DemoDate) -> Unit) {
-    val hourHeight = 56.dp
+@Composable private fun TimeGrid(dates: List<DemoDate>, tasks: List<WorkTask>, dayMode: Boolean, onSelect: (WorkTask, DemoDate) -> Unit) {
+    val hourHeight = if (dayMode) 60.dp else 56.dp
     val density = LocalDensity.current
     val scroll = rememberScrollState(with(density) { (hourHeight * 8).roundToPx() })
     Row(Modifier.fillMaxSize().padding(end = 8.dp).verticalScroll(scroll)) {
@@ -198,7 +220,8 @@ private fun Modifier.calendarGuides(): Modifier = drawBehind {
                     assigned.forEach { (task, range, lane) ->
                         Box(Modifier.offset(x = dayWidth * index + eventWidth * lane, y = hourHeight * (range.first / 60f)).width(eventWidth).height(hourHeight * ((range.last - range.first + 1) / 60f)).padding(1.dp).clip(RoundedCornerShape(4.dp)).background(taskColor(task)).clickable { onSelect(task, date) }) {
                             Column(Modifier.padding(horizontal = 4.dp, vertical = 2.dp)) {
-                                Text(task.title, fontSize = 11.sp, lineHeight = 13.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                                Text(task.title, fontSize = if (dayMode) 13.sp else 11.sp, lineHeight = if (dayMode) 16.sp else 13.sp, maxLines = if (dayMode) 2 else 3, overflow = TextOverflow.Ellipsis)
+                                if (dayMode && range.last - range.first >= 30) Text("${minuteLabel(range.first)}—${minuteLabel(range.last + 1)}", fontSize = 11.sp, color = Ink.copy(alpha = .7f))
                             }
                         }
                     }
@@ -247,15 +270,15 @@ private fun Modifier.pinchToZoom(mode: CalendarMode, onModeChange: (CalendarMode
             val month = DemoDate(cursor.year, index + 1, 1)
             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(WarmCard).border(1.dp, CreamDeep, RoundedCornerShape(10.dp)).padding(4.dp)) {
                 Text("${month.month}月", fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth().clickable { onSelectMonth(month) }.padding(horizontal = 2.dp))
-                Row(Modifier.fillMaxWidth().padding(top = 1.dp)) { listOf("一", "二", "三", "四", "五", "六", "日").forEach { Text(it, Modifier.weight(1f), fontSize = 8.sp, textAlign = TextAlign.Center, color = Ink.copy(alpha = .45f)) } }
+                Row(Modifier.fillMaxWidth().padding(top = 1.dp)) { listOf("一", "二", "三", "四", "五", "六", "日").forEach { Text(it, Modifier.weight(1f), fontSize = 8.sp, lineHeight = 8.sp, textAlign = TextAlign.Center, color = Ink.copy(alpha = .45f)) } }
                 monthWeeks(month).forEach { week ->
                     Row(Modifier.fillMaxWidth()) {
                         week.forEach { date ->
                             val inMonth = date.month == month.month
                             val hasPlan = inMonth && tasks.any { date >= it.start && date <= it.end }
                             Column(Modifier.weight(1f).clickable { onSelectDate(date) }, horizontalAlignment = Alignment.CenterHorizontally) {
-                                Box(Modifier.size(15.dp).clip(CircleShape).background(if (date == today) Peach else Color.Transparent), contentAlignment = Alignment.Center) {
-                                    Text("${date.day}", fontSize = 9.sp, fontWeight = if (date == today) FontWeight.Bold else FontWeight.Normal, color = if (inMonth) Ink else Ink.copy(alpha = .25f))
+                                Box(Modifier.size(20.dp).clip(CircleShape).background(if (date == today) Peach else Color.Transparent), contentAlignment = Alignment.Center) {
+                                    Text("${date.day}", fontSize = 9.sp, lineHeight = 9.sp, fontWeight = if (date == today) FontWeight.Bold else FontWeight.Normal, color = if (inMonth) Ink else Ink.copy(alpha = .25f))
                                 }
                                 Box(Modifier.size(3.dp).clip(CircleShape).background(if (hasPlan) WarmOrange else Color.Transparent))
                             }

@@ -66,6 +66,9 @@ fun PandoraApp() {
         var homeDetail by remember { mutableStateOf<HomeDetail?>(null) }
         var showSettings by rememberSaveable { mutableStateOf(false) }
         var fontScale by rememberSaveable { mutableStateOf(1f) }
+        var notificationsEnabled by rememberSaveable { mutableStateOf(true) }
+        val personalItems = remember { mutableStateListOf<String>().apply { addAll(MockData.personalImportant) } }
+        val logs = remember { mutableStateListOf<WorkLog>().apply { addAll(MockData.logs) } }
         val tasks = remember { mutableStateListOf<WorkTask>().apply { addAll(MockData.companyTasks); addAll(MockData.timedTasks) } }
         val date = dateKey.split("-").map(String::toInt).let { DemoDate(it[0], it[1], it[2]) }
         val current = Route.valueOf(route)
@@ -77,21 +80,21 @@ fun PandoraApp() {
             NavItem(Route.ME, "我的", Icons.Default.PersonOutline)
         )
         val baseDensity = LocalDensity.current
-        val scaledDensity = remember(fontScale) { Density(baseDensity.density, baseDensity.fontScale * fontScale) }
+        val scaledDensity = remember(baseDensity, fontScale) { Density(baseDensity.density, baseDensity.fontScale * fontScale) }
         CompositionLocalProvider(LocalDensity provides scaledDensity) {
-        Scaffold(containerColor = Cream, bottomBar = { NavigationBar(containerColor = CreamDeep) { nav.forEach { item -> NavigationBarItem(selected = current == item.route, onClick = { route = item.route.name; detail = null; homeDetail = null }, icon = { Icon(item.icon, item.label) }, label = { Text(item.label, fontSize = 11.sp) }, colors = NavigationBarItemDefaults.colors(selectedIconColor = WarmOrange, selectedTextColor = WarmOrange, indicatorColor = CreamDeep)) } } }) { padding ->
+        Scaffold(containerColor = Cream, bottomBar = { NavigationBar(containerColor = CreamDeep) { nav.forEach { item -> NavigationBarItem(selected = current == item.route, onClick = { route = item.route.name; detail = null; homeDetail = null; showSettings = false }, icon = { Icon(item.icon, item.label) }, label = { Text(item.label, fontSize = 11.sp) }, colors = NavigationBarItemDefaults.colors(selectedIconColor = WarmOrange, selectedTextColor = WarmOrange, indicatorColor = CreamDeep)) } } }) { padding ->
             Surface(Modifier.padding(padding).fillMaxSize(), color = Cream) {
                 when {
                     homeDetail != null -> HomeItemDetailScreen(homeDetail!!) { homeDetail = null }
-                    showSettings -> SettingsScreen(fontScale = fontScale, onFontScaleChange = { fontScale = it }, onClose = { showSettings = false })
+                    showSettings -> SettingsScreen(fontScale = fontScale, onFontScaleChange = { fontScale = it }, notificationsEnabled = notificationsEnabled, onNotificationsChange = { notificationsEnabled = it }, onClose = { showSettings = false })
                     detail != null -> DetailScreen(detail!!, tasks, onBack = { detail = null })
                     else -> AnimatedContent(current, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "page") { target ->
                         when (target) {
-                            Route.HOME -> HomeScreen(tasks, onOpenHome = { homeDetail = it }, onOpenSettings = { showSettings = true })
+                            Route.HOME -> HomeScreen(tasks, personalItems, logs, onOpenHome = { homeDetail = it }, onOpenSettings = { showSettings = true })
                             Route.VIEW -> CalendarScreen(CalendarMode.valueOf(modeName), date, tasks, MockData.role.canCreateTasks, { modeName = it.name }, { dateKey = "${it.year}-${it.month}-${it.day}" }, { if (MockData.role.canCreateTasks) tasks.add(it) }, { detail = it.id })
-                            Route.LOGS -> LogsScreen(tasks) { detail = it }
+                            Route.LOGS -> LogsScreen(tasks, logs) { detail = it }
                             Route.AI -> AiMapScreen()
-                            Route.ME -> ProfileScreen(onOpenSettings = { showSettings = true })
+                            Route.ME -> ProfileScreen(notificationsEnabled, onOpenSettings = { showSettings = true })
                         }
                     }
                 }
@@ -106,16 +109,15 @@ fun PandoraApp() {
     TopAppBar(title = { Column { Text(title, fontWeight = FontWeight.Bold); subtitle?.let { Text(it, fontSize = 12.sp, color = Ink.copy(alpha = .6f)) } } }, navigationIcon = { if (onBack != null) IconButton(onBack) { Icon(Icons.Default.ArrowBack, "返回") } }, actions = actions, colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent))
 }
 
-@Composable private fun HomeScreen(tasks: List<WorkTask>, onOpenHome: (HomeDetail) -> Unit, onOpenSettings: () -> Unit) {
+@Composable private fun HomeScreen(tasks: List<WorkTask>, personalItems: SnapshotStateList<String>, logs: List<WorkLog>, onOpenHome: (HomeDetail) -> Unit, onOpenSettings: () -> Unit) {
     var expandedPanel by rememberSaveable { mutableStateOf<String?>(null) }
     var notifications by rememberSaveable { mutableStateOf(false) }
     var editingPersonal by remember { mutableStateOf(false) }
-    val personalItems = remember { mutableStateListOf<String>().apply { addAll(MockData.personalImportant) } }
     val panels = listOf(
         HomePanelDef("公司十大重要事项", MockData.companyHighlights),
         HomePanelDef("公司十大派发任务", tasks.filter { it.status != "草稿（演示）" }.take(10).map { it.title }),
         HomePanelDef("个人十大重要事项", personalItems),
-        HomePanelDef("个人日志", MockData.logs.map { it.content })
+        HomePanelDef("个人日志", logs.sortedByDescending { it.date.ordinal() }.map { it.content })
     )
     fun openItem(panel: HomePanelDef, index: Int, text: String) {
         onOpenHome(HomeDetail(panel.title, index, text, WarmOrange))
@@ -260,6 +262,7 @@ fun PandoraApp() {
 }
 
 @Composable private fun PersonalImportantEditor(items: SnapshotStateList<String>, onClose: () -> Unit) {
+    androidx.activity.compose.BackHandler(onBack = onClose)
     var editingIndex by remember { mutableStateOf<Int?>(null) }
     var adding by remember { mutableStateOf(false) }
     var editText by remember { mutableStateOf("") }
@@ -395,7 +398,7 @@ fun PandoraApp() {
                                             change.consume()
                                         },
                                         onDragEnd = { onDragEnd() },
-                                        onDragCancel = { onDragEnd() }
+                                        onDragCancel = { draggedIndex = null; hoverIndex = null; dragOffsetY = 0f }
                                     )
                                 }
                                 .clickable { onItemTap(i, text) }
@@ -501,7 +504,7 @@ fun PandoraApp() {
 
 
 @OptIn(ExperimentalLayoutApi::class)
-@Composable private fun LogsScreen(tasks: List<WorkTask>, onOpen: (String) -> Unit) {
+@Composable private fun LogsScreen(tasks: List<WorkTask>, logs: SnapshotStateList<WorkLog>, onOpen: (String) -> Unit) {
     var expandedLogs by rememberSaveable { mutableStateOf(false) }
     var filterOpen by rememberSaveable { mutableStateOf(false) }
     var historyFilter by rememberSaveable { mutableStateOf("全部日期") }
@@ -511,8 +514,7 @@ fun PandoraApp() {
     var savedDraft by rememberSaveable { mutableStateOf(false) }
     var confirmPublish by rememberSaveable { mutableStateOf(false) }
     var confirmExit by rememberSaveable { mutableStateOf(false) }
-    val todayEntries = remember { mutableStateListOf<WorkLog>() }
-    val allLogs = (todayEntries + MockData.logs).sortedWith(compareByDescending<WorkLog> { it.date.ordinal() }.thenByDescending { it.time })
+    val allLogs = logs.sortedWith(compareByDescending<WorkLog> { it.date.ordinal() }.thenByDescending { it.time })
     val todayLog = allLogs.firstOrNull { it.date.ordinal() == todayDate().ordinal() }
     val todayReported = todayLog != null
     val filteredLogs = if (historyFilter == "全部日期") allLogs else allLogs.filter { it.date.shortLabel() == historyFilter }
@@ -538,7 +540,7 @@ fun PandoraApp() {
                         }
                     }
                 }
-                items(filteredLogs.take(if (expandedLogs) 10 else 5)) { log -> DetailCard("${log.date.shortLabel()} · ${log.time}", log.content, Color.White) { onOpen("日志 · ${log.time}§${log.content}") } }
+                items(if (expandedLogs) filteredLogs else filteredLogs.take(5)) { log -> DetailCard("${log.date.shortLabel()} · ${log.time}", log.content, Color.White) { onOpen("日志 · ${log.time}§${log.content}") } }
                 if (filteredLogs.size > 5) item { TextButton({ expandedLogs = !expandedLogs }, Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.textButtonColors(containerColor = CreamDeep, contentColor = Ink)) { Text(if (expandedLogs) "收起" else "展开") } }
                 if (filteredLogs.isEmpty()) item { Text("所选日期暂无日志", color = Ink.copy(alpha = .6f)) }
             }
@@ -575,7 +577,7 @@ fun PandoraApp() {
                 }
             }
         }
-        if (confirmPublish) AlertDialog(onDismissRequest = { confirmPublish = false }, modifier = Modifier.border(2.dp, CreamDeep, RoundedCornerShape(28.dp)), shape = RoundedCornerShape(28.dp), containerColor = Color.White, titleContentColor = Ink, textContentColor = Ink.copy(alpha = .75f), title = { Text("确认发布？", fontWeight = FontWeight.Bold) }, text = { Text(if (todayReported) "发布后将更新今日这一篇日志，不会新增第二条。" else "发布后将显示在日志列表中。") }, confirmButton = { Button({ val time = nowTimeLabel(); val index = todayEntries.indexOfFirst { it.date.ordinal() == todayDate().ordinal() }; if (index >= 0) todayEntries[index] = todayEntries[index].copy(content = draftLog, time = time) else todayEntries.add(0, WorkLog("draft-${todayEntries.size + 1}", draftLog, MockData.userName, todayDate(), time)); confirmPublish = false; savedDraft = false; draftLog = ""; draftTask = "不关联任务"; writing = false }, colors = ButtonDefaults.buttonColors(containerColor = CreamDeep, contentColor = Ink), shape = RoundedCornerShape(14.dp)) { Text("确认发布", fontWeight = FontWeight.Bold) } }, dismissButton = { TextButton({ confirmPublish = false }, colors = ButtonDefaults.textButtonColors(contentColor = Ink)) { Text("取消") } })
+        if (confirmPublish) AlertDialog(onDismissRequest = { confirmPublish = false }, modifier = Modifier.border(2.dp, CreamDeep, RoundedCornerShape(28.dp)), shape = RoundedCornerShape(28.dp), containerColor = Color.White, titleContentColor = Ink, textContentColor = Ink.copy(alpha = .75f), title = { Text("确认发布？", fontWeight = FontWeight.Bold) }, text = { Text(if (todayReported) "发布后将更新今日这一篇日志，不会新增第二条。" else "发布后将显示在日志列表中。") }, confirmButton = { Button({ saveDailyLog(logs, draftLog, todayDate(), nowTimeLabel()); confirmPublish = false; savedDraft = false; draftLog = ""; draftTask = "不关联任务"; writing = false }, colors = ButtonDefaults.buttonColors(containerColor = CreamDeep, contentColor = Ink), shape = RoundedCornerShape(14.dp)) { Text("确认发布", fontWeight = FontWeight.Bold) } }, dismissButton = { TextButton({ confirmPublish = false }, colors = ButtonDefaults.textButtonColors(contentColor = Ink)) { Text("取消") } })
         if (confirmExit) AlertDialog(onDismissRequest = { confirmExit = false }, modifier = Modifier.border(2.dp, CreamDeep, RoundedCornerShape(28.dp)), shape = RoundedCornerShape(28.dp), containerColor = Color.White, titleContentColor = Ink, textContentColor = Ink.copy(alpha = .75f), title = { Text("放弃未保存内容？", fontWeight = FontWeight.Bold) }, text = { Text("退出后当前填写内容会被清空。") }, confirmButton = { TextButton({ confirmExit = false; draftLog = ""; draftTask = "不关联任务"; savedDraft = false; writing = false }, colors = ButtonDefaults.textButtonColors(contentColor = Ink)) { Text("放弃并退出") } }, dismissButton = { TextButton({ confirmExit = false }, colors = ButtonDefaults.textButtonColors(contentColor = Ink)) { Text("继续编辑") } })
     }
 }
@@ -586,7 +588,7 @@ fun PandoraApp() {
     }
 }
 @Composable private fun AiMapScreen() { Column(Modifier.fillMaxSize().padding(16.dp)) { PageHeader("AI地图"); Spacer(Modifier.height(48.dp)); Icon(Icons.Default.Info, null, Modifier.size(70.dp).align(Alignment.CenterHorizontally), tint = Coral); Text("AI 地图", Modifier.fillMaxWidth().padding(top = 18.dp), textAlign = TextAlign.Center, fontSize = 28.sp, fontWeight = FontWeight.Bold); Text("功能规划中", Modifier.fillMaxWidth().padding(top = 8.dp), textAlign = TextAlign.Center, color = Ink.copy(alpha = .6f)) } }
-@Composable private fun ProfileScreen(onOpenSettings: () -> Unit) {
+@Composable private fun ProfileScreen(notificationsEnabled: Boolean, onOpenSettings: () -> Unit) {
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         PageHeader("我的", "个人资料")
         Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -619,7 +621,7 @@ fun PandoraApp() {
                 }
                 DashedDivider(Ink.copy(alpha = .18f))
                 SettingsRow(icon = Icons.Default.Notifications, title = "消息通知", onClick = onOpenSettings) {
-                    Text("已开启", color = Ink.copy(alpha = .55f), fontSize = 13.sp)
+                    Text(if (notificationsEnabled) "已开启" else "已关闭", color = Ink.copy(alpha = .55f), fontSize = 13.sp)
                 }
             }
             Text("关于 Pandora", fontSize = 18.sp, fontWeight = FontWeight.Bold)
@@ -673,9 +675,11 @@ fun PandoraApp() {
 private fun SettingsScreen(
     fontScale: Float,
     onFontScaleChange: (Float) -> Unit,
+    notificationsEnabled: Boolean,
+    onNotificationsChange: (Boolean) -> Unit,
     onClose: () -> Unit
 ) {
-    var notificationsEnabled by rememberSaveable { mutableStateOf(true) }
+    androidx.activity.compose.BackHandler(onBack = onClose)
     var showFontDialog by remember { mutableStateOf(false) }
     var showClearCacheDialog by remember { mutableStateOf(false) }
     var showAboutDialog by remember { mutableStateOf(false) }
@@ -705,11 +709,11 @@ private fun SettingsScreen(
                     SettingsRow(
                         icon = Icons.Default.Notifications,
                         title = "通知提醒",
-                        onClick = { notificationsEnabled = !notificationsEnabled }
+                        onClick = { onNotificationsChange(!notificationsEnabled) }
                     ) {
                         Switch(
                             checked = notificationsEnabled,
-                            onCheckedChange = { notificationsEnabled = it },
+                            onCheckedChange = onNotificationsChange,
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = Cream,
                                 checkedTrackColor = WarmOrange,

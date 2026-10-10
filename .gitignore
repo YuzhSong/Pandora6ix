@@ -16,6 +16,7 @@
 # Android local SDK and build state
 android/local.properties
 android/.gradle/
+android/.kotlin/
 *.apk
 *.aab
 
