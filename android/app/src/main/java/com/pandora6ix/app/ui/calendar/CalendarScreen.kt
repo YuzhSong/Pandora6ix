@@ -1,9 +1,14 @@
 package com.pandora6ix.app.ui.calendar
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -20,6 +25,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
@@ -45,45 +51,35 @@ fun CalendarScreen(
     onCreate: (WorkTask) -> Unit,
     onOpen: (WorkTask) -> Unit
 ) {
-    var menu by rememberSaveable { mutableStateOf(false) }
     var adding by rememberSaveable { mutableStateOf(false) }
+    val today = todayDate()
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
             Row(Modifier.fillMaxWidth().height(44.dp).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                IconButton({ menu = true }) { Icon(if (mode == CalendarMode.MONTH) Icons.Default.CalendarMonth else Icons.Default.ViewWeek, "选择日周月视图", tint = Ink) }
-                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                    TextButton({ menu = true }, colors = ButtonDefaults.textButtonColors(contentColor = Ink)) {
-                        Text(mode.label, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                        Icon(Icons.Default.ArrowDropDown, null)
-                    }
-                    DropdownMenu(menu, { menu = false }) {
-                        CalendarMode.values().forEach { option -> DropdownMenuItem(text = { Text(option.label) }, onClick = { menu = false; onModeChange(option) }) }
-                    }
-                }
-                Spacer(Modifier.width(48.dp))
+                Text(mode.label, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
             }
             val weekStart = mondayOfWeek(cursor)
             val dates = (0..6).map { weekStart.plusDays(it) }
+            val unit = when (mode) { CalendarMode.YEAR -> "年"; CalendarMode.MONTH -> "月"; CalendarMode.WEEK -> "周" }
             Row(Modifier.fillMaxWidth().height(44.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(when (mode) {
+                    CalendarMode.YEAR -> "${cursor.year}年"
                     CalendarMode.MONTH -> cursor.monthLabel()
                     CalendarMode.WEEK -> "${weekStart.shortLabel()}—${dates.last().shortLabel()}"
-                    CalendarMode.DAY -> cursor.shortLabelWithWeekday()
                 }, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                IconButton({ onCursorChange(when (mode) { CalendarMode.MONTH -> cursor.plusMonths(-1); CalendarMode.WEEK -> cursor.plusDays(-7); CalendarMode.DAY -> cursor.plusDays(-1) }) }) { Icon(Icons.Default.ArrowBack, "上一${if (mode == CalendarMode.MONTH) "月" else if (mode == CalendarMode.WEEK) "周" else "天"}", tint = Ink) }
-                IconButton({ onCursorChange(when (mode) { CalendarMode.MONTH -> cursor.plusMonths(1); CalendarMode.WEEK -> cursor.plusDays(7); CalendarMode.DAY -> cursor.plusDays(1) }) }) { Icon(Icons.Default.ArrowForward, "下一${if (mode == CalendarMode.MONTH) "月" else if (mode == CalendarMode.WEEK) "周" else "天"}", tint = Ink) }
+                IconButton({ onCursorChange(when (mode) { CalendarMode.YEAR -> cursor.plusYears(-1); CalendarMode.MONTH -> cursor.plusMonths(-1); CalendarMode.WEEK -> cursor.plusDays(-7) }) }) { Icon(Icons.Default.ArrowBack, "上一$unit", tint = Ink) }
+                IconButton({ onCursorChange(when (mode) { CalendarMode.YEAR -> cursor.plusYears(1); CalendarMode.MONTH -> cursor.plusMonths(1); CalendarMode.WEEK -> cursor.plusDays(7) }) }) { Icon(Icons.Default.ArrowForward, "下一$unit", tint = Ink) }
             }
-            Box(Modifier.fillMaxWidth().weight(1f)) {
-                if (mode == CalendarMode.MONTH) {
-                    CompactMonth(cursor, tasks) { date -> onCursorChange(date); onModeChange(CalendarMode.WEEK) }
-                } else {
-                    Column(Modifier.fillMaxSize()) {
-                        WeekDates(dates, cursor, mode == CalendarMode.WEEK) { date -> onCursorChange(date); onModeChange(CalendarMode.DAY) }
-                        val displayedDates = if (mode == CalendarMode.DAY) listOf(cursor) else dates
-                        AllDayTasks(displayedDates, tasks, onSelect = { task, date -> if (mode == CalendarMode.DAY) onOpen(task) else { onCursorChange(date); onModeChange(CalendarMode.DAY) } })
+            Box(Modifier.fillMaxWidth().weight(1f).pinchToZoom(mode, onModeChange)) {
+                when (mode) {
+                    CalendarMode.YEAR -> YearGrid(cursor, tasks, today, onSelectDate = { onCursorChange(it); onModeChange(CalendarMode.WEEK) }, onSelectMonth = { onCursorChange(it); onModeChange(CalendarMode.MONTH) })
+                    CalendarMode.MONTH -> CompactMonth(cursor, tasks, today) { date -> onCursorChange(date); onModeChange(CalendarMode.WEEK) }
+                    CalendarMode.WEEK -> Column(Modifier.fillMaxSize()) {
+                        WeekDates(dates, today) { date -> onCursorChange(date) }
+                        AllDayTasks(dates, tasks, onSelect = { task, date -> onCursorChange(date); onOpen(task) })
                         HorizontalDivider(color = Ink.copy(alpha = .08f))
                         key(mode, weekStart) {
-                            TimeGrid(displayedDates, tasks, mode == CalendarMode.DAY) { task, date -> if (mode == CalendarMode.DAY) onOpen(task) else { onCursorChange(date); onModeChange(CalendarMode.DAY) } }
+                            TimeGrid(dates, tasks) { task, _ -> onOpen(task) }
                         }
                     }
                 }
@@ -91,29 +87,29 @@ fun CalendarScreen(
         }
         if (canCreateTasks) FloatingActionButton(onClick = { adding = true }, modifier = Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 48.dp), shape = CircleShape, containerColor = WarmOrange, contentColor = Color.White) { Icon(Icons.Default.Add, "添加任务", Modifier.size(30.dp)) }
         val atToday = when (mode) {
-            CalendarMode.DAY -> cursor == MockData.demoToday
-            CalendarMode.WEEK -> mondayOfWeek(cursor) == mondayOfWeek(MockData.demoToday)
-            CalendarMode.MONTH -> cursor.year == MockData.demoToday.year && cursor.month == MockData.demoToday.month
+            CalendarMode.WEEK -> mondayOfWeek(cursor) == mondayOfWeek(today)
+            CalendarMode.MONTH -> cursor.year == today.year && cursor.month == today.month
+            CalendarMode.YEAR -> cursor.year == today.year
         }
-        if (!atToday) Button(onClick = { onCursorChange(MockData.demoToday) }, modifier = Modifier.align(Alignment.BottomEnd).fillMaxWidth(.25f).height(34.dp), shape = RoundedCornerShape(topStart = 17.dp, bottomStart = 17.dp), contentPadding = PaddingValues(horizontal = 4.dp), colors = ButtonDefaults.buttonColors(containerColor = Ink)) { Text("回到今天", fontSize = 12.sp, maxLines = 1) }
+        if (!atToday) Button(onClick = { onCursorChange(today) }, modifier = Modifier.align(Alignment.BottomEnd).fillMaxWidth(.25f).height(34.dp), shape = RoundedCornerShape(topStart = 17.dp, bottomStart = 17.dp), contentPadding = PaddingValues(horizontal = 4.dp), colors = ButtonDefaults.buttonColors(containerColor = Ink)) { Text("回到今天", fontSize = 12.sp, maxLines = 1) }
     }
     if (adding && canCreateTasks) TaskEntrySheet(cursor, canCreateTasks, onDismiss = { adding = false }, onSave = { task -> if (canCreateTasks) { onCreate(task); onCursorChange(task.start); adding = false } })
 }
 
-@Composable private fun WeekDates(dates: List<DemoDate>, selected: DemoDate, weekMode: Boolean, onSelect: (DemoDate) -> Unit) {
+@Composable private fun WeekDates(dates: List<DemoDate>, today: DemoDate, onSelect: (DemoDate) -> Unit) {
     Row(Modifier.fillMaxWidth().padding(start = 40.dp, end = 8.dp, bottom = 8.dp)) {
         dates.forEach { date ->
             Column(Modifier.weight(1f).clickable { onSelect(date) }, horizontalAlignment = Alignment.CenterHorizontally) {
                 Text("周${date.weekdayLabel()}", fontSize = 12.sp, color = Ink.copy(alpha = .65f))
-                Box(Modifier.padding(top = 3.dp).size(32.dp).clip(CircleShape).background(if (!weekMode && date == selected) Peach else if (date == MockData.demoToday) CreamDeep else Color.Transparent), contentAlignment = Alignment.Center) {
-                    Text("${date.day}", fontSize = 17.sp, fontWeight = if (date == selected) FontWeight.Bold else FontWeight.Normal)
+                Box(Modifier.padding(top = 3.dp).size(32.dp).clip(CircleShape).background(if (date == today) CreamDeep else Color.Transparent), contentAlignment = Alignment.Center) {
+                    Text("${date.day}", fontSize = 17.sp, fontWeight = if (date == today) FontWeight.Bold else FontWeight.Normal)
                 }
             }
         }
     }
 }
 
-@Composable private fun CompactMonth(cursor: DemoDate, tasks: List<WorkTask>, onSelect: (DemoDate) -> Unit) {
+@Composable private fun CompactMonth(cursor: DemoDate, tasks: List<WorkTask>, today: DemoDate, onSelect: (DemoDate) -> Unit) {
     Column(Modifier.fillMaxSize().padding(horizontal = 8.dp)) {
         Row(Modifier.fillMaxWidth().height(20.dp)) { listOf("一", "二", "三", "四", "五", "六", "日").forEach { Text("周$it", Modifier.weight(1f), fontSize = 11.sp, textAlign = TextAlign.Center, color = Ink.copy(alpha = .6f)) } }
         monthWeeks(cursor).forEach { week ->
@@ -125,7 +121,7 @@ fun CalendarScreen(
                     Row(Modifier.fillMaxWidth().height(24.dp)) {
                         week.forEach { date ->
                             Box(Modifier.weight(1f).fillMaxHeight().clickable { onSelect(date) }, contentAlignment = Alignment.Center) {
-                                Text("${date.day}", fontSize = 15.sp, fontWeight = if (date == MockData.demoToday) FontWeight.Bold else FontWeight.Normal, color = if (date.month == cursor.month) Ink else Ink.copy(alpha = .3f), modifier = Modifier.clip(CircleShape).background(if (date == MockData.demoToday) Peach else Color.Transparent).padding(horizontal = 6.dp, vertical = 1.dp))
+                                Text("${date.day}", fontSize = 15.sp, fontWeight = if (date == today) FontWeight.Bold else FontWeight.Normal, color = if (date.month == cursor.month) Ink else Ink.copy(alpha = .3f), modifier = Modifier.clip(CircleShape).background(if (date == today) Peach else Color.Transparent).padding(horizontal = 6.dp, vertical = 1.dp))
                             }
                         }
                     }
@@ -169,8 +165,8 @@ private fun Modifier.calendarGuides(): Modifier = drawBehind {
     drawLine(Ink.copy(alpha = .08f), Offset(0f, size.height), Offset(size.width, size.height), pathEffect = effect)
 }
 
-@Composable private fun TimeGrid(dates: List<DemoDate>, tasks: List<WorkTask>, dayMode: Boolean, onSelect: (WorkTask, DemoDate) -> Unit) {
-    val hourHeight = if (dayMode) 60.dp else 56.dp
+@Composable private fun TimeGrid(dates: List<DemoDate>, tasks: List<WorkTask>, onSelect: (WorkTask, DemoDate) -> Unit) {
+    val hourHeight = 56.dp
     val density = LocalDensity.current
     val scroll = rememberScrollState(with(density) { (hourHeight * 8).roundToPx() })
     Row(Modifier.fillMaxSize().padding(end = 8.dp).verticalScroll(scroll)) {
@@ -202,8 +198,66 @@ private fun Modifier.calendarGuides(): Modifier = drawBehind {
                     assigned.forEach { (task, range, lane) ->
                         Box(Modifier.offset(x = dayWidth * index + eventWidth * lane, y = hourHeight * (range.first / 60f)).width(eventWidth).height(hourHeight * ((range.last - range.first + 1) / 60f)).padding(1.dp).clip(RoundedCornerShape(4.dp)).background(taskColor(task)).clickable { onSelect(task, date) }) {
                             Column(Modifier.padding(horizontal = 4.dp, vertical = 2.dp)) {
-                                Text(task.title, fontSize = if (dayMode) 13.sp else 11.sp, lineHeight = if (dayMode) 16.sp else 13.sp, maxLines = if (dayMode) 2 else 3, overflow = TextOverflow.Ellipsis)
-                                if (dayMode && range.last - range.first >= 30) Text("${minuteLabel(range.first)}—${minuteLabel(range.last + 1)}", fontSize = 11.sp, color = Ink.copy(alpha = .7f))
+                                Text(task.title, fontSize = 11.sp, lineHeight = 13.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// 双指缩放：两指张开（间距由短到长）切到更小时间周期，两指收拢切到更大周期
+// 在 Initial 通道提前截获：一旦出现多指就消费该手势全部事件，避免两指分别触发子项点击（如月视图两行周）与触摸反馈
+private fun Modifier.pinchToZoom(mode: CalendarMode, onModeChange: (CalendarMode) -> Unit): Modifier = pointerInput(mode) {
+    awaitEachGesture {
+        var accumulated = 1f
+        var multiTouch = false
+        awaitFirstDown(requireUnconsumed = false)
+        while (true) {
+            val event = awaitPointerEvent(PointerEventPass.Initial)
+            val pressed = event.changes.filter { it.pressed }
+            if (pressed.size >= 2) {
+                multiTouch = true
+                val current = (pressed[0].position - pressed[1].position).getDistance()
+                val previous = (pressed[0].previousPosition - pressed[1].previousPosition).getDistance()
+                if (previous > 1f && current > 1f) {
+                    accumulated *= current / previous
+                    val target = when {
+                        accumulated >= 1.35f -> mode.zoomIn()
+                        accumulated <= 0.74f -> mode.zoomOut()
+                        else -> null
+                    }
+                    if (target != null) {
+                        accumulated = 1f
+                        if (target != mode) onModeChange(target)
+                    }
+                }
+            }
+            if (multiTouch) event.changes.forEach { it.consume() }
+            if (event.changes.none { it.pressed }) break
+        }
+    }
+}
+
+@Composable private fun YearGrid(cursor: DemoDate, tasks: List<WorkTask>, today: DemoDate, onSelectDate: (DemoDate) -> Unit, onSelectMonth: (DemoDate) -> Unit) {
+    LazyVerticalGrid(columns = GridCells.Fixed(2), modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        items(12) { index ->
+            val month = DemoDate(cursor.year, index + 1, 1)
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(WarmCard).border(1.dp, CreamDeep, RoundedCornerShape(10.dp)).padding(4.dp)) {
+                Text("${month.month}月", fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth().clickable { onSelectMonth(month) }.padding(horizontal = 2.dp))
+                Row(Modifier.fillMaxWidth().padding(top = 1.dp)) { listOf("一", "二", "三", "四", "五", "六", "日").forEach { Text(it, Modifier.weight(1f), fontSize = 8.sp, textAlign = TextAlign.Center, color = Ink.copy(alpha = .45f)) } }
+                monthWeeks(month).forEach { week ->
+                    Row(Modifier.fillMaxWidth()) {
+                        week.forEach { date ->
+                            val inMonth = date.month == month.month
+                            val hasPlan = inMonth && tasks.any { date >= it.start && date <= it.end }
+                            Column(Modifier.weight(1f).clickable { onSelectDate(date) }, horizontalAlignment = Alignment.CenterHorizontally) {
+                                Box(Modifier.size(15.dp).clip(CircleShape).background(if (date == today) Peach else Color.Transparent), contentAlignment = Alignment.Center) {
+                                    Text("${date.day}", fontSize = 9.sp, fontWeight = if (date == today) FontWeight.Bold else FontWeight.Normal, color = if (inMonth) Ink else Ink.copy(alpha = .25f))
+                                }
+                                Box(Modifier.size(3.dp).clip(CircleShape).background(if (hasPlan) WarmOrange else Color.Transparent))
                             }
                         }
                     }

@@ -15,6 +15,7 @@ val WarmCard = Color(0xFFFFFCF4)
 val WarmOrange = Color(0xFFE3A083)
 val Peach = Color(0xFFFFE0D8)
 val Mint = Color(0xFFDDEEDC)
+val MintDeep = Color(0xFF4C7A5C)
 val Lilac = Color(0xFFE7DDF4)
 val Sky = Color(0xFFDCECF2)
 

@@ -13,7 +13,6 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -54,7 +53,7 @@ fun PandoraApp() {
     PandoraTheme {
         var route by rememberSaveable { mutableStateOf(Route.HOME.name) }
         var modeName by rememberSaveable { mutableStateOf(CalendarMode.WEEK.name) }
-        var dateKey by rememberSaveable { mutableStateOf("2026-09-19") }
+        var dateKey by rememberSaveable { mutableStateOf(todayDate().let { "${it.year}-${it.month}-${it.day}" }) }
         var detail by rememberSaveable { mutableStateOf<String?>(null) }
         val tasks = remember { mutableStateListOf<WorkTask>().apply { addAll(MockData.companyTasks); addAll(MockData.timedTasks) } }
         val date = dateKey.split("-").map(String::toInt).let { DemoDate(it[0], it[1], it[2]) }
@@ -147,20 +146,22 @@ fun PandoraApp() {
 }
 
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable private fun LogsScreen(tasks: List<WorkTask>, onOpen: (String) -> Unit) {
     var expandedLogs by rememberSaveable { mutableStateOf(false) }
     var filterOpen by rememberSaveable { mutableStateOf(false) }
     var historyFilter by rememberSaveable { mutableStateOf("全部日期") }
     var writing by rememberSaveable { mutableStateOf(false) }
-    var notifications by rememberSaveable { mutableStateOf(false) }
     var draftLog by rememberSaveable { mutableStateOf("") }
     var draftTask by rememberSaveable { mutableStateOf("不关联任务") }
     var savedDraft by rememberSaveable { mutableStateOf(false) }
     var confirmPublish by rememberSaveable { mutableStateOf(false) }
     var confirmExit by rememberSaveable { mutableStateOf(false) }
     val todayEntries = remember { mutableStateListOf<WorkLog>() }
-    val historyLogs = MockData.logs.filter { it.date != MockData.demoToday }.sortedWith(compareByDescending<WorkLog> { it.date.ordinal() }.thenByDescending { it.time })
-    val filteredHistory = if (historyFilter == "全部日期") historyLogs else historyLogs.filter { it.date.shortLabel() == historyFilter }
+    val allLogs = (todayEntries + MockData.logs).sortedWith(compareByDescending<WorkLog> { it.date.ordinal() }.thenByDescending { it.time })
+    val todayLog = allLogs.firstOrNull { it.date.ordinal() == todayDate().ordinal() }
+    val todayReported = todayLog != null
+    val filteredLogs = if (historyFilter == "全部日期") allLogs else allLogs.filter { it.date.shortLabel() == historyFilter }
     val mutedColors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Ink.copy(alpha = .7f), unfocusedBorderColor = Ink.copy(alpha = .3f), focusedLabelColor = Ink, cursorColor = Ink)
     fun closeEditor() {
         if (draftLog.isNotBlank() || draftTask != "不关联任务") confirmExit = true
@@ -168,43 +169,51 @@ fun PandoraApp() {
     }
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-            PageHeader("日志", "记录工作，回顾成长", actions = { IconButton({ notifications = true }) { Icon(Icons.Default.Email, "消息") } })
+            PageHeader("日志")
             LazyColumn(Modifier.fillMaxWidth().weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 16.dp)) {
-                item { Text("今日工作日志", fontWeight = FontWeight.Bold, fontSize = 18.sp) }
-                items(todayEntries + MockData.logs.filter { it.date == MockData.demoToday }.sortedByDescending { it.time }) { log -> DetailCard(log.time, log.content, Lilac) { onOpen("日志 · ${log.time}") } }
-                item { Button({ writing = true }, Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Ink), shape = RoundedCornerShape(14.dp)) { Icon(Icons.Default.Add, null); Spacer(Modifier.width(6.dp)); Text(if (savedDraft) "继续编辑草稿" else "记录今天的工作") } }
+                item { Button({ if (todayLog != null && !savedDraft) draftLog = todayLog.content; writing = true }, Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Ink), shape = RoundedCornerShape(14.dp)) { Icon(Icons.Default.Add, null); Spacer(Modifier.width(6.dp)); Text(when { savedDraft -> "继续编辑草稿"; todayReported -> "补充今日工作"; else -> "记录今日工作" }) } }
                 item {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("历史日志", fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.weight(1f))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                         Box {
-                            OutlinedButton({ filterOpen = true }, contentPadding = PaddingValues(horizontal = 10.dp)) { Text(historyFilter); Icon(Icons.Default.ArrowDropDown, null) }
-                            DropdownMenu(filterOpen, { filterOpen = false }) {
-                                (listOf("全部日期") + historyLogs.map { it.date.shortLabel() }.distinct()).forEach { option -> DropdownMenuItem({ Text(option) }, { historyFilter = option; filterOpen = false; expandedLogs = false }) }
+                            Button({ filterOpen = true }, contentPadding = PaddingValues(horizontal = 12.dp), colors = ButtonDefaults.buttonColors(containerColor = CreamDeep, contentColor = Ink), shape = RoundedCornerShape(12.dp)) { Text(historyFilter); Icon(Icons.Default.ArrowDropDown, null) }
+                            DropdownMenu(filterOpen, { filterOpen = false }, containerColor = CreamDeep) {
+                                Column(Modifier.heightIn(max = 300.dp).verticalScroll(rememberScrollState())) {
+                                    (listOf("全部日期") + allLogs.map { it.date.shortLabel() }.distinct()).forEach { option -> DropdownMenuItem({ Text(option) }, { historyFilter = option; filterOpen = false; expandedLogs = false }) }
+                                }
                             }
                         }
                     }
                 }
-                items(filteredHistory.take(if (expandedLogs) 10 else 5)) { log -> DetailCard("${log.date.shortLabel()} · ${log.time}", log.content, Color.White) { onOpen("日志 · ${log.time}") } }
-                if (filteredHistory.size > 5) item { TextButton({ expandedLogs = !expandedLogs }, Modifier.fillMaxWidth()) { Text(if (expandedLogs) "收起" else "展开") } }
-                if (filteredHistory.isEmpty()) item { Text("所选日期暂无日志", color = Ink.copy(alpha = .6f)) }
+                items(filteredLogs.take(if (expandedLogs) 10 else 5)) { log -> DetailCard("${log.date.shortLabel()} · ${log.time}", log.content, Color.White) { onOpen("日志 · ${log.time}§${log.content}") } }
+                if (filteredLogs.size > 5) item { TextButton({ expandedLogs = !expandedLogs }, Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.textButtonColors(containerColor = CreamDeep, contentColor = Ink)) { Text(if (expandedLogs) "收起" else "展开") } }
+                if (filteredLogs.isEmpty()) item { Text("所选日期暂无日志", color = Ink.copy(alpha = .6f)) }
             }
         }
-        if (writing || notifications) Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .38f)).clickable { if (writing) closeEditor() else notifications = false })
+        if (writing) Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .38f)).clickable { closeEditor() })
         if (writing) {
             androidx.activity.compose.BackHandler { closeEditor() }
-            Card(Modifier.align(Alignment.Center).fillMaxWidth(.9f).fillMaxHeight(.8f).imePadding().clickable { }, shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = WarmCard)) {
+            val imeVisible = WindowInsets.isImeVisible
+            Card(Modifier.align(Alignment.Center).imePadding().fillMaxWidth(.9f).fillMaxHeight(if (imeVisible) .92f else .8f).border(2.dp, CreamDeep, RoundedCornerShape(24.dp)).clickable { }, shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = WarmCard)) {
                 Column(Modifier.fillMaxSize().padding(20.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) { Text("记录今天的工作", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f)); IconButton({ closeEditor() }) { Icon(Icons.Default.Close, "关闭") } }
-                    Text("1. 日志日期", fontWeight = FontWeight.Bold)
-                    Text(MockData.demoToday.shortLabelWithWeekday(), Modifier.fillMaxWidth().padding(vertical = 12.dp), color = Ink.copy(alpha = .7f))
-                    Text("2. 关联任务（可选）", fontWeight = FontWeight.Bold)
-                    var taskMenu by remember { mutableStateOf(false) }
-                    Box {
-                        OutlinedButton({ taskMenu = true }, Modifier.fillMaxWidth(), border = BorderStroke(1.dp, Ink.copy(alpha = .3f)), colors = ButtonDefaults.outlinedButtonColors(contentColor = Ink)) { Text(draftTask, Modifier.weight(1f), textAlign = TextAlign.Start); Icon(Icons.Default.ArrowDropDown, null) }
-                        DropdownMenu(taskMenu, { taskMenu = false }) { (listOf("不关联任务") + tasks.map { it.title }).forEach { option -> DropdownMenuItem({ Text(option) }, { draftTask = option; savedDraft = false; taskMenu = false }) } }
+                    Row(verticalAlignment = Alignment.CenterVertically) { Text(if (todayReported) "补充今日工作" else "记录今日工作", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f)); IconButton({ closeEditor() }) { Icon(Icons.Default.Close, "关闭") } }
+                    if (imeVisible) {
+                        Text(todayDate().shortLabelWithWeekday(), Modifier.padding(top = 2.dp, bottom = 8.dp), color = Ink.copy(alpha = .6f), fontSize = 13.sp)
+                    } else {
+                        Text("· 日志日期", fontWeight = FontWeight.Bold)
+                        Text(todayDate().shortLabelWithWeekday(), Modifier.fillMaxWidth().padding(vertical = 12.dp), color = Ink.copy(alpha = .7f))
+                        Text("· 关联任务（可选）", fontWeight = FontWeight.Bold)
+                        var taskMenu by remember { mutableStateOf(false) }
+                        Box {
+                            Button({ taskMenu = true }, Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = CreamDeep, contentColor = Ink), shape = RoundedCornerShape(12.dp)) { Text(draftTask, Modifier.weight(1f), textAlign = TextAlign.Start); Icon(Icons.Default.ArrowDropDown, null) }
+                            DropdownMenu(taskMenu, { taskMenu = false }, containerColor = CreamDeep) {
+                                Column(Modifier.heightIn(max = 300.dp).verticalScroll(rememberScrollState())) {
+                                    (listOf("不关联任务") + tasks.map { it.title }).forEach { option -> DropdownMenuItem({ Text(option) }, { draftTask = option; savedDraft = false; taskMenu = false }) }
+                                }
+                            }
+                        }
+                        Text("· 今日完成的工作", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp, bottom = 6.dp))
                     }
-                    Text("3. 一句话记录完成的工作", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp, bottom = 6.dp))
-                    OutlinedTextField(draftLog, { draftLog = it; savedDraft = false }, Modifier.fillMaxWidth().weight(1f), placeholder = { Text("记录今天完成的工作") }, colors = mutedColors)
+                    OutlinedTextField(draftLog, { draftLog = it; savedDraft = false }, Modifier.fillMaxWidth().weight(1f).heightIn(min = 140.dp), placeholder = { Text("记录今日完成的工作") }, colors = mutedColors)
                     Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         OutlinedButton({ savedDraft = true; writing = false }, Modifier.weight(1f), enabled = draftLog.isNotBlank(), colors = ButtonDefaults.outlinedButtonColors(contentColor = Ink)) { Text("保存为草稿") }
                         Button({ confirmPublish = true }, Modifier.weight(1f), enabled = draftLog.isNotBlank(), colors = ButtonDefaults.buttonColors(containerColor = Ink)) { Text("发布") }
@@ -212,9 +221,8 @@ fun PandoraApp() {
                 }
             }
         }
-        if (confirmPublish) AlertDialog(onDismissRequest = { confirmPublish = false }, title = { Text("确认发布？") }, text = { Text("发布后将显示在今日工作日志中。") }, confirmButton = { TextButton({ todayEntries.add(0, WorkLog("draft-${todayEntries.size + 1}", draftLog, MockData.userName, MockData.demoToday, "刚刚")); confirmPublish = false; savedDraft = false; draftLog = ""; draftTask = "不关联任务"; writing = false }) { Text("确认发布") } }, dismissButton = { TextButton({ confirmPublish = false }) { Text("取消") } })
-        if (confirmExit) AlertDialog(onDismissRequest = { confirmExit = false }, title = { Text("放弃未保存内容？") }, text = { Text("退出后当前填写内容会被清空。") }, confirmButton = { TextButton({ confirmExit = false; draftLog = ""; draftTask = "不关联任务"; savedDraft = false; writing = false }) { Text("放弃并退出") } }, dismissButton = { TextButton({ confirmExit = false }) { Text("继续编辑") } })
-        if (notifications) NotificationDrawer(onClose = { notifications = false })
+        if (confirmPublish) AlertDialog(onDismissRequest = { confirmPublish = false }, modifier = Modifier.border(2.dp, CreamDeep, RoundedCornerShape(28.dp)), shape = RoundedCornerShape(28.dp), containerColor = Color.White, titleContentColor = Ink, textContentColor = Ink.copy(alpha = .75f), title = { Text("确认发布？", fontWeight = FontWeight.Bold) }, text = { Text(if (todayReported) "发布后将更新今日这一篇日志，不会新增第二条。" else "发布后将显示在日志列表中。") }, confirmButton = { Button({ val time = nowTimeLabel(); val index = todayEntries.indexOfFirst { it.date.ordinal() == todayDate().ordinal() }; if (index >= 0) todayEntries[index] = todayEntries[index].copy(content = draftLog, time = time) else todayEntries.add(0, WorkLog("draft-${todayEntries.size + 1}", draftLog, MockData.userName, todayDate(), time)); confirmPublish = false; savedDraft = false; draftLog = ""; draftTask = "不关联任务"; writing = false }, colors = ButtonDefaults.buttonColors(containerColor = CreamDeep, contentColor = Ink), shape = RoundedCornerShape(14.dp)) { Text("确认发布", fontWeight = FontWeight.Bold) } }, dismissButton = { TextButton({ confirmPublish = false }, colors = ButtonDefaults.textButtonColors(contentColor = Ink)) { Text("取消") } })
+        if (confirmExit) AlertDialog(onDismissRequest = { confirmExit = false }, modifier = Modifier.border(2.dp, CreamDeep, RoundedCornerShape(28.dp)), shape = RoundedCornerShape(28.dp), containerColor = Color.White, titleContentColor = Ink, textContentColor = Ink.copy(alpha = .75f), title = { Text("放弃未保存内容？", fontWeight = FontWeight.Bold) }, text = { Text("退出后当前填写内容会被清空。") }, confirmButton = { TextButton({ confirmExit = false; draftLog = ""; draftTask = "不关联任务"; savedDraft = false; writing = false }, colors = ButtonDefaults.textButtonColors(contentColor = Ink)) { Text("放弃并退出") } }, dismissButton = { TextButton({ confirmExit = false }, colors = ButtonDefaults.textButtonColors(contentColor = Ink)) { Text("继续编辑") } })
     }
 }
 
@@ -265,14 +273,15 @@ fun PandoraApp() {
 }
 @Composable private fun DetailCard(title: String, body: String, color: Color, onClick: () -> Unit = {}) { Card(Modifier.fillMaxWidth().clickable(onClick = onClick), colors = CardDefaults.cardColors(containerColor = color.copy(alpha = .78f)), shape = RoundedCornerShape(16.dp)) { Column(Modifier.padding(14.dp)) { Text(title, fontWeight = FontWeight.Bold); Text(body, fontSize = 13.sp, color = Ink.copy(alpha = .75f), maxLines = 2, overflow = TextOverflow.Ellipsis) } } }
 @Composable private fun DetailScreen(title: String, tasks: List<WorkTask>, onBack: () -> Unit) {
-    val task = tasks.firstOrNull { it.id == title || it.title == title }
-    val displayTitle = task?.title ?: title
+    val isLog = title.startsWith("日志 · ")
+    val logContent = if (isLog) title.substringAfter("§", "") else null
+    val task = if (!isLog) tasks.firstOrNull { it.id == title || it.title == title } else null
+    val displayTitle = task?.title ?: if (isLog) title.substringBefore("§") else title
     androidx.activity.compose.BackHandler(onBack = onBack)
     Column(Modifier.fillMaxSize()) {
-        PageHeader(displayTitle, "演示详情", onBack)
+        PageHeader(displayTitle, if (isLog) null else "演示详情", onBack)
         Column(Modifier.verticalScroll(rememberScrollState()).padding(20.dp)) {
-            Text("${displayTitle}详情", fontSize = 24.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(12.dp))
+            if (!isLog) { Text("${displayTitle}详情", fontSize = 24.sp, fontWeight = FontWeight.Bold); Spacer(Modifier.height(12.dp)) }
             if (task != null) {
                 Text("任务说明", fontWeight = FontWeight.Bold)
                 Text(task.note.ifBlank { "暂无备注" }, lineHeight = 22.sp)
@@ -283,11 +292,15 @@ fun PandoraApp() {
                 Spacer(Modifier.height(10.dp))
                 Text("接收人", fontWeight = FontWeight.Bold)
                 Text(task.assignee, lineHeight = 22.sp)
+            } else if (isLog) {
+                Text(logContent ?: "", color = Ink.copy(alpha = .75f), fontSize = 16.sp, lineHeight = 26.sp)
             } else {
                 Text("这里展示低保真原型中的可读内容和返回路径。\n\n真实任务、日志、权限和 AI 服务将在后续需求确认后接入。", color = Ink.copy(alpha = .75f), lineHeight = 24.sp)
             }
-            Spacer(Modifier.height(22.dp))
-            DetailCard("当前状态", "模拟数据 · 仅用于线下讨论", CreamDeep)
+            if (!isLog) {
+                Spacer(Modifier.height(22.dp))
+                DetailCard("当前状态", "模拟数据 · 仅用于线下讨论", CreamDeep)
+            }
         }
     }
 }
