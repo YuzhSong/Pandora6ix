@@ -271,7 +271,7 @@ fun PandoraApp() {
     val displayTitle = task?.title ?: title
     androidx.activity.compose.BackHandler(onBack = onBack)
     Column(Modifier.fillMaxSize()) {
-        PageHeader(displayTitle, "演示详情", onBack)
+        PageHeader(displayTitle, if (displayTitle.startsWith("日志 · ")) null else "演示详情", onBack)
         Column(Modifier.verticalScroll(rememberScrollState()).padding(20.dp)) {
             Text("${displayTitle}详情", fontSize = 24.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(12.dp))
@@ -288,8 +288,10 @@ fun PandoraApp() {
             } else {
                 Text("这里展示低保真原型中的可读内容和返回路径。\n\n真实任务、日志、权限和 AI 服务将在后续需求确认后接入。", color = Ink.copy(alpha = .75f), lineHeight = 24.sp)
             }
-            Spacer(Modifier.height(22.dp))
-            DetailCard("当前状态", "模拟数据 · 仅用于线下讨论", CreamDeep)
+            if (!displayTitle.startsWith("日志 · ")) {
+                Spacer(Modifier.height(22.dp))
+                DetailCard("当前状态", "模拟数据 · 仅用于线下讨论", CreamDeep)
+            }
         }
     }
 }
