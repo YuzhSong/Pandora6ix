@@ -1,0 +1,32 @@
+import { useEffect, useRef, useState } from 'react'
+import type { AdminData, CompanyImportantItem } from '../data/types.ts'
+import { roleLabels } from '../data/types.ts'
+import type { DisplayPreferences } from '../data/preferences.ts'
+import type { EditRequest } from './AdminEditor.tsx'
+import { Icon } from './Icon.tsx'
+
+export function CompanyItemsPage({ data, onEdit }: { data: AdminData; onEdit: (request: EditRequest) => void }) {
+  const [query, setQuery] = useState('')
+  const [page, setPage] = useState(1)
+  const [detail, setDetail] = useState<CompanyImportantItem | null>(null)
+  const items = [...data.companyItems].sort((a, b) => a.displayOrder - b.displayOrder || a.id.localeCompare(b.id)).filter(item => `${item.title} ${item.content}`.toLowerCase().includes(query.trim().toLowerCase()))
+  const pageCount = Math.max(1, Math.ceil(items.length / 10))
+  const currentPage = Math.min(page, pageCount)
+  const visibleItems = items.slice((currentPage - 1) * 10, currentPage * 10)
+  return <section className="panel"><div className="panel-heading"><div><h2>公司重要事项<span className="count-badge">{data.companyItems.length}</span></h2></div><button className="button primary" onClick={() => onEdit({ kind: 'company' })}><Icon name="plus" size={18} />新增事项</button></div><div className="filters"><label className="search-box"><Icon name="search" size={18} /><input aria-label="搜索重要事项" placeholder="搜索标题或内容" value={query} onChange={event => { setQuery(event.target.value); setPage(1) }} />{query && <button className="icon-button" aria-label="清空事项搜索" onClick={() => { setQuery(''); setPage(1) }}><Icon name="close" size={15} /></button>}</label><span className="result-count">{query ? `找到 ${items.length} 条事项` : `共 ${items.length} 条事项`} · 按显示顺序排列</span></div><div className="company-list">{visibleItems.map(item => <article className="company-card" key={item.id}><div className="company-meta"><span className="badge blue">公司事项</span><span>顺序 {item.displayOrder}</span></div><h3><button className="item-title" onClick={() => setDetail(item)}>{item.title}</button></h3><p className="content-preview">{item.content || '暂无补充说明'}</p><div className="company-actions"><span>发布人：{data.people.find(person => person.id === item.publisherUserId)?.displayName}</span><div><button className="text-button" aria-label={`查看事项：${item.title}`} onClick={() => setDetail(item)}>查看详情</button><button className="text-button" aria-label={`编辑事项：${item.title}`} onClick={() => onEdit({ kind: 'company', item })}>编辑</button></div></div></article>)}</div>{!items.length && <div className="empty-state"><Icon name="layers" size={30} /><h3>{query ? '没有找到符合条件的事项' : '暂无公司重要事项'}</h3><p>{query ? '试试其他关键词。' : '可以添加公司公告或重要安排。'}</p>{query ? <button className="button secondary" onClick={() => { setQuery(''); setPage(1) }}>清空搜索</button> : <button className="button primary" onClick={() => onEdit({ kind: 'company' })}><Icon name="plus" size={18} />新增事项</button>}</div>}{items.length > 0 && <div className="table-footer"><span>共 {items.length} 条，显示 {(currentPage - 1) * 10 + 1}–{Math.min(currentPage * 10, items.length)} 条</span><div className="pagination"><button aria-label="上一页事项" disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)}>‹</button><span>{currentPage} / {pageCount}</span><button aria-label="下一页事项" disabled={currentPage >= pageCount} onClick={() => setPage(currentPage + 1)}>›</button></div></div>}{detail && <ItemDetail item={detail} onClose={() => setDetail(null)} />}</section>
+}
+
+function ItemDetail({ item, onClose }: { item: CompanyImportantItem; onClose: () => void }) {
+  const dialog = useRef<HTMLDialogElement>(null)
+  useEffect(() => { const opener = document.activeElement as HTMLElement | null; dialog.current?.showModal(); return () => opener?.focus() }, [])
+  return <dialog ref={dialog} className="editor-dialog" aria-labelledby="item-detail-title" onCancel={event => { event.preventDefault(); onClose() }}><div className="dialog-head"><div><span className="eyebrow">公司重要事项</span><h2 id="item-detail-title">{item.title}</h2></div><button className="icon-button" aria-label="关闭事项详情" onClick={onClose}><Icon name="close" /></button></div><div className="dialog-body full-content">{item.content || '暂无补充说明'}</div><div className="dialog-footer"><button className="button secondary" onClick={onClose}>关闭</button></div></dialog>
+}
+
+export function AccountPage({ data }: { data: AdminData }) {
+  const person = data.people.find(item => item.id === data.currentUserId)!
+  return <div className="profile-layout"><section className="panel account-card"><div className="panel-heading"><div><h2>我的账号</h2></div><Icon name="people" /></div><div className="account-identity"><span className="avatar">{person.displayName.slice(0, 1)}</span><div><h3>{person.displayName}</h3><span>{person.loginName}</span></div></div><dl className="info-list"><div><dt>所属企业</dt><dd>{data.enterprise.name}</dd></div><div><dt>所属组织</dt><dd>{data.units.find(unit => unit.id === person.orgUnitId)?.name}</dd></div><div><dt>职位</dt><dd>{person.jobTitle || '未设置'}</dd></div><div><dt>直属上级</dt><dd>{data.people.find(item => item.id === person.supervisorId)?.displayName || '未设置'}</dd></div><div><dt>业务角色</dt><dd>{person.roles.map(role => roleLabels[role]).join('、')}</dd></div></dl><div className="password-section"><h3>账号安全</h3><p>密码修改暂不可用，待账号认证服务接入后开放。</p><button className="button secondary" disabled>修改密码</button></div></section></div>
+}
+
+export function SettingsPage({ preferences, error, onChange }: { preferences: DisplayPreferences; error: string; onChange: (preferences: DisplayPreferences) => void }) {
+  return <section className="panel account-card"><div className="panel-heading"><div><h2>显示设置</h2></div><Icon name="layers" /></div><fieldset className="preference-picker"><legend>界面主题</legend>{([['light', '浅色'], ['dark', '深色'], ['system', '跟随系统']] as const).map(([value, label]) => <label key={value}><input type="radio" name="theme" value={value} checked={preferences.theme === value} onChange={() => onChange({ ...preferences, theme: value })} />{label}</label>)}</fieldset><fieldset className="preference-picker"><legend>文字大小</legend>{([['small', '较小'], ['standard', '标准'], ['large', '较大']] as const).map(([value, label]) => <label key={value}><input type="radio" name="fontSize" value={value} checked={preferences.fontSize === value} onChange={() => onChange({ ...preferences, fontSize: value })} />{label}</label>)}</fieldset>{error && <p className="error-message" role="alert">{error}</p>}</section>
+}

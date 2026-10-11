@@ -1,10 +1,28 @@
 :root {
-  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
-  color: #1f2937;
-  background: #f8fafc;
+  --font-scale: 1;
+  font-family: 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif;
+  color: #26334d;
+  background: #f4f6fa;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  --primary: #4b69e2;
+  --muted: #7b879d;
+  --border: #e9edf4;
 }
-
 * { box-sizing: border-box; }
-body { margin: 0; }
+body { margin: 0; min-width: 320px; }
+button, input, select, textarea { font: inherit; }
+button, a, input, select { -webkit-tap-highlight-color: transparent; }
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; opacity: .5; }
+button, a { touch-action: manipulation; }
+:focus-visible { outline: 3px solid #9baef4; outline-offset: 3px; }
+input:focus-visible, select:focus-visible { outline: 2px solid #aabbff; outline-offset: 0; }
+button, input, select { color: inherit; }
+a { color: inherit; }
+h1, h2, h3, p { margin: 0; }
+::selection { background: #dce4ff; }
+:root[data-font-size='small'] { --font-scale: .9; }
+:root[data-font-size='large'] { --font-scale: 1.15; }
+:root[data-theme='dark'] { color-scheme: dark; color: #e1e7f2; background: #101827; --muted: #a2afc6; --border: #35415a; }
