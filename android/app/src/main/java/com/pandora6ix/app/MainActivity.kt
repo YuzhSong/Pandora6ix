@@ -81,7 +81,8 @@ fun PandoraApp() {
         var notificationsEnabled by rememberSaveable { mutableStateOf(true) }
         var themeKey by rememberSaveable { mutableStateOf("warm") }
         val theme = appThemes.firstOrNull { it.key == themeKey } ?: appThemes.first()
-        val personalItems = remember { mutableStateListOf<String>().apply { addAll(MockData.personalImportant) } }
+        val personalItems = remember { mutableStateListOf<PersonalImportantItem>().apply { addAll(MockData.personalImportant) } }
+        val personalItemDrafts = remember { mutableStateMapOf<String, String>() }
         val logs = remember { mutableStateListOf<WorkLog>().apply { addAll(MockData.logs) } }
         val tasks = remember { mutableStateListOf<WorkTask>().apply { addAll(MockData.companyTasks); addAll(MockData.timedTasks) } }
         val date = dateKey.split("-").map(String::toInt).let { DemoDate(it[0], it[1], it[2]) }
@@ -104,7 +105,7 @@ fun PandoraApp() {
                     detail != null -> DetailScreen(detail!!, tasks, onBack = { detail = null })
                     else -> AnimatedContent(current, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "page") { target ->
                         when (target) {
-                            Route.HOME -> HomeScreen(tasks, personalItems, logs, onOpenHome = { homeDetail = it }, onOpenSettings = { showSettings = true })
+                            Route.HOME -> HomeScreen(tasks, personalItems, personalItemDrafts, logs, onOpenHome = { homeDetail = it }, onOpenSettings = { showSettings = true })
                             Route.VIEW -> CalendarScreen(CalendarMode.valueOf(modeName), date, tasks, MockData.role.canCreateTasks, { modeName = it.name }, { dateKey = "${it.year}-${it.month}-${it.day}" }, { if (MockData.role.canCreateTasks) tasks.add(it) }, { detail = it.id })
                             Route.LOGS -> LogsScreen(tasks, logs) { detail = it }
                             Route.AI -> AiMapScreen()
@@ -123,14 +124,14 @@ fun PandoraApp() {
     TopAppBar(title = { Column { Text(title, fontWeight = FontWeight.Bold); subtitle?.let { Text(it, fontSize = 12.sp, color = Ink.copy(alpha = .6f)) } } }, navigationIcon = { if (onBack != null) IconButton(onBack) { Icon(Icons.Default.ArrowBack, "返回") } }, actions = actions, colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent))
 }
 
-@Composable private fun HomeScreen(tasks: List<WorkTask>, personalItems: SnapshotStateList<String>, logs: List<WorkLog>, onOpenHome: (HomeDetail) -> Unit, onOpenSettings: () -> Unit) {
+@Composable private fun HomeScreen(tasks: List<WorkTask>, personalItems: SnapshotStateList<PersonalImportantItem>, personalItemDrafts: MutableMap<String, String>, logs: List<WorkLog>, onOpenHome: (HomeDetail) -> Unit, onOpenSettings: () -> Unit) {
     var expandedPanel by rememberSaveable { mutableStateOf<String?>(null) }
     var notifications by rememberSaveable { mutableStateOf(false) }
     var editingPersonal by remember { mutableStateOf(false) }
     val panels = listOf(
         HomePanelDef("公司十大重要事项", MockData.companyHighlights),
         HomePanelDef("公司十大派发任务", tasks.filter { it.status != "草稿（演示）" }.take(10).map { it.title }),
-        HomePanelDef("个人十大重要事项", personalItems),
+        HomePanelDef("个人十大重要事项", personalItems.map { it.content }),
         HomePanelDef("个人日志", logs.sortedByDescending { it.date.ordinal() }.map { it.content })
     )
     fun openItem(panel: HomePanelDef, index: Int, text: String) {
@@ -199,7 +200,7 @@ fun PandoraApp() {
       }
       if (editingPersonal) {
           Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .42f)).clickable { editingPersonal = false })
-          PersonalImportantEditor(items = personalItems, logs = logs, onClose = { editingPersonal = false })
+          PersonalImportantEditor(items = personalItems, drafts = personalItemDrafts, logs = logs, onClose = { editingPersonal = false })
       }
       if (notifications) {
           Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .42f)).clickable { notifications = false; expandedPanel = null })
@@ -275,7 +276,7 @@ fun PandoraApp() {
     )
 }
 
-@Composable private fun PersonalImportantEditor(items: SnapshotStateList<String>, logs: List<WorkLog>, onClose: () -> Unit) {
+@Composable private fun PersonalImportantEditor(items: SnapshotStateList<PersonalImportantItem>, drafts: MutableMap<String, String>, logs: List<WorkLog>, onClose: () -> Unit) {
     androidx.activity.compose.BackHandler(onBack = onClose)
     var editingIndex by remember { mutableStateOf<Int?>(null) }
     var editText by remember { mutableStateOf("") }
@@ -287,10 +288,7 @@ fun PandoraApp() {
     val rowHeights = remember { mutableMapOf<Int, Float>() }
     val accent = WarmOrange
     // 候选事项：本人最近十个自然日已发布日报的完整工作条目，按日期倒序；已进入正式事项的不重复展示
-    val candidates = logs
-        .filter { it.user == MockData.userName && it.date >= MockData.demoToday.plusDays(-9) && it.date <= MockData.demoToday }
-        .sortedByDescending { it.date.ordinal() }
-        .filter { it.content !in items }
+    val candidates = personalItemCandidates(logs, items, todayDate())
 
     val onItemTap: (Int, String) -> Unit = { idx, t ->
         editingIndex = idx
@@ -361,7 +359,8 @@ fun PandoraApp() {
                     if (items.isEmpty()) {
                         Text("暂无正式事项，在下方候选事项中打钩加入。", color = Ink.copy(alpha = .55f), fontSize = 13.sp, modifier = Modifier.padding(vertical = 16.dp))
                     }
-                    items.forEachIndexed { i, text ->
+                    items.forEachIndexed { i, item ->
+                        val text = item.content
                         val from = draggedIndex
                         val to = hoverIndex
                         val isDragged = from == i
@@ -399,7 +398,7 @@ fun PandoraApp() {
                                     Spacer(Modifier.width(8.dp))
                                     Button({
                                         val t = editText.trim()
-                                        if (t.isNotEmpty()) items[i] = t
+                                        editPersonalItem(items, drafts, i, t)
                                         editingIndex = null; editText = ""
                                     }, colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = Ink)) { Text("保存") }
                                 }
@@ -462,12 +461,12 @@ fun PandoraApp() {
                                 Modifier.size(26.dp).clip(CircleShape)
                                     .background(if (items.size < 10) accent.copy(alpha = .12f) else Color.Transparent)
                                     .border(1.5.dp, if (items.size < 10) accent else Ink.copy(alpha = .25f), CircleShape)
-                                    .clickable(enabled = items.size < 10) { if (items.size < 10) items.add(entry.content) },
+                                    .clickable(enabled = items.size < 10) { selectPersonalItem(items, drafts, entry) },
                                 contentAlignment = Alignment.Center
                             ) { }
                             Spacer(Modifier.width(8.dp))
                             Text(
-                                entry.content,
+                                drafts[entry.id] ?: entry.content,
                                 fontSize = 14.sp,
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis,
@@ -490,7 +489,7 @@ fun PandoraApp() {
         AlertDialog(
             onDismissRequest = { confirmDelete = null },
             title = { Text("移回候选？") },
-            text = { Text("「${items.getOrNull(idx)?.take(24) ?: ""}」将移回候选事项，之后可重新打钩加入。") },
+            text = { Text("「${items.getOrNull(idx)?.content?.take(24) ?: ""}」将移回候选事项，之后可重新打钩加入。") },
             confirmButton = { TextButton({ items.removeAt(idx); confirmDelete = null }) { Text("移回候选", color = CoralDark) } },
             dismissButton = { TextButton({ confirmDelete = null }) { Text("取消") } }
         )

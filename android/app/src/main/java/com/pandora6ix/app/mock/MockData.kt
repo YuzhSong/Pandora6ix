@@ -135,5 +135,5 @@ object MockData {
         WorkLog("l9", "补充演示流程和讲解提纲。", userName, shifted(DemoDate(2026, 9, 12)), "13:10"),
         WorkLog("l10", "完成本轮低保真页面走查。", userName, shifted(DemoDate(2026, 9, 11)), "17:35")
     )
-    val personalImportant = logs.take(5).map { it.content }
+    val personalImportant = logs.take(5).map { PersonalImportantItem(it.id, it.content) }
 }

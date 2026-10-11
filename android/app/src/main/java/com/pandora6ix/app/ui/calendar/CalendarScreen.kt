@@ -106,7 +106,7 @@ fun CalendarScreen(
                 })
             }) {
                 when (mode) {
-                    CalendarMode.YEAR -> YearGrid(cursor, visibleTasks, today, yearGridState, onYearChange = { onCursorChange(DemoDate(it, cursor.month, cursor.day)) }, onSelectDate = onCursorChange, onSelectMonth = { onCursorChange(it); onModeChange(CalendarMode.MONTH) })
+                    CalendarMode.YEAR -> YearGrid(cursor, visibleTasks, today, yearGridState, onYearChange = { onCursorChange(cursor.plusYears(it - cursor.year)) }, onSelectDate = onCursorChange, onSelectMonth = { onCursorChange(it); onModeChange(CalendarMode.MONTH) })
                     CalendarMode.MONTH -> CompactMonth(cursor, visibleTasks, today, onSelect = onCursorChange, onOpen = onOpen)
                     CalendarMode.WEEK, CalendarMode.DAY -> Column(Modifier.fillMaxSize()) {
                         val visibleDates = if (mode == CalendarMode.DAY) listOf(cursor) else dates
@@ -362,7 +362,7 @@ private fun Modifier.swipeNavigate(mode: CalendarMode, onAdvance: (Boolean) -> U
 
 // 年视图：跨多年连续滚动的月份网格（锚点前后各 YearGridSpanYears 年），拖动跟手、跨年自然衔接，不再分片跳年
 // 顶部年份随滚动实时上报（驱动日期行标题与「回到今天」状态）；滚动接近列表边缘时静默重锚并保持视觉位置，近似无限滚动
-// 外部大幅跳转（如「回到今天」）时重锚并定位到目标年一月
+// 外部年份跳转（如「回到今天」）时定位到目标年一月
 private const val YearGridSpanYears = 12
 private const val YearGridAnchorIndex = YearGridSpanYears * 12
 
@@ -379,24 +379,31 @@ private const val YearGridAnchorIndex = YearGridSpanYears * 12
     var lastReportedYear by remember { mutableStateOf(cursor.year) }
     val startYear = anchorYear - YearGridSpanYears
     val currentStartYear by rememberUpdatedState(startYear)
+    val reportYear by rememberUpdatedState(onYearChange)
     LaunchedEffect(state) {
         snapshotFlow { state.layoutInfo.visibleItemsInfo.firstOrNull()?.index }
             .collect { index ->
                 if (index == null) return@collect
                 val year = currentStartYear + index / 12
                 lastReportedYear = year
-                onYearChange(year)
+                reportYear(year)
                 if (year <= currentStartYear + 1 || year >= currentStartYear + YearGridSpanYears * 2 - 2) {
+                    val offset = state.firstVisibleItemScrollOffset
                     anchorYear = year
-                    state.scrollToItem(YearGridAnchorIndex + index % 12)
+                    state.scrollToItem(YearGridAnchorIndex + index % 12, offset)
                 }
             }
     }
     LaunchedEffect(cursor.year) {
-        if (abs(cursor.year - lastReportedYear) >= 2) {
-            anchorYear = cursor.year
+        if (cursor.year != lastReportedYear) {
+            val targetIndex = (cursor.year - startYear) * 12
             lastReportedYear = cursor.year
-            state.scrollToItem(YearGridAnchorIndex)
+            if (targetIndex in 0 until YearGridSpanYears * 2 * 12) {
+                state.scrollToItem(targetIndex)
+            } else {
+                anchorYear = cursor.year
+                state.scrollToItem(YearGridAnchorIndex)
+            }
         }
     }
     LazyVerticalGrid(state = state, columns = GridCells.Fixed(2), modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
