@@ -10,11 +10,11 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -38,6 +38,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Density
@@ -56,6 +57,17 @@ private data class NavItem(val route: Route, val label: String, val icon: ImageV
 private data class HomePanelDef(val title: String, val items: List<String>)
 private data class HomeDetail(val section: String, val index: Int, val text: String, val accent: Color)
 
+// 应用主题：预置背景配色方案（key 用于 rememberSaveable 持久化当前选择）
+private data class AppTheme(val key: String, val label: String, val background: Color, val backgroundDeep: Color, val dashboard: Color)
+private val appThemes = listOf(
+    AppTheme("warm", "暖米", Cream, CreamDeep, WarmDashboard),
+    AppTheme("mint", "薄荷", Color(0xFFE8F4EC), Color(0xFFD9EAE0), Color(0xFFE2F0E7)),
+    AppTheme("sky", "晴空", Color(0xFFE9F1FA), Color(0xFFD9E7F4), Color(0xFFE3EDF8)),
+    AppTheme("sakura", "樱花", Color(0xFFFBF0F3), Color(0xFFF7E1E8), Color(0xFFF9E7EB)),
+    AppTheme("lilac", "紫藤", Color(0xFFF1EDFA), Color(0xFFE4DEF3), Color(0xFFEAE5F7))
+)
+private val LocalAppTheme = staticCompositionLocalOf { appThemes.first() }
+
 @Composable
 fun PandoraApp() {
     PandoraTheme {
@@ -67,6 +79,8 @@ fun PandoraApp() {
         var showSettings by rememberSaveable { mutableStateOf(false) }
         var fontScale by rememberSaveable { mutableStateOf(1f) }
         var notificationsEnabled by rememberSaveable { mutableStateOf(true) }
+        var themeKey by rememberSaveable { mutableStateOf("warm") }
+        val theme = appThemes.firstOrNull { it.key == themeKey } ?: appThemes.first()
         val personalItems = remember { mutableStateListOf<String>().apply { addAll(MockData.personalImportant) } }
         val logs = remember { mutableStateListOf<WorkLog>().apply { addAll(MockData.logs) } }
         val tasks = remember { mutableStateListOf<WorkTask>().apply { addAll(MockData.companyTasks); addAll(MockData.timedTasks) } }
@@ -81,12 +95,12 @@ fun PandoraApp() {
         )
         val baseDensity = LocalDensity.current
         val scaledDensity = remember(baseDensity, fontScale) { Density(baseDensity.density, baseDensity.fontScale * fontScale) }
-        CompositionLocalProvider(LocalDensity provides scaledDensity) {
-        Scaffold(containerColor = Cream, bottomBar = { NavigationBar(containerColor = CreamDeep) { nav.forEach { item -> NavigationBarItem(selected = current == item.route, onClick = { route = item.route.name; detail = null; homeDetail = null; showSettings = false }, icon = { Icon(item.icon, item.label) }, label = { Text(item.label, fontSize = 11.sp) }, colors = NavigationBarItemDefaults.colors(selectedIconColor = WarmOrange, selectedTextColor = WarmOrange, indicatorColor = CreamDeep)) } } }) { padding ->
-            Surface(Modifier.padding(padding).fillMaxSize(), color = Cream) {
+        CompositionLocalProvider(LocalAppTheme provides theme, LocalDensity provides scaledDensity) {
+        Scaffold(containerColor = theme.background, bottomBar = { NavigationBar(containerColor = theme.backgroundDeep) { nav.forEach { item -> NavigationBarItem(selected = current == item.route, onClick = { route = item.route.name; detail = null; homeDetail = null; showSettings = false }, icon = { Icon(item.icon, item.label) }, label = { Text(item.label, fontSize = 11.sp) }, colors = NavigationBarItemDefaults.colors(selectedIconColor = WarmOrange, selectedTextColor = WarmOrange, indicatorColor = theme.backgroundDeep)) } } }) { padding ->
+            Surface(Modifier.padding(padding).fillMaxSize(), color = theme.background) {
                 when {
                     homeDetail != null -> HomeItemDetailScreen(homeDetail!!) { homeDetail = null }
-                    showSettings -> SettingsScreen(fontScale = fontScale, onFontScaleChange = { fontScale = it }, notificationsEnabled = notificationsEnabled, onNotificationsChange = { notificationsEnabled = it }, onClose = { showSettings = false })
+                    showSettings -> SettingsScreen(fontScale = fontScale, onFontScaleChange = { fontScale = it }, notificationsEnabled = notificationsEnabled, onNotificationsChange = { notificationsEnabled = it }, themeKey = themeKey, onThemeChange = { themeKey = it }, onClose = { showSettings = false })
                     detail != null -> DetailScreen(detail!!, tasks, onBack = { detail = null })
                     else -> AnimatedContent(current, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "page") { target ->
                         when (target) {
@@ -122,7 +136,7 @@ fun PandoraApp() {
     fun openItem(panel: HomePanelDef, index: Int, text: String) {
         onOpenHome(HomeDetail(panel.title, index, text, WarmOrange))
     }
-    Box(Modifier.fillMaxSize().background(WarmDashboard)) {
+    Box(Modifier.fillMaxSize().background(LocalAppTheme.current.dashboard)) {
       Column(Modifier.fillMaxSize().padding(horizontal = 10.dp)) {
         Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(MockData.demoToday.shortLabelWithWeekday(), fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
@@ -185,7 +199,7 @@ fun PandoraApp() {
       }
       if (editingPersonal) {
           Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .42f)).clickable { editingPersonal = false })
-          PersonalImportantEditor(items = personalItems, onClose = { editingPersonal = false })
+          PersonalImportantEditor(items = personalItems, logs = logs, onClose = { editingPersonal = false })
       }
       if (notifications) {
           Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .42f)).clickable { notifications = false; expandedPanel = null })
@@ -261,12 +275,10 @@ fun PandoraApp() {
     )
 }
 
-@Composable private fun PersonalImportantEditor(items: SnapshotStateList<String>, onClose: () -> Unit) {
+@Composable private fun PersonalImportantEditor(items: SnapshotStateList<String>, logs: List<WorkLog>, onClose: () -> Unit) {
     androidx.activity.compose.BackHandler(onBack = onClose)
     var editingIndex by remember { mutableStateOf<Int?>(null) }
-    var adding by remember { mutableStateOf(false) }
     var editText by remember { mutableStateOf("") }
-    var newText by remember { mutableStateOf("") }
     var confirmDelete by remember { mutableStateOf<Int?>(null) }
     // drag-to-reorder state
     var draggedIndex by remember { mutableStateOf<Int?>(null) }
@@ -274,6 +286,11 @@ fun PandoraApp() {
     var dragOffsetY by remember { mutableStateOf(0f) }
     val rowHeights = remember { mutableMapOf<Int, Float>() }
     val accent = WarmOrange
+    // 候选事项：本人最近十个自然日已发布日报的完整工作条目，按日期倒序；已进入正式事项的不重复展示
+    val candidates = logs
+        .filter { it.user == MockData.userName && it.date >= MockData.demoToday.plusDays(-9) && it.date <= MockData.demoToday }
+        .sortedByDescending { it.date.ordinal() }
+        .filter { it.content !in items }
 
     val onItemTap: (Int, String) -> Unit = { idx, t ->
         editingIndex = idx
@@ -335,14 +352,14 @@ fun PandoraApp() {
                     Spacer(Modifier.width(10.dp))
                     Column(Modifier.weight(1f)) {
                         Text("编辑 · 个人十大重要事项", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                        Text("共 ${items.size}/10 · 长按整行拖动排序", color = Ink.copy(alpha = .6f), fontSize = 12.sp)
+                        Text("共 ${items.size}/10 · 长按整行拖动排序 · 候选打钩加入", color = Ink.copy(alpha = .6f), fontSize = 12.sp)
                     }
-                    TextButton(onClick = onClose) { Text("完成", color = Ink, fontWeight = FontWeight.Bold) }
+                    TextButton(onClick = onClose) { Text("保存", color = Ink, fontWeight = FontWeight.Bold) }
                 }
                 Spacer(Modifier.height(10.dp))
                 Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())) {
                     if (items.isEmpty()) {
-                        Text("还没有事项，点击下方「添加新事项」开始记录。", color = Ink.copy(alpha = .55f), fontSize = 13.sp, modifier = Modifier.padding(vertical = 16.dp))
+                        Text("暂无正式事项，在下方候选事项中打钩加入。", color = Ink.copy(alpha = .55f), fontSize = 13.sp, modifier = Modifier.padding(vertical = 16.dp))
                     }
                     items.forEachIndexed { i, text ->
                         val from = draggedIndex
@@ -421,45 +438,50 @@ fun PandoraApp() {
                         }
                         if (i < items.lastIndex) DashedDivider(accent)
                     }
-                    if (adding) {
-                        Spacer(Modifier.height(10.dp))
-                        Column(
-                            Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
-                                .background(accent.copy(alpha = .18f))
-                                .padding(12.dp)
+                    // 分割线：上为正式事项，下为候选事项
+                    Spacer(Modifier.height(14.dp))
+                    DashedDivider(accent)
+                    Spacer(Modifier.height(10.dp))
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text("候选事项", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        Spacer(Modifier.width(8.dp))
+                        Text("来自最近十个自然日日报", color = Ink.copy(alpha = .55f), fontSize = 12.sp, modifier = Modifier.weight(1f))
+                        Text("${candidates.size} 条", color = Ink.copy(alpha = .5f), fontSize = 12.sp)
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    if (candidates.isEmpty()) {
+                        Text("最近十个自然日没有可勾选的日报条目。", color = Ink.copy(alpha = .55f), fontSize = 13.sp, modifier = Modifier.padding(vertical = 12.dp))
+                    }
+                    candidates.forEach { entry ->
+                        Row(
+                            Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 7.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("新增事项", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                            OutlinedTextField(
-                                newText, { newText = it },
-                                Modifier.fillMaxWidth().padding(top = 6.dp),
-                                placeholder = { Text("输入要追踪的重要事项…") },
-                                singleLine = true
+                            // 勾选方块改为与正式事项序号同尺寸的圆形，点击即勾选进入正式事项
+                            Box(
+                                Modifier.size(26.dp).clip(CircleShape)
+                                    .background(if (items.size < 10) accent.copy(alpha = .12f) else Color.Transparent)
+                                    .border(1.5.dp, if (items.size < 10) accent else Ink.copy(alpha = .25f), CircleShape)
+                                    .clickable(enabled = items.size < 10) { if (items.size < 10) items.add(entry.content) },
+                                contentAlignment = Alignment.Center
+                            ) { }
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                entry.content,
+                                fontSize = 14.sp,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
                             )
-                            Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.End) {
-                                TextButton({ adding = false; newText = "" }) { Text("取消", color = Ink.copy(alpha = .7f)) }
-                                Spacer(Modifier.width(8.dp))
-                                Button({
-                                    val t = newText.trim()
-                                    if (t.isNotEmpty() && items.size < 10) items.add(t)
-                                    adding = false; newText = ""
-                                }, enabled = newText.isNotBlank() && items.size < 10, colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = Ink)) { Text("添加") }
-                            }
+                            Spacer(Modifier.width(8.dp))
+                            Text("${entry.date.month}月${entry.date.day}日", fontSize = 12.sp, color = Ink.copy(alpha = .5f))
                         }
+                    }
+                    if (items.size >= 10 && candidates.isNotEmpty()) {
+                        Text("已达 10 条上限，移出正式事项后可继续勾选。", Modifier.fillMaxWidth().padding(top = 6.dp), textAlign = TextAlign.Center, color = Ink.copy(alpha = .55f), fontSize = 12.sp)
                     }
                 }
                 Spacer(Modifier.height(10.dp))
-                if (!adding) {
-                    if (items.size < 10) {
-                        OutlinedButton(
-                            { adding = true },
-                            Modifier.fillMaxWidth(),
-                            border = BorderStroke(1.dp, accent),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Ink)
-                        ) { Icon(Icons.Default.Add, null, tint = accent); Spacer(Modifier.width(6.dp)); Text("添加新事项") }
-                    } else {
-                        Text("已达 10 条上限", Modifier.fillMaxWidth(), textAlign = TextAlign.Center, color = Ink.copy(alpha = .55f), fontSize = 12.sp)
-                    }
-                }
             }
         }
     }
@@ -467,9 +489,9 @@ fun PandoraApp() {
         val idx = confirmDelete!!
         AlertDialog(
             onDismissRequest = { confirmDelete = null },
-            title = { Text("删除第 ${idx + 1} 条？") },
-            text = { Text("「${items.getOrNull(idx)?.take(24) ?: ""}」将被移除。") },
-            confirmButton = { TextButton({ items.removeAt(idx); confirmDelete = null }) { Text("删除", color = CoralDark) } },
+            title = { Text("移回候选？") },
+            text = { Text("「${items.getOrNull(idx)?.take(24) ?: ""}」将移回候选事项，之后可重新打钩加入。") },
+            confirmButton = { TextButton({ items.removeAt(idx); confirmDelete = null }) { Text("移回候选", color = CoralDark) } },
             dismissButton = { TextButton({ confirmDelete = null }) { Text("取消") } }
         )
     }
@@ -477,7 +499,7 @@ fun PandoraApp() {
 
 @Composable private fun HomeItemDetailScreen(detail: HomeDetail, onBack: () -> Unit) {
     androidx.activity.compose.BackHandler(onBack = onBack)
-    Column(Modifier.fillMaxSize().background(WarmDashboard)) {
+    Column(Modifier.fillMaxSize().background(LocalAppTheme.current.dashboard)) {
         PageHeader(detail.section, onBack = onBack)
         Column(
             Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(20.dp)
@@ -658,14 +680,20 @@ fun PandoraApp() {
                 Spacer(Modifier.height(10.dp))
                 Text("接收人", fontWeight = FontWeight.Bold)
                 Text(task.assignee, lineHeight = 22.sp)
+                if (task.tags.isNotEmpty()) {
+                    Spacer(Modifier.height(10.dp))
+                    Text("标签", fontWeight = FontWeight.Bold)
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        task.tags.forEachIndexed { i, name ->
+                            val tagColor = taskTagColor(name)?.let { Color(it) } ?: Ink
+                            Text(if (i == 0) "$name · 主" else name, Modifier.clip(RoundedCornerShape(10.dp)).background(tagColor).padding(horizontal = 10.dp, vertical = 4.dp), fontSize = 12.sp, color = Ink)
+                        }
+                    }
+                }
             } else if (isLog) {
                 Text(logContent ?: "", color = Ink.copy(alpha = .75f), fontSize = 16.sp, lineHeight = 26.sp)
             } else {
                 Text("这里展示低保真原型中的可读内容和返回路径。\n\n真实任务、日志、权限和 AI 服务将在后续需求确认后接入。", color = Ink.copy(alpha = .75f), lineHeight = 24.sp)
-            }
-            if (!isLog) {
-                Spacer(Modifier.height(22.dp))
-                DetailCard("当前状态", "模拟数据 · 仅用于线下讨论", CreamDeep)
             }
         }
     }
@@ -677,6 +705,8 @@ private fun SettingsScreen(
     onFontScaleChange: (Float) -> Unit,
     notificationsEnabled: Boolean,
     onNotificationsChange: (Boolean) -> Unit,
+    themeKey: String,
+    onThemeChange: (String) -> Unit,
     onClose: () -> Unit
 ) {
     androidx.activity.compose.BackHandler(onBack = onClose)
@@ -684,6 +714,8 @@ private fun SettingsScreen(
     var showClearCacheDialog by remember { mutableStateOf(false) }
     var showAboutDialog by remember { mutableStateOf(false) }
     var showLogoutDialog by remember { mutableStateOf(false) }
+    var showPasswordDialog by remember { mutableStateOf(false) }
+    var showThemeDialog by remember { mutableStateOf(false) }
     var toast by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(toast) {
         if (toast != null) {
@@ -692,7 +724,7 @@ private fun SettingsScreen(
         }
     }
 
-    Column(Modifier.fillMaxSize().background(WarmDashboard)) {
+    Column(Modifier.fillMaxSize().background(LocalAppTheme.current.dashboard)) {
         PageHeader("设置", onBack = onClose)
         Box(Modifier.fillMaxWidth().weight(1f)) {
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp)) {
@@ -721,6 +753,22 @@ private fun SettingsScreen(
                                 uncheckedTrackColor = Ink.copy(alpha = 0.25f)
                             )
                         )
+                    }
+                    DashedDivider(Ink.copy(alpha = 0.18f))
+                    SettingsRow(
+                        icon = Icons.Default.Lock,
+                        title = "修改密码",
+                        onClick = { showPasswordDialog = true }
+                    ) {
+                        Text("已设置", color = Ink.copy(alpha = 0.55f), fontSize = 13.sp)
+                    }
+                    DashedDivider(Ink.copy(alpha = 0.18f))
+                    SettingsRow(
+                        icon = Icons.Default.Palette,
+                        title = "切换主题",
+                        onClick = { showThemeDialog = true }
+                    ) {
+                        Text(appThemes.firstOrNull { it.key == themeKey }?.label ?: "暖米", color = Ink.copy(alpha = 0.55f), fontSize = 13.sp)
                     }
                 }
                 Spacer(Modifier.height(18.dp))
@@ -786,6 +834,59 @@ private fun SettingsScreen(
                 }
             },
             confirmButton = { TextButton({ showFontDialog = false }) { Text("关闭", color = Ink) } }
+        )
+    }
+    if (showPasswordDialog) {
+        var oldPw by remember { mutableStateOf("") }
+        var newPw by remember { mutableStateOf("") }
+        var confirmPw by remember { mutableStateOf("") }
+        var pwError by remember { mutableStateOf<String?>(null) }
+        AlertDialog(
+            onDismissRequest = { showPasswordDialog = false },
+            title = { Text("修改密码") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(oldPw, { oldPw = it; pwError = null }, label = { Text("当前密码") }, visualTransformation = PasswordVisualTransformation(), singleLine = true)
+                    OutlinedTextField(newPw, { newPw = it; pwError = null }, label = { Text("新密码（至少 6 位）") }, visualTransformation = PasswordVisualTransformation(), singleLine = true)
+                    OutlinedTextField(confirmPw, { confirmPw = it; pwError = null }, label = { Text("确认新密码") }, visualTransformation = PasswordVisualTransformation(), singleLine = true)
+                    pwError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
+                }
+            },
+            confirmButton = {
+                TextButton({
+                    pwError = when {
+                        oldPw.isBlank() -> "请输入当前密码"
+                        newPw.length < 6 -> "新密码至少 6 位"
+                        newPw != confirmPw -> "两次输入的新密码不一致"
+                        else -> null
+                    }
+                    if (pwError == null) { showPasswordDialog = false; toast = "密码已修改（演示）" }
+                }) { Text("确定", color = WarmOrange, fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = { TextButton({ showPasswordDialog = false }) { Text("取消", color = Ink.copy(alpha = 0.7f)) } }
+        )
+    }
+    if (showThemeDialog) {
+        AlertDialog(
+            onDismissRequest = { showThemeDialog = false },
+            title = { Text("切换主题") },
+            text = {
+                Column {
+                    appThemes.forEach { t ->
+                        Row(
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { onThemeChange(t.key); showThemeDialog = false }.padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(Modifier.size(22.dp).clip(CircleShape).background(t.background).border(1.5.dp, t.backgroundDeep, CircleShape))
+                            Spacer(Modifier.width(10.dp))
+                            Text(t.label, Modifier.weight(1f), fontSize = 15.sp)
+                            RadioButton(selected = t.key == themeKey, onClick = { onThemeChange(t.key); showThemeDialog = false }, colors = RadioButtonDefaults.colors(selectedColor = WarmOrange))
+                        }
+                    }
+                    Text("切换后仅更改背景颜色，演示数据不受影响。", fontSize = 12.sp, color = Ink.copy(alpha = 0.55f))
+                }
+            },
+            confirmButton = { TextButton({ showThemeDialog = false }) { Text("关闭", color = Ink) } }
         )
     }
     if (showClearCacheDialog) {
