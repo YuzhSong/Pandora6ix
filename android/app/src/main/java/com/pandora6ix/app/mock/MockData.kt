@@ -59,6 +59,7 @@ data class WorkTask(
 
 // 任务标签目录：每个标签一种颜色（ARGB Long，UI 侧转 Color）
 data class TaskTag(val name: String, val color: Long)
+
 fun taskTagColor(name: String): Long? = MockData.taskTags.firstOrNull { it.name == name }?.color
 
 enum class DemoRole(val canCreateTasks: Boolean) { MANAGER(true), EMPLOYEE(false) }
@@ -107,32 +108,33 @@ object MockData {
         "安排下周计划"
     )
     val companyTasks = listOf(
-        WorkTask("t1", "完成登录模块", shifted(DemoDate(2026, 9, 16)), shifted(DemoDate(2026, 9, 20)), "进行中", "周岚", 0),
-        WorkTask("t2", "提交数据库设计", shifted(DemoDate(2026, 9, 18)), shifted(DemoDate(2026, 9, 22)), "待开始", "陈默", 1),
-        WorkTask("t3", "完成需求评审", shifted(DemoDate(2026, 9, 19)), shifted(DemoDate(2026, 9, 21)), "进行中", "许安", 2),
-        WorkTask("t4", "准备演示材料", shifted(DemoDate(2026, 9, 23)), shifted(DemoDate(2026, 9, 26)), "待开始", "周岚", 3),
-        WorkTask("t5", "发布测试版本", shifted(DemoDate(2026, 9, 27)), shifted(DemoDate(2026, 9, 30)), "待开始", "陈默", 1),
-        WorkTask("t6", "完善埋点方案", shifted(DemoDate(2026, 9, 20)), shifted(DemoDate(2026, 9, 24)), "待开始", "许安", 2),
-        WorkTask("t7", "编写用户手册", shifted(DemoDate(2026, 9, 22)), shifted(DemoDate(2026, 9, 25)), "待开始", "周岚", 3),
-        WorkTask("t8", "整理反馈清单", shifted(DemoDate(2026, 9, 24)), shifted(DemoDate(2026, 9, 28)), "待开始", "陈默", 0),
-        WorkTask("t9", "准备发布检查", shifted(DemoDate(2026, 9, 26)), shifted(DemoDate(2026, 9, 29)), "待开始", "许安", 1),
-        WorkTask("t10", "版本复盘会议", shifted(DemoDate(2026, 9, 29)), shifted(DemoDate(2026, 10, 1)), "待开始", "周岚", 2)
+        WorkTask("t1", "完成登录模块", shifted(DemoDate(2026, 9, 16)), shifted(DemoDate(2026, 9, 20)), "进行中", "周岚", 0, tags = listOf("研发", "产品")),
+        WorkTask("t2", "提交数据库设计", shifted(DemoDate(2026, 9, 18)), shifted(DemoDate(2026, 9, 22)), "待开始", "陈默", 1, tags = listOf("研发")),
+        WorkTask("t3", "完成需求评审", shifted(DemoDate(2026, 9, 19)), shifted(DemoDate(2026, 9, 21)), "进行中", "许安", 2, tags = listOf("产品", "会议")),
+        WorkTask("t4", "准备演示材料", shifted(DemoDate(2026, 9, 23)), shifted(DemoDate(2026, 9, 26)), "待开始", "周岚", 3, tags = listOf("产品")),
+        WorkTask("t5", "发布测试版本", shifted(DemoDate(2026, 9, 27)), shifted(DemoDate(2026, 9, 30)), "待开始", "陈默", 1, tags = listOf("研发", "运营")),
+        WorkTask("t6", "完善埋点方案", shifted(DemoDate(2026, 9, 20)), shifted(DemoDate(2026, 9, 24)), "待开始", "许安", 2, tags = listOf("研发")),
+        WorkTask("t7", "编写用户手册", shifted(DemoDate(2026, 9, 22)), shifted(DemoDate(2026, 9, 25)), "待开始", "周岚", 3, tags = listOf("产品", "设计")),
+        WorkTask("t8", "整理反馈清单", shifted(DemoDate(2026, 9, 24)), shifted(DemoDate(2026, 9, 28)), "待开始", "陈默", 0, tags = listOf("运营", "客户")),
+        WorkTask("t9", "准备发布检查", shifted(DemoDate(2026, 9, 26)), shifted(DemoDate(2026, 9, 29)), "待开始", "许安", 1, tags = listOf("研发", "运营")),
+        WorkTask("t10", "版本复盘会议", shifted(DemoDate(2026, 9, 29)), shifted(DemoDate(2026, 10, 1)), "待开始", "周岚", 2, tags = listOf("会议", "产品"))
     )
     val timedTasks = listOf(
-        WorkTask("time1", "项目晨会", demoToday, demoToday, "待开始", "周岚", 1, note = "同步本周项目进度与阻塞项。", startMinute = 9 * 60, endMinute = 9 * 60 + 45),
-        WorkTask("time2", "需求讨论", demoToday, demoToday, "待开始", "许安", 2, note = "核对日历与任务录入流程。", startMinute = 9 * 60 + 30, endMinute = 10 * 60 + 30),
-        WorkTask("time3", "阶段汇报", demoToday.plusDays(1), demoToday.plusDays(1), "待开始", "陈默", 0, startMinute = 14 * 60, endMinute = 15 * 60)
+        WorkTask("time1", "项目晨会", demoToday, demoToday, "待开始", "周岚", 1, note = "同步本周项目进度与阻塞项。", startMinute = 9 * 60, endMinute = 9 * 60 + 45, tags = listOf("会议")),
+        WorkTask("time2", "需求讨论", demoToday, demoToday, "待开始", "许安", 2, note = "核对日历与任务录入流程。", startMinute = 9 * 60 + 30, endMinute = 10 * 60 + 30, tags = listOf("会议", "产品")),
+        WorkTask("time3", "阶段汇报", demoToday.plusDays(1), demoToday.plusDays(1), "待开始", "陈默", 0, startMinute = 14 * 60, endMinute = 15 * 60, tags = listOf("会议", "紧急"))
     )
+    // 日志日期同样跟随真实今天平移（原始中心 2026-09-15），保证「最近十个自然日」窗口内始终有已发布日报
     val logs = listOf(
-        WorkLog("l1", "梳理首页四象限交互，确认面板文案；完成登录模块的 Compose 页面骨架。", userName, DemoDate(2026, 9, 19), "14:10"),
-        WorkLog("l3", "同步本周任务进度并记录风险事项。", userName, DemoDate(2026, 9, 18), "17:20"),
-        WorkLog("l4", "参与产品需求评审，整理待确认问题。", userName, DemoDate(2026, 9, 17), "11:00"),
-        WorkLog("l5", "准备演示数据和移动端测试环境。", userName, DemoDate(2026, 9, 16), "16:45"),
-        WorkLog("l6", "完成周报初稿并发送给项目负责人。", userName, DemoDate(2026, 9, 15), "18:00"),
-        WorkLog("l7", "检查 Android Studio 和模拟器配置。", userName, DemoDate(2026, 9, 14), "10:20"),
-        WorkLog("l8", "整理甲方反馈并标记待确认项。", userName, DemoDate(2026, 9, 13), "15:40"),
-        WorkLog("l9", "补充演示流程和讲解提纲。", userName, DemoDate(2026, 9, 12), "13:10"),
-        WorkLog("l10", "完成本轮低保真页面走查。", userName, DemoDate(2026, 9, 11), "17:35")
+        WorkLog("l1", "梳理首页四象限交互，确认面板文案；完成登录模块的 Compose 页面骨架。", userName, shifted(DemoDate(2026, 9, 19)), "14:10"),
+        WorkLog("l3", "同步本周任务进度并记录风险事项。", userName, shifted(DemoDate(2026, 9, 18)), "17:20"),
+        WorkLog("l4", "参与产品需求评审，整理待确认问题。", userName, shifted(DemoDate(2026, 9, 17)), "11:00"),
+        WorkLog("l5", "准备演示数据和移动端测试环境。", userName, shifted(DemoDate(2026, 9, 16)), "16:45"),
+        WorkLog("l6", "完成周报初稿并发送给项目负责人。", userName, shifted(DemoDate(2026, 9, 15)), "18:00"),
+        WorkLog("l7", "检查 Android Studio 和模拟器配置。", userName, shifted(DemoDate(2026, 9, 14)), "10:20"),
+        WorkLog("l8", "整理甲方反馈并标记待确认项。", userName, shifted(DemoDate(2026, 9, 13)), "15:40"),
+        WorkLog("l9", "补充演示流程和讲解提纲。", userName, shifted(DemoDate(2026, 9, 12)), "13:10"),
+        WorkLog("l10", "完成本轮低保真页面走查。", userName, shifted(DemoDate(2026, 9, 11)), "17:35")
     )
-    val personalImportant = logs.take(5).map { it.content }
+    val personalImportant = logs.take(5).map { PersonalImportantItem(it.id, it.content) }
 }

@@ -2,16 +2,18 @@ package com.pandora6ix.app.ui.calendar
 
 import com.pandora6ix.app.mock.*
 
-enum class CalendarMode(val label: String) { WEEK("周视图"), MONTH("月视图"), YEAR("年视图") }
+enum class CalendarMode(val label: String) { DAY("日视图"), WEEK("周视图"), MONTH("月视图"), YEAR("年视图") }
 data class TaskSegment(val task: WorkTask, val first: Int, val last: Int)
 
 fun CalendarMode.zoomIn(): CalendarMode = when (this) {
     CalendarMode.YEAR -> CalendarMode.MONTH
     CalendarMode.MONTH -> CalendarMode.WEEK
-    CalendarMode.WEEK -> CalendarMode.WEEK
+    CalendarMode.WEEK -> CalendarMode.DAY
+    CalendarMode.DAY -> CalendarMode.DAY
 }
 
 fun CalendarMode.zoomOut(): CalendarMode = when (this) {
+    CalendarMode.DAY -> CalendarMode.WEEK
     CalendarMode.WEEK -> CalendarMode.MONTH
     CalendarMode.MONTH -> CalendarMode.YEAR
     CalendarMode.YEAR -> CalendarMode.YEAR

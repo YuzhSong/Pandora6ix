@@ -145,5 +145,34 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreateTasks: Boolean, onDismiss: ()
         }
     }
     if (confirmExit) AlertDialog(onDismissRequest = { confirmExit = false }, title = { Text("放弃未保存的任务？") }, text = { Text("关闭后，本次填写的内容会清空。") }, confirmButton = { TextButton({ confirmExit = false; onDismiss() }) { Text("放弃") } }, dismissButton = { TextButton({ confirmExit = false }) { Text("继续填写") } })
-    if (showTagPicker) AlertDialog(onDismissRequest = { showTagPicker = false }, title = { Text("选择标签") }, text = { Column { Text("可多选；先选的为主标签，决定任务在视图中的颜色。再次点击已选标签可取消。", fontSize = 12.sp, color = Ink.copy(alpha = .6f)); Spacer(Modifier.height(6.dp)); Column(Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())) { MockData.taskTags.forEach { tag -> val selected = tag.name in tags; val isPrimary = selected && tags.first() == tag.name; Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { tags = if (selected) tags - tag.name else tags + tag.name }.padding(horizontal = 4.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) { Box(Modifier.size(14.dp).clip(CircleShape).background(Color(tag.color))); Spacer(Modifier.width(10.dp)); Text(tag.name, Modifier.weight(1f), fontSize = 15.sp); if (selected) { Text(if (isPrimary) "主标签" else "次标签", fontSize = 12.sp, color = Ink.copy(alpha = .6f)); Spacer(Modifier.width(6.dp)); Icon(Icons.Default.Check, "已选", Modifier.size(18.dp), tint = Ink) } } } } } }, confirmButton = { TextButton({ showTagPicker = false }) { Text("完成") } })
+    if (showTagPicker) AlertDialog(
+        onDismissRequest = { showTagPicker = false },
+        title = { Text("选择标签") },
+        text = {
+            Column {
+                Text("可多选；先选的为主标签，决定任务在视图中的颜色。再次点击已选标签可取消。", fontSize = 12.sp, color = Ink.copy(alpha = .6f))
+                Spacer(Modifier.height(6.dp))
+                Column(Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())) {
+                    MockData.taskTags.forEach { tag ->
+                        val selected = tag.name in tags
+                        val isPrimary = selected && tags.first() == tag.name
+                        Row(
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { tags = if (selected) tags - tag.name else tags + tag.name }.padding(horizontal = 4.dp, vertical = 9.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(Modifier.size(14.dp).clip(CircleShape).background(Color(tag.color)))
+                            Spacer(Modifier.width(10.dp))
+                            Text(tag.name, Modifier.weight(1f), fontSize = 15.sp)
+                            if (selected) {
+                                Text(if (isPrimary) "主标签" else "次标签", fontSize = 12.sp, color = Ink.copy(alpha = .6f))
+                                Spacer(Modifier.width(6.dp))
+                                Icon(Icons.Default.Check, "已选", Modifier.size(18.dp), tint = Ink)
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton({ showTagPicker = false }) { Text("完成") } }
+    )
 }

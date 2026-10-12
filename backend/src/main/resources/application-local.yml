@@ -1,0 +1,11 @@
+spring:
+  config:
+    activate:
+      on-profile: local
+
+# Persistence is intentionally disabled in the foundation change.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
