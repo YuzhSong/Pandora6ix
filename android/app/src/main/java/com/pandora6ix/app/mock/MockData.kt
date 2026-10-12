@@ -52,8 +52,14 @@ data class WorkTask(
     val note: String = "演示任务说明：请按时间节点完成并及时更新进度。",
     val startMinute: Int? = null,
     val endMinute: Int? = null,
-    val priorityLevel: Int = 3
+    val priorityLevel: Int = 3,
+    // 标签列表：首个为主标签（决定视图中的任务颜色），其余为次标签
+    val tags: List<String> = emptyList()
 )
+
+// 任务标签目录：每个标签一种颜色（ARGB Long，UI 侧转 Color）
+data class TaskTag(val name: String, val color: Long)
+fun taskTagColor(name: String): Long? = MockData.taskTags.firstOrNull { it.name == name }?.color
 
 enum class DemoRole(val canCreateTasks: Boolean) { MANAGER(true), EMPLOYEE(false) }
 
@@ -76,6 +82,17 @@ object MockData {
     const val position = "产品研发部总经理"
     val teamLeaders = listOf("前端团队长 · 周岚", "后端团队长 · 陈默", "测试团队长 · 许安")
     val managedMembers = teamLeaders + listOf("前端员工 · 林晓", "后端员工 · 赵宁", "测试员工 · 唐果")
+
+    val taskTags = listOf(
+        TaskTag("产品", 0xFFFFB74D),
+        TaskTag("研发", 0xFF81C784),
+        TaskTag("设计", 0xFFBA68C8),
+        TaskTag("运营", 0xFF4DB6AC),
+        TaskTag("会议", 0xFF64B5F6),
+        TaskTag("客户", 0xFFF06292),
+        TaskTag("紧急", 0xFFE57373),
+        TaskTag("常规", 0xFFA1887F)
+    )
 
     val companyHighlights = listOf(
         "本周项目验收",

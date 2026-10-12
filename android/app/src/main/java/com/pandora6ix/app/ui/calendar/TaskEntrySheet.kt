@@ -3,10 +3,20 @@ package com.pandora6ix.app.ui.calendar
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CheckBox
+import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
@@ -15,6 +25,8 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -26,7 +38,7 @@ import java.util.UUID
 private fun DemoDate.key() = "$year-$month-$day"
 private fun String.date() = split("-").map(String::toInt).let { DemoDate(it[0], it[1], it[2]) }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun TaskEntrySheet(initialDate: DemoDate, canCreateTasks: Boolean, onDismiss: () -> Unit, onSave: (WorkTask) -> Unit) {
     val context = LocalContext.current
@@ -39,9 +51,13 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreateTasks: Boolean, onDismiss: ()
     var endMinute by rememberSaveable { mutableIntStateOf(600) }
     var priority by rememberSaveable { mutableIntStateOf(3) }
     var recipients by rememberSaveable { mutableStateOf(listOf<String>()) }
+    var recipientQuery by rememberSaveable { mutableStateOf("") }
+    var candidateOpen by rememberSaveable { mutableStateOf(false) }
+    var tags by rememberSaveable { mutableStateOf(listOf<String>()) }
+    var showTagPicker by rememberSaveable { mutableStateOf(false) }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
     var confirmExit by rememberSaveable { mutableStateOf(false) }
-    val dirty = title.isNotBlank() || note.isNotBlank() || recipients.isNotEmpty() || !allDay || priority != 3 || startKey != initialDate.key() || endKey != initialDate.key()
+    val dirty = title.isNotBlank() || note.isNotBlank() || recipients.isNotEmpty() || tags.isNotEmpty() || !allDay || priority != 3 || startKey != initialDate.key() || endKey != initialDate.key()
     val latestDirty by rememberUpdatedState(dirty)
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true, confirmValueChange = { value ->
         if (value == SheetValue.Hidden && latestDirty) { confirmExit = true; false } else true
@@ -81,13 +97,36 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreateTasks: Boolean, onDismiss: ()
                 }
                 Text("重要程度 · $priority 星", fontWeight = FontWeight.SemiBold)
                 Row { (1..5).forEach { level -> IconButton({ priority = level }, Modifier.size(40.dp)) { Icon(if (level <= priority) Icons.Default.Star else Icons.Default.StarBorder, "$level 星", tint = Ink) } } }
-                Text("接收人（可多选）", fontWeight = FontWeight.SemiBold)
-                Column(Modifier.fillMaxWidth().height(144.dp).verticalScroll(rememberScrollState())) {
-                    MockData.managedMembers.forEach { member ->
-                        Row(Modifier.fillMaxWidth().height(48.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(member in recipients, { checked -> recipients = if (checked) recipients + member else recipients - member; error = null }, colors = CheckboxDefaults.colors(checkedColor = Ink))
-                            Text(member, fontSize = 14.sp)
+                Text("标签 · 可多选，先选的为主标签", fontWeight = FontWeight.SemiBold)
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    tags.forEachIndexed { i, name ->
+                        val tagColor = taskTagColor(name)?.let { Color(it) } ?: Ink
+                        if (i == 0) {
+                            Button({ tags = tags - name }, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp), colors = ButtonDefaults.buttonColors(containerColor = tagColor, contentColor = Ink)) { Text("$name · 主", fontSize = 13.sp) }
+                        } else {
+                            OutlinedButton({ tags = tags - name }, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp), border = BorderStroke(1.dp, tagColor), colors = ButtonDefaults.outlinedButtonColors(contentColor = Ink)) { Text(name, fontSize = 13.sp) }
                         }
+                    }
+                    OutlinedButton({ showTagPicker = true }, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp), border = BorderStroke(1.dp, Ink.copy(alpha = .25f)), colors = ButtonDefaults.outlinedButtonColors(contentColor = Ink)) { Icon(Icons.Default.Add, "选择标签", Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("选择标签", fontSize = 13.sp) }
+                }
+                Text("接收人（可多选，输入 @ 检索）", fontWeight = FontWeight.SemiBold)
+                if (recipients.isNotEmpty()) FlowRow(Modifier.fillMaxWidth().padding(vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    recipients.forEach { member -> FilterChip(selected = true, onClick = { recipients = recipients - member; error = null }, label = { Text(member, fontSize = 13.sp) }, colors = FilterChipDefaults.filterChipColors(containerColor = Color.Transparent, labelColor = Ink, selectedContainerColor = CreamDeep, selectedLabelColor = Ink)) }
+                }
+                Box {
+                    OutlinedTextField(recipientQuery, { recipientQuery = it; candidateOpen = it.contains("@") }, Modifier.fillMaxWidth(), placeholder = { Text("@ 检索接收人，勾选候选") }, singleLine = true, colors = fieldColors)
+                    if (candidateOpen) Column(Modifier.fillMaxWidth().align(Alignment.BottomStart).offset(y = (-60).dp).clip(RoundedCornerShape(12.dp)).background(CreamDeep).border(1.dp, Ink.copy(alpha = .12f), RoundedCornerShape(12.dp)).padding(vertical = 4.dp)) {
+                        val keyword = recipientQuery.substringAfter("@").trim()
+                        val candidates = MockData.managedMembers.filter { it.contains(keyword, ignoreCase = true) }
+                        if (candidates.isEmpty()) Text("无匹配成员", Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), fontSize = 13.sp, color = Ink.copy(alpha = .5f))
+                        candidates.forEach { member ->
+                            val selected = member in recipients
+                            Row(Modifier.fillMaxWidth().clickable { recipients = if (selected) recipients - member else recipients + member; error = null }.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Icon(if (selected) Icons.Default.CheckBox else Icons.Default.CheckBoxOutlineBlank, if (selected) "已选" else "未选", tint = Ink)
+                                Text(member, Modifier.padding(start = 8.dp), fontSize = 14.sp)
+                            }
+                        }
+                        TextButton({ candidateOpen = false }, Modifier.fillMaxWidth()) { Text("完成", fontSize = 13.sp, color = Ink) }
                     }
                 }
                 Text("仅保存为本地演示草稿，不会正式派发。审核入口后续设计。", fontSize = 12.sp, color = Ink.copy(alpha = .6f))
@@ -101,9 +140,10 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreateTasks: Boolean, onDismiss: ()
                     !validTaskInterval(startKey.date(), endKey.date(), if (allDay) null else startMinute, if (allDay) null else endMinute) -> "结束日期和时间必须晚于开始时间"
                     else -> null
                 }
-                if (error == null && canCreateTasks) onSave(WorkTask(UUID.randomUUID().toString(), title.trim(), startKey.date(), endKey.date(), "草稿（演示）", recipients.joinToString("、"), (priority - 1) % 4, priority = "★".repeat(priority), note = note.trim(), startMinute = if (allDay) null else startMinute, endMinute = if (allDay) null else endMinute, priorityLevel = priority))
+                if (error == null && canCreateTasks) onSave(WorkTask(UUID.randomUUID().toString(), title.trim(), startKey.date(), endKey.date(), "草稿（演示）", recipients.joinToString("、"), (priority - 1) % 4, priority = "★".repeat(priority), note = note.trim(), startMinute = if (allDay) null else startMinute, endMinute = if (allDay) null else endMinute, priorityLevel = priority, tags = tags))
             }, Modifier.fillMaxWidth().padding(vertical = 12.dp), colors = ButtonDefaults.buttonColors(containerColor = Ink)) { Text("保存任务（演示）") }
         }
     }
     if (confirmExit) AlertDialog(onDismissRequest = { confirmExit = false }, title = { Text("放弃未保存的任务？") }, text = { Text("关闭后，本次填写的内容会清空。") }, confirmButton = { TextButton({ confirmExit = false; onDismiss() }) { Text("放弃") } }, dismissButton = { TextButton({ confirmExit = false }) { Text("继续填写") } })
+    if (showTagPicker) AlertDialog(onDismissRequest = { showTagPicker = false }, title = { Text("选择标签") }, text = { Column { Text("可多选；先选的为主标签，决定任务在视图中的颜色。再次点击已选标签可取消。", fontSize = 12.sp, color = Ink.copy(alpha = .6f)); Spacer(Modifier.height(6.dp)); Column(Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())) { MockData.taskTags.forEach { tag -> val selected = tag.name in tags; val isPrimary = selected && tags.first() == tag.name; Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { tags = if (selected) tags - tag.name else tags + tag.name }.padding(horizontal = 4.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) { Box(Modifier.size(14.dp).clip(CircleShape).background(Color(tag.color))); Spacer(Modifier.width(10.dp)); Text(tag.name, Modifier.weight(1f), fontSize = 15.sp); if (selected) { Text(if (isPrimary) "主标签" else "次标签", fontSize = 12.sp, color = Ink.copy(alpha = .6f)); Spacer(Modifier.width(6.dp)); Icon(Icons.Default.Check, "已选", Modifier.size(18.dp), tint = Ink) } } } } } }, confirmButton = { TextButton({ showTagPicker = false }) { Text("完成") } })
 }
