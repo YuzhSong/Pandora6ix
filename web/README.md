@@ -34,7 +34,9 @@ src/api/client.ts 提供统一 HTTP 请求、超时、成功信封、204、401�
 
 已规划接口包括 /auth/login、/me、/admin/users、/admin/org-units、/tags、/company-important-items，前缀 /api/v1，实际可用性以 backend 实现与团队契约为准。
 
-OpenSpec：web-admin-foundation；验证记录见该变更的 validation.md。
+OpenSpec：web-admin-foundation；验证记录见已归档变更的 [validation.md](../openspec/changes/archive/2026-10-11-web-admin-foundation/validation.md)。
+
+2026-10-13 接入基础：开发服务器已配置 `/api/v1` 代理及 `/backend/health` → `/health` 的映射，复制 `.env.example` 到 `.env.local` 后设置 `BACKEND_PROXY_TARGET`。运行 `npm run check:backend -- http://localhost:5173/backend` 检查实际 Web 代理连接（端口以 Vite 输出为准）。健康成功只说明服务存活，业务 repository 仍是本地存储；dev 尚无业务 API。后端分支审查、接口缺口、环境配置及下一轮接入顺序见 [BACKEND_INTEGRATION.md](BACKEND_INTEGRATION.md)。
 
 其他标签页更新资料时会提示刷新，编辑期间保留输入并禁止刷新覆盖。
 

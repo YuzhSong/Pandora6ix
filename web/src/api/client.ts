@@ -17,6 +17,8 @@ interface RequestOptions {
   method?: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE'
   body?: unknown
   signal?: AbortSignal
+  // Only unwrapped infrastructure endpoints (such as /health) opt into JSON.
+  responseFormat?: 'envelope' | 'json'
 }
 interface ClientOptions {
   baseUrl: string
@@ -69,6 +71,10 @@ export function createApiClient({ baseUrl, fetcher = fetch, timeoutMs = 15000, o
             requestId,
             Array.isArray(error?.fieldErrors) ? error.fieldErrors : [],
           )
+        }
+        if (options.responseFormat === 'json') {
+          if (!payload) throw new ApiError('服务器返回的数据格式不符合接口约定。', response.status, 'INVALID_RESPONSE', requestId)
+          return payload as T
         }
         if (!payload || !Object.hasOwn(payload, 'data')) throw new ApiError('服务器返回的数据格式不符合接口约定。', response.status, 'INVALID_RESPONSE', requestId)
         return payload.data as T
