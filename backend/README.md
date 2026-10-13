@@ -1,6 +1,8 @@
 # Pandora 后端实施记录
 
-2026-10-13；在 `backend-syz` 从 `dev` 的 `a8adf5d` 开始开发。只涉及 backend 与 OpenSpec；不创建 PR，不合回 dev。依据 docs 中需求 V1.3、API0.1、DB0.2 和后端缺口清单，变更为 [`implement-backend-confirmed-apis`](../openspec/changes/implement-backend-confirmed-apis/proposal.md)。
+2026-10-13；在 `backend-syz` 从 `dev a8adf5d` 开始开发，经 [PR #10](https://github.com/YuzhSong/Pandora6ix/pull/10) 合并到 `dev f5283e6`，随后同步回 `backend-syz`。只涉及 backend 与 OpenSpec。依据 docs 中需求 V1.3、API0.1、DB0.2 和后端缺口清单，变更 [`implement-backend-confirmed-apis`](../openspec/changes/archive/2026-10-13-implement-backend-confirmed-apis/proposal.md) 已在合并验证后归档并同步主规格。
+
+安卓逐模块接入、模型差异与阻塞项见 [ANDROID_INTEGRATION.md](ANDROID_INTEGRATION.md)。
 
 ## 已实现的缺口
 
@@ -114,7 +116,9 @@ python scripts/generate-openapi.py --check
 # 真实进程、独立随机测试库，不使用 backend/data 或预设团队账号：
 .\scripts\smoke.ps1
 cd ..
-openspec validate implement-backend-confirmed-apis --strict
+openspec validate backend-identity-directory --strict
+openspec validate backend-task-workflow --strict
+openspec validate backend-journals-dashboard --strict
 ```
 
 接口变化后运行 `python scripts/generate-openapi.py` 更新契约。脚本读取显式命令和控制器注解，读模型 schema 由脚本集中维护。
