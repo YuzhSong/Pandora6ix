@@ -1,0 +1,10 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:pandora-tests;DB_CLOSE_DELAY=-1
+    username: sa
+    password: ''
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
+pandora:
+  bootstrap-token: integration-tests-only-bootstrap

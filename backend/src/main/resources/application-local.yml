@@ -3,7 +3,7 @@ spring:
     activate:
       on-profile: local
 
-# Persistence is intentionally disabled in the foundation change.
+# The common configuration uses a local file database; credentials remain external.
 management:
   endpoints:
     web:
