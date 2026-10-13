@@ -3,12 +3,15 @@ package com.pandora6ix.app.ui.calendar
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -27,21 +30,34 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import com.pandora6ix.app.mock.*
 import com.pandora6ix.app.ui.theme.*
 import java.util.UUID
+import kotlinx.coroutines.launch
 
 private fun DemoDate.key() = "$year-$month-$day"
 private fun String.date() = split("-").map(String::toInt).let { DemoDate(it[0], it[1], it[2]) }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
 fun TaskEntrySheet(initialDate: DemoDate, canCreateTasks: Boolean, onDismiss: () -> Unit, onSave: (WorkTask) -> Unit) {
     val context = LocalContext.current
+    val density = LocalDensity.current
+    val candidateGap = with(density) { 8.dp.roundToPx() }
+    val candidateInset = with(density) { 16.dp.roundToPx() }
+    val candidatePosition = remember(candidateGap, candidateInset) { RecipientPopupPositionProvider(candidateGap, candidateInset) }
+    var queryWidth by remember { mutableIntStateOf(0) }
+    var queryTop by remember { mutableIntStateOf(0) }
+    val queryVisibility = remember { BringIntoViewRequester() }
     var title by rememberSaveable { mutableStateOf("") }
     var note by rememberSaveable { mutableStateOf("") }
     var startKey by rememberSaveable { mutableStateOf(initialDate.key()) }
@@ -53,6 +69,12 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreateTasks: Boolean, onDismiss: ()
     var recipients by rememberSaveable { mutableStateOf(listOf<String>()) }
     var recipientQuery by rememberSaveable { mutableStateOf("") }
     var candidateOpen by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(candidateOpen, recipients) {
+        if (candidateOpen) {
+            withFrameNanos { }
+            queryVisibility.bringIntoView()
+        }
+    }
     var tags by rememberSaveable { mutableStateOf(listOf<String>()) }
     var showTagPicker by rememberSaveable { mutableStateOf(false) }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
@@ -63,6 +85,7 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreateTasks: Boolean, onDismiss: ()
         if (value == SheetValue.Hidden && latestDirty) { confirmExit = true; false } else true
     })
     val requestClose = { if (dirty) confirmExit = true else onDismiss() }
+    val sheetScope = rememberCoroutineScope()
     val fieldColors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Ink.copy(alpha = .65f), unfocusedBorderColor = Ink.copy(alpha = .25f), focusedLabelColor = Ink, cursorColor = Ink)
     val buttonColors = ButtonDefaults.outlinedButtonColors(contentColor = Ink)
     val buttonBorder = BorderStroke(1.dp, Ink.copy(alpha = .25f))
@@ -113,20 +136,32 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreateTasks: Boolean, onDismiss: ()
                 if (recipients.isNotEmpty()) FlowRow(Modifier.fillMaxWidth().padding(vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     recipients.forEach { member -> FilterChip(selected = true, onClick = { recipients = recipients - member; error = null }, label = { Text(member, fontSize = 13.sp) }, colors = FilterChipDefaults.filterChipColors(containerColor = Color.Transparent, labelColor = Ink, selectedContainerColor = CreamDeep, selectedLabelColor = Ink)) }
                 }
-                Box {
+                Box(Modifier.bringIntoViewRequester(queryVisibility).onGloballyPositioned { coordinates ->
+                    queryWidth = coordinates.size.width
+                    queryTop = coordinates.boundsInWindow().top.toInt()
+                }) {
                     OutlinedTextField(recipientQuery, { recipientQuery = it; candidateOpen = it.contains("@") }, Modifier.fillMaxWidth(), placeholder = { Text("@ 检索接收人，勾选候选") }, singleLine = true, colors = fieldColors)
-                    if (candidateOpen) Column(Modifier.fillMaxWidth().align(Alignment.BottomStart).offset(y = (-60).dp).clip(RoundedCornerShape(12.dp)).background(CreamDeep).border(1.dp, Ink.copy(alpha = .12f), RoundedCornerShape(12.dp)).padding(vertical = 4.dp)) {
-                        val keyword = recipientQuery.substringAfter("@").trim()
-                        val candidates = MockData.managedMembers.filter { it.contains(keyword, ignoreCase = true) }
-                        if (candidates.isEmpty()) Text("无匹配成员", Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), fontSize = 13.sp, color = Ink.copy(alpha = .5f))
-                        candidates.forEach { member ->
-                            val selected = member in recipients
-                            Row(Modifier.fillMaxWidth().clickable { recipients = if (selected) recipients - member else recipients + member; error = null }.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Icon(if (selected) Icons.Default.CheckBox else Icons.Default.CheckBoxOutlineBlank, if (selected) "已选" else "未选", tint = Ink)
-                                Text(member, Modifier.padding(start = 8.dp), fontSize = 14.sp)
+                    if (candidateOpen && queryWidth > 0) Popup(
+                        popupPositionProvider = candidatePosition,
+                        onDismissRequest = { candidateOpen = false },
+                        properties = PopupProperties(focusable = false)
+                    ) {
+                        val maxCandidateHeight = with(density) { (queryTop - candidateGap - candidateInset).coerceAtLeast(0).toDp() }.coerceAtMost(280.dp)
+                        Column(Modifier.width(with(density) { queryWidth.toDp() }).heightIn(max = maxCandidateHeight).clip(RoundedCornerShape(12.dp)).background(CreamDeep).border(1.dp, Ink.copy(alpha = .12f), RoundedCornerShape(12.dp)).padding(vertical = 4.dp)) {
+                            val keyword = recipientQuery.substringAfter("@").trim()
+                            val candidates = MockData.managedMembers.filter { it.contains(keyword, ignoreCase = true) }
+                            Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
+                                if (candidates.isEmpty()) Text("无匹配成员", Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), fontSize = 13.sp, color = Ink.copy(alpha = .5f))
+                                candidates.forEach { member ->
+                                    val selected = member in recipients
+                                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { recipients = if (selected) recipients - member else recipients + member; error = null }.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(if (selected) Icons.Default.CheckBox else Icons.Default.CheckBoxOutlineBlank, if (selected) "已选" else "未选", tint = Ink)
+                                        Text(member, Modifier.padding(start = 8.dp), fontSize = 14.sp)
+                                    }
+                                }
                             }
+                            TextButton({ candidateOpen = false }, Modifier.fillMaxWidth()) { Text("完成", fontSize = 13.sp, color = Ink) }
                         }
-                        TextButton({ candidateOpen = false }, Modifier.fillMaxWidth()) { Text("完成", fontSize = 13.sp, color = Ink) }
                     }
                 }
                 Text("仅保存为本地演示草稿，不会正式派发。审核入口后续设计。", fontSize = 12.sp, color = Ink.copy(alpha = .6f))
@@ -144,7 +179,7 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreateTasks: Boolean, onDismiss: ()
             }, Modifier.fillMaxWidth().padding(vertical = 12.dp), colors = ButtonDefaults.buttonColors(containerColor = Ink)) { Text("保存任务（演示）") }
         }
     }
-    if (confirmExit) AlertDialog(onDismissRequest = { confirmExit = false }, title = { Text("放弃未保存的任务？") }, text = { Text("关闭后，本次填写的内容会清空。") }, confirmButton = { TextButton({ confirmExit = false; onDismiss() }) { Text("放弃") } }, dismissButton = { TextButton({ confirmExit = false }) { Text("继续填写") } })
+    if (confirmExit) AlertDialog(onDismissRequest = { confirmExit = false; sheetScope.launch { sheetState.show() } }, title = { Text("放弃未保存的任务？") }, text = { Text("关闭后，本次填写的内容会清空。") }, confirmButton = { TextButton({ confirmExit = false; onDismiss() }) { Text("放弃") } }, dismissButton = { TextButton({ confirmExit = false; sheetScope.launch { sheetState.show() } }) { Text("继续填写") } })
     if (showTagPicker) AlertDialog(
         onDismissRequest = { showTagPicker = false },
         title = { Text("选择标签") },
