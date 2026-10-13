@@ -57,7 +57,7 @@ FR-LOG、FR-TASK、FR-VIEW、FR-DASH-01～07、FR-TAG-04～07，以及本人任�
 2. 后端实现认证、本人资料、企业/人员/组织、标签及公司事项；Web 使用 HTTP repository 替换本地适配器，不能只换登录入口而保留不一致的本地目录。
 3. 验证新账号能登录、角色生效、跨企业拒绝、改密/会话撤销、版本冲突、分页完整性和 Android 共享数据，再逐条完成正式验收。
 
-Web 自动检查与浏览器操作证据见 [validation.md](../openspec/changes/web-admin-foundation/validation.md)。
+Web 自动检查与浏览器操作证据见 [validation.md](../openspec/changes/archive/2026-10-11-web-admin-foundation/validation.md)。后端实现缺口及当前接入基础见 [BACKEND_INTEGRATION.md](BACKEND_INTEGRATION.md)。
 
 ## 四面板与管理员职责（本轮复核）
 

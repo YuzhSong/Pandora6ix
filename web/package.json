@@ -6,9 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "lint": "oxlint src tests vite.config.ts",
+    "lint": "oxlint src tests dev scripts vite.config.ts",
     "preview": "vite preview",
-    "test": "node --test tests/*.test.ts"
+    "test": "node --test tests/*.test.ts",
+    "check:backend": "node scripts/checkBackend.ts"
   },
   "dependencies": {
     "react": "^19.2.8",
