@@ -19,12 +19,15 @@ interface RequestOptions {
   signal?: AbortSignal
   // Only unwrapped infrastructure endpoints (such as /health) opt into JSON.
   responseFormat?: 'envelope' | 'json'
+  headers?: Record<string, string>
+  authenticated?: boolean
 }
 interface ClientOptions {
   baseUrl: string
   fetcher?: typeof fetch
   timeoutMs?: number
   onUnauthorized?: () => void
+  getAccessToken?: () => string | null
 }
 const messages: Record<number, string> = {
   401: '登录状态已失效，请重新登录。',
@@ -34,7 +37,7 @@ const messages: Record<number, string> = {
   422: '提交的信息不符合要求，请检查后重试。',
 }
 
-export function createApiClient({ baseUrl, fetcher = fetch, timeoutMs = 15000, onUnauthorized }: ClientOptions) {
+export function createApiClient({ baseUrl, fetcher = fetch, timeoutMs = 15000, onUnauthorized, getAccessToken }: ClientOptions) {
   const base = baseUrl.replace(/\/+$/, '')
   if (!base || (!base.startsWith('/') && !/^https?:\/\//.test(base)) || base.startsWith('//')) throw new Error('API 地址必须是站内路径或 HTTP(S) 地址。')
   return {
@@ -45,9 +48,13 @@ export function createApiClient({ baseUrl, fetcher = fetch, timeoutMs = 15000, o
       const timer = setTimeout(() => { timedOut = true; controller.abort() }, timeoutMs)
       const signal = options.signal ? AbortSignal.any([controller.signal, options.signal]) : controller.signal
       try {
+        const headers = new Headers({ Accept: 'application/json', ...options.headers })
+        if (options.body !== undefined) headers.set('Content-Type', 'application/json')
+        const token = options.authenticated === false ? null : getAccessToken?.()
+        if (token) headers.set('Authorization', `Bearer ${token}`)
         const response = await fetcher(`${base}${path}`, {
           method: options.method ?? 'GET',
-          headers: options.body === undefined ? { Accept: 'application/json' } : { Accept: 'application/json', 'Content-Type': 'application/json' },
+          headers,
           body: options.body === undefined ? undefined : JSON.stringify(options.body),
           credentials: 'same-origin',
           signal,
@@ -63,7 +70,7 @@ export function createApiClient({ baseUrl, fetcher = fetch, timeoutMs = 15000, o
         if (!response.ok) {
           const nested = payload?.error
           const error = nested && typeof nested === 'object' ? nested as Record<string, unknown> : payload
-          if (response.status === 401) onUnauthorized?.()
+          if (response.status === 401 && options.authenticated !== false) onUnauthorized?.()
           throw new ApiError(
             typeof error?.message === 'string' ? error.message : messages[response.status] ?? '服务器暂时无法完成请求，请稍后重试。',
             response.status,
