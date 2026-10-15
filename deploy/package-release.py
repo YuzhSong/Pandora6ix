@@ -34,8 +34,11 @@ def main():
         release = Path(scratch)
         with zipfile.ZipFile(fatjar) as jar, zipfile.ZipFile(release / "backend.jar", "w", zipfile.ZIP_DEFLATED) as app:
             for name in jar.namelist():
-                if name.startswith("BOOT-INF/classes/") and not name.endswith("/"):
-                    app.writestr(name.removeprefix("BOOT-INF/classes/"), jar.read(name))
+                if name.startswith("BOOT-INF/classes/"):
+                    relative = name.removeprefix("BOOT-INF/classes/")
+                    if relative:
+                        # Spring package scanning also needs the directory entries in a plain jar.
+                        app.writestr(relative, jar.read(name))
             for library in libraries:
                 if library['sha256'] in missing:
                     (release / "libraries").mkdir(exist_ok=True)

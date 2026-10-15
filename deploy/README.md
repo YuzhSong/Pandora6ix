@@ -6,6 +6,8 @@
 
 `.github/workflows/deploy-dev.yml` 监听远端 `dev` 的每次 push（无路径过滤），也支持在 dev 手动运行。GitHub Actions 完成后端测试/打包、OpenAPI 核对、Web 测试/lint/build 和发布器测试后，才上传成品。
 
+CI 另外启动最终精简包，以内存库验证 `/health`、数据库迁移和 `/api/v1/me` 的 401，确认 Spring 实际扫描到了业务控制器和鉴权组件；不是只检查 Maven 编译结果。脚本为 `deploy/check-package.py`。
+
 SSH 专用账号 `pandora-deploy` 仅能执行 root 管理的发布接收器，不具有任意 SSH 命令、PTY、转发或 SFTP 权限。三个 GitHub Actions Secrets 为 PANDORA_DEPLOY_HOST、PANDORA_DEPLOY_KEY、PANDORA_DEPLOY_KNOWN_HOSTS；私钥和 SSH 登录密码不进仓库。官方 setup/checkout actions 固定到已核验的完整提交。
 
 打包工具将 Spring Boot 成品拆为应用类 backend.jar 与内容寻址的 Java 依赖。受限 SSH 先查询服务器缺少的依赖摘要，只传应用、web/、release.json 和缺少的 libraries/ 文件。依赖存于只读缓存，每个发布目录由接收器生成准确的 classpath 链接；不会混用旧版本依赖。release.json 记录提交、runNumber/runAttempt 及逐文件 SHA-256；接收器限制上传大小、解压大小和文件类型，拒绝链接、路径穿越、额外文件、校验不符及过时的发布。完整接收/校验后才获取激活锁，上传有超时，断连不会阻塞后续发布。实际激活串行执行，旧流水线不能覆盖新发布。重跑使用独立 attempt 目录。
