@@ -243,8 +243,8 @@ class BusinessApiIntegrationTests {
         return request("POST", "/tasks", token, taskBody(kind, recipients, List.of(), null), 201);
     }
 
-    // Approval is RESERVED. This explicit database fixture is not a production API or service
-    // bypass.
+    // Legacy fixture isolates execution tests at assignment version zero. New lifecycle tests
+    // below exercise approval through the public API and use its advanced assignment versions.
     private void approved(String task) {
         db.update(
                 "UPDATE task SET review_status='APPROVED' WHERE enterprise_id=? AND id=?",
@@ -271,6 +271,447 @@ class BusinessApiIntegrationTests {
                         task,
                         recipient),
                 "id");
+    }
+
+    private Map<String, Object> reviewDecision(
+            String token, Map<String, Object> task, String decision) throws Exception {
+        return request(
+                "POST",
+                "/task-reviews/" + task.get("reviewId") + "/decision",
+                token,
+                fields("expectedVersion", 0, "decision", decision, "comment", "Reviewed"),
+                200);
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> taskAssignments(Map<String, Object> task) {
+        return (List<Map<String, Object>>) task.get("authorizedAssignments");
+    }
+
+    @Test
+    void androidCapabilitiesReflectBusinessRolesWithoutGrantingAdminAuthority() throws Exception {
+        var employeeProfile = request("GET", "/me", employeeToken, null, 200);
+        var employeeCaps = (Map<?, ?>) employeeProfile.get("capabilities");
+        assertEquals(true, employeeCaps.get("createPersonalTasks"));
+        assertEquals(false, employeeCaps.get("createDelegatedTasks"));
+        assertEquals(false, employeeCaps.get("reviewTasks"));
+        var managerCaps =
+                (Map<?, ?>) request("GET", "/me", managerToken, null, 200).get("capabilities");
+        assertEquals(true, managerCaps.get("createDelegatedTasks"));
+        assertEquals(true, managerCaps.get("reviewTasks"));
+        var adminCaps =
+                (Map<?, ?>) request("GET", "/me", adminToken, null, 200).get("capabilities");
+        assertEquals(false, adminCaps.get("createPersonalTasks"));
+        assertEquals(false, adminCaps.get("reviewTasks"));
+    }
+
+    @Test
+    void realPersonalApprovalProgressAndCompletionUseReturnedRelationshipVersions()
+            throws Exception {
+        var task = createTask(employeeToken, "PERSONAL", List.of());
+        String reviewId = str(task, "reviewId"), taskId = str(task, "id");
+        assertEquals("PENDING", task.get("reviewStatus"));
+        assertEquals(0, items(request("GET", "/tasks", employeeToken, null, 200)).size());
+        var pending = request("GET", "/task-reviews/" + reviewId, leadToken, null, 200);
+        assertEquals(List.of("APPROVE", "REJECT"), pending.get("allowedActions"));
+        var decision = reviewDecision(leadToken, task, "APPROVE");
+        var review = (Map<?, ?>) decision.get("review");
+        assertEquals("APPROVED", review.get("decision"));
+        assertEquals(lead, review.get("decidedByUserId"));
+        assertEquals("Reviewed", review.get("decisionNote"));
+        assertNotNull(review.get("decidedAt"));
+        var live = request("GET", "/tasks/" + taskId, employeeToken, null, 200);
+        assertEquals(reviewId, live.get("reviewId"));
+        assertEquals(1, ((Number) live.get("version")).intValue());
+        var relation = taskAssignments(live).getFirst();
+        assertEquals("ACTIVE", relation.get("executionStatus"));
+        assertNotNull(relation.get("activatedAt"));
+        assertEquals(
+                List.of("UPDATE_PROGRESS", "COMPLETE_PERSONAL"), relation.get("allowedActions"));
+        String assignment = str(relation, "id");
+        request(
+                "POST",
+                "/task-assignments/" + assignment + "/progress-records",
+                employeeToken,
+                fields("expectedVersion", 0, "progressPercent", 100),
+                409);
+        var progress =
+                request(
+                        "POST",
+                        "/task-assignments/" + assignment + "/progress-records",
+                        employeeToken,
+                        fields("expectedVersion", relation.get("version"), "progressPercent", 100),
+                        201);
+        assertEquals("ACTIVE", ((Map<?, ?>) progress.get("assignment")).get("executionStatus"));
+        assertEquals(
+                0,
+                ((Number) request("GET", "/statistics", employeeToken, null, 200).get("completed"))
+                        .intValue());
+        var complete =
+                request(
+                        "POST",
+                        "/tasks/" + taskId + "/complete",
+                        employeeToken,
+                        fields(
+                                "expectedAssignmentVersion",
+                                ((Map<?, ?>) progress.get("assignment")).get("version")),
+                        200);
+        assertEquals("SELF", complete.get("completionSource"));
+        assertEquals(
+                1,
+                ((Number) request("GET", "/statistics", employeeToken, null, 200).get("completed"))
+                        .intValue());
+    }
+
+    @Test
+    void realDelegatedApprovalAndPerRecipientAcceptanceDoNotCompleteOtherRecipients()
+            throws Exception {
+        var task = createTask(leadToken, "DELEGATED", List.of(employee, peer));
+        String id = str(task, "id");
+        reviewDecision(managerToken, task, "APPROVE");
+        var forEmployee = request("GET", "/tasks/" + id, employeeToken, null, 200);
+        assertEquals(1, taskAssignments(forEmployee).size());
+        var assignment = taskAssignments(forEmployee).getFirst();
+        assertEquals(
+                List.of("UPDATE_PROGRESS", "REQUEST_COMPLETION"), assignment.get("allowedActions"));
+        var requested =
+                request(
+                        "POST",
+                        "/task-assignments/" + assignment.get("id") + "/completion-requests",
+                        employeeToken,
+                        fields("expectedVersion", assignment.get("version")),
+                        201);
+        String requestId = (String) ((Map<?, ?>) requested.get("request")).get("id");
+        var creatorView = request("GET", "/tasks/" + id, leadToken, null, 200);
+        for (var relation : taskAssignments(creatorView)) {
+            assertEquals(
+                    relation.get("recipientUserId").equals(employee)
+                            ? List.of("DECIDE_COMPLETION")
+                            : List.of(),
+                    relation.get("allowedActions"));
+        }
+        request(
+                "POST",
+                "/task-completion-requests/" + requestId + "/decision",
+                managerToken,
+                fields("expectedVersion", 0, "decision", "ACCEPT"),
+                404);
+        var completion =
+                request(
+                        "POST",
+                        "/task-completion-requests/" + requestId + "/decision",
+                        leadToken,
+                        fields("expectedVersion", 0, "decision", "ACCEPT"),
+                        200);
+        assertEquals(
+                "CREATOR_ACCEPTANCE",
+                ((Map<?, ?>) completion.get("assignment")).get("completionSource"));
+        var forPeer = request("GET", "/tasks/" + id, peerToken, null, 200);
+        assertEquals("ACTIVE", taskAssignments(forPeer).getFirst().get("executionStatus"));
+        assertEquals(
+                List.of("UPDATE_PROGRESS", "REQUEST_COMPLETION"),
+                taskAssignments(forPeer).getFirst().get("allowedActions"));
+    }
+
+    @Test
+    void reviewRejectionRetainsAuditButNeverActivatesRecipients() throws Exception {
+        var task = createTask(leadToken, "DELEGATED", List.of(employee, peer));
+        var result = reviewDecision(managerToken, task, "REJECT");
+        assertEquals("REJECTED", ((Map<?, ?>) result.get("review")).get("decision"));
+        var creatorView = request("GET", "/tasks/" + task.get("id"), leadToken, null, 200);
+        assertEquals("REJECTED", creatorView.get("reviewStatus"));
+        assertTrue(
+                taskAssignments(creatorView).stream()
+                        .allMatch(
+                                x ->
+                                        "PENDING_APPROVAL".equals(x.get("executionStatus"))
+                                                && x.get("activatedAt") == null));
+        assertEquals(0, items(request("GET", "/tasks", employeeToken, null, 200)).size());
+        assertEquals(0, items(request("GET", "/task-reviews", managerToken, null, 200)).size());
+        var history = items(request("GET", "/task-reviews?scope=created", leadToken, null, 200));
+        assertEquals("Reviewed", history.getFirst().get("decisionNote"));
+        request(
+                "POST",
+                "/task-reviews/" + task.get("reviewId") + "/decision",
+                managerToken,
+                fields("expectedVersion", 1, "decision", "APPROVE"),
+                409);
+    }
+
+    @Test
+    void reviewSnapshotsStayImmutableAndSupersededAttemptsCannotDecide() throws Exception {
+        var task = createTask(employeeToken, "PERSONAL", List.of());
+        String original = str(task, "reviewId");
+        var patch = taskBody("PERSONAL", List.of(), List.of(), null);
+        patch.remove("kind");
+        patch.remove("recipientIds");
+        patch.put("expectedVersion", 0);
+        patch.put("title", "Revised task");
+        var edited = request("PATCH", "/tasks/" + task.get("id"), employeeToken, patch, 200);
+        String latest = str(edited, "reviewId");
+        assertNotEquals(original, latest);
+        var old = request("GET", "/task-reviews/" + original, leadToken, null, 200);
+        assertEquals(false, old.get("isCurrent"));
+        assertEquals(List.of(), old.get("allowedActions"));
+        assertEquals("Task", ((Map<?, ?>) old.get("submittedSnapshot")).get("title"));
+        var current = request("GET", "/task-reviews/" + latest, leadToken, null, 200);
+        assertEquals("Revised task", ((Map<?, ?>) current.get("submittedSnapshot")).get("title"));
+        assertEquals(
+                List.of(employee),
+                ((Map<?, ?>) current.get("submittedSnapshot")).get("recipientIds"));
+        assertFalse(((Map<?, ?>) current.get("submittedSnapshot")).containsKey("allowedActions"));
+        var queue = items(request("GET", "/task-reviews", leadToken, null, 200));
+        assertEquals(List.of(latest), queue.stream().map(x -> x.get("id")).toList());
+        request(
+                "POST",
+                "/task-reviews/" + original + "/decision",
+                leadToken,
+                fields("expectedVersion", 0, "decision", "APPROVE"),
+                409);
+        reviewDecision(leadToken, edited, "APPROVE");
+        assertEquals(
+                latest,
+                request("GET", "/tasks/" + task.get("id"), employeeToken, null, 200)
+                        .get("reviewId"));
+        assertEquals(
+                2,
+                items(request("GET", "/task-reviews?scope=created", employeeToken, null, 200))
+                        .size());
+    }
+
+    @Test
+    void reviewReadsAndDecisionsAreRestrictedToDesignatedBusinessParticipants() throws Exception {
+        var task = createTask(employeeToken, "PERSONAL", List.of());
+        String path = "/task-reviews/" + task.get("reviewId");
+        request("GET", path, employeeToken, null, 200);
+        for (String unauthorized : List.of(adminToken, peerToken, managerToken)) {
+            request("GET", path, unauthorized, null, 404);
+            request(
+                    "POST",
+                    path + "/decision",
+                    unauthorized,
+                    fields("expectedVersion", 0, "decision", "APPROVE"),
+                    404);
+        }
+        request(
+                "POST",
+                path + "/decision",
+                employeeToken,
+                fields("expectedVersion", 0, "decision", "APPROVE"),
+                404);
+        request("GET", "/task-reviews", employeeToken, null, 403);
+        request("GET", "/task-reviews?scope=invalid", leadToken, null, 422);
+        request("POST", path + "/decision", leadToken, fields("decision", "APPROVE"), 422);
+        request(
+                "POST",
+                path + "/decision",
+                leadToken,
+                fields("expectedVersion", 0, "decision", "ACCEPT"),
+                422);
+        request(
+                "POST",
+                path + "/decision",
+                leadToken,
+                fields("expectedVersion", 9, "decision", "APPROVE"),
+                409);
+    }
+
+    @Test
+    void changedSupervisorOrDisabledRecipientBlocksApprovalWithoutPartialWrites() throws Exception {
+        var personal = createTask(employeeToken, "PERSONAL", List.of());
+        db.update(
+                "UPDATE app_user SET supervisor_user_id=? WHERE enterprise_id=? AND id=?",
+                manager,
+                enterprise,
+                employee);
+        var error =
+                request(
+                        "POST",
+                        "/task-reviews/" + personal.get("reviewId") + "/decision",
+                        leadToken,
+                        fields("expectedVersion", 0, "decision", "APPROVE"),
+                        409);
+        assertEquals("REVIEW_CONTEXT_CHANGED", error.get("code"));
+        assertEquals(
+                List.of(),
+                request("GET", "/task-reviews/" + personal.get("reviewId"), leadToken, null, 200)
+                        .get("allowedActions"));
+        var delegated = createTask(managerToken, "DELEGATED", List.of(employee, peer));
+        db.update(
+                "UPDATE app_user SET status='DISABLED' WHERE enterprise_id=? AND id=?",
+                enterprise,
+                peer);
+        request(
+                "POST",
+                "/task-reviews/" + delegated.get("reviewId") + "/decision",
+                founderToken,
+                fields("expectedVersion", 0, "decision", "APPROVE"),
+                409);
+        assertEquals(
+                "PENDING",
+                db.entity("task", enterprise, str(delegated, "id")).get("review_status"));
+        assertEquals(
+                0,
+                number(
+                        db.entity("task_review", enterprise, str(delegated, "reviewId")),
+                        "version"));
+        assertTrue(
+                taskAssignments(
+                                request(
+                                        "GET",
+                                        "/tasks/" + delegated.get("id"),
+                                        managerToken,
+                                        null,
+                                        200))
+                        .stream()
+                        .allMatch(x -> "PENDING_APPROVAL".equals(x.get("executionStatus"))));
+    }
+
+    @Test
+    void reviewDecisionsAreIdempotentAndRejectChangedCommands() throws Exception {
+        var task = createTask(employeeToken, "PERSONAL", List.of());
+        String path = "/task-reviews/" + task.get("reviewId") + "/decision";
+        var body = fields("expectedVersion", 0, "decision", "APPROVE", "comment", "Original");
+        var first = request("POST", path, leadToken, body, 200, "Idempotency-Key", "review-retry");
+        assertEquals(
+                first,
+                request("POST", path, leadToken, body, 200, "Idempotency-Key", "review-retry"));
+        body.put("decision", "REJECT");
+        var error = request("POST", path, leadToken, body, 409, "Idempotency-Key", "review-retry");
+        assertEquals("IDEMPOTENCY_CONFLICT", error.get("code"));
+        assertEquals(
+                1, number(db.entity("task_review", enterprise, str(task, "reviewId")), "version"));
+        assertEquals(
+                1,
+                number(
+                        db.entity(
+                                "task_assignment",
+                                enterprise,
+                                assignment(str(task, "id"), employee)),
+                        "version"));
+    }
+
+    @Test
+    void reviewPaginationIsCompleteAndBoundToActorAndScope() throws Exception {
+        for (int i = 0; i < 3; i++) createTask(employeeToken, "PERSONAL", List.of());
+        var first = request("GET", "/task-reviews?limit=1", leadToken, null, 200);
+        String cursor = str(first, "nextCursor");
+        assertNotNull(cursor);
+        var second = request("GET", "/task-reviews?limit=1&cursor=" + cursor, leadToken, null, 200);
+        var third =
+                request(
+                        "GET",
+                        "/task-reviews?limit=1&cursor=" + second.get("nextCursor"),
+                        leadToken,
+                        null,
+                        200);
+        assertEquals(
+                3,
+                new HashSet<>(
+                                List.of(
+                                        items(first).getFirst().get("id"),
+                                        items(second).getFirst().get("id"),
+                                        items(third).getFirst().get("id")))
+                        .size());
+        assertNull(third.get("nextCursor"));
+        request("GET", "/task-reviews?scope=created&cursor=" + cursor, leadToken, null, 422);
+        request("GET", "/task-reviews?cursor=" + cursor, managerToken, null, 422);
+        assertEquals(0, items(request("GET", "/task-reviews", managerToken, null, 200)).size());
+    }
+
+    @Test
+    void concurrentReviewDecisionsPersistExactlyOneTransition() throws Exception {
+        var task = createTask(employeeToken, "PERSONAL", List.of());
+        String path = "/task-reviews/" + task.get("reviewId") + "/decision";
+        var executor = Executors.newFixedThreadPool(2);
+        var start = new CountDownLatch(1);
+        try {
+            var approve =
+                    executor.submit(
+                            () -> {
+                                start.await();
+                                return raw(
+                                        "POST",
+                                        path,
+                                        leadToken,
+                                        fields("expectedVersion", 0, "decision", "APPROVE"));
+                            });
+            var reject =
+                    executor.submit(
+                            () -> {
+                                start.await();
+                                return raw(
+                                        "POST",
+                                        path,
+                                        leadToken,
+                                        fields("expectedVersion", 0, "decision", "REJECT"));
+                            });
+            start.countDown();
+            var responses =
+                    List.of(approve.get(15, TimeUnit.SECONDS), reject.get(15, TimeUnit.SECONDS));
+            assertEquals(
+                    List.of(200, 409), responses.stream().map(Result::status).sorted().toList());
+            var decided = db.entity("task_review", enterprise, str(task, "reviewId"));
+            assertEquals(1, number(decided, "version"));
+            var relation =
+                    db.entity("task_assignment", enterprise, assignment(str(task, "id"), employee));
+            assertEquals(
+                    "APPROVED".equals(decided.get("decision")) ? "ACTIVE" : "PENDING_APPROVAL",
+                    relation.get("execution_status"));
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void simultaneousPendingEditAndApprovalCannotApproveSupersededContent() throws Exception {
+        var task = createTask(employeeToken, "PERSONAL", List.of());
+        String taskId = str(task, "id"), reviewId = str(task, "reviewId");
+        var patch = taskBody("PERSONAL", List.of(), List.of(), null);
+        patch.remove("kind");
+        patch.remove("recipientIds");
+        patch.put("expectedVersion", 0);
+        patch.put("title", "Concurrent edit");
+        var executor = Executors.newFixedThreadPool(2);
+        var start = new CountDownLatch(1);
+        try {
+            var edit =
+                    executor.submit(
+                            () -> {
+                                start.await();
+                                return raw("PATCH", "/tasks/" + taskId, employeeToken, patch);
+                            });
+            var decision =
+                    executor.submit(
+                            () -> {
+                                start.await();
+                                return raw(
+                                        "POST",
+                                        "/task-reviews/" + reviewId + "/decision",
+                                        leadToken,
+                                        fields("expectedVersion", 0, "decision", "APPROVE"));
+                            });
+            start.countDown();
+            var edited = edit.get(15, TimeUnit.SECONDS);
+            var decided = decision.get(15, TimeUnit.SECONDS);
+            var stored = db.entity("task", enterprise, taskId);
+            if (edited.status() == 200) {
+                assertEquals(409, decided.status(), decided.body());
+                assertEquals("Concurrent edit", stored.get("title"));
+                assertEquals("PENDING", stored.get("review_status"));
+                assertEquals(
+                        "PENDING_APPROVAL",
+                        db.entity("task_assignment", enterprise, assignment(taskId, employee))
+                                .get("execution_status"));
+            } else {
+                assertEquals(409, edited.status(), edited.body());
+                assertEquals(200, decided.status(), decided.body());
+                assertEquals("Task", stored.get("title"));
+                assertEquals("APPROVED", stored.get("review_status"));
+            }
+        } finally {
+            executor.shutdownNow();
+        }
     }
 
     @Test
@@ -583,6 +1024,14 @@ class BusinessApiIntegrationTests {
                                         200)
                                 .get("accessToken");
         request("GET", "/company-important-items/" + item.get("id"), otherToken, null, 404);
+        var task = createTask(employeeToken, "PERSONAL", List.of());
+        request("GET", "/task-reviews/" + task.get("reviewId"), otherToken, null, 404);
+        request(
+                "POST",
+                "/task-reviews/" + task.get("reviewId") + "/decision",
+                otherToken,
+                fields("expectedVersion", 0, "decision", "APPROVE"),
+                404);
         request(
                 "POST",
                 "/admin/users",
@@ -812,7 +1261,7 @@ class BusinessApiIntegrationTests {
                 employeeToken,
                 fields("expectedVersion", 0, "progressPercent", 100),
                 409);
-        request("GET", "/task-reviews", managerToken, null, 404);
+        assertTrue(items(request("GET", "/task-reviews", managerToken, null, 200)).isEmpty());
         request("GET", "/inbox", employeeToken, null, 404);
         request(
                 "POST",
@@ -904,7 +1353,7 @@ class BusinessApiIntegrationTests {
         var snapshots =
                 db.rows(
                         "SELECT * FROM task_review WHERE enterprise_id=? AND task_id=? ORDER BY"
-                            + " attempt_no",
+                                + " attempt_no",
                         enterprise,
                         personalId);
         assertEquals(manager, snapshots.getFirst().get("reviewer_user_id"));

@@ -127,7 +127,7 @@ def read_schemas():
         "executionStatus": {"type": "string", "enum": ["PENDING_APPROVAL", "ACTIVE", "AWAITING_ACCEPTANCE", "COMPLETED"]},
         "progressPercent": {"type": "integer", "minimum": 0, "maximum": 100},
         "activatedAt": nullable(INSTANT), "completionSource": nullable({"type": "string", "enum": ["SELF", "CREATOR_ACCEPTANCE"]}),
-        "completedByUserId": nullable(ID), "completedAt": nullable(INSTANT)})
+        "completedByUserId": nullable(ID), "completedAt": nullable(INSTANT), "allowedActions": array(STRING)})
     progress = obj({"id": ID, "assignmentId": ID, "actorUserId": ID, "progressPercent": INTEGER, "note": nullable(STRING), "recordedAt": INSTANT})
     completion = obj({**versioned, "assignmentId": ID, "requestedByUserId": ID, "submittedNote": nullable(STRING), "requestedAt": INSTANT,
         "decision": {"type": "string", "enum": ["PENDING", "ACCEPTED", "REJECTED"]}, "decidedByUserId": nullable(ID), "decisionNote": nullable(STRING), "decidedAt": nullable(INSTANT)})
@@ -146,12 +146,21 @@ def read_schemas():
     org = obj({**versioned, "name": STRING, "kind": {"type": "string", "enum": ["COMPANY", "DEPARTMENT", "TEAM"]}, "parentId": nullable(ID)})
     user = obj({**versioned, "displayName": STRING, "name": STRING, "loginName": STRING, "orgUnitId": nullable(ID), "supervisorUserId": nullable(ID),
         "jobTitle": nullable(STRING), "status": STRING, "roles": array(STRING), "businessTimezone": nullable(STRING), "department": nullable(STRING),
-        "organization": nullable(ref("OrgUnit")), "enterprise": ref("Enterprise"), "capabilities": {"type": "object", "additionalProperties": BOOLEAN}})
+        "organization": nullable(ref("OrgUnit")), "enterprise": ref("Enterprise"),
+        "capabilities": obj({name: BOOLEAN for name in ("admin", "business", "manage", "createPersonalTasks", "createDelegatedTasks", "reviewTasks", "createTags", "publishCompanyItems")})})
     item = obj({**versioned, "itemId": ID, "publisherUserId": ID, "title": STRING, "content": STRING, "displayOrder": INTEGER, "createdAt": INSTANT})
     selection = obj({"entries": array(ref("WorkEntry")), "hasManualSelection": BOOLEAN, "requiresSelection": BOOLEAN, "candidateCount": INTEGER, "version": INTEGER})
     stats = obj({"total": INTEGER, "completed": INTEGER, "uncompleted": INTEGER, "basis": {"type": "string", "const": "OWN_APPROVED_ASSIGNMENTS"}})
+    review = obj({**versioned, "reviewId": ID, "taskId": ID, "reviewerUserId": ID, "submittedByUserId": ID,
+        "taskVersion": INTEGER, "currentTaskVersion": INTEGER, "attemptNo": INTEGER, "submittedAt": INSTANT,
+        "submittedSnapshot": {"type": "object", "additionalProperties": True},
+        "decision": {"type": "string", "enum": ["PENDING", "APPROVED", "REJECTED"]},
+        "reviewStatus": {"type": "string", "enum": ["PENDING", "APPROVED", "REJECTED"]},
+        "decidedByUserId": nullable(ID), "decisionNote": nullable(STRING), "decidedAt": nullable(INSTANT),
+        "isCurrent": BOOLEAN, "allowedActions": array({"type": "string", "enum": ["APPROVE", "REJECT"]})})
     schemas = {"Tag": tag, "Assignment": assignment, "ProgressRecord": progress, "CompletionRequestView": completion, "Task": task,
         "WorkEntry": entry, "Journal": journal, "Enterprise": enterprise, "OrgUnit": org, "User": user, "CompanyItem": item, "ImportantSelection": selection, "Statistics": stats,
+        "TaskReview": review, "ReviewDecisionResult": obj({"review": ref("TaskReview"), "task": ref("Task")}),
         "Recipient": obj({"id": ID, "displayName": STRING, "orgUnitId": nullable(ID), "jobTitle": nullable(STRING), "organizationName": nullable(STRING), "relationship": STRING}),
         "LoginResult": obj({"accessToken": STRING, "tokenType": {"type": "string", "const": "Bearer"}, "expiresAt": INSTANT, "user": ref("User")}),
         "ProgressResult": obj({"record": ref("ProgressRecord"), "assignment": ref("Assignment")}),
@@ -160,7 +169,7 @@ def read_schemas():
             "today": DATE, "businessTimezone": STRING, "tasks": array(ref("Task")), "nextCursor": nullable(STRING), "totalCount": INTEGER}),
         "Error": obj({"error": obj({"code": STRING, "message": STRING, "fieldErrors": array(obj({"field": STRING, "message": STRING})), "existingJournalId": ID}, ("code", "message", "fieldErrors")),
             "requestId": STRING, "timestamp": INSTANT, "status": INTEGER, "code": STRING, "message": STRING, "path": STRING}, ("error", "requestId"))}
-    for name in ("Tag", "Task", "Journal", "WorkEntry", "CompanyItem", "OrgUnit", "User", "Recipient"):
+    for name in ("Tag", "Task", "Journal", "WorkEntry", "CompanyItem", "OrgUnit", "User", "Recipient", "TaskReview"):
         schemas[name + "Page"] = obj({"items": array(ref(name)), "nextCursor": nullable(STRING), "moreUrl": STRING}, ("items", "nextCursor"))
     schemas["Dashboard"] = obj({"companyImportantItems": ref("CompanyItemPage"), "companyTasks": ref("TaskPage"), "personalImportantEntries": ref("ImportantSelection"), "workEntries": ref("WorkEntryPage"), "statistics": ref("Statistics")})
     return schemas
@@ -175,6 +184,7 @@ RESPONSES = {
     ("GET", "/tasks/recipient-candidates"): "RecipientPage", ("GET", "/tasks"): "TaskPage", ("POST", "/tasks"): "Task", ("GET", "/tasks/{id}"): "Task", ("PATCH", "/tasks/{id}"): "Task",
     ("POST", "/tasks/{id}/complete"): "Assignment", ("POST", "/task-assignments/{id}/progress-records"): "ProgressResult",
     ("POST", "/task-assignments/{id}/completion-requests"): "CompletionResult", ("POST", "/task-completion-requests/{id}/decision"): "CompletionResult",
+    ("GET", "/task-reviews"): "TaskReviewPage", ("GET", "/task-reviews/{id}"): "TaskReview", ("POST", "/task-reviews/{id}/decision"): "ReviewDecisionResult",
     ("GET", "/calendar"): "Calendar", ("GET", "/work-logs"): "JournalPage", ("POST", "/work-logs"): "Journal", ("GET", "/work-logs/{id}"): "Journal", ("PATCH", "/work-logs/{id}"): "Journal",
     ("GET", "/work-log-entries/{id}"): "WorkEntry", ("GET", "/me/important-entry-candidates"): "WorkEntryPage", ("GET", "/me/important-entries"): "ImportantSelection", ("PUT", "/me/important-entries"): "ImportantSelection",
     ("GET", "/company-important-items"): "CompanyItemPage", ("POST", "/company-important-items"): "CompanyItem", ("GET", "/company-important-items/{id}"): "CompanyItem", ("PATCH", "/company-important-items/{id}"): "CompanyItem",
@@ -183,8 +193,8 @@ RESPONSES = {
 
 
 def generate():
-    document = {"openapi": "3.1.0", "info": {"title": "Pandora6ix confirmed backend APIs", "version": "0.1.0",
-        "description": "Implementation on backend-syz. Reserved approval/inbox and unresolved Q-01–09 are excluded. Read backend/README.md for policy and deployment boundaries."},
+    document = {"openapi": "3.1.0", "info": {"title": "Pandora6ix confirmed backend APIs", "version": "0.2.0",
+        "description": "Implementation on backend-syz, including confirmed direct-supervisor task review. Reserved inbox and unresolved Q-01–09 are excluded. Read backend/ANDROID_INTEGRATION.md for current Android contracts."},
         "servers": [{"url": "/api/v1"}], "security": [{"bearerAuth": []}], "paths": {},
         "components": {"securitySchemes": {"bearerAuth": {"type": "http", "scheme": "bearer"}, "bootstrapSecret": {"type": "apiKey", "in": "header", "name": "X-Bootstrap-Token"}},
             "schemas": {**command_schemas(), **read_schemas()}}}

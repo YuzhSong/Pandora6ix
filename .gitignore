@@ -29,6 +29,7 @@ android/.kotlin/
 *.p12
 *.jks
 secrets.properties
+sshkey.md
 
 # OS files and logs
 .DS_Store

@@ -1,5 +1,7 @@
 # Pandora 后端实施记录
 
+2026-10-15 更新：`backend-syz` 已合入最新 `dev ec288d4`。用户确认开放直属上级审批，新增审核列表、详情和决定，打通真实任务闭环；Android 所需十模块契约与对接示例见 [ANDROID_API_V0.2.md](ANDROID_API_V0.2.md)。本轮变更 [complete-android-backend-workflows](../openspec/changes/complete-android-backend-workflows/proposal.md) 尚未提交 PR。下面 2026-10-13 段落记录原始实施基线。
+
 2026-10-13；在 `backend-syz` 从 `dev a8adf5d` 开始开发，经 [PR #10](https://github.com/YuzhSong/Pandora6ix/pull/10) 合并到 `dev f5283e6`，随后同步回 `backend-syz`。只涉及 backend 与 OpenSpec。依据 docs 中需求 V1.3、API0.1、DB0.2 和后端缺口清单，变更 [`implement-backend-confirmed-apis`](../openspec/changes/archive/2026-10-13-implement-backend-confirmed-apis/proposal.md) 已在合并验证后归档并同步主规格。
 
 安卓逐模块接入、模型差异与阻塞项见 [ANDROID_INTEGRATION.md](ANDROID_INTEGRATION.md)。
@@ -19,9 +21,10 @@
 | 日报与条目 | 每人每天唯一；一篇多条；稳定 entryId；版本更新/增补不删除遗漏条目；作者写、管理范围读；单条全文接口 |
 | 个人重要事项 | 本人 D～D-9 已发布条目；至多十条；≤10 默认全选、>10 要求手选；手动空集持久化；旧已选过期条目不擅自删除/补位 |
 | 导图与基础统计 | 四面板与详情 ID；列表更多入口；本人已批准执行关系的总数、完成数、未完成数；无数据为零 |
-| 正式接口契约与验证 | [`openapi.json`](openapi.json)：41 个业务操作及命令/读模型 schema；JSON 成功/错误信封、fieldErrors、分页、版本和可选幂等；集成测试及真实进程重启检查 |
+| 直属上级审批 | 本人待审队列/提交历史、不可变快照、APPROVE/REJECT、版本/幂等/审计；审批时重查直属上级及接收人，原子激活多人执行关系，旧快照不能决定 |
+| 正式接口契约与验证 | [`openapi.json`](openapi.json)：44 个业务操作及命令/读模型 schema；JSON 成功/错误信封、fieldErrors、分页、版本和可选幂等；集成测试及真实进程重启检查 |
 
-Web 的 repository 和 Android 原型仍需要另行接入这些接口；本次没有修改客户端，也不声称完成三端业务联调。
+Web 管理端已在 PR #11 接入；Android 原型仍需要接入真实网络。本次没有修改客户端，也不声称完成 Android 应用联调。
 
 ## 独立运行
 
@@ -69,6 +72,7 @@ DB0.2 的 MySQL 8.4 是候选。当前驱动、DDL、迁移和验证针对 H2，
 | GET+POST / PATCH | `/admin/users`、`/admin/users/{id}` |
 | GET+POST / PATCH | `/tags`、`/tags/{id}` |
 | GET / GET+POST / GET+PATCH | `/tasks/recipient-candidates`、`/tasks`、`/tasks/{id}` |
+| GET / GET / POST | `/task-reviews?scope=pending\|created`、`/task-reviews/{id}`、`/task-reviews/{id}/decision` |
 | POST | `/task-assignments/{id}/progress-records`、`/tasks/{id}/complete`、`/task-assignments/{id}/completion-requests`、`/task-completion-requests/{id}/decision` |
 | GET | `/calendar?mode=day\|week\|month&anchorDate=YYYY-MM-DD` |
 | GET+POST / GET+PATCH / GET | `/work-logs`、`/work-logs/{id}`、`/work-log-entries/{id}` |
@@ -87,14 +91,14 @@ DB0.2 的 MySQL 8.4 是候选。当前驱动、DDL、迁移和验证针对 H2，
 - 日报 PATCH `upsertEntries` 省略/为空不会删旧条目；有 entryId 是原条目编辑，无 entryId 必须有唯一 clientEntryKey 才新增。tagIds 省略为保留，空数组 + null 主标签为清空。修改单独 primaryTagId 必须携带完整 tagIds。
 - `DAILY_JOURNAL_EXISTS` 在 `error.existingJournalId` 返回本人同日日报 ID；失败内容不会自动合入旧篇。条目单独详情只返回这一条的完整内容。
 - ADMIN 可维护目录/公司事项，ADMIN 单独不是业务用户。FOUNDER 管企业下级，DEPARTMENT_MANAGER/TEAM_LEAD 对应所属部门/团队子树；同级、上级、无组织范围人员不能被派发。直属审核人独立于组织归属，不能形成环。
-- 创建任务返回 201 只表示 PENDING 申请。未批准任务不会进入接收人的正式任务/日历，也不能进度/完成。当前待审编辑重查接收人范围及直属审核人，追加不可变快照，旧快照内容保留；未来审批必须匹配当前任务版本。
+- 创建任务返回 201 只表示 PENDING 申请。未批准任务不会进入接收人的正式任务/日历，也不能进度/完成。待审编辑重查接收人范围及直属审核人，追加不可变快照；审批必须匹配当前任务版本。批准会增加任务和 assignment 版本；后续进度/完成必须使用返回的新关系版本。审核决定可传 Idempotency-Key。
 - `/statistics` 基础统计明确使用 `OWN_APPROVED_ASSIGNMENTS`：本人已批准执行关系总数，以真实 COMPLETED 事实计完成；不把进度 100 当完成，不推导多人任务整体完成/父子统计口径。
 
 ## 仍未实施 / 待确认
 
 | 文档边界 | 状态 |
 |---|---|
-| `/inbox`、已读、`/task-reviews`、审批详情/决定 | API0.1 明确 Reserved，本轮不开放。已保存审批快照/审批人/PENDING 关系；新提交任务暂不能经生产 API 获批，不能声称完整审批闭环已交付 |
+| `/inbox`、已读 | 仍 Reserved；用户本轮已确认将三个 `/task-reviews` 接口从旧文档预留提升为实现，不依赖 inbox 也可读取审核队列并完成审批 |
 | Q-01 最高级/无上级审核 | 明确 `WORKFLOW_POLICY_UNCONFIRMED`，不免审/自审 |
 | Q-02 获批编辑、驳回重提 | 未开放重提；获批/驳回内容编辑拒绝 |
 | Q-03 草稿长期同步 | 没有草稿表/同步端点，已发布存储不混入草稿 |
@@ -115,6 +119,7 @@ cd D:\Code\Pandora6ix\backend
 python scripts/generate-openapi.py --check
 # 真实进程、独立随机测试库，不使用 backend/data 或预设团队账号：
 .\scripts\smoke.ps1
+python scripts/android-smoke.py
 cd ..
 openspec validate backend-identity-directory --strict
 openspec validate backend-task-workflow --strict
@@ -123,6 +128,8 @@ openspec validate backend-journals-dashboard --strict
 
 接口变化后运行 `python scripts/generate-openapi.py` 更新契约。脚本读取显式命令和控制器注解，读模型 schema 由脚本集中维护。
 
-业务集成测试在独立内存库创建临时企业/账号，覆盖跨企业、ADMIN 业务隔离、上下级范围/循环、会话生命周期、AND 标签、全部分页、版本失败回滚、幂等与并发发表、两类完成事实、唯一日报、稳定条目、十日窗口/手动空集/过期保留、日历和导图。审批为 Reserved，完成分支测试明确通过测试数据库夹具准备 APPROVED 状态，生产没有测试审核端点。
+业务集成测试在独立内存库创建临时企业/账号，覆盖跨企业、ADMIN 业务隔离、上下级范围/循环、会话生命周期、AND 标签、全部分页、版本失败回滚、幂等与并发发表、两类完成事实、唯一日报、稳定条目、十日窗口/手动空集/过期保留、日历和导图。新增测试通过真实审批接口打通个人/多人派发流程、审核快照与过期版本、权限变化和并发决定；原有执行单元场景仍保留隔离状态夹具，不是生产绕过接口。
 
 真实进程 smoke 检查独立文件数据库：迁移、初始化/登录、发表幂等、重启后 ID/内容/手动空集/会话保存、导图读取与退出撤销；结束时停止自己启动的进程。运行结果与测试数量见 [`VALIDATION.md`](VALIDATION.md)。这不替代生产 MySQL 验证、固定规模的性能验收或真实客户端联调。
+
+`android-smoke.py` 进一步覆盖十模块真实 HTTP：V1 数据库写入后升级 V2、直属上级批准/驳回、100% 进度仍未完成、个人自完和派发逐人拒绝/重验收、日报补充/冲突、十条选择/空集、标签 AND/角色、统计和再次重启持久化；不通过 SQL 准备批准状态。

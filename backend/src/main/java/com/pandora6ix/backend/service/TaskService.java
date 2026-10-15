@@ -274,36 +274,27 @@ public class TaskService
                                         a.id().equals(task.get("creator_user_id"))
                                                 || a.id().equals(r.get("recipient_user_id"))
                                                 || managed.contains(str(r, "recipient_user_id")))
-                        .map(BusinessDb::view)
+                        .map(
+                                r -> {
+                                    var assignment = view(r);
+                                    assignment.put("allowedActions", assignmentActions(a, task, r));
+                                    return assignment;
+                                })
                         .toList();
         v.put("authorizedAssignments", allowed);
-        List<String> actions = new ArrayList<>();
+        Set<String> actions = new LinkedHashSet<>();
         if (a.id().equals(task.get("creator_user_id"))
                 && "PENDING".equals(task.get("review_status"))) actions.add("EDIT_PENDING");
-        if ("APPROVED".equals(task.get("review_status")))
-            for (var r : assignments) {
-                if (a.id().equals(r.get("recipient_user_id"))
-                        && "ACTIVE".equals(r.get("execution_status"))) {
-                    actions.add("UPDATE_PROGRESS");
-                    actions.add(
-                            "PERSONAL".equals(task.get("task_kind"))
-                                    ? "COMPLETE_PERSONAL"
-                                    : "REQUEST_COMPLETION");
-                }
-                if (a.id().equals(task.get("creator_user_id"))
-                        && "AWAITING_ACCEPTANCE".equals(r.get("execution_status")))
-                    actions.add("DECIDE_COMPLETION");
-            }
-        v.put("allowedActions", actions.stream().distinct().toList());
+        for (var r : assignments) actions.addAll(assignmentActions(a, task, r));
+        v.put("allowedActions", List.copyOf(actions));
         if (full) {
             v.put(
                     "reviewId",
                     db.optional(
                                     "SELECT id FROM task_review WHERE enterprise_id=? AND task_id=?"
-                                            + " AND task_version=? ORDER BY attempt_no DESC",
+                                            + " ORDER BY attempt_no DESC",
                                     a.enterpriseId(),
-                                    task.get("id"),
-                                    task.get("version"))
+                                    task.get("id"))
                             .map(r -> r.get("id"))
                             .orElse(null));
             List<Map<String, Object>> history = new ArrayList<>(), requests = new ArrayList<>();
@@ -334,6 +325,22 @@ public class TaskService
             v.put("completionRequests", requests);
         } else v.remove("description");
         return v;
+    }
+
+    private List<String> assignmentActions(
+            IdentityService.Actor a, Map<String, Object> task, Map<String, Object> assignment) {
+        if (!"APPROVED".equals(task.get("review_status"))) return List.of();
+        if (a.id().equals(assignment.get("recipient_user_id"))
+                && "ACTIVE".equals(assignment.get("execution_status")))
+            return List.of(
+                    "UPDATE_PROGRESS",
+                    "PERSONAL".equals(task.get("task_kind"))
+                            ? "COMPLETE_PERSONAL"
+                            : "REQUEST_COMPLETION");
+        if (a.id().equals(task.get("creator_user_id"))
+                && "AWAITING_ACCEPTANCE".equals(assignment.get("execution_status")))
+            return List.of("DECIDE_COMPLETION");
+        return List.of();
     }
 
     public Map<String, Object> detail(IdentityService.Actor a, String id) {
@@ -514,11 +521,34 @@ public class TaskService
                         id,
                         c.expectedVersion()));
         tags.replace(a, "task_tag", "task_id", id, tagIds);
-        // Preserve earlier submitted snapshots. A future reviewer must approve the current content
-        // version.
-        var snapshot = detail(a, id);
-        snapshot.remove("progressRecords");
-        snapshot.remove("completionRequests");
+        // Keep the same submitted command shape as creation, without mutable read/action metadata.
+        // Earlier snapshots remain immutable and can no longer approve this content version.
+        var snapshot =
+                fields(
+                        "kind",
+                        task.get("task_kind"),
+                        "title",
+                        c.title(),
+                        "description",
+                        c.description(),
+                        "priorityLevel",
+                        c.priorityLevel(),
+                        "timeKind",
+                        c.timeKind(),
+                        "startDate",
+                        c.startDate(),
+                        "endDate",
+                        c.endDate(),
+                        "startTime",
+                        c.startTime(),
+                        "endTime",
+                        c.endTime(),
+                        "recipientIds",
+                        assignments(a, id).stream().map(r -> r.get("recipient_user_id")).toList(),
+                        "tagIds",
+                        tagIds,
+                        "primaryTagId",
+                        c.primaryTagId());
         var previous =
                 db.one(
                         "SELECT * FROM task_review WHERE enterprise_id=? AND task_id=? ORDER BY"

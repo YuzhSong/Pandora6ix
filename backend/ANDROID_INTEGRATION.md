@@ -1,5 +1,7 @@
 # Android 与后端对接清单
 
+**2026-10-15 更新：** `backend-syz` 已同步 `dev ec288d4`，安卓成员两分支的当前改动均已包含于 dev。用户本轮明确确认实施直属上级审批；最新十模块端点、DTO、版本与审批流程以 [ANDROID_API_V0.2.md](ANDROID_API_V0.2.md) 和 [OpenAPI](openapi.json) 为准，覆盖旧 API0.1 的审批 Reserved 说明。本轮不修改 Android 源码。
+
 2026-10-13。PR #10 已合并到 `dev f5283e6`，`backend-syz` 已同步该提交。本清单依据安卓现有源码、docs 需求 V1.3/API0.1 与已实现 [OpenAPI](openapi.json) 核对；只记录对接工作，不修改安卓代码或新增业务接口。
 
 ## 当前状态与前置工作
@@ -28,6 +30,7 @@
 | 单条全文 | `GET /company-important-items/{id}`、`GET /tasks/{id}`、`GET /work-log-entries/{id}`、`GET /work-logs/{id}` | 点击面板用稳定 ID 读取对应单条全文；日报整篇和工作条目详情分别处理；不再只传列表下标或拼接文本 | 已实现。单条工作内容不是整篇日报；不可见私人资源与不存在统一 404 |
 | 任务创建和 @ 候选 | `GET /tasks/recipient-candidates?q=&cursor=&limit=`、`POST /tasks` | PERSONAL/DELEGATED 分支；个人任务锁本人；派发用候选 userId 而非姓名；候选搜索分页；提交 kind、时间、重要程度、recipientIds、标签 IDs；接收服务端 PENDING 结果 | 已实现。员工可建本人个人任务；管理者派下级；无有效直属审核人返回政策未确认 |
 | 任务列表/编辑 | `GET /tasks?scope=mine\|managed\|created&from=&to=&tagIds=`、`GET /tasks/{id}`、`PATCH /tasks/{id}` | 本人任务、管理范围、本人提交申请分别查询；根据 allowedActions/reviewStatus 和执行关系显示按钮；保存期望版本，409 重新读取 | 已实现。待审批创建者可编辑；获批/驳回编辑、重提仍未开放 |
+| 直属上级审批 | `GET /task-reviews?scope=pending\|created`、`GET /task-reviews/{id}`、`POST /task-reviews/{id}/decision` | 用 reviewId 打开不可变快照；审核人传 APPROVE/REJECT 和 review.expectedVersion；创建者读结果；批准后刷新任务/执行关系版本 | 本轮已实现。指定当前直属上级可决定；旧快照/变更的范围拒绝，支持幂等和并发保护。消息 inbox 仍预留 |
 | 进度及个人完成 | `POST /task-assignments/{id}/progress-records`、`POST /tasks/{id}/complete` | 补进度输入/历史和个人完成交互；进度带 assignment.expectedVersion，个人完成带 expectedAssignmentVersion；提交成功后刷新关系版本 | 已实现，仅批准 ACTIVE 关系。progressPercent=100 不自动完成；PERSONAL 完成来源 SELF |
 | 派发任务逐人验收 | `POST /task-assignments/{id}/completion-requests`、`POST /task-completion-requests/{id}/decision` | 接收人申请完成；创建者按 requestId 逐人 ACCEPT/REJECT，携带请求版本；分别显示每位接收人结果 | 已实现，完成来源 CREATOR_ACCEPTANCE。普通接收人不能代验收，不能使用个人自完成代替 |
 | 日/周/月视图 | `GET /calendar?mode=day\|week\|month&anchorDate=&tagIds=&cursor=&limit=` | 将 ISO 日期/HH:mm 转为展示模型；使用服务端 rangeStart/rangeEnd/today/businessTimezone；AND 标签、全部分页、跨格同 taskId；不往日历混入日志 | 已实现，仅批准本人任务。安卓 YEAR 不是正式 mode；若保留年视图，需评审全年任务区间读取方案 |
@@ -68,7 +71,7 @@
 
 | 内容 | 目前对安卓联调的影响 |
 |---|---|
-| 消息/任务审批全部 Reserved | `/inbox`、已读、`/task-reviews`、审批详情/决定尚未实现；原型消息中的“已派发/审核通过”是假数据。新建任务只到 PENDING，生产接口无法将其批准为 ACTIVE，完整创建→执行→验收闭环暂不能验收 |
+| 消息仍 Reserved | `/inbox`、已读尚未实现；审核改用本轮提供的 `/task-reviews` 队列/详情/决定。原型消息仍是假数据，不代表 Android 已调用接口；后端真实任务闭环已可通过接口验收 |
 | Q-01 无上级审核 | 创始人/无有效直接上级创建任务明确拒绝，不能免审/自审 |
 | Q-02 获批修改/驳回重提 | 仅待审创建者编辑已实现；重提/获批编辑入口不接猜测的 API |
 | Q-03 草稿长期同步 | 当前没有服务端草稿端点；不能把本地保存当已发布，也不能上传未确认草稿 |
@@ -76,7 +79,7 @@
 | Q-05～09 | 不推测重要程度方向、自动补位/条目删除、父子关联与总体/团队统计分母、日报任务关联、标签停用/历史策略 |
 | P1/P2 与生产验收 | 提醒、邀约、AI、团队率/分布未提供；MySQL 部署、真机/多设备业务联调、固定规模性能验收未执行 |
 
-如果要开放审批/消息，需要另一个明确授权的 OpenSpec 实施批次。不能为演示把 PENDING 自动置为 APPROVED。完成/验收分支目前只能用已有、可信的 APPROVED 状态受控测试数据联调；测试夹具不是生产免审入口。
+本轮用户已授权审批，并由 `complete-android-backend-workflows` 实施；消息仍需另行确认。新任务必须通过真实直属上级审核后生效；不能为演示把 PENDING 自动置为 APPROVED。`scripts/android-smoke.py` 通过真实接口完成审核与验收，没有 SQL 批准夹具。
 
 ## 推荐接入顺序与验收
 
@@ -84,7 +87,7 @@
 2. 标签、公司事项、导图和本人重要事项读取；替换 MockData，验证多页读取、条目单独详情、空数据/失败状态。
 3. 日报 entries 发布/编辑，再接重要事项选择；验证每天唯一、稳定 ID、版本冲突、最多十条和手动空集重启保持，换设备读取同一条数据。
 4. 任务个人/派发创建、真实候选、任务列表与日周月视图；验证跨级范围、非法混入整笔拒绝、标签 AND、PENDING 不进入正式接收/日历。
-5. 基于已批准测试数据接进度、个人完成与逐人验收；验证 100% 未完成、个人/派发分支不能混用、重复提交不追加完成事实。
-6. 审批/消息规则确认及后端服务交付后，再验收从新任务申请到生效/完成的完整真实流程；AI/团队统计按后续范围排期。
+5. 接入审核队列、快照详情和决定，再接进度、个人完成与逐人验收；验证 100% 未完成、个人/派发分支不能混用、重复提交不追加完成事实。
+6. 通过新建→真实直属上级批准→执行→完成/验收接口验收完整流程；消息、AI/团队统计按后续范围排期。
 
-后端已有 39 项测试与真实文件库重启验证，记录见 [VALIDATION.md](VALIDATION.md)。本次清单核对没有修改业务代码，合并提交相对后端实现提交 `f29f202` 无文件差异，因此未重复运行全量业务或 Android 构建测试；不能把本清单记作安卓联调成功。
+2026-10-13 基线为 39 项测试。本轮新增审批与真实闭环验证结果见 [VALIDATION.md](VALIDATION.md)。后端 HTTP 验证不等于 Android 应用已经接入或通过真机验收。

@@ -185,6 +185,12 @@ public class IdentityService
                         actor.businessRank() != 99,
                         "manage",
                         actor.businessRank() < 3,
+                        "createPersonalTasks",
+                        actor.businessRank() != 99,
+                        "createDelegatedTasks",
+                        actor.businessRank() < 3,
+                        "reviewTasks",
+                        actor.businessRank() < 3,
                         "createTags",
                         actor.has("ADMIN")
                                 || actor.has("FOUNDER")

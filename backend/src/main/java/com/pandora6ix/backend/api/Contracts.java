@@ -106,6 +106,11 @@ public final class Contracts {
 
     public record Complete(@NotNull @Min(0) Long expectedAssignmentVersion) {}
 
+    public record ReviewDecision(
+            @NotNull @Min(0) Long expectedVersion,
+            @NotBlank @Pattern(regexp = "APPROVE|REJECT") String decision,
+            @Size(max = 20000) String comment) {}
+
     public record CompletionRequest(
             @NotNull @Min(0) Long expectedVersion, @Size(max = 20000) String note) {}
 
