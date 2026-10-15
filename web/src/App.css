@@ -222,5 +222,12 @@ dialog::backdrop { background: #17243d70; backdrop-filter: blur(3px); }.editor-d
   .company-card { padding: 16px; }
 }
 td { height: 60px; font-size: calc(13px * var(--font-scale)); }
+.auth-card form { text-align: left; }
+.auth-card fieldset, .dialog-body > fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+.auth-card label { display: grid; gap: 6px; margin: 14px 0; font-size: calc(13px * var(--font-scale)); }
+.auth-card input { width: 100%; min-width: 0; height: 42px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); padding: 10px 12px; font: inherit; }
+.dialog-body > fieldset > label { display: grid; gap: 9px; margin-bottom: 21px; font-size: calc(13px * var(--font-scale)); }
+.auth-card .text-button { display: block; margin: 14px auto 0; }
+.auth-card { max-height: none; }
 th { font-size: calc(13px * var(--font-scale)); }
 @media (min-width: 1600px) { td { height: 64px; } }
