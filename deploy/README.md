@@ -8,7 +8,7 @@
 
 SSH 专用账号 `pandora-deploy` 仅能执行 root 管理的发布接收器，不具有任意 SSH 命令、PTY、转发或 SFTP 权限。三个 GitHub Actions Secrets 为 PANDORA_DEPLOY_HOST、PANDORA_DEPLOY_KEY、PANDORA_DEPLOY_KNOWN_HOSTS；私钥和 SSH 登录密码不进仓库。官方 setup/checkout actions 固定到已核验的完整提交。
 
-打包工具只包含 backend.jar、web/ 和 release.json。后者记录提交、runNumber/runAttempt 及逐文件 SHA-256；接收器限制上传大小、解压大小和文件类型，拒绝链接、路径穿越、额外文件、校验不符及过时的发布。实际部署通过文件锁串行执行，旧流水线不能覆盖新发布。重跑使用独立 attempt 目录。
+打包工具将 Spring Boot 成品拆为应用类 backend.jar 与内容寻址的 Java 依赖。受限 SSH 先查询服务器缺少的依赖摘要，只传应用、web/、release.json 和缺少的 libraries/ 文件。依赖存于只读缓存，每个发布目录由接收器生成准确的 classpath 链接；不会混用旧版本依赖。release.json 记录提交、runNumber/runAttempt 及逐文件 SHA-256；接收器限制上传大小、解压大小和文件类型，拒绝链接、路径穿越、额外文件、校验不符及过时的发布。完整接收/校验后才获取激活锁，上传有超时，断连不会阻塞后续发布。实际激活串行执行，旧流水线不能覆盖新发布。重跑使用独立 attempt 目录。
 
 发布完成后，`/deployment.json` 返回当前部署的 sha/runNumber/runAttempt/branch，可与 GitHub Actions 对照。域名为 dev 环境，不把 dev 发布自动等同 main 稳定发布。
 
@@ -18,6 +18,7 @@ SSH 专用账号 `pandora-deploy` 仅能执行 root 管理的发布接收器，�
 |---|---|
 | `/opt/Pandora/releases/<sha>-<run>-<attempt>` | 不可变 Java/Web 成品 |
 | `/opt/Pandora/current` | 当前程序软链接 |
+| `/opt/Pandora/libraries/<sha256>.jar` | root 管理的共享依赖缓存，各发布仅链接自己的精确版本 |
 | `/opt/Pandora/shared/data/pandora.mv.db` | 云端持久化 H2 文件库，发布不覆盖 |
 | `/opt/Pandora/config/backend.env` | root-only 数据源/bootstrap 环境；不提交 Git |
 | `/opt/Pandora/backups` | 每次发布前停服取得的一致数据库备份，root-only |
@@ -57,4 +58,4 @@ python3 -m unittest discover -s deploy/tests -v
 python3 deploy/package-release.py --sha "$(git rev-parse HEAD)" --run-number 0 --output /tmp/pandora.tgz
 ```
 
-Windows 可运行 5 项归档校验测试，2 项真实软链接/回滚测试只在 Linux 运行。云端和 Actions 均须完整通过 7 项。安装、域名和真实 CI 发布结果见本目录 VALIDATION.md。
+Windows 可运行 8 项归档/缓存校验测试，3 项真实软链接/回滚测试只在 Linux 运行。云端和 Actions 均须完整通过 11 项。安装、域名和真实 CI 发布结果见本目录 VALIDATION.md。

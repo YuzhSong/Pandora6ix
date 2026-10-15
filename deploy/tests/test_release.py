@@ -66,6 +66,38 @@ class ReleaseTests(unittest.TestCase):
             bundle, destination = self.bundle(Path(folder), tarfile.TarInfo("backend.env"))
             with self.assertRaises(ValueError): receiver.validate_archive(bundle, destination)
 
+    def test_missing_dependency_rejected(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder); unpacked = root / "app"; unpacked.mkdir()
+            with patch.object(receiver, "ROOT", root):
+                with self.assertRaises(ValueError):
+                    receiver.prepare_libraries(unpacked, {"libraries": [{"name": "missing.jar", "sha256": "a" * 64}]})
+
+    def test_dependency_path_traversal_rejected(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder); unpacked = root / "app"; unpacked.mkdir()
+            with patch.object(receiver, "ROOT", root):
+                with self.assertRaises(ValueError):
+                    receiver.prepare_libraries(unpacked, {"libraries": [{"name": "../bad.jar", "sha256": "a" * 64}]})
+
+    def test_corrupted_cached_dependency_rejected(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder); unpacked = root / "app"; unpacked.mkdir(); (root / "libraries").mkdir()
+            (root / "libraries" / ("a" * 64 + ".jar")).write_bytes(b"corrupted")
+            with patch.object(receiver, "ROOT", root):
+                with self.assertRaises(ValueError):
+                    receiver.prepare_libraries(unpacked, {"libraries": [{"name": "dependency.jar", "sha256": "a" * 64}]})
+
+    @unittest.skipIf(sys.platform == "win32", "Dependency links are verified on Linux")
+    def test_valid_cached_dependency_is_linked_into_release(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder); unpacked = root / "app"; unpacked.mkdir(); (root / "libraries").mkdir()
+            digest = hashlib.sha256(b"library").hexdigest(); cached = root / "libraries" / (digest + ".jar")
+            cached.write_bytes(b"library")
+            with patch.object(receiver, "ROOT", root):
+                receiver.prepare_libraries(unpacked, {"libraries": [{"name": "dependency.jar", "sha256": digest}]})
+            self.assertEqual(cached, (unpacked / "lib/dependency.jar").resolve())
+
     @unittest.skipIf(sys.platform == "win32", "Real symlink activation is verified on Linux")
     def test_unhealthy_release_restores_program_without_replacing_database(self):
         with tempfile.TemporaryDirectory() as folder:

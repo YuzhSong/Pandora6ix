@@ -8,6 +8,7 @@ import os
 from pathlib import Path, PurePosixPath
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tarfile
@@ -32,7 +33,8 @@ def validate_archive(archive_path, destination):
             name = member.name.rstrip("/")
             if (path.is_absolute() or ".." in path.parts or "\\" in member.name
                     or name in seen or not (member.isfile() or member.isdir())
-                    or not (name in {"backend.jar", "release.json", "web"} or name.startswith("web/"))):
+                    or not (name in {"backend.jar", "release.json", "web", "libraries"}
+                            or name.startswith("web/") or re.fullmatch(r"libraries/[0-9a-f]{64}\.jar", name))):
                 raise ValueError("Unsafe archive member")
             seen.add(name)
             target = destination / name
@@ -93,6 +95,27 @@ def switch(release):
     pending.replace(ROOT / "current")
 
 
+def prepare_libraries(unpacked, manifest):
+    cache = ROOT / "libraries"
+    cache.mkdir(mode=0o755, exist_ok=True)
+    cache.chmod(0o755)
+    linkdir = unpacked / "lib"
+    linkdir.mkdir(mode=0o755)
+    linkdir.chmod(0o755)
+    for library in manifest.get("libraries", []):
+        name, digest = library.get("name", ""), library.get("sha256", "")
+        if not re.fullmatch(r"[A-Za-z0-9_.+-]+\.jar", name) or not re.fullmatch(r"[0-9a-f]{64}", digest):
+            raise ValueError("Invalid dependency identity")
+        cached = cache / (digest + ".jar")
+        uploaded = unpacked / "libraries" / (digest + ".jar")
+        if not cached.exists() and uploaded.is_file():
+            shutil.copyfile(uploaded, cached)
+            cached.chmod(0o644)
+        if not cached.is_file() or hashlib.sha256(cached.read_bytes()).hexdigest() != digest:
+            raise ValueError("Missing or invalid cached dependency")
+        (linkdir / name).symlink_to(cached)
+
+
 def activate(release, manifest):
     current = ROOT / "current"
     old = current.resolve() if current.is_symlink() else None
@@ -137,28 +160,47 @@ def main():
     if os.geteuid() != 0:
         raise SystemExit("This receiver must run through the constrained sudo command")
     os.umask(0o077)
-    with (ROOT / "deploy.lock").open("a") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
-        with tempfile.TemporaryDirectory(prefix="incoming-", dir=ROOT / "releases") as scratch:
-            scratch = Path(scratch)
-            bundle = scratch / "upload.tgz"
-            size = 0
-            with bundle.open("wb") as output:
-                while chunk := sys.stdin.buffer.read(65536):
-                    size += len(chunk)
-                    if size > MAX_ARCHIVE:
-                        raise ValueError("Upload limit exceeded")
-                    output.write(chunk)
-            unpacked = scratch / "content"
-            unpacked.mkdir(mode=0o755)
-            manifest = validate_archive(bundle, unpacked)
-            release = ROOT / "releases" / f"{manifest['sha']}-{manifest['runNumber']}-{manifest.get('runAttempt', 1)}"
-            if release.exists():
-                if (release / "release.json").read_bytes() != (unpacked / "release.json").read_bytes():
-                    raise ValueError("Existing release identity has different artifacts")
-            else:
-                unpacked.rename(release)
+    # A disconnected uploader must not retain the deployment lock or wait indefinitely.
+    def timed_out(*_):
+        raise TimeoutError("Release upload/activation timed out")
+
+    signal.signal(signal.SIGALRM, timed_out)
+    signal.signal(signal.SIGTERM, timed_out)
+    signal.signal(signal.SIGHUP, timed_out)
+    signal.alarm(600)
+    if sys.stdin.buffer.peek(1).startswith(b"{"):
+        query = json.loads(sys.stdin.buffer.read(65537))
+        hashes = query.get("hashes", [])
+        if query.get("operation") != "probe" or not isinstance(hashes, list) or len(hashes) > 500:
+            raise ValueError("Invalid dependency query")
+        if any(not isinstance(h, str) or not re.fullmatch(r"[0-9a-f]{64}", h) for h in hashes):
+            raise ValueError("Invalid dependency digest")
+        print(json.dumps({"missing": [h for h in hashes if not (ROOT / "libraries" / (h + ".jar")).is_file()]}))
+        return
+    with tempfile.TemporaryDirectory(prefix="incoming-", dir=ROOT / "releases") as scratch:
+        scratch = Path(scratch)
+        bundle = scratch / "upload.tgz"
+        size = 0
+        with bundle.open("wb") as output:
+            while chunk := sys.stdin.buffer.read(65536):
+                size += len(chunk)
+                if size > MAX_ARCHIVE:
+                    raise ValueError("Upload limit exceeded")
+                output.write(chunk)
+        unpacked = scratch / "content"
+        unpacked.mkdir(mode=0o755)
+        manifest = validate_archive(bundle, unpacked)
+        prepare_libraries(unpacked, manifest)
+        release = ROOT / "releases" / f"{manifest['sha']}-{manifest['runNumber']}-{manifest.get('runAttempt', 1)}"
+        if release.exists():
+            if (release / "release.json").read_bytes() != (unpacked / "release.json").read_bytes():
+                raise ValueError("Existing release identity has different artifacts")
+        else:
+            unpacked.rename(release)
+        with (ROOT / "deploy.lock").open("a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
             activate(release, manifest)
+    signal.alarm(0)
 
 
 if __name__ == "__main__":

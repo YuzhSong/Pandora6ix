@@ -8,7 +8,7 @@ User=pandora-app
 Group=pandora-app
 WorkingDirectory=/opt/Pandora/shared
 EnvironmentFile=/opt/Pandora/config/backend.env
-ExecStart=/usr/bin/java -Xms128m -Xmx512m -XX:MaxMetaspaceSize=192m -jar /opt/Pandora/current/backend.jar --server.address=127.0.0.1 --server.port=18080
+ExecStart=/usr/bin/java -Xms128m -Xmx512m -XX:MaxMetaspaceSize=192m -cp /opt/Pandora/current/backend.jar:/opt/Pandora/current/lib/* com.pandora6ix.backend.Pandora6ixBackendApplication --server.address=127.0.0.1 --server.port=18080
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=30

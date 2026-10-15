@@ -48,18 +48,23 @@ jobs:
           RELEASE_SHA: ${{ github.sha }}
           RELEASE_NUMBER: ${{ github.run_number }}
           RELEASE_ATTEMPT: ${{ github.run_attempt }}
-        run: python3 deploy/package-release.py --sha "$RELEASE_SHA" --run-number "$RELEASE_NUMBER" --attempt "$RELEASE_ATTEMPT" --output "$RUNNER_TEMP/pandora.tgz"
+        run: python3 deploy/package-release.py --sha "$RELEASE_SHA" --run-number "$RELEASE_NUMBER" --attempt "$RELEASE_ATTEMPT" --inventory --output "$RUNNER_TEMP/pandora-inventory.json"
       - name: Deploy verified artifacts
         env:
           DEPLOY_HOST: ${{ secrets.PANDORA_DEPLOY_HOST }}
           DEPLOY_KEY: ${{ secrets.PANDORA_DEPLOY_KEY }}
           DEPLOY_KNOWN_HOSTS: ${{ secrets.PANDORA_DEPLOY_KNOWN_HOSTS }}
+          RELEASE_SHA: ${{ github.sha }}
+          RELEASE_NUMBER: ${{ github.run_number }}
+          RELEASE_ATTEMPT: ${{ github.run_attempt }}
         run: |
           set -euo pipefail
           install -d -m 700 "$RUNNER_TEMP/pandora-ssh"
           printf '%s\n' "$DEPLOY_KEY" > "$RUNNER_TEMP/pandora-ssh/key"
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$RUNNER_TEMP/pandora-ssh/known_hosts"
           chmod 600 "$RUNNER_TEMP/pandora-ssh/key" "$RUNNER_TEMP/pandora-ssh/known_hosts"
+          ssh -T -o BatchMode=yes -o ConnectTimeout=20 -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/pandora-ssh/known_hosts" -i "$RUNNER_TEMP/pandora-ssh/key" "pandora-deploy@$DEPLOY_HOST" < "$RUNNER_TEMP/pandora-inventory.json" > "$RUNNER_TEMP/pandora-missing.json"
+          python3 deploy/package-release.py --sha "$RELEASE_SHA" --run-number "$RELEASE_NUMBER" --attempt "$RELEASE_ATTEMPT" --missing-file "$RUNNER_TEMP/pandora-missing.json" --output "$RUNNER_TEMP/pandora.tgz"
           ssh -T -o BatchMode=yes -o ConnectTimeout=20 -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/pandora-ssh/known_hosts" -i "$RUNNER_TEMP/pandora-ssh/key" "pandora-deploy@$DEPLOY_HOST" < "$RUNNER_TEMP/pandora.tgz"
           rm -f "$RUNNER_TEMP/pandora-ssh/key"
       - name: Verify public release

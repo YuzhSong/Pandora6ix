@@ -5,7 +5,7 @@ cd -- "$(dirname -- "$0")"
 root=/opt/Pandora
 id pandora-app >/dev/null 2>&1 || useradd --system --home-dir "$root/shared" --no-create-home --shell /usr/sbin/nologin pandora-app
 id pandora-deploy >/dev/null 2>&1 || useradd --system --home-dir "$root/deploy-home" --create-home --shell /bin/bash pandora-deploy
-install -d -m 755 "$root" "$root/releases"
+install -d -m 755 "$root" "$root/releases" "$root/libraries"
 install -d -m 750 -o pandora-app -g pandora-app "$root/shared"
 install -d -m 700 -o pandora-app -g pandora-app "$root/shared/data"
 install -d -m 700 "$root/backups" "$root/config"
