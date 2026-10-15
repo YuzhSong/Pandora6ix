@@ -39,18 +39,22 @@ The personnel directory SHALL offer read-only personnel details, deterministic n
 - **THEN** the directory retains the filters, presents the matching records and shows full profile, organization, supervisor and role information without changing data
 
 ### Requirement: Notice external directory updates
-The workspace SHALL notify users when another browser tab changes the saved directory and SHALL require an explicit reload without replacing an open editor or its input.
+The server-backed workspace SHALL protect external changes with expectedVersion, HTTP 409 feedback and explicit reload. A rejected edit SHALL retain the user's input rather than overwrite newer server data. Reload SHALL remain unavailable while an editor is open. The client SHALL NOT claim live cross-tab/server update notifications without an implemented server event contract.
 
-#### Scenario: Another tab saves while editing
-- **WHEN** a storage update arrives while an editor is open
-- **THEN** the client shows an update notice and keeps the editor input, with reloading unavailable until the editor closes
+#### Scenario: Another writer saves while editing
+- **WHEN** another writer changes a server record before an open editor saves its older version
+- **THEN** the save reports a conflict, preserves the draft and requires closing/reloading before editing the latest version
 
 ### Requirement: Administration workspace session
-The Web client SHALL present administration workspace wording without demo labels, provide primary navigation to organization, personnel with roles, tags and company important items, place current company information in organization management, and expose account and display settings through separate corner controls, and SHALL NOT claim a backend login has succeeded without authenticating.
+The Web client SHALL authenticate through the backend and verify ADMIN authority from trusted user data before showing organization, personnel/roles, tags and company important items. Current company information SHALL remain in organization management; account and display settings SHALL use separate corner controls. Bearer credentials SHALL be tab-scoped, and expired/revoked sessions SHALL clear cached identity and return to login. Local directory/session records SHALL NOT impersonate backend identity. Successful logout SHALL revoke the current server session while retaining published data and account-scoped display preferences.
 
 #### Scenario: Enter and leave workspace
-- **WHEN** a visitor enters the administration workspace and later confirms logout
-- **THEN** the client shows the shell, then returns to the entry page and clears the client session while retaining saved directory data and preferences
+- **WHEN** an administrator logs in and later confirms logout
+- **THEN** the client loads the authorized server workspace, revokes that session on logout and returns to login without deleting published directory data or preferences
+
+#### Scenario: Rejected identity
+- **WHEN** the server reports a non-administrator or a revoked/expired credential
+- **THEN** the protected workspace is unavailable and prior-account cached records are not exposed
 
 ### Requirement: Uniform API transport feedback
 The client transport SHALL distinguish network failures, unauthenticated responses, version conflicts and server failures, accept documented JSON success responses and no-content responses, and preserve request identifiers for error diagnosis.
@@ -93,3 +97,14 @@ The primary navigation SHALL combine personnel and roles into one destination. T
 #### Scenario: Open settings
 - **WHEN** an administrator selects the corner settings action
 - **THEN** display preferences open independently from personal profile data
+
+### Requirement: Load server-owned enterprise administration data
+The Web repository SHALL load the current enterprise, organizations, users/roles, shared tags and company items from documented backend APIs, retrieving every cursor page and mapping string IDs, versions and supervisor references. Writes SHALL use server-returned results and documented version/idempotency commands. Identity changes SHALL invalidate old in-flight snapshots. Missing network or invalid responses SHALL report failure rather than substitute demo data.
+
+#### Scenario: Directory exceeds a page
+- **WHEN** the server directory contains more than the first page of tags or users
+- **THEN** every cursor page is loaded without duplicate/repeated-cursor loops or a silent first-page limit
+
+#### Scenario: Identity changes during a write
+- **WHEN** identity is cleared while a server write is pending
+- **THEN** the former enterprise response cannot repopulate the new or logged-out workspace

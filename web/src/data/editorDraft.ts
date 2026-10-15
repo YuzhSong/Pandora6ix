@@ -8,7 +8,8 @@ export interface Draft {
 }
 
 export function createEditorDraft(request: EditRequest, data: AdminData): Draft {
-  const draft: Draft = { name: '', loginName: '', jobTitle: '', orgUnitId: data.units[0]?.id ?? '', supervisorId: '', roles: ['EMPLOYEE'], kind: 'DEPARTMENT', parentId: data.units.find(unit => unit.kind === 'COMPANY')?.id ?? '', colorHex: '#4F70E8', content: '', displayOrder: '0' }
+  const rootId = data.units.find(unit => unit.kind === 'COMPANY')?.id ?? ''
+  const draft: Draft = { name: '', loginName: '', jobTitle: '', orgUnitId: rootId, supervisorId: '', roles: ['EMPLOYEE'], kind: 'DEPARTMENT', parentId: rootId, colorHex: '#4F70E8', content: '', displayOrder: '1' }
   if (request.kind === 'unit' && !request.item && request.parentId) {
     const parent = data.units.find(unit => unit.id === request.parentId)
     if (parent && parent.kind !== 'TEAM') Object.assign(draft, { parentId: parent.id, kind: parent.kind === 'COMPANY' ? 'DEPARTMENT' : 'TEAM' })

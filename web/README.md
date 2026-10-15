@@ -1,54 +1,67 @@
 # Pandora Web 管理端
 
-React + TypeScript + Vite，持续开发企业管理员的 Web 工作台。已实现首次公司初始化、所属公司信息维护、组织、人员与角色分组、直属上级、共用标签、公司重要事项，以及头像账号与独立显示设置。
+React + TypeScript + Vite。2026-10-14 基于 dev `f5283e6` 接入后端 PR #10：真实管理员登录、受控首次公司初始化、所属公司信息、组织、人员与角色、直属上级、共用标签、公司重要事项、本人改密和服务端退出。
 
-## 本地开发
+## 使用组长的服务
 
-使用 Node.js 22.18+（规则测试直接运行 TypeScript）。
+需要 Node.js 22.18+。在 `web/` 执行：
 
 ```powershell
-cd web
 npm ci
+Copy-Item .env.example .env.local
 npm run dev
 ```
 
-打开终端显示的地址，点击“进入工作台”。当前认证服务尚未接入，这个入口只管理浏览器工作空间会话。
+将 `.env.local` 的 `BACKEND_PROXY_TARGET` 设为实际后端 HTTP(S) 地址（只含 origin，不含 `/api/v1` 或凭据），修改后重启 Vite。浏览器通过同源 `/api/v1` 请求，健康路径 `/backend/health` 转发至 `/health`。打开 Vite 输出地址，用企业登录域、登录名和密码登录；账号必须具有 ADMIN 角色。
+
+尚未发现仓库内的团队服务地址、预设管理员或内置密码。首次企业由负责人员在后端进程环境中配置 `PANDORA_BOOTSTRAP_TOKEN`，再由登录页“首次创建公司”输入授权码、公司与初始管理员资料。密码至少 10 个字符、UTF-8 编码后最多 72 字节。授权码不是登录密码，不写入 `.env.local` 或任何 `VITE_*` 变量。
+
+## 仅本机运行后端原样副本
+
+本机已验证 `D:\Java` 为 JDK 23，可运行 Java 21 后端。另开 PowerShell：
+
+```powershell
+cd D:\软件开发与测试实训\Pandora6ix\web
+$env:JAVA_HOME = 'D:\Java' # 其他机器请换成 JDK 21 或更新版本
+# 首次初始化需要在本终端私下设置 PANDORA_BOOTSTRAP_TOKEN。
+# 可用安全输入，避免把授权码写进命令历史或仓库：
+$localBootstrap = Read-Host '设置本机初始化授权码（请自行保存以便页面输入）' -AsSecureString
+$env:PANDORA_BOOTSTRAP_TOKEN = [Net.NetworkCredential]::new('', $localBootstrap).Password
+npm run dev:backend
+```
+
+该命令按后端源码提交建立原样副本并构建，绑定 `127.0.0.1:8080`；数据库持久化在 `web/.integration/local/`。它只写 Web 忽略目录和 Maven 依赖缓存，不修改原 backend 或其数据库。已有本机企业再次启动无需配置初始化码，可直接登录；Ctrl+C 停止服务。公司数据不会自动复制到团队后端。
+
+再开一个终端，在 `web/` 执行 `npm run dev`。默认代理指向 8080，使用页面初始化公司后即可登录。若本机 8080 已被占用，应使用团队服务配置或先由操作者处理已有服务，脚本不会终止别人的进程。
+
+## 数据与账号行为
+
+- 页面使用 `src/data/repository.ts` 的 HTTP repository，读取所有游标页，不把首个 100 条结果当全部资料。`supervisorUserId` 映射为页面的独立直属上级，组织为空时显示未分配。
+- 服务端校验企业归属、角色、树/上级循环和版本。PATCH 发送完整人员字段、角色和现有状态，禁止自动重试覆盖 409；组织类型和已有登录名按实际接口能力禁止编辑。
+- 新人员填写初始密码，默认普通员工；角色在独立界面配置。直属上级只选启用的创始人/部门负责人/团队负责人，ADMIN 单独不能成为业务上级。停用/启用、删除和管理员代重置密码的产品入口未新增。
+- 公司事项内容必填、按纯文本展示；发布者由服务器返回。创建事项和首次企业初始化使用稳定幂等键，修改携带 expectedVersion。
+- Bearer 会话只保存在当前标签页 sessionStorage，包含令牌与过期时间；密码、初始密码和初始化授权码不保存。刷新后读取 `/me` 验证身份；401/过期清理快照并回到登录。退出成功才清理本机身份，网络失败保留会话以便重试。改密成功撤销当前会话，回到登录。
+- 原 localStorage 目录和旧工作台会话不用于服务端身份，不自动上传或混入新资料。旧适配器保留用于历史迁移测试。主题与三档字号继续按可信账号 ID 存在本机。
+- Web 管理员只维护所属公司目录及事项；不增加私人日志查看、任务派发、审批或跨公司切换。
+
+## 检查
 
 ```powershell
 npm test
 npm run build
+npm run lint
+npm run check:backend -- http://localhost:5173/backend # Vite 实际端口可能不同
 ```
 
-## 数据与实现状态
+`check:backend` 也可直接传后端地址，只检查服务存活。独立 Node 命令不自动读取 `.env.local`。生产部署需同源反向代理，Vite 的开发代理不会进入生产构建；不要用跨域 Cookie 配置替代本项目实际 Bearer 契约。
 
-- AdminRepository 隔离页面与存储，目前使用 createLocalAdminRepository。业务接口尚未接入，修改保存在当前浏览器；不提供服务端授权、跨设备同步或多标签页并发事务。
-- 为兼容已录入资料，保留存储键 pandora-admin-demo-v1，数据结构迁移到 schema 2。兼容既有 pandora-enterprise-catalog-v1 目录，首次读取绑定当时所属公司并保持绑定，其他公司资料保留，不提供列表和切换入口。迁移保留自定义资料，只更新原始默认名称；会话键也保持兼容。退出保留资料。
-- 人员与角色合并入口，按部门或最高业务角色分组，管理员单独首组；可折叠横向账号卡片，每组先显示 12 位并支持加载更多；所属组织与直属上级独立配置。人员编辑只维护资料与组织关系；新人员默认普通员工，角色在独立页面配置。保存校验循环、重复登录名、角色、颜色、版本冲突与存储失败。
-- 公司重要事项支持新增、编辑、搜索、完整纯文本详情和显示顺序；编辑保留发布者，正文不作为 HTML 执行。
-- 显示设置按账号保存，支持浅色/深色/跟随系统及三档字号。写入失败保留原设置。
-- 密码修改、账号认证、启停用与删除尚未开放。Web 管理员职责不包含私人日志查看或任务审批。
+真实联调检查（先用 `dev:backend` 完成副本构建，再停止该实例）：
 
-## 接口接入
+```powershell
+$env:JAVA_HOME = 'D:\Java'
+npm run test:integration
+```
 
-src/api/client.ts 提供统一 HTTP 请求、超时、成功信封、204、401、409、请求标识及两种后端错误格式的处理。复制 .env.example 配置 VITE_API_BASE_URL，不要填写凭证。它尚未替换业务 repository；须先确认 DTO、认证方式和企业初始化契约，再接入服务端。
+脚本在新临时数据库中生成随机企业和凭据，经过 Vite 请求真实 Spring，验证初始化幂等、认证、企业/组织/人员/角色、超过 100 条的标签分页、事项幂等/版本、刷新持久化、409、改密与退出撤销，结束自动停止测试进程。它不会连接团队服务器。
 
-已规划接口包括 /auth/login、/me、/admin/users、/admin/org-units、/tags、/company-important-items，前缀 /api/v1，实际可用性以 backend 实现与团队契约为准。
-
-OpenSpec：web-admin-foundation；验证记录见已归档变更的 [validation.md](../openspec/changes/archive/2026-10-11-web-admin-foundation/validation.md)。
-
-2026-10-13 接入基础：开发服务器已配置 `/api/v1` 代理及 `/backend/health` → `/health` 的映射，复制 `.env.example` 到 `.env.local` 后设置 `BACKEND_PROXY_TARGET`。运行 `npm run check:backend -- http://localhost:5173/backend` 检查实际 Web 代理连接（端口以 Vite 输出为准）。健康成功只说明服务存活，业务 repository 仍是本地存储；dev 尚无业务 API。后端分支审查、接口缺口、环境配置及下一轮接入顺序见 [BACKEND_INTEGRATION.md](BACKEND_INTEGRATION.md)。
-
-其他标签页更新资料时会提示刷新，编辑期间保留输入并禁止刷新覆盖。
-
-视觉参考 Apple 官方 HIG，采用顶部横向导航及清晰卡片层次，配色保留 App 端的暖黄色与米白，由 src/theme.css 管理浅色/深色配色。标签与事项搜索提供清空及结果数，事项按每页 10 条显示；已有记录未修改时不能重复保存。
-
-## 需求完成情况
-
-逐项状态、未完成要求及后端接入顺序见 [Web 需求核对](REQUIREMENTS.md)。本地人员录入不等于账号可登录，角色配置不等于服务端授权完成。
-
-表单必填标记与字段名称同行，关闭有修改的表单时使用独立确认弹窗。新增组织按当前上下文预选上级；企业根组织编辑不显示上级选择。企业创建仅在无资料时的首次初始化流程完成，本机初始化公司根组织和当前管理员资料；不创建服务端身份或凭据，不代表可信企业归属初始化已完成。
-
-主导航为组织管理、人员与角色、标签管理、公司重要事项。公司信息维护合并到组织管理；旧 #enterprise 链接兼容到组织管理。我的账号从右上角头像进入，显示设置从齿轮进入；旧 #roles 链接兼容到人员页。完整四面板职责与 MVP 缺口见 REQUIREMENTS.md。
-
-
-2026-10-11 公司范围收敛验证：30 项自动测试通过；生产构建通过；lint 无错误（保留两项既有 effect 状态更新警告）；OpenSpec 严格校验通过。浏览器验证既有公司资料、四项主导航、公司信息编辑、旧企业路由、独立空环境初始化及刷新持久化、390px 窄屏弹窗。初始化只生成本机资料，可信账号认证与服务端权限仍待接入。
+实际验证与范围见 [BACKEND_INTEGRATION.md](BACKEND_INTEGRATION.md)，需求状态见 [REQUIREMENTS.md](REQUIREMENTS.md)。历史界面规格与验证见 [web-admin-foundation](../openspec/changes/archive/2026-10-11-web-admin-foundation/validation.md)；本轮仅 Web 的实施记录按用户作用域放在 Web 文档中。
