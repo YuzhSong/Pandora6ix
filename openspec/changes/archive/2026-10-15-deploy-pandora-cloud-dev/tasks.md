@@ -6,11 +6,11 @@
 
 ## 2. Provision and release
 
-- [ ] 2.1 Install isolated Pandora services and migrate a consistent local database snapshot.
+- [x] 2.1 Install isolated Pandora services and migrate a consistent local database snapshot.
 - [x] 2.2 Configure domain HTTPS/renewal and dedicated encrypted deployment credentials.
-- [ ] 2.3 Publish user-selected initial scope and observe a real dev-triggered build/deployment.
+- [x] 2.3 Publish user-selected initial scope and observe a real dev-triggered build/deployment.
 
 ## 3. Validate and hand off
 
-- [ ] 3.1 Verify external Web/API, deployed revision, data persistence and failed-release recovery.
-- [ ] 3.2 Complete deployment documentation, module/OpenSpec checks and final resource/secret audit.
+- [x] 3.1 Verify external Web/API, deployed revision, data persistence and failed-release recovery.
+- [x] 3.2 Complete deployment documentation, module/OpenSpec checks and final resource/secret audit.
