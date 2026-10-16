@@ -65,6 +65,7 @@ import com.pandora6ix.app.mock.*
 import com.pandora6ix.app.ui.calendar.*
 import com.pandora6ix.app.ui.review.ReviewScreen
 import com.pandora6ix.app.ui.task.ProgressSheet
+import com.pandora6ix.app.ui.tags.TagManageScreen
 import com.pandora6ix.app.ui.theme.*
 import kotlinx.coroutines.launch
 import java.io.File
@@ -175,6 +176,8 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
         var homeDetail by remember { mutableStateOf<HomeDetail?>(null) }
         var showSettings by rememberSaveable { mutableStateOf(false) }
         var showReviews by rememberSaveable { mutableStateOf(false) }
+        // 标签管理覆盖层（我的页进入）
+        var showTagManage by rememberSaveable { mutableStateOf(false) }
         // 进度记录浮层：从任务详情进入，显示当前任务的执行关系
         var progressTaskId by remember { mutableStateOf<String?>(null) }
         var fontScale by rememberSaveable { mutableStateOf(1f) }
@@ -216,6 +219,15 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
         val journalRepo = remember { JournalRepository(api) }
         val selectionRepo = remember { SelectionRepository(api) }
         val taskRepo = remember { TaskRepository(api) }
+        val tagRepo = remember { TagRepository(api) }
+        val appScope = rememberCoroutineScope()
+        fun refreshTags() {
+            appScope.launch {
+                runCatching { calendarRepo.tags() }.getOrNull()?.let { list ->
+                    serverTags.clear(); serverTags.addAll(list)
+                }
+            }
+        }
         // 登录后加载企业标签目录与本人统计
         var statistics by remember { mutableStateOf<StatisticsDto?>(null) }
         LaunchedEffect(currentUser?.id) {
@@ -276,12 +288,18 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
                 route = Route.HOME.name; detail = null; homeDetail = null; showSettings = false; showReviews = false
             }
             else -> CompositionLocalProvider(LocalAppTheme provides theme, LocalDensity provides scaledDensity) {
-        Scaffold(containerColor = theme.background, bottomBar = { NavigationBar(containerColor = theme.backgroundDeep) { nav.forEach { item -> NavigationBarItem(selected = current == item.route, onClick = { route = item.route.name; detail = null; homeDetail = null; showSettings = false; showReviews = false; progressTaskId = null }, icon = { Icon(item.icon, item.label) }, label = { Text(item.label, fontSize = 11.sp) }, colors = NavigationBarItemDefaults.colors(selectedIconColor = WarmOrange, selectedTextColor = WarmOrange, indicatorColor = theme.backgroundDeep)) } } }) { padding ->
+        Scaffold(containerColor = theme.background, bottomBar = { NavigationBar(containerColor = theme.backgroundDeep) { nav.forEach { item -> NavigationBarItem(selected = current == item.route, onClick = { route = item.route.name; detail = null; homeDetail = null; showSettings = false; showReviews = false; showTagManage = false; progressTaskId = null }, icon = { Icon(item.icon, item.label) }, label = { Text(item.label, fontSize = 11.sp) }, colors = NavigationBarItemDefaults.colors(selectedIconColor = WarmOrange, selectedTextColor = WarmOrange, indicatorColor = theme.backgroundDeep)) } } }) { padding ->
             Surface(Modifier.padding(padding).fillMaxSize(), color = theme.background) {
                 when {
                     homeDetail != null -> HomeItemDetailScreen(dashboardRepo, homeDetail!!) { homeDetail = null }
                     showSettings -> SettingsScreen(fontScale = fontScale, onFontScaleChange = { fontScale = it }, notificationsEnabled = notificationsEnabled, onNotificationsChange = { notificationsEnabled = it }, themeKey = themeKey, onThemeChange = { themeKey = it }, auth = auth, onLoggedOut = { currentUser = null }, onClose = { showSettings = false })
                     showReviews -> ReviewScreen(taskRepo, serverTags) { showReviews = false }
+                    showTagManage -> TagManageScreen(
+                        tagRepo,
+                        // TODO(权限)：标签管理权限待定级——未来按角色/等级填充（如 capabilities.createTags 与更细的修改/删除权限）
+                        TagPermissions(),
+                        reloadTags = { refreshTags() }
+                    ) { showTagManage = false }
                     detail != null -> {
                         val dto = taskDtoById[detail]
                         DetailScreen(detail!!, dto, serverTags, onBack = { detail = null; progressTaskId = null }, onRecordProgress = dto
@@ -297,7 +315,7 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
                             Route.VIEW -> CalendarScreen(CalendarMode.valueOf(modeName), date, taskItems, canCreatePersonal, canCreateDelegated, serverTags, taskRepo, { modeName = it.name }, { dateKey = "${it.year}-${it.month}-${it.day}" }, { calRetry++ }, { detail = it.id }, taskScope = taskScope, onTaskScopeChange = { taskScope = it }, loading = calLoading, error = calError, onRetry = { calRetry++ })
                             Route.LOGS -> LogsScreen(journalRepo) { detail = it }
                             Route.AI -> AiMapScreen()
-                            Route.ME -> ProfileScreen(currentUser!!, statistics, notificationsEnabled, showReviewCenter, onOpenReviews = { showReviews = true }, onOpenSettings = { showSettings = true })
+                            Route.ME -> ProfileScreen(currentUser!!, statistics, notificationsEnabled, showReviewCenter, onOpenTagManage = { showTagManage = true }, onOpenReviews = { showReviews = true }, onOpenSettings = { showSettings = true })
                         }
                     }
                 }
@@ -1179,7 +1197,7 @@ private fun within24h(iso: String?): Boolean {
     }
 }
 @Composable private fun AiMapScreen() { Column(Modifier.fillMaxSize().padding(16.dp)) { PageHeader("AI地图"); Spacer(Modifier.height(48.dp)); Icon(Icons.Default.Info, null, Modifier.size(70.dp).align(Alignment.CenterHorizontally), tint = Coral); Text("AI 地图", Modifier.fillMaxWidth().padding(top = 18.dp), textAlign = TextAlign.Center, fontSize = 28.sp, fontWeight = FontWeight.Bold); Text("功能规划中", Modifier.fillMaxWidth().padding(top = 8.dp), textAlign = TextAlign.Center, color = Ink.copy(alpha = .6f)) } }
-@Composable private fun ProfileScreen(user: UserDto, statistics: StatisticsDto?, notificationsEnabled: Boolean, showReviewCenter: Boolean, onOpenReviews: () -> Unit, onOpenSettings: () -> Unit) {
+@Composable private fun ProfileScreen(user: UserDto, statistics: StatisticsDto?, notificationsEnabled: Boolean, showReviewCenter: Boolean, onOpenTagManage: () -> Unit, onOpenReviews: () -> Unit, onOpenSettings: () -> Unit) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("profile_avatar", Context.MODE_PRIVATE) }
     var avatarType by remember { mutableStateOf(prefs.getString("avatarType", "color") ?: "color") }
@@ -1331,6 +1349,10 @@ private fun within24h(iso: String?): Boolean {
             }
             SettingsSectionLabel("基础设置")
             SettingsCard {
+                SettingsRow(icon = Icons.Default.Label, title = "标签管理", onClick = onOpenTagManage) {
+                    Icon(Icons.Default.ChevronRight, null, Modifier.size(20.dp), tint = Ink.copy(alpha = .4f))
+                }
+                DashedDivider(Ink.copy(alpha = .18f))
                 if (showReviewCenter) {
                     SettingsRow(icon = Icons.Default.FactCheck, title = "审批中心", onClick = onOpenReviews) {
                         Icon(Icons.Default.ChevronRight, null, Modifier.size(20.dp), tint = Ink.copy(alpha = .4f))

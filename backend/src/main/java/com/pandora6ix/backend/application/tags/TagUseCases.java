@@ -15,4 +15,8 @@ public interface TagUseCases {
             com.pandora6ix.backend.service.IdentityService.Actor actor,
             String id,
             com.pandora6ix.backend.api.Contracts.TagPatch command);
+
+    java.util.Map<String, Object> delete(
+            com.pandora6ix.backend.service.IdentityService.Actor actor,
+            String id);
 }
