@@ -1,9 +1,10 @@
 package com.pandora6ix.app.ui.calendar
 
+import com.pandora6ix.app.data.TaskItem
 import com.pandora6ix.app.mock.*
 
 enum class CalendarMode(val label: String) { DAY("日视图"), WEEK("周视图"), MONTH("月视图"), YEAR("年视图") }
-data class TaskSegment(val task: WorkTask, val first: Int, val last: Int)
+data class TaskSegment(val task: TaskItem, val first: Int, val last: Int)
 
 fun CalendarMode.zoomIn(): CalendarMode = when (this) {
     CalendarMode.YEAR -> CalendarMode.MONTH
@@ -27,10 +28,10 @@ fun monthWeeks(date: DemoDate): List<List<DemoDate>> {
     return (0 until count).map { monday.plusDays(it) }.chunked(7)
 }
 
-fun packTaskRows(tasks: List<WorkTask>, dates: List<DemoDate>): List<List<TaskSegment>> {
+fun packTaskRows(tasks: List<TaskItem>, dates: List<DemoDate>): List<List<TaskSegment>> {
     val rows = mutableListOf<MutableList<TaskSegment>>()
     tasks.filter { it.end >= dates.first() && it.start <= dates.last() }
-        .sortedWith(compareByDescending<WorkTask> { it.priorityLevel }.thenBy { it.start }.thenBy { it.id })
+        .sortedWith(compareByDescending<TaskItem> { it.priorityLevel }.thenBy { it.start }.thenBy { it.id })
         .forEach { task ->
             val segment = TaskSegment(task, maxOf(0, daysBetween(dates.first(), task.start)), minOf(dates.lastIndex, daysBetween(dates.first(), task.end)))
             val row = rows.firstOrNull { lane -> lane.none { segment.first <= it.last && segment.last >= it.first } }
@@ -40,10 +41,10 @@ fun packTaskRows(tasks: List<WorkTask>, dates: List<DemoDate>): List<List<TaskSe
     return rows.map { it.sortedBy { segment -> segment.first } }
 }
 
-fun isAllDay(task: WorkTask) = task.startMinute == null || task.endMinute == null
+fun isAllDay(task: TaskItem) = task.startMinute == null || task.endMinute == null
 fun minuteLabel(value: Int): String = "%02d:%02d".format(value / 60, value % 60)
-fun taskTimeLabel(task: WorkTask): String = if (isAllDay(task)) "全天" else "${minuteLabel(task.startMinute!!)}—${minuteLabel(task.endMinute!!)}"
-fun timeRangeOnDate(task: WorkTask, date: DemoDate): IntRange? {
+fun taskTimeLabel(task: TaskItem): String = if (isAllDay(task)) "全天" else "${minuteLabel(task.startMinute!!)}—${minuteLabel(task.endMinute!!)}"
+fun timeRangeOnDate(task: TaskItem, date: DemoDate): IntRange? {
     if (isAllDay(task) || date < task.start || date > task.end) return null
     val from = if (date == task.start) task.startMinute!! else 0
     val until = if (date == task.end) task.endMinute!! else 1440
