@@ -31,13 +31,20 @@ data class EntryUpsertDto(
     val content: String
 )
 
-/** PATCH /work-logs/{id} 请求体：expectedVersion 必填 */
+/** PATCH /work-logs/{id} 请求体：expectedVersion 必填；deleteEntryIds 删除既有条目（窗口内） */
 @Serializable
 data class JournalPatchDto(
     val expectedVersion: Long,
     val upsertEntries: List<EntryUpsertDto>? = null,
+    val deleteEntryIds: List<String>? = null,
     val tagIds: List<String>? = null,
     val primaryTagId: String? = null
+)
+
+/** DELETE /work-logs/{id} 响应 */
+@Serializable
+data class JournalDeletedDto(
+    val journalId: String = ""
 )
 
 /** GET /work-logs 分页响应 */

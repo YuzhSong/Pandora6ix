@@ -10,6 +10,9 @@ public interface JournalUseCases {
             String id,
             com.pandora6ix.backend.api.Contracts.JournalPatch command);
 
+    java.util.Map<String, Object> delete(
+            com.pandora6ix.backend.service.IdentityService.Actor actor, String id);
+
     java.util.Map<String, Object> detail(
             com.pandora6ix.backend.service.IdentityService.Actor actor, String id);
 

@@ -6220,6 +6220,22 @@
               }
             ]
           },
+          "deleteEntryIds": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "\\S"
+                },
+                "maxItems": 100
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "tagIds": {
             "anyOf": [
               {

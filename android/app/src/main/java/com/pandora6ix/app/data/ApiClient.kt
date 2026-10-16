@@ -42,6 +42,7 @@ class ApiException(
         "REVIEW_CONTEXT_CHANGED" -> "审批环境已变化，请刷新后重试"
         "IDEMPOTENCY_CONFLICT" -> "操作已提交，请勿重复操作"
         "DAILY_JOURNAL_EXISTS" -> "今日日报已存在"
+        "JOURNAL_EDIT_WINDOW_EXPIRED" -> "已超过 24 小时，该日志不能再修改或删除"
         "WORKFLOW_POLICY_UNCONFIRMED" -> "流程策略未确认，请联系管理员"
         else -> when (httpStatus) {
             400 -> "请求内容有误，请检查后重试"
@@ -107,6 +108,9 @@ class ApiClient(private val session: SessionStore) {
 
     suspend fun <T> patch(path: String, body: String, dataSerializer: DeserializationStrategy<T>): T =
         call("PATCH", path, body, null, dataSerializer)
+
+    suspend fun <T> delete(path: String, dataSerializer: DeserializationStrategy<T>): T =
+        call("DELETE", path, null, null, dataSerializer)
 
     suspend fun <T> put(path: String, body: String, dataSerializer: DeserializationStrategy<T>): T =
         call("PUT", path, body, null, dataSerializer)

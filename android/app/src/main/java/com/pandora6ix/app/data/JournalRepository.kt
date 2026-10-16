@@ -7,7 +7,8 @@ import java.net.URLEncoder
  * - 列表 GET /work-logs?date/from/to/scope（缺省 scope=mine）
  * - 详情 GET /work-logs/{journalId}
  * - 发布 POST /work-logs（201 返回 Journal；同日重复返回 409 DAILY_JOURNAL_EXISTS + existingJournalId）
- * - 编辑 PATCH /work-logs/{journalId}（expectedVersion + upsertEntries，不删除遗漏条目）
+ * - 编辑 PATCH /work-logs/{journalId}（expectedVersion + upsertEntries/deleteEntryIds，创建后 24h 内）
+ * - 删除 DELETE /work-logs/{journalId}（仅作者，创建后 24h 内，级联删除条目与标签）
  */
 class JournalRepository(private val api: ApiClient) {
 
@@ -45,6 +46,10 @@ class JournalRepository(private val api: ApiClient) {
         val body = api.json.encodeToString(JournalPatchDto.serializer(), patch)
         return api.patch("/work-logs/$journalId", body, JournalDto.serializer())
     }
+
+    /** 删除整篇日报（仅作者、创建后 24 小时内；服务端级联删除条目与标签） */
+    suspend fun delete(journalId: String): JournalDeletedDto =
+        api.delete("/work-logs/$journalId", JournalDeletedDto.serializer())
 
     private fun url(value: String) = URLEncoder.encode(value, "UTF-8")
 }

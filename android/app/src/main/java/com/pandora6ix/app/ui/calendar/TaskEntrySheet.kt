@@ -1,14 +1,16 @@
 package com.pandora6ix.app.ui.calendar
 
 import android.app.DatePickerDialog
-import android.app.TimePickerDialog
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
@@ -96,6 +98,8 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
     var showTagPicker by rememberSaveable { mutableStateOf(false) }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
     var confirmExit by rememberSaveable { mutableStateOf(false) }
+    // 时间选择浮层目标：start | end | null
+    var timePickTarget by rememberSaveable { mutableStateOf<String?>(null) }
     val dirty = title.isNotBlank() || note.isNotBlank() || selectedRecipientIds.isNotEmpty() || tags.isNotEmpty() || !allDay || priority != 3 || startKey != initialDate.key() || endKey != initialDate.key()
     val latestDirty by rememberUpdatedState(dirty)
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true, confirmValueChange = { value ->
@@ -110,9 +114,7 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
         val date = key.date()
         DatePickerDialog(context, { _, y, m, d -> update(DemoDate(y, m + 1, d).key()) }, date.year, date.month - 1, date.day).show()
     }
-    fun pickTime(minute: Int, update: (Int) -> Unit) {
-        TimePickerDialog(context, { _, h, m -> update(h * 60 + m) }, minute / 60, minute % 60, true).show()
-    }
+    fun pickTime(target: String) { timePickTarget = target }
     fun nameOf(id: String): String = candidates.firstOrNull { it.id == id }?.displayName?.ifBlank { null } ?: "成员 ${id.takeLast(4)}"
     /** 提交创建：POST /tasks（非幂等，携带 Idempotency-Key；失败重试复用同一键） */
     fun submit() {
@@ -176,8 +178,8 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
                     OutlinedButton({ pickDate(endKey) { endKey = it; error = null } }, Modifier.weight(1f), colors = buttonColors, border = buttonBorder, contentPadding = PaddingValues(8.dp)) { Text(endKey.date().let { "结束\n${it.year}/${it.month}/${it.day}" }, fontSize = 13.sp) }
                 }
                 if (!allDay) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton({ pickTime(startMinute) { startMinute = it; error = null } }, Modifier.weight(1f), colors = buttonColors, border = buttonBorder) { Text("开始 ${minuteLabel(startMinute)}") }
-                    OutlinedButton({ pickTime(endMinute) { endMinute = it; error = null } }, Modifier.weight(1f), colors = buttonColors, border = buttonBorder) { Text("结束 ${minuteLabel(endMinute)}") }
+                    OutlinedButton({ pickTime("start") }, Modifier.weight(1f), colors = buttonColors, border = buttonBorder) { Text("开始 ${minuteLabel(startMinute)}") }
+                    OutlinedButton({ pickTime("end") }, Modifier.weight(1f), colors = buttonColors, border = buttonBorder) { Text("结束 ${minuteLabel(endMinute)}") }
                 }
                 Text("重要程度 · $priority 星", fontWeight = FontWeight.SemiBold)
                 Row { (1..5).forEach { level -> IconButton({ priority = level }, Modifier.size(40.dp)) { Icon(if (level <= priority) Icons.Default.Star else Icons.Default.StarBorder, "$level 星", tint = Ink) } } }
@@ -227,16 +229,24 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
                         }
                     }
                 }
-                } else {
-                    Text("个人任务接收人锁定为本人，无需选择。", fontSize = 12.sp, color = Ink.copy(alpha = .6f))
                 }
-                Text("提交后进入直属上级审批；审批通过前，接收人看不到正式任务。", fontSize = 12.sp, color = Ink.copy(alpha = .6f))
             }
             error?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp) }
             Button(onClick = { submit() }, Modifier.fillMaxWidth().padding(vertical = 12.dp), enabled = !submitting, colors = ButtonDefaults.buttonColors(containerColor = Ink)) { Text(if (submitting) "提交中…" else "提交任务") }
         }
     }
     if (confirmExit) AlertDialog(onDismissRequest = { confirmExit = false; sheetScope.launch { sheetState.show() } }, title = { Text("放弃未保存的任务？") }, text = { Text("关闭后，本次填写的内容会清空。") }, confirmButton = { TextButton({ confirmExit = false; onDismiss() }) { Text("放弃") } }, dismissButton = { TextButton({ confirmExit = false; sheetScope.launch { sheetState.show() } }) { Text("继续填写") } })
+    timePickTarget?.let { target ->
+        TimeWheelDialog(
+            initialMinute = if (target == "start") startMinute else endMinute,
+            onDismiss = { timePickTarget = null },
+            onConfirm = { value ->
+                if (target == "start") startMinute = value else endMinute = value
+                error = null
+                timePickTarget = null
+            }
+        )
+    }
     if (showTagPicker) AlertDialog(
         onDismissRequest = { showTagPicker = false },
         title = { Text("选择标签") },
@@ -280,4 +290,66 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
             }) { Text("知道了", color = Ink, fontWeight = FontWeight.Bold) }
         }
     )
+}
+
+/** 时间选择：左列小时 00–23、右列分钟 00–59，上下滚动或点击选择 */
+@Composable
+private fun TimeWheelDialog(initialMinute: Int, onDismiss: () -> Unit, onConfirm: (Int) -> Unit) {
+    var hour by remember { mutableStateOf(initialMinute / 60) }
+    var minute by remember { mutableStateOf(initialMinute % 60) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("选择时间", fontWeight = FontWeight.Bold) },
+        text = {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("时", fontSize = 13.sp, color = Ink.copy(alpha = .6f))
+                    WheelColumn((0..23).map { "%02d".format(it) }, hour, { hour = it })
+                }
+                Text(":", Modifier.padding(top = 20.dp), fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Ink.copy(alpha = .55f))
+                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("分", fontSize = 13.sp, color = Ink.copy(alpha = .6f))
+                    WheelColumn((0..59).map { "%02d".format(it) }, minute, { minute = it })
+                }
+            }
+        },
+        confirmButton = { TextButton({ onConfirm(hour * 60 + minute) }) { Text("确定", color = Ink, fontWeight = FontWeight.Bold) } },
+        dismissButton = { TextButton(onDismiss) { Text("取消", color = Ink.copy(alpha = .6f)) } }
+    )
+}
+
+/** 单列滚轮：固定 5 行视口、吸附停位，中间行为选中值；点击直接选中 */
+@Composable
+private fun WheelColumn(values: List<String>, selected: Int, onSelected: (Int) -> Unit) {
+    val itemHeight = 40.dp
+    val state = rememberLazyListState(initialFirstVisibleItemIndex = selected)
+    // 滚动停位即选中值
+    LaunchedEffect(state) {
+        snapshotFlow { state.firstVisibleItemIndex }.collect { index -> if (index in values.indices && index != selected) onSelected(index) }
+    }
+    // 选中值变化（含点击）时对中定位
+    LaunchedEffect(selected) {
+        if (state.firstVisibleItemIndex != selected || state.firstVisibleItemScrollOffset != 0) state.scrollToItem(selected)
+    }
+    Box(Modifier.height(itemHeight * 5).width(72.dp), contentAlignment = Alignment.Center) {
+        Box(Modifier.fillMaxWidth().height(itemHeight).clip(RoundedCornerShape(10.dp)).background(CreamDeep))
+        LazyColumn(
+            state = state,
+            modifier = Modifier.fillMaxWidth(),
+            flingBehavior = rememberSnapFlingBehavior(state),
+            contentPadding = PaddingValues(vertical = itemHeight * 2),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            items(count = values.size, key = { it }) { index ->
+                Box(Modifier.fillMaxWidth().height(itemHeight).clickable { onSelected(index) }, contentAlignment = Alignment.Center) {
+                    Text(
+                        values[index],
+                        fontSize = if (index == selected) 18.sp else 15.sp,
+                        fontWeight = if (index == selected) FontWeight.Bold else FontWeight.Normal,
+                        color = if (index == selected) Ink else Ink.copy(alpha = .35f)
+                    )
+                }
+            }
+        }
+    }
 }

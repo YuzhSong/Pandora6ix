@@ -282,8 +282,6 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
                 }
             }, Modifier.fillMaxWidth().height(50.dp), enabled = !loading, colors = ButtonDefaults.buttonColors(containerColor = Ink), shape = RoundedCornerShape(14.dp)) { Text(if (loading) "登录中…" else "登录", fontSize = 16.sp) }
         }
-        Spacer(Modifier.height(20.dp))
-        Text("会话有效期 12 小时 · 修改密码后需重新登录", fontSize = 12.sp, color = Ink.copy(alpha = .45f))
     }
 }
 
@@ -775,6 +773,29 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
 /** 编辑中的一条工作条目：entryId 非空表示修改已有条目，空表示新增（发布时生成 clientEntryKey） */
 private data class EntryDraft(val entryId: String?, val content: String)
 
+/** publishedAt(ISO) 距今是否在 24 小时内（minSdk 24 无 java.time，用 Calendar 手工解析；解析失败按可编辑处理） */
+private fun within24h(iso: String?): Boolean {
+    if (iso.isNullOrBlank() || iso.length < 19) return true
+    return try {
+        val cal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
+        cal.clear()
+        cal.set(
+            iso.substring(0, 4).toInt(), iso.substring(5, 7).toInt() - 1, iso.substring(8, 10).toInt(),
+            iso.substring(11, 13).toInt(), iso.substring(14, 16).toInt(), iso.substring(17, 19).toInt()
+        )
+        var createdUtc = cal.timeInMillis
+        val tail = iso.substring(19)
+        if (tail.isNotEmpty() && (tail[0] == '+' || tail[0] == '-')) {
+            val oh = tail.substring(1, 3).toInt()
+            val om = if (tail.length >= 6) tail.substring(4, 6).toInt() else 0
+            createdUtc -= (if (tail[0] == '+') 1 else -1) * (oh * 3600L + om * 60L) * 1000L
+        }
+        createdUtc >= System.currentTimeMillis() - 24L * 3_600_000L
+    } catch (e: Exception) {
+        true
+    }
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable private fun LogsScreen(repo: JournalRepository, onOpen: (String) -> Unit) {
     var expandedLogs by rememberSaveable { mutableStateOf(false) }
@@ -790,9 +811,15 @@ private data class EntryDraft(val entryId: String?, val content: String)
     var publishing by remember { mutableStateOf(false) }
     var publishError by remember { mutableStateOf<String?>(null) }
     var confirmExit by rememberSaveable { mutableStateOf(false) }
+    // 编辑器业务日期（最近三日可选）；删除确认目标与错误
+    var editorDateKey by rememberSaveable { mutableStateOf("") }
+    var deletingJournal by remember { mutableStateOf<JournalDto?>(null) }
+    var deleteError by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val mutedColors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Ink.copy(alpha = .7f), unfocusedBorderColor = Ink.copy(alpha = .3f), focusedLabelColor = Ink, cursorColor = Ink)
     fun todayIso(): String { val t = todayDate(); return "%04d-%02d-%02d".format(t.year, t.month, t.day) }
+    fun isoOf(d: DemoDate): String = "%04d-%02d-%02d".format(d.year, d.month, d.day)
+    fun threeDays(): List<DemoDate> { val t = todayDate(); return listOf(t, t.plusDays(-1), t.plusDays(-2)) }
     fun loadJournals() {
         loading = true; loadError = null
         scope.launch {
@@ -817,26 +844,42 @@ private data class EntryDraft(val entryId: String?, val content: String)
     val flatEntries = journals.flatMap { j -> j.entries.sortedBy { it.displayOrder }.map { j.workDate to it } }
     val filteredEntries = if (historyFilter == "全部日期") flatEntries else flatEntries.filter { dateLabel(it.first) == historyFilter }
     val filterOptions = listOf("全部日期") + journals.map { dateLabel(it.workDate) }.distinct()
-    fun openEditor() {
-        editingJournal = todayJournal
-        entryDrafts = todayJournal?.entries?.sortedBy { it.displayOrder }?.map { EntryDraft(it.entryId, it.content) } ?: listOf(EntryDraft(null, ""))
+    fun openEditor(dateKey: String) {
+        editorDateKey = dateKey
+        editingJournal = journals.firstOrNull { it.workDate == dateKey }
+        entryDrafts = editingJournal?.entries?.sortedBy { it.displayOrder }?.map { EntryDraft(it.entryId, it.content) } ?: listOf(EntryDraft(null, ""))
         publishError = null
         writing = true
+    }
+    fun switchEditorDate(dateKey: String) {
+        if (dateKey == editorDateKey) return
+        editorDateKey = dateKey
+        editingJournal = journals.firstOrNull { it.workDate == dateKey }
+        entryDrafts = editingJournal?.entries?.sortedBy { it.displayOrder }?.map { EntryDraft(it.entryId, it.content) } ?: listOf(EntryDraft(null, ""))
+        publishError = null
     }
     fun closeEditor() {
         if (entryDrafts.any { it.content.isNotBlank() }) confirmExit = true else writing = false
     }
     fun publish() {
         val valid = entryDrafts.filter { it.content.isNotBlank() }
-        if (valid.isEmpty()) { publishError = "请至少填写一条工作内容"; return }
+        // 从草稿列表移除的既有条目 = 删除（PATCH deleteEntryIds）；不在原条目上追加新条目代替删改
+        val deleteIds = editingJournal?.entries
+            ?.mapNotNull { e -> e.entryId.ifBlank { null } }
+            ?.filter { id -> entryDrafts.none { it.entryId == id } }
+            ?: emptyList()
+        if (valid.isEmpty() && deleteIds.isEmpty()) { publishError = "请至少填写一条工作内容"; return }
+        if (valid.isEmpty() && editingJournal != null && deleteIds.size == editingJournal!!.entries.size) {
+            publishError = "如需删除整篇日志，请使用日志卡片的删除按钮"; return
+        }
         publishing = true; publishError = null
         scope.launch {
             try {
                 val ej = editingJournal
                 if (ej == null) {
                     try {
-                        // 新建一篇：每条携带客户端稳定键
-                        repo.create(todayIso(), valid.map { EntryCreateDto(clientEntryKey = UUID.randomUUID().toString(), content = it.content.trim()) })
+                        // 新建一篇（所选日期）：每条携带客户端稳定键
+                        repo.create(editorDateKey, valid.map { EntryCreateDto(clientEntryKey = UUID.randomUUID().toString(), content = it.content.trim()) })
                     } catch (e: ApiException) {
                         if (e.code == "DAILY_JOURNAL_EXISTS" && e.existingJournalId != null) {
                             // 同日已有日报（如其他设备创建）：并入同一篇继续补充，不新增第二篇
@@ -851,7 +894,7 @@ private data class EntryDraft(val entryId: String?, val content: String)
                         } else throw e
                     }
                 } else {
-                    // 补充/编辑：已有条目带 entryId，新增条目带 clientEntryKey；遗漏条目不会被删除
+                    // 编辑：已有条目带 entryId（原条目修改），新增条目带 clientEntryKey；移除的条目走 deleteEntryIds
                     val upserts = valid.map { d ->
                         EntryUpsertDto(
                             entryId = d.entryId,
@@ -859,7 +902,10 @@ private data class EntryDraft(val entryId: String?, val content: String)
                             content = d.content.trim()
                         )
                     }
-                    repo.patch(ej.journalId.ifBlank { ej.id }, JournalPatchDto(expectedVersion = ej.version, upsertEntries = upserts))
+                    repo.patch(
+                        ej.journalId.ifBlank { ej.id },
+                        JournalPatchDto(expectedVersion = ej.version, upsertEntries = upserts, deleteEntryIds = deleteIds.ifEmpty { null })
+                    )
                 }
                 writing = false
                 loadJournals()
@@ -889,7 +935,29 @@ private data class EntryDraft(val entryId: String?, val content: String)
         Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
             PageHeader("日志")
             LazyColumn(Modifier.fillMaxWidth().weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 16.dp)) {
-                item { Button({ openEditor() }, Modifier.fillMaxWidth(), enabled = !publishing, colors = ButtonDefaults.buttonColors(containerColor = Ink), shape = RoundedCornerShape(14.dp)) { Icon(Icons.Default.Add, null); Spacer(Modifier.width(6.dp)); Text(if (todayJournal != null) "补充今日工作" else "记录今日工作") } }
+                item { Button({ openEditor(todayIso()) }, Modifier.fillMaxWidth(), enabled = !publishing, colors = ButtonDefaults.buttonColors(containerColor = Ink), shape = RoundedCornerShape(14.dp)) { Icon(Icons.Default.Add, null); Spacer(Modifier.width(6.dp)); Text(if (todayJournal != null) "补充今日工作" else "记录今日工作") } }
+                item {
+                    // 最近三日：创建后 24 小时内的日报可编辑/删除
+                    val recent = journals.filter { it.workDate in threeDays().map { d -> isoOf(d) } }
+                    if (recent.isNotEmpty()) Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("最近三日 · 可在 24 小时内修改或删除", fontSize = 13.sp, color = Ink.copy(alpha = .55f))
+                        recent.forEach { j ->
+                            val editable = within24h(j.publishedAt)
+                            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = WarmCard), shape = RoundedCornerShape(14.dp)) {
+                                Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text(dateLabel(j.workDate), fontWeight = FontWeight.SemiBold)
+                                        Text("${j.entries.size} 条 · " + if (editable) "可编辑/删除" else "已超过 24 小时", fontSize = 12.sp, color = Ink.copy(alpha = .55f))
+                                    }
+                                    if (editable) {
+                                        TextButton({ openEditor(j.workDate) }, enabled = !publishing, contentPadding = PaddingValues(horizontal = 10.dp)) { Text("编辑", color = Ink) }
+                                        TextButton({ deleteError = null; deletingJournal = j }, enabled = !publishing, contentPadding = PaddingValues(horizontal = 10.dp)) { Text("删除", color = CoralDark) }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
                 item {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                         Box {
@@ -931,32 +999,87 @@ private data class EntryDraft(val entryId: String?, val content: String)
             val imeVisible = WindowInsets.isImeVisible
             Card(Modifier.align(Alignment.Center).imePadding().fillMaxWidth(.9f).fillMaxHeight(if (imeVisible) .92f else .8f).border(2.dp, CreamDeep, RoundedCornerShape(24.dp)).clickable { }, shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = WarmCard)) {
                 Column(Modifier.fillMaxSize().padding(20.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) { Text(if (editingJournal != null) "补充今日工作" else "记录今日工作", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f)); IconButton({ closeEditor() }) { Icon(Icons.Default.Close, "关闭") } }
+                    Row(verticalAlignment = Alignment.CenterVertically) { Text(if (editingJournal != null) "编辑日志" else "记录日志", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f)); IconButton({ closeEditor() }) { Icon(Icons.Default.Close, "关闭") } }
                     if (imeVisible) {
-                        Text(todayDate().shortLabelWithWeekday(), Modifier.padding(top = 2.dp, bottom = 8.dp), color = Ink.copy(alpha = .6f), fontSize = 13.sp)
+                        Text(parseIsoDate(editorDateKey)?.shortLabelWithWeekday() ?: "", Modifier.padding(top = 2.dp, bottom = 8.dp), color = Ink.copy(alpha = .6f), fontSize = 13.sp)
                     } else {
                         Text("· 日志日期", fontWeight = FontWeight.Bold)
-                        Text(todayDate().shortLabelWithWeekday(), Modifier.fillMaxWidth().padding(vertical = 12.dp), color = Ink.copy(alpha = .7f))
-                        Text("· 今日完成的工作（一篇可含多条）", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp, bottom = 6.dp))
+                        Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            threeDays().forEach { d ->
+                                val key = isoOf(d)
+                                val selected = editorDateKey == key
+                                Text(
+                                    d.shortLabel(),
+                                    Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).background(if (selected) WarmOrange else CreamDeep).clickable { switchEditorDate(key) }.padding(vertical = 8.dp),
+                                    fontSize = 13.sp,
+                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (selected) Ink else Ink.copy(alpha = .65f),
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
+                        val editorEditable = editingJournal == null || within24h(editingJournal?.publishedAt)
+                        if (!editorEditable) Text("已超过 24 小时，此日志不可修改；如需更正请联系管理员。", fontSize = 12.sp, color = Ink.copy(alpha = .55f))
+                        Text("· 完成的工作", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp, bottom = 6.dp))
                     }
                     Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         entryDrafts.forEachIndexed { i, draft ->
                             Row(verticalAlignment = Alignment.Top) {
-                                OutlinedTextField(draft.content, { value -> entryDrafts = entryDrafts.toMutableList().also { it[i] = draft.copy(content = value) } }, Modifier.weight(1f), placeholder = { Text("第 ${i + 1} 条：记录完成的工作") }, colors = mutedColors, minLines = 2)
-                                if (entryDrafts.size > 1) IconButton({ entryDrafts = entryDrafts.filterIndexed { idx, _ -> idx != i } }, Modifier.size(40.dp)) { Icon(Icons.Default.Close, "删除此条", Modifier.size(16.dp)) }
+                                OutlinedTextField(draft.content, { value -> entryDrafts = entryDrafts.toMutableList().also { it[i] = draft.copy(content = value) } }, Modifier.weight(1f), placeholder = { Text(if (editingJournal == null) "第 ${i + 1} 条：记录完成的工作" else "第 ${i + 1} 条") }, colors = mutedColors, minLines = 2)
+                                if (editingJournal == null && entryDrafts.size > 1) IconButton({ entryDrafts = entryDrafts.filterIndexed { idx, _ -> idx != i } }, Modifier.size(40.dp)) { Icon(Icons.Default.Close, "删除此条", Modifier.size(16.dp)) }
                             }
                         }
-                        TextButton({ entryDrafts = entryDrafts + EntryDraft(null, "") }, enabled = !publishing) { Icon(Icons.Default.Add, null, Modifier.size(14.dp)); Spacer(Modifier.width(4.dp)); Text("添加一条", color = WarmOrange, fontWeight = FontWeight.Bold) }
+                        if (editingJournal == null) TextButton({ entryDrafts = entryDrafts + EntryDraft(null, "") }, enabled = !publishing) { Icon(Icons.Default.Add, null, Modifier.size(14.dp)); Spacer(Modifier.width(4.dp)); Text("添加一条", color = WarmOrange, fontWeight = FontWeight.Bold) }
                     }
                     publishError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)) }
                     Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         OutlinedButton({ closeEditor() }, Modifier.weight(1f), enabled = !publishing, colors = ButtonDefaults.outlinedButtonColors(contentColor = Ink)) { Text("取消") }
-                        Button({ publish() }, Modifier.weight(1f), enabled = !publishing && entryDrafts.any { it.content.isNotBlank() }, colors = ButtonDefaults.buttonColors(containerColor = Ink), shape = RoundedCornerShape(14.dp)) { Text(if (publishing) "发布中…" else "发布") }
+                        Button(
+                            { publish() },
+                            Modifier.weight(1f),
+                            enabled = !publishing && (entryDrafts.any { it.content.isNotBlank() } || (editingJournal?.entries?.any { e -> entryDrafts.none { it.entryId == e.entryId } } == true)) && (editingJournal == null || within24h(editingJournal?.publishedAt)),
+                            colors = ButtonDefaults.buttonColors(containerColor = Ink),
+                            shape = RoundedCornerShape(14.dp)
+                        ) { Text(if (publishing) "发布中…" else "发布") }
                     }
                 }
             }
         }
         if (confirmExit) AlertDialog(onDismissRequest = { confirmExit = false }, modifier = Modifier.border(2.dp, CreamDeep, RoundedCornerShape(28.dp)), shape = RoundedCornerShape(28.dp), containerColor = Color.White, titleContentColor = Ink, textContentColor = Ink.copy(alpha = .75f), title = { Text("放弃未保存内容？", fontWeight = FontWeight.Bold) }, text = { Text("退出后当前填写内容会被清空。") }, confirmButton = { TextButton({ confirmExit = false; entryDrafts = listOf(EntryDraft(null, "")); writing = false }, colors = ButtonDefaults.textButtonColors(contentColor = Ink)) { Text("放弃并退出") } }, dismissButton = { TextButton({ confirmExit = false }, colors = ButtonDefaults.textButtonColors(contentColor = Ink)) { Text("继续编辑") } })
+        deletingJournal?.let { j ->
+            AlertDialog(
+                onDismissRequest = { if (!publishing) deletingJournal = null },
+                title = { Text("删除这篇日志？", fontWeight = FontWeight.Bold) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("${dateLabel(j.workDate)} 的 ${j.entries.size} 条工作记录将被删除，且不可恢复。")
+                        deleteError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp) }
+                    }
+                },
+                confirmButton = {
+                    if (publishing) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = WarmOrange)
+                    else TextButton({
+                        publishing = true
+                        scope.launch {
+                            try {
+                                repo.delete(j.journalId.ifBlank { j.id })
+                                deletingJournal = null
+                                loadJournals()
+                            } catch (e: SessionExpiredException) {
+                                // 401 已由全局回调处理
+                            } catch (e: ApiException) {
+                                deleteError = e.friendlyMessage()
+                            } catch (e: Exception) {
+                                deleteError = "网络异常，请重试"
+                            } finally {
+                                publishing = false
+                            }
+                        }
+                    }, colors = ButtonDefaults.textButtonColors(contentColor = CoralDark)) { Text("删除") }
+                },
+                dismissButton = { if (!publishing) TextButton({ deletingJournal = null }, colors = ButtonDefaults.textButtonColors(contentColor = Ink)) { Text("取消") } }
+            )
+        }
     }
 }
 

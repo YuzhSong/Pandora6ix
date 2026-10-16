@@ -889,6 +889,75 @@ class BusinessApiIntegrationTests {
     }
 
     @Test
+    void journalEditWindowAndEntryDeletion() throws Exception {
+        var j = journal(employeeToken, today, 2);
+        String id = str(j, "id");
+        var entries = (List<?>) j.get("entries");
+        String first = str((Map<String, Object>) entries.get(0), "entryId");
+        String second = str((Map<String, Object>) entries.get(1), "entryId");
+        // 在原条目上删改：修改一条 + 删除一条，不追加新条目
+        var patched =
+                request(
+                        "PATCH",
+                        "/work-logs/" + id,
+                        employeeToken,
+                        fields(
+                                "expectedVersion",
+                                0,
+                                "upsertEntries",
+                                List.of(fields("entryId", second, "content", "Revised content")),
+                                "deleteEntryIds",
+                                List.of(first)),
+                        200);
+        var remain = (List<?>) patched.get("entries");
+        assertEquals(1, remain.size());
+        assertEquals("Revised content", str((Map<String, Object>) remain.get(0), "content"));
+        // 同一请求 upsert 与 delete 重叠
+        request(
+                "PATCH",
+                "/work-logs/" + id,
+                employeeToken,
+                fields(
+                        "expectedVersion",
+                        1,
+                        "upsertEntries",
+                        List.of(fields("entryId", second, "content", "x")),
+                        "deleteEntryIds",
+                        List.of(second)),
+                422);
+        // 删除不属于该日志的条目
+        request(
+                "PATCH",
+                "/work-logs/" + id,
+                employeeToken,
+                fields("expectedVersion", 1, "deleteEntryIds", List.of(UUID.randomUUID().toString())),
+                422);
+        // 非作者删除
+        request("DELETE", "/work-logs/" + id, managerToken, null, 403);
+        // 超 24 小时窗口：修改与删除均被拒绝
+        db.update(
+                "UPDATE work_log SET published_at=? WHERE id=?",
+                OffsetDateTime.now(ZoneOffset.UTC).minusHours(25),
+                id);
+        request(
+                "PATCH",
+                "/work-logs/" + id,
+                employeeToken,
+                fields("expectedVersion", 1, "deleteEntryIds", List.of(second)),
+                409);
+        request("DELETE", "/work-logs/" + id, employeeToken, null, 409);
+        // 窗口内删除成功，删除后不可读且同日可重建
+        db.update(
+                "UPDATE work_log SET published_at=? WHERE id=?",
+                OffsetDateTime.now(ZoneOffset.UTC),
+                id);
+        request("DELETE", "/work-logs/" + id, employeeToken, null, 200);
+        request("GET", "/work-logs/" + id, employeeToken, null, 404);
+        var again = journal(employeeToken, today, 1);
+        assertNotEquals(id, str(again, "id"));
+    }
+
+    @Test
     void disablingAccountsRevokesOldSessionsAndKeepsAuthorizedHistoricalReads() throws Exception {
         var journal = journal(employeeToken, today, 1);
         var command =
