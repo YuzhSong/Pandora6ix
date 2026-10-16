@@ -887,6 +887,18 @@ private fun within24h(iso: String?): Boolean {
     var deleteError by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val mutedColors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Ink.copy(alpha = .7f), unfocusedBorderColor = Ink.copy(alpha = .3f), focusedLabelColor = Ink, cursorColor = Ink)
+    // 日报草稿（缓存目录）：上次编辑未发布的内容
+    val context = LocalContext.current
+    val savedJournalDraft = remember {
+        AppCache.readDraft(context, "journal_draft.json")?.let { s -> runCatching { AppCache.json.decodeFromString<JournalDraftDto>(s) }.getOrNull() }
+    }
+    // 编辑器打开期间草稿实时落盘；发布成功或放弃时清除
+    LaunchedEffect(writing, editorDateKey, entryDrafts) {
+        if (writing) AppCache.writeDraft(
+            context, "journal_draft.json",
+            AppCache.json.encodeToString(JournalDraftDto.serializer(), JournalDraftDto(editorDateKey, entryDrafts.map { JournalDraftEntryDto(it.entryId, it.content) }))
+        )
+    }
     fun todayIso(): String { val t = todayDate(); return "%04d-%02d-%02d".format(t.year, t.month, t.day) }
     fun isoOf(d: DemoDate): String = "%04d-%02d-%02d".format(d.year, d.month, d.day)
     fun threeDays(): List<DemoDate> { val t = todayDate(); return listOf(t, t.plusDays(-1), t.plusDays(-2)) }
@@ -915,9 +927,12 @@ private fun within24h(iso: String?): Boolean {
     val filteredEntries = if (historyFilter == "全部日期") flatEntries else flatEntries.filter { dateLabel(it.first) == historyFilter }
     val filterOptions = listOf("全部日期") + journals.map { dateLabel(it.workDate) }.distinct()
     fun openEditor(dateKey: String) {
-        editorDateKey = dateKey
-        editingJournal = journals.firstOrNull { it.workDate == dateKey }
-        entryDrafts = editingJournal?.entries?.sortedBy { it.displayOrder }?.map { EntryDraft(it.entryId, it.content) } ?: listOf(EntryDraft(null, ""))
+        val draft = savedJournalDraft
+        editorDateKey = draft?.dateKey ?: dateKey
+        editingJournal = journals.firstOrNull { it.workDate == editorDateKey }
+        entryDrafts = draft?.entries?.map { EntryDraft(it.entryId, it.content) }
+            ?: editingJournal?.entries?.sortedBy { it.displayOrder }?.map { EntryDraft(it.entryId, it.content) }
+            ?: listOf(EntryDraft(null, ""))
         publishError = null
         writing = true
     }
@@ -978,6 +993,7 @@ private fun within24h(iso: String?): Boolean {
                     )
                 }
                 writing = false
+                AppCache.deleteDraft(context, "journal_draft.json")
                 loadJournals()
             } catch (e: SessionExpiredException) {
                 // 401 已由全局回调处理
@@ -1115,7 +1131,7 @@ private fun within24h(iso: String?): Boolean {
                 }
             }
         }
-        if (confirmExit) AlertDialog(onDismissRequest = { confirmExit = false }, modifier = Modifier.border(2.dp, CreamDeep, RoundedCornerShape(28.dp)), shape = RoundedCornerShape(28.dp), containerColor = Color.White, titleContentColor = Ink, textContentColor = Ink.copy(alpha = .75f), title = { Text("放弃未保存内容？", fontWeight = FontWeight.Bold) }, text = { Text("退出后当前填写内容会被清空。") }, confirmButton = { TextButton({ confirmExit = false; entryDrafts = listOf(EntryDraft(null, "")); writing = false }, colors = ButtonDefaults.textButtonColors(contentColor = Ink)) { Text("放弃并退出") } }, dismissButton = { TextButton({ confirmExit = false }, colors = ButtonDefaults.textButtonColors(contentColor = Ink)) { Text("继续编辑") } })
+        if (confirmExit) AlertDialog(onDismissRequest = { confirmExit = false }, modifier = Modifier.border(2.dp, CreamDeep, RoundedCornerShape(28.dp)), shape = RoundedCornerShape(28.dp), containerColor = Color.White, titleContentColor = Ink, textContentColor = Ink.copy(alpha = .75f), title = { Text("放弃未保存内容？", fontWeight = FontWeight.Bold) }, text = { Text("退出后当前填写内容会被清空。") }, confirmButton = { TextButton({ confirmExit = false; entryDrafts = listOf(EntryDraft(null, "")); AppCache.deleteDraft(context, "journal_draft.json"); writing = false }, colors = ButtonDefaults.textButtonColors(contentColor = Ink)) { Text("放弃并退出") } }, dismissButton = { TextButton({ confirmExit = false }, colors = ButtonDefaults.textButtonColors(contentColor = Ink)) { Text("继续编辑") } })
         deletingJournal?.let { j ->
             AlertDialog(
                 onDismissRequest = { if (!publishing) deletingJournal = null },
@@ -1408,6 +1424,12 @@ private fun SettingsScreen(
     var showPasswordDialog by remember { mutableStateOf(false) }
     var showThemeDialog by remember { mutableStateOf(false) }
     var toast by remember { mutableStateOf<String?>(null) }
+    // 真实缓存清点：草稿（任务/日报未发布内容）+ 被替换的旧头像副本
+    val context = LocalContext.current
+    val avatarPrefs = remember { context.getSharedPreferences("profile_avatar", Context.MODE_PRIVATE) }
+    var cacheVersion by remember { mutableStateOf(0) }
+    val cacheItems = remember(cacheVersion) { AppCache.collect(context, avatarPrefs.getString("avatarPath", null)) }
+    val totalCache = cacheItems.sumOf { it.size }
     LaunchedEffect(toast) {
         if (toast != null) {
             kotlinx.coroutines.delay(1800)
@@ -1470,7 +1492,7 @@ private fun SettingsScreen(
                         title = "清除缓存",
                         onClick = { showClearCacheDialog = true }
                     ) {
-                        Text("12.3 MB", color = Ink.copy(alpha = 0.5f), fontSize = 13.sp)
+                        Text(AppCache.formatSize(totalCache), color = Ink.copy(alpha = 0.5f), fontSize = 13.sp)
                     }
                 }
                 Spacer(Modifier.height(18.dp))
@@ -1601,9 +1623,31 @@ private fun SettingsScreen(
     if (showClearCacheDialog) {
         AlertDialog(
             onDismissRequest = { showClearCacheDialog = false },
-            title = { Text("清除缓存？") },
-            text = { Text("将清除 12.3 MB 临时文件，不会影响你的数据。") },
-            confirmButton = { TextButton({ showClearCacheDialog = false; toast = "已清除缓存" }) { Text("清除", color = WarmOrange, fontWeight = FontWeight.Bold) } },
+            title = { Text("清除缓存") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (cacheItems.isEmpty()) {
+                        Text("暂无可清理的缓存。", color = Ink.copy(alpha = .6f))
+                    } else {
+                        Text("共 ${AppCache.formatSize(totalCache)}，明细：", color = Ink.copy(alpha = .75f))
+                        cacheItems.forEach { item ->
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Text(item.label, Modifier.weight(1f), fontSize = 13.sp, lineHeight = 18.sp)
+                                Text(AppCache.formatSize(item.size), fontSize = 13.sp, color = Ink.copy(alpha = .6f))
+                            }
+                        }
+                        Text("不影响登录状态、设置与当前使用的头像。", fontSize = 12.sp, color = Ink.copy(alpha = .5f))
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton({
+                    cacheItems.forEach { item -> item.files.forEach { runCatching { it.delete() } } }
+                    cacheVersion++
+                    showClearCacheDialog = false
+                    toast = if (totalCache > 0) "已清除 ${AppCache.formatSize(totalCache)}" else "没有需要清除的缓存"
+                }) { Text("清除", color = if (totalCache > 0) WarmOrange else Ink.copy(alpha = .4f), fontWeight = FontWeight.Bold) }
+            },
             dismissButton = { TextButton({ showClearCacheDialog = false }) { Text("取消", color = Ink.copy(alpha = 0.7f)) } }
         )
     }

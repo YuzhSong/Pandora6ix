@@ -66,17 +66,21 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
     var queryWidth by remember { mutableIntStateOf(0) }
     var queryTop by remember { mutableIntStateOf(0) }
     val queryVisibility = remember { BringIntoViewRequester() }
-    var title by rememberSaveable { mutableStateOf("") }
-    var note by rememberSaveable { mutableStateOf("") }
-    var startKey by rememberSaveable { mutableStateOf(initialDate.key()) }
-    var endKey by rememberSaveable { mutableStateOf(initialDate.key()) }
-    var allDay by rememberSaveable { mutableStateOf(false) }
-    var startMinute by rememberSaveable { mutableIntStateOf(540) }
-    var endMinute by rememberSaveable { mutableIntStateOf(600) }
-    var priority by rememberSaveable { mutableIntStateOf(3) }
-    // 任务类型/接收人相关状态不跨弹层打开残留：每次打开按能力重新初始化，默认派发任务
-    var kind by remember { mutableStateOf(if (canCreateDelegated) "DELEGATED" else "PERSONAL") }
-    var selectedRecipientIds by remember { mutableStateOf(listOf<String>()) }
+    // 草稿恢复：上次未提交的任务内容（缓存目录）
+    val savedDraft = remember {
+        AppCache.readDraft(context, "task_draft.json")?.let { s -> runCatching { AppCache.json.decodeFromString<TaskDraftDto>(s) }.getOrNull() }
+    }
+    var title by rememberSaveable { mutableStateOf(savedDraft?.title ?: "") }
+    var note by rememberSaveable { mutableStateOf(savedDraft?.note ?: "") }
+    var startKey by rememberSaveable { mutableStateOf(savedDraft?.startKey ?: initialDate.key()) }
+    var endKey by rememberSaveable { mutableStateOf(savedDraft?.endKey ?: initialDate.key()) }
+    var allDay by rememberSaveable { mutableStateOf(savedDraft?.allDay ?: false) }
+    var startMinute by rememberSaveable { mutableIntStateOf(savedDraft?.startMinute ?: 540) }
+    var endMinute by rememberSaveable { mutableIntStateOf(savedDraft?.endMinute ?: 600) }
+    var priority by rememberSaveable { mutableIntStateOf(savedDraft?.priority ?: 3) }
+    // 任务类型/接收人相关状态不跨弹层打开残留：优先用草稿恢复，其次按能力初始化
+    var kind by remember { mutableStateOf(savedDraft?.kind ?: if (canCreateDelegated) "DELEGATED" else "PERSONAL") }
+    var selectedRecipientIds by remember { mutableStateOf(savedDraft?.recipientIds ?: listOf()) }
     var candidates by remember { mutableStateOf<List<RecipientDto>>(emptyList()) }
     var recipientQuery by remember { mutableStateOf("") }
     var candidateOpen by remember { mutableStateOf(false) }
@@ -96,7 +100,12 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
             runCatching { taskRepo.recipientCandidates(keyword.ifBlank { null }) }.getOrNull()?.let { candidates = it.items }
         }
     }
-    var tags by rememberSaveable { mutableStateOf(listOf<String>()) }
+    var tags by rememberSaveable { mutableStateOf(savedDraft?.tags ?: listOf<String>()) }
+    // 草稿实时落盘（缓存目录）：提交成功或明确放弃时清除
+    LaunchedEffect(kind, title, note, allDay, startKey, endKey, startMinute, endMinute, priority, tags, selectedRecipientIds) {
+        val draft = TaskDraftDto(kind, title, note, allDay, startKey, endKey, startMinute, endMinute, priority, tags, selectedRecipientIds)
+        AppCache.writeDraft(context, "task_draft.json", AppCache.json.encodeToString(TaskDraftDto.serializer(), draft))
+    }
     var showTagPicker by rememberSaveable { mutableStateOf(false) }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
     var confirmExit by rememberSaveable { mutableStateOf(false) }
@@ -146,6 +155,7 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
                     ),
                     idempotencyKey
                 )
+                AppCache.deleteDraft(context, "task_draft.json")
             } catch (e: ApiException) {
                 error = e.friendlyMessage()
             } catch (e: Exception) {
@@ -250,7 +260,7 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
             Button(onClick = { submit() }, Modifier.fillMaxWidth().padding(vertical = 12.dp), enabled = !submitting, colors = ButtonDefaults.buttonColors(containerColor = Ink)) { Text(if (submitting) "提交中…" else "提交任务") }
         }
     }
-    if (confirmExit) AlertDialog(onDismissRequest = { confirmExit = false; sheetScope.launch { sheetState.show() } }, title = { Text("放弃未保存的任务？") }, text = { Text("关闭后，本次填写的内容会清空。") }, confirmButton = { TextButton({ confirmExit = false; onDismiss() }) { Text("放弃") } }, dismissButton = { TextButton({ confirmExit = false; sheetScope.launch { sheetState.show() } }) { Text("继续填写") } })
+    if (confirmExit) AlertDialog(onDismissRequest = { confirmExit = false; sheetScope.launch { sheetState.show() } }, title = { Text("放弃未保存的任务？") }, text = { Text("关闭后，本次填写的内容会清空。") }, confirmButton = { TextButton({ confirmExit = false; AppCache.deleteDraft(context, "task_draft.json"); onDismiss() }) { Text("放弃") } }, dismissButton = { TextButton({ confirmExit = false; sheetScope.launch { sheetState.show() } }) { Text("继续填写") } })
     timePickTarget?.let { target ->
         TimeWheelDialog(
             initialMinute = if (target == "start") startMinute else endMinute,
