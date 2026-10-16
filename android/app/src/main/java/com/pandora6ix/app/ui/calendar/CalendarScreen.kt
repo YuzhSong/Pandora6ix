@@ -86,17 +86,23 @@ fun CalendarScreen(
             }
             val weekStart = mondayOfWeek(cursor)
             val dates = (0..6).map { weekStart.plusDays(it) }
+            var showDatePick by rememberSaveable { mutableStateOf(false) }
             Row(Modifier.fillMaxWidth().height(44.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(when (mode) {
                     CalendarMode.YEAR -> "${cursor.year}年"
                     CalendarMode.MONTH -> cursor.monthLabel()
                     CalendarMode.WEEK -> "${weekStart.shortLabel()}—${dates.last().shortLabel()}"
                     CalendarMode.DAY -> cursor.shortLabelWithWeekday()
-                }, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                }, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f).clickable { showDatePick = true })
                 IconButton({ showTagFilter = true }) {
                     Icon(Icons.Default.Search, "按标签筛选任务", tint = if (filterTags.isEmpty()) Ink else WarmOrange)
                 }
             }
+            if (showDatePick) DateWheelDialog(
+                initial = cursor,
+                onDismiss = { showDatePick = false },
+                onConfirm = { d -> showDatePick = false; onCursorChange(d) }
+            )
             // 年视图任务范围：GET /tasks?scope=mine|managed|created（服务端校验可见范围）
             if (mode == CalendarMode.YEAR) Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 listOf("mine" to "我的任务", "managed" to "我管理的", "created" to "我创建的").forEach { (value, label) ->

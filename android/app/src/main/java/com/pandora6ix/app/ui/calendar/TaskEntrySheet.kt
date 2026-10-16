@@ -1,6 +1,5 @@
 package com.pandora6ix.app.ui.calendar
 
-import android.app.DatePickerDialog
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -23,6 +22,8 @@ import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material3.*
@@ -73,11 +74,12 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
     var startMinute by rememberSaveable { mutableIntStateOf(540) }
     var endMinute by rememberSaveable { mutableIntStateOf(600) }
     var priority by rememberSaveable { mutableIntStateOf(3) }
-    var kind by rememberSaveable { mutableStateOf(if (canCreatePersonal && !canCreateDelegated) "PERSONAL" else "DELEGATED") }
-    var selectedRecipientIds by rememberSaveable { mutableStateOf(listOf<String>()) }
+    // 任务类型/接收人相关状态不跨弹层打开残留：每次打开按能力重新初始化，默认派发任务
+    var kind by remember { mutableStateOf(if (canCreateDelegated) "DELEGATED" else "PERSONAL") }
+    var selectedRecipientIds by remember { mutableStateOf(listOf<String>()) }
     var candidates by remember { mutableStateOf<List<RecipientDto>>(emptyList()) }
-    var recipientQuery by rememberSaveable { mutableStateOf("") }
-    var candidateOpen by rememberSaveable { mutableStateOf(false) }
+    var recipientQuery by remember { mutableStateOf("") }
+    var candidateOpen by remember { mutableStateOf(false) }
     var submitting by remember { mutableStateOf(false) }
     var createdTask by remember { mutableStateOf<TaskDto?>(null) }
     val idempotencyKey = remember { UUID.randomUUID().toString() }
@@ -98,8 +100,9 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
     var showTagPicker by rememberSaveable { mutableStateOf(false) }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
     var confirmExit by rememberSaveable { mutableStateOf(false) }
-    // 时间选择浮层目标：start | end | null
+    // 时间/日期选择浮层目标：start | end | null
     var timePickTarget by rememberSaveable { mutableStateOf<String?>(null) }
+    var datePickTarget by rememberSaveable { mutableStateOf<String?>(null) }
     val dirty = title.isNotBlank() || note.isNotBlank() || selectedRecipientIds.isNotEmpty() || tags.isNotEmpty() || !allDay || priority != 3 || startKey != initialDate.key() || endKey != initialDate.key()
     val latestDirty by rememberUpdatedState(dirty)
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true, confirmValueChange = { value ->
@@ -110,10 +113,7 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
     val fieldColors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Ink.copy(alpha = .65f), unfocusedBorderColor = Ink.copy(alpha = .25f), focusedLabelColor = Ink, cursorColor = Ink)
     val buttonColors = ButtonDefaults.outlinedButtonColors(contentColor = Ink)
     val buttonBorder = BorderStroke(1.dp, Ink.copy(alpha = .25f))
-    fun pickDate(key: String, update: (String) -> Unit) {
-        val date = key.date()
-        DatePickerDialog(context, { _, y, m, d -> update(DemoDate(y, m + 1, d).key()) }, date.year, date.month - 1, date.day).show()
-    }
+    fun pickDate(target: String) { datePickTarget = target }
     fun pickTime(target: String) { timePickTarget = target }
     fun nameOf(id: String): String = candidates.firstOrNull { it.id == id }?.displayName?.ifBlank { null } ?: "成员 ${id.takeLast(4)}"
     /** 提交创建：POST /tasks（非幂等，携带 Idempotency-Key；失败重试复用同一键） */
@@ -174,8 +174,8 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
                 }
                 Text("开始与结束", fontWeight = FontWeight.SemiBold)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton({ pickDate(startKey) { startKey = it; error = null } }, Modifier.weight(1f), colors = buttonColors, border = buttonBorder, contentPadding = PaddingValues(8.dp)) { Text(startKey.date().let { "开始\n${it.year}/${it.month}/${it.day}" }, fontSize = 13.sp) }
-                    OutlinedButton({ pickDate(endKey) { endKey = it; error = null } }, Modifier.weight(1f), colors = buttonColors, border = buttonBorder, contentPadding = PaddingValues(8.dp)) { Text(endKey.date().let { "结束\n${it.year}/${it.month}/${it.day}" }, fontSize = 13.sp) }
+                    OutlinedButton({ pickDate("start") }, Modifier.weight(1f), colors = buttonColors, border = buttonBorder, contentPadding = PaddingValues(8.dp)) { Text(startKey.date().let { "开始\n${it.year}/${it.month}/${it.day}" }, fontSize = 13.sp) }
+                    OutlinedButton({ pickDate("end") }, Modifier.weight(1f), colors = buttonColors, border = buttonBorder, contentPadding = PaddingValues(8.dp)) { Text(endKey.date().let { "结束\n${it.year}/${it.month}/${it.day}" }, fontSize = 13.sp) }
                 }
                 if (!allDay) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton({ pickTime("start") }, Modifier.weight(1f), colors = buttonColors, border = buttonBorder) { Text("开始 ${minuteLabel(startMinute)}") }
@@ -214,16 +214,31 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
                         Column(Modifier.width(with(density) { queryWidth.toDp() }).heightIn(max = maxCandidateHeight).clip(RoundedCornerShape(12.dp)).background(CreamDeep).border(1.dp, Ink.copy(alpha = .12f), RoundedCornerShape(12.dp)).padding(vertical = 4.dp)) {
                             Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
                                 if (candidates.isEmpty()) Text("无匹配成员", Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), fontSize = 13.sp, color = Ink.copy(alpha = .5f))
-                                candidates.forEach { candidate ->
-                                    val selected = candidate.id in selectedRecipientIds
-                                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { selectedRecipientIds = if (selected) selectedRecipientIds - candidate.id else selectedRecipientIds + candidate.id; error = null }.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(if (selected) Icons.Default.CheckBox else Icons.Default.CheckBoxOutlineBlank, if (selected) "已选" else "未选", tint = Ink)
-                                        Column(Modifier.padding(start = 8.dp).weight(1f)) {
-                                            Text(candidate.displayName.ifBlank { "成员 ${candidate.id.takeLast(4)}" }, fontSize = 14.sp)
-                                            candidate.jobTitle?.takeIf { it.isNotBlank() }?.let { Text(it, fontSize = 11.sp, color = Ink.copy(alpha = .5f)) }
+                                // 按部门分组展示，避免候选人过多时一屏铺平；点击部门头可折叠/展开
+                                var collapsedDepts by remember { mutableStateOf(setOf<String>()) }
+                                candidates.groupBy { it.organizationName?.takeIf { n -> n.isNotBlank() } ?: "未分配部门" }
+                                    .forEach { (dept, members) ->
+                                        val collapsed = dept in collapsedDepts
+                                        Row(
+                                            Modifier.fillMaxWidth().clickable { collapsedDepts = if (collapsed) collapsedDepts - dept else collapsedDepts + dept }.padding(horizontal = 12.dp, vertical = 6.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(if (collapsed) Icons.Default.ExpandMore else Icons.Default.ExpandLess, if (collapsed) "展开" else "收起", Modifier.size(16.dp), tint = Ink.copy(alpha = .55f))
+                                            Spacer(Modifier.width(4.dp))
+                                            Text(dept, Modifier.weight(1f), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                            Text("${members.size} 人", fontSize = 11.sp, color = Ink.copy(alpha = .5f))
+                                        }
+                                        if (!collapsed) members.forEach { candidate ->
+                                            val selected = candidate.id in selectedRecipientIds
+                                            Row(Modifier.fillMaxWidth().heightIn(min = 44.dp).clickable { selectedRecipientIds = if (selected) selectedRecipientIds - candidate.id else selectedRecipientIds + candidate.id; error = null }.padding(start = 24.dp, end = 12.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                                Icon(if (selected) Icons.Default.CheckBox else Icons.Default.CheckBoxOutlineBlank, if (selected) "已选" else "未选", tint = Ink)
+                                                Column(Modifier.padding(start = 8.dp).weight(1f)) {
+                                                    Text(candidate.displayName.ifBlank { "成员 ${candidate.id.takeLast(4)}" }, fontSize = 14.sp)
+                                                    candidate.jobTitle?.takeIf { it.isNotBlank() }?.let { Text(it, fontSize = 11.sp, color = Ink.copy(alpha = .5f)) }
+                                                }
+                                            }
                                         }
                                     }
-                                }
                             }
                             TextButton({ candidateOpen = false }, Modifier.fillMaxWidth()) { Text("完成", fontSize = 13.sp, color = Ink) }
                         }
@@ -244,6 +259,17 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
                 if (target == "start") startMinute = value else endMinute = value
                 error = null
                 timePickTarget = null
+            }
+        )
+    }
+    datePickTarget?.let { target ->
+        DateWheelDialog(
+            initial = (if (target == "start") startKey else endKey).date(),
+            onDismiss = { datePickTarget = null },
+            onConfirm = { d ->
+                if (target == "start") startKey = d.key() else endKey = d.key()
+                error = null
+                datePickTarget = null
             }
         )
     }
@@ -316,40 +342,4 @@ private fun TimeWheelDialog(initialMinute: Int, onDismiss: () -> Unit, onConfirm
         confirmButton = { TextButton({ onConfirm(hour * 60 + minute) }) { Text("确定", color = Ink, fontWeight = FontWeight.Bold) } },
         dismissButton = { TextButton(onDismiss) { Text("取消", color = Ink.copy(alpha = .6f)) } }
     )
-}
-
-/** 单列滚轮：固定 5 行视口、吸附停位，中间行为选中值；点击直接选中 */
-@Composable
-private fun WheelColumn(values: List<String>, selected: Int, onSelected: (Int) -> Unit) {
-    val itemHeight = 40.dp
-    val state = rememberLazyListState(initialFirstVisibleItemIndex = selected)
-    // 滚动停位即选中值
-    LaunchedEffect(state) {
-        snapshotFlow { state.firstVisibleItemIndex }.collect { index -> if (index in values.indices && index != selected) onSelected(index) }
-    }
-    // 选中值变化（含点击）时对中定位
-    LaunchedEffect(selected) {
-        if (state.firstVisibleItemIndex != selected || state.firstVisibleItemScrollOffset != 0) state.scrollToItem(selected)
-    }
-    Box(Modifier.height(itemHeight * 5).width(72.dp), contentAlignment = Alignment.Center) {
-        Box(Modifier.fillMaxWidth().height(itemHeight).clip(RoundedCornerShape(10.dp)).background(CreamDeep))
-        LazyColumn(
-            state = state,
-            modifier = Modifier.fillMaxWidth(),
-            flingBehavior = rememberSnapFlingBehavior(state),
-            contentPadding = PaddingValues(vertical = itemHeight * 2),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            items(count = values.size, key = { it }) { index ->
-                Box(Modifier.fillMaxWidth().height(itemHeight).clickable { onSelected(index) }, contentAlignment = Alignment.Center) {
-                    Text(
-                        values[index],
-                        fontSize = if (index == selected) 18.sp else 15.sp,
-                        fontWeight = if (index == selected) FontWeight.Bold else FontWeight.Normal,
-                        color = if (index == selected) Ink else Ink.copy(alpha = .35f)
-                    )
-                }
-            }
-        }
-    }
 }
