@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import type { AdminData, Person } from '../data/types.ts'
-import { roleLabels } from '../data/types.ts'
+import { RoleBadge } from './RoleBadge.tsx'
 import { Icon } from './Icon.tsx'
 
 export function PersonDetails({ person, data, onClose, onEdit, editLabel = '编辑资料' }: {
@@ -31,7 +31,7 @@ export function PersonDetails({ person, data, onClose, onEdit, editLabel = '编�
           <div><dt>登录名</dt><dd>{person.loginName}</dd></div>
           <div><dt>所属组织</dt><dd>{parent ? `${parent.name} / ` : ''}{organization?.name}</dd></div>
           <div><dt>直属上级</dt><dd>{data.people.find(item => item.id === person.supervisorId)?.displayName || '未设置'}</dd></div>
-          <div><dt>业务角色</dt><dd>{person.roles.map(role => roleLabels[role]).join('、')}</dd></div>
+          <div><dt>业务角色</dt><dd className="badges">{person.roles.map(role => <RoleBadge key={role} role={role} />)}</dd></div>
           <div><dt>直接下属</dt><dd>{reports.length ? reports.map(item => item.displayName).join('、') : '无'}</dd></div>
         </dl>
       </div>

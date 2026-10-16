@@ -154,6 +154,20 @@ td { height: 68px; }
 :root[data-theme='dark'] .avatar { background: #494331; color: #e9d7a3; }
 .role-card, .tag-card, .company-card, .entry-card { border-radius: 12px; }
 .role-card.selected { border-color: var(--primary); }
+.badge.role-badge { border: 1px solid transparent; font-weight: 500; }
+.badge.role-badge[data-role='ADMIN'] { background: #eee7fa; color: #674297; border-color: #ddd0ee; }
+.badge.role-badge[data-role='FOUNDER'] { background: #fff0c2; color: #826016; border-color: #efd996; }
+.badge.role-badge[data-role='DEPARTMENT_MANAGER'] { background: #e6edff; color: #355ca2; border-color: #cad8f6; }
+.badge.role-badge[data-role='TEAM_LEAD'] { background: #ddf2eb; color: #226b58; border-color: #b8dfd1; }
+.badge.role-badge[data-role='EMPLOYEE'] { background: #edf0f4; color: #566171; border-color: #d8dfe6; }
+:root[data-theme='dark'] .badge.role-badge[data-role='ADMIN'] { background: #443254; color: #e2c3ff; border-color: #6b4e83; }
+:root[data-theme='dark'] .badge.role-badge[data-role='FOUNDER'] { background: #4c4023; color: #f4d17e; border-color: #786335; }
+:root[data-theme='dark'] .badge.role-badge[data-role='DEPARTMENT_MANAGER'] { background: #293b58; color: #b9d0ff; border-color: #405b83; }
+:root[data-theme='dark'] .badge.role-badge[data-role='TEAM_LEAD'] { background: #24453b; color: #a3dfcd; border-color: #3b6e5f; }
+:root[data-theme='dark'] .badge.role-badge[data-role='EMPLOYEE'] { background: #363d47; color: #ced6e1; border-color: #566171; }
+.field-grid label > small, .role-supervisor small { color: var(--muted); font-size: calc(11px * var(--font-scale)); line-height: 1.6; font-weight: 400; }
+.role-supervisor { margin-top: 20px; }
+.role-supervisor > label { display: flex; flex-direction: column; gap: 10px; font-size: calc(12px * var(--font-scale)); }
 .tree-node { border-radius: 8px; }
 .tree-legend i { background: var(--muted); }
 .toast { left: 50%; background: #29292d; border-color: #49463c; color: #fff; border-radius: 12px; }
@@ -286,10 +300,15 @@ body { background: var(--canvas-gradient); background-attachment: fixed; min-hei
 .auth-card > p { font-size: calc(13px * var(--font-scale)); line-height: 1.7; text-align: left; margin-bottom: 24px; }
 .auth-eyebrow { text-align: left; font-size: 10px; }
 .auth-card label { font-size: calc(12px * var(--font-scale)); font-weight: 500; margin: 18px 0; gap: 9px; color: var(--text); }
+.auth-card label > small { color: var(--muted); font-size: calc(11px * var(--font-scale)); font-weight: 400; line-height: 1.65; }
 .auth-card input { height: 45px; font-size: calc(14px * var(--font-scale)); border-radius: 11px; background: var(--surface); border-color: var(--border); }
 .auth-card .entry-button { height: 46px; margin-top: 20px; font-size: calc(14px * var(--font-scale)); font-weight: 500; }
 .auth-card [role='status'] { margin-top: 12px; font-size: calc(12px * var(--font-scale)); line-height: 1.6; color: var(--muted); }
 .auth-card .text-button { margin-top: 20px; font-size: calc(12px * var(--font-scale)); }
+.company-onboarding { margin-top: 22px; border-top: 1px solid var(--border); padding-top: 18px; }
+.company-onboarding summary { cursor: pointer; color: var(--muted); text-align: center; font-size: calc(12px * var(--font-scale)); }
+.company-onboarding > p { margin: 14px 0 0; font-size: calc(12px * var(--font-scale)); color: var(--muted); line-height: 1.8; }
+.auth-card .company-onboarding .text-button { margin-top: 12px; width: 100%; justify-content: center; color: var(--muted); }
 .entry-page > footer { padding: 20px; font-size: calc(11px * var(--font-scale)); color: var(--muted); letter-spacing: .02em; }
 .select-control { min-width: 0; }
 .filters .select-control { width: 166px; flex-shrink: 0; }

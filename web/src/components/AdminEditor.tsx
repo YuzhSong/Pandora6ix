@@ -11,6 +11,8 @@ import { Select } from './Select.tsx'
 import { TagColorPicker } from './TagColorPicker.tsx'
 import { TagChip } from './TagChip.tsx'
 import { ValidatedForm } from './ValidatedForm.tsx'
+import { businessRank, reportingError, supervisorCandidates, supervisorHint } from '../data/supervisors.ts'
+import { RoleBadge } from './RoleBadge.tsx'
 
 export type EditRequest =
   | { kind: 'enterprise'; item: Enterprise }
@@ -35,7 +37,11 @@ export function AdminEditor({ request, data, onClose, onSaved }: {
   const [initialPassword, setInitialPassword] = useState('')
   const creationKey = useRef({ command: '', key: crypto.randomUUID() })
   const [confirmDiscard, setConfirmDiscard] = useState(false)
+  const set = <K extends keyof Draft>(key: K, value: Draft[K]) => { setDraft(current => ({ ...current, [key]: value })); setConfirmDiscard(false) }
   const dirty = JSON.stringify(initial) !== JSON.stringify(draft) || !!initialPassword
+  const candidates = supervisorCandidates(data.people, request.item?.id, draft.roles)
+  const invalidSupervisor = !!draft.supervisorId && !candidates.some(person => person.id === draft.supervisorId)
+  const supervisorField = <label>直属上级<Select label="直属上级" value={draft.supervisorId} disabled={businessRank(draft.roles) < 0 || businessRank(draft.roles) === 3} onChange={value => set('supervisorId', value)} options={[{ value: '', label: '未设置直属上级' }, ...(invalidSupervisor ? [{ value: draft.supervisorId, label: `${data.people.find(person => person.id === draft.supervisorId)?.displayName ?? '原上级'}（不符合当前角色，请重新选择）` }] : []), ...candidates.map(person => ({ value: person.id, label: `${person.displayName} · ${person.jobTitle || person.loginName}` }))]} /><small>{supervisorHint(draft.roles)}</small>{invalidSupervisor && <button className="text-button" type="button" onClick={() => set('supervisorId', '')}>清除不符合层级的上级</button>}</label>
   useEffect(() => {
     const opener = document.activeElement as HTMLElement | null
     dialog.current?.showModal()
@@ -47,12 +53,15 @@ export function AdminEditor({ request, data, onClose, onSaved }: {
     window.addEventListener('beforeunload', protect)
     return () => window.removeEventListener('beforeunload', protect)
   }, [dirty])
-  const set = <K extends keyof Draft>(key: K, value: Draft[K]) => { setDraft(current => ({ ...current, [key]: value })); setConfirmDiscard(false) }
   const close = () => { if (!saving) { if (dirty) setConfirmDiscard(true); else onClose() } }
   const title = request.kind === 'enterprise' ? '编辑公司信息' : request.kind === 'roles' ? '配置人员角色' : `${request.item ? '编辑' : '新增'}${request.kind === 'company' ? '公司重要事项' : request.kind === 'unit' ? '组织' : request.kind === 'person' ? '人员' : '标签'}`
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (saving) return
+    if (request.kind === 'person' || request.kind === 'roles') {
+      const invalid = reportingError(data.people, request.item?.id, draft.roles, draft.supervisorId)
+      if (invalid) { setError(invalid); return }
+    }
     setSaving(true); setError(''); setConfirmDiscard(false)
     try {
       let next: AdminData
@@ -65,7 +74,7 @@ export function AdminEditor({ request, data, onClose, onSaved }: {
         if (command !== creationKey.current.command) creationKey.current = { command, key: crypto.randomUUID() }
         next = await adminRepository.saveCompanyItem(input, request.item?.id, request.item?.version, creationKey.current.key)
       }
-      else if (request.kind === 'roles') next = await adminRepository.saveRoles(request.item.id, draft.roles, request.item.version)
+      else if (request.kind === 'roles') next = await adminRepository.savePerson({ displayName: draft.name, loginName: draft.loginName, jobTitle: draft.jobTitle, orgUnitId: draft.orgUnitId, supervisorId: draft.supervisorId || null, roles: draft.roles }, request.item.id, request.item.version)
       else next = await adminRepository.savePerson({ displayName: draft.name, loginName: draft.loginName, jobTitle: draft.jobTitle, orgUnitId: draft.orgUnitId, supervisorId: draft.supervisorId || null, roles: draft.roles }, request.item?.id, request.item?.version, initialPassword)
       onSaved(next)
     } catch (reason) { setError(errorMessage(reason)) }
@@ -87,10 +96,10 @@ export function AdminEditor({ request, data, onClose, onSaved }: {
             <div className="field-grid"><label><span className="field-label">姓名 <span className="required" aria-hidden="true">*</span></span><input autoFocus required maxLength={128} value={draft.name} onChange={event => set('name', event.target.value)} placeholder="人员姓名" /></label><label><span className="field-label">登录名 <span className="required" aria-hidden="true">*</span></span><input required disabled={!!request.item} maxLength={128} value={draft.loginName} onChange={event => set('loginName', event.target.value)} placeholder="例如：chen.sining" /></label></div>
             {!request.item && <label><span>初始密码 <span className="required">*</span></span><input type="password" required minLength={10} maxLength={72} autoComplete="new-password" value={initialPassword} onChange={event => setInitialPassword(event.target.value)} /><small>至少 10 个字符，UTF-8 编码后不超过 72 字节。</small></label>}
             <label>职位<input maxLength={128} value={draft.jobTitle} onChange={event => set('jobTitle', event.target.value)} placeholder="例如：前端开发工程师" /></label>
-            <div className="field-grid"><label>所属组织<Select label="所属组织" value={draft.orgUnitId} onChange={value => set('orgUnitId', value)} options={[{ value: '', label: '未分配组织' }, ...data.units.map(unit => ({ value: unit.id, label: unit.name }))]} /></label><label>直属上级<Select label="直属上级" value={draft.supervisorId} onChange={value => set('supervisorId', value)} options={[{ value: '', label: '未设置直属上级' }, ...data.people.filter(person => person.id !== request.item?.id && person.status !== 'DISABLED' && person.roles.some(role => ['FOUNDER', 'DEPARTMENT_MANAGER', 'TEAM_LEAD'].includes(role))).map(person => ({ value: person.id, label: `${person.displayName} · ${person.jobTitle || person.loginName}` }))]} /></label></div>
+            <div className="field-grid"><label>所属组织<Select label="所属组织" value={draft.orgUnitId} onChange={value => set('orgUnitId', value)} options={[{ value: '', label: '未分配组织' }, ...data.units.map(unit => ({ value: unit.id, label: unit.name }))]} /></label>{supervisorField}</div>
             
           </>}
-          {request.kind === 'roles' && <fieldset className="role-picker"><legend>业务角色 <span className="required">*</span></legend><div>{(Object.keys(roleLabels) as Role[]).map(role => <label key={role}><input type="checkbox" checked={draft.roles.includes(role)} onChange={event => set('roles', event.target.checked ? [...draft.roles, role] : draft.roles.filter(item => item !== role))} />{roleLabels[role]}</label>)}</div></fieldset>}
+          {request.kind === 'roles' && <><fieldset className="role-picker"><legend>业务角色 <span className="required">*</span></legend><div>{(Object.keys(roleLabels) as Role[]).map(role => <label key={role}><input type="checkbox" checked={draft.roles.includes(role)} onChange={event => set('roles', event.target.checked ? [...draft.roles, role] : draft.roles.filter(item => item !== role))} /><RoleBadge role={role} /></label>)}</div></fieldset><div className="role-supervisor">{supervisorField}</div></>}
         </>}
         {request.kind === 'tag' && <>
           <label><span className="field-label">标签名称 <span className="required" aria-hidden="true">*</span></span><input autoFocus required maxLength={64} value={draft.name} onChange={event => set('name', event.target.value)} placeholder="例如：产品研发" /></label>

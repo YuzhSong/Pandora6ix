@@ -113,7 +113,7 @@ export default function App() {
   async function logout() {
     if (logoutBusy) return
     setLogoutBusy(true); setLogoutError('')
-    try { await authService.logout(); setAuthMessage('已退出登录。') }
+    try { await authService.logout(); setAuthMessage('') }
     catch (reason) { setLogoutError(errorMessage(reason)) }
     finally { setLogoutBusy(false) }
   }
