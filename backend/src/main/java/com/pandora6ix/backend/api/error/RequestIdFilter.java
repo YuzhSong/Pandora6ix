@@ -1,12 +1,14 @@
 package com.pandora6ix.backend.api.error;
 
-import java.io.IOException;
-import java.util.UUID;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+
 import org.springframework.web.filter.OncePerRequestFilter;
+
+import java.io.IOException;
+import java.util.UUID;
 
 public class RequestIdFilter extends OncePerRequestFilter {
     public static final String HEADER_NAME = "X-Request-Id";
@@ -14,16 +16,16 @@ public class RequestIdFilter extends OncePerRequestFilter {
 
     @Override
     protected void doFilterInternal(
-            HttpServletRequest request,
-            HttpServletResponse response,
-            FilterChain filterChain
-    ) throws ServletException, IOException {
+            HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
+            throws ServletException, IOException {
         String requestId = request.getHeader(HEADER_NAME);
-        if (requestId == null || requestId.isBlank()) {
+        if (requestId == null || !requestId.matches("[A-Za-z0-9._:-]{1,128}")) {
             requestId = UUID.randomUUID().toString();
         }
         request.setAttribute(ATTRIBUTE_NAME, requestId);
         response.setHeader(HEADER_NAME, requestId);
+        if (request.getRequestURI().startsWith("/api/v1/"))
+            response.setHeader("Cache-Control", "no-store");
         filterChain.doFilter(request, response);
     }
 }

@@ -19,6 +19,8 @@
 
 ## 历史与协作
 
+2026-10-13 实现核对记录：[后端接口实现核对与缺口清单](reviews/Pandora_后端接口实现核对与缺口清单_20261013.md)，包含 PR #8/#9 的审查基线、7nfc Web 阻塞清单、需求关联和真实 Spring 探测结果。
+
 - 本次移除10份旧版/重复Markdown；原件与旧草案可从Git基线 `ab32ced` 或更早提交恢复，不在当前目录另建备份副本。
 - 最新5份主文档与本索引共6份Markdown；目录及.gitkeep不删除，既有OpenSpec历史记录不改写。
 - 整理记录：[consolidate-latest-design-documents](../openspec/changes/consolidate-latest-design-documents/proposal.md)；业务确认依据：[reconcile-confirmed-requirements-1009](../openspec/changes/reconcile-confirmed-requirements-1009/proposal.md)。
