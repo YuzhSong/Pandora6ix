@@ -9,7 +9,7 @@ const messages: Record<string, string> = {
   UNAUTHENTICATED: '登录状态已失效，请重新登录。',
   FORBIDDEN: '此账号没有执行该操作的权限。',
 }
-const fields: Record<string, string> = { name: '名称', enterpriseDomain: '公司登录标识', loginDomain: '公司登录标识', loginName: '登录名', password: '密码', adminPassword: '管理员密码', adminDisplayName: '管理员姓名', displayName: '姓名', businessTimezone: '业务时区', content: '事项内容', title: '事项标题', colorHex: '标签颜色', roles: '角色', orgUnitId: '所属组织', supervisorUserId: '直属上级', newPassword: '新密码', currentPassword: '当前密码', displayOrder: '显示顺序' }
+const fields: Record<string, string> = { gender: '性别', idNumber: '身份证号', phoneNumber: '电话号码', name: '名称', enterpriseDomain: '公司登录标识', loginDomain: '公司登录标识', loginName: '登录名', password: '密码', adminPassword: '管理员密码', adminDisplayName: '管理员姓名', displayName: '姓名', businessTimezone: '业务时区', content: '事项内容', title: '事项标题', colorHex: '标签颜色', roles: '角色', orgUnitId: '所属组织', supervisorUserId: '直属上级', newPassword: '新密码', currentPassword: '当前密码', displayOrder: '显示顺序' }
 export function errorMessage(reason: unknown): string {
   if (!(reason instanceof Error)) return '暂时无法完成操作，请重试。'
   if (!(reason instanceof ApiError)) return reason.message

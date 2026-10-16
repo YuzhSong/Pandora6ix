@@ -7,11 +7,13 @@ import { sessionStore } from './api/session.ts'
 import type { AdminData } from './data/types.ts'
 import { AdminEditor } from './components/AdminEditor.tsx'
 import type { EditRequest } from './components/AdminEditor.tsx'
-import { OrganizationPage, PeoplePage, TagsPage } from './components/AdminPages.tsx'
+import { OrganizationPage, PeoplePage } from './components/AdminPages.tsx'
 import { Icon } from './components/Icon.tsx'
 import type { IconName } from './components/Icon.tsx'
 import { CompanyItemsPage, AccountPage, SettingsPage } from './components/WorkspacePages.tsx'
+import { AvatarDialog } from './components/AvatarUpload.tsx'
 import { AuthPage } from './components/AuthPage.tsx'
+import { SystemLogsPage } from './components/SystemLogsPage.tsx'
 import { PasswordDialog } from './components/PasswordDialog.tsx'
 import { defaultPreferences, preferenceStore } from './data/preferences.ts'
 import type { DisplayPreferences } from './data/preferences.ts'
@@ -21,8 +23,8 @@ import './theme.css'
 const navigation: { id: string; label: string; icon: IconName }[] = [
   { id: 'organizations', label: '组织管理', icon: 'organization' },
   { id: 'people', label: '人员与角色', icon: 'people' },
-  { id: 'tags', label: '标签管理', icon: 'tags' },
   { id: 'company-items', label: '公司重要事项', icon: 'layers' },
+  { id: 'system-logs', label: '系统日志', icon: 'journal' },
 ]
 const auxiliaryPages = [{ id: 'account', label: '我的账号' }, { id: 'settings', label: '设置' }]
 function route() { const hash = location.hash.slice(1); return hash === 'enterprise' ? 'organizations' : hash === 'roles' ? 'people' : [...navigation, ...auxiliaryPages].some(item => item.id === hash) ? hash : 'people' }
@@ -44,6 +46,8 @@ export default function App() {
   const [logoutBusy, setLogoutBusy] = useState(false)
   const [logoutError, setLogoutError] = useState('')
   const [passwordDialog, setPasswordDialog] = useState(false)
+  const [itemsPending, setItemsPending] = useState(false)
+  const [avatarDialog, setAvatarDialog] = useState(false)
   const [preferences, setPreferences] = useState<DisplayPreferences>(defaultPreferences)
   const [preferenceError, setPreferenceError] = useState('')
 
@@ -52,7 +56,7 @@ export default function App() {
     setSession(authenticated)
     if (!authenticated) {
       loadSerial.current++
-      setData(null); setEditor(null); setPasswordDialog(false); setLogoutConfirm(false)
+      setData(null); setEditor(null); setPasswordDialog(false); setAvatarDialog(false); setLogoutConfirm(false)
       setPreferences(defaultPreferences); setToast(''); setError(''); setLoading(false)
       setAuthMessage('登录状态已失效，请重新登录。')
     }
@@ -103,12 +107,12 @@ export default function App() {
   }
   useEffect(() => {
     const onHash = () => {
-      if (editor || passwordDialog) { if (route() !== active) { location.replace(`#${active}`); setToast('请先保存或关闭编辑窗口') }; return }
+      if (editor || passwordDialog || avatarDialog || itemsPending) { if (route() !== active) { location.replace(`#${active}`); setToast('请先保存、取消排序或关闭编辑窗口') }; return }
       setActive(route())
     }
     window.addEventListener('hashchange', onHash)
     return () => window.removeEventListener('hashchange', onHash)
-  }, [active, editor, passwordDialog])
+  }, [active, editor, passwordDialog, avatarDialog, itemsPending])
   useEffect(() => { if (toast) { const timer = window.setTimeout(() => setToast(''), 4000); return () => window.clearTimeout(timer) } }, [toast])
   async function logout() {
     if (logoutBusy) return
@@ -130,15 +134,17 @@ export default function App() {
   const currentName = data.people.find(person => person.id === data.currentUserId)?.displayName ?? '管理员'
   const page = [...navigation, ...auxiliaryPages].find(item => item.id === active) ?? navigation[0]
   return <div className="admin-layout">
-    <header className="workspace-header"><div className="workspace-header-row"><Brand /><span className="workspace-enterprise"><Icon name="enterprise" size={16} /><span>{data.enterprise.name}</span></span><div className="workspace-account"><button className="account-link" aria-label={`${currentName}，我的账号`} onClick={() => { location.hash = 'account' }}><span className="avatar small-avatar">{currentName.slice(0, 1)}</span><span>{currentName}</span></button><button className="icon-button settings-button" aria-label="设置" aria-current={active === 'settings' ? 'page' : undefined} onClick={() => { location.hash = 'settings' }}><Icon name="settings" size={20} /></button><button className="icon-button" aria-label="退出登录" onClick={() => { setLogoutError(''); setLogoutConfirm(true) }}><Icon name="logout" size={19} /></button></div></div>
+    <header className="workspace-header"><div className="workspace-header-row"><Brand /><span className="workspace-enterprise"><Icon name="enterprise" size={16} /><span>{data.enterprise.name}</span></span><div className="workspace-account"><div className="account-link"><button type="button" className="avatar small-avatar avatar-edit-button" aria-label="我的账号" title="我的账号" onClick={() => { location.hash = 'account' }}>{currentName.slice(0, 1)}</button><button className="account-name" aria-label={`${currentName}，我的账号`} onClick={() => { location.hash = 'account' }}>{currentName}</button></div><button className="icon-button settings-button" aria-label="设置" aria-current={active === 'settings' ? 'page' : undefined} onClick={() => { location.hash = 'settings' }}><Icon name="settings" size={20} /></button><button className="icon-button" aria-label="退出登录" onClick={() => { setLogoutError(''); setLogoutConfirm(true) }}><Icon name="logout" size={19} /></button></div></div>
       <nav ref={navigationRef} className="primary-navigation" aria-label="管理端导航">{navigation.map(item => <a key={item.id} href={`#${item.id}`} className={active === item.id ? 'active' : ''} aria-current={active === item.id ? 'page' : undefined}><Icon name={item.icon} size={17} /><span>{item.label}</span></a>)}</nav>
     </header>
-    <div className="main-area"><main className="page-content"><div className="page-heading"><h1>{page.label}</h1><button className="button secondary" onClick={() => void load()} disabled={loading || !!editor || passwordDialog}><Icon name="refresh" size={16} />刷新数据</button></div>
+    <div className="main-area"><main className="page-content"><div className="page-heading"><h1>{page.label}</h1><button className="button secondary" onClick={() => void load()} disabled={loading || !!editor || passwordDialog || avatarDialog || itemsPending}><Icon name="refresh" size={16} />刷新数据</button></div>
       {error && <div className="error-message" role="alert">刷新失败：{error} 当前显示上次加载的资料，恢复后才能编辑。</div>}
       <fieldset className="workspace-content" disabled={loading || !!error}>
-        {active === 'people' && <PeoplePage key={data.enterprise.id} data={data} onEdit={setEditor} />}{active === 'organizations' && <OrganizationPage key={data.enterprise.id} data={data} onEdit={setEditor} />}{active === 'tags' && <TagsPage key={data.enterprise.id} data={data} onEdit={setEditor} />}{active === 'company-items' && <CompanyItemsPage key={data.enterprise.id} data={data} onEdit={setEditor} />}{active === 'account' && <AccountPage data={data} onChangePassword={() => setPasswordDialog(true)} />}{active === 'settings' && <SettingsPage preferences={preferences} error={preferenceError} onChange={changePreferences} />}
+        {active === 'system-logs' && <SystemLogsPage />}
+        {active === 'people' && <PeoplePage key={data.enterprise.id} data={data} onEdit={setEditor} />}{active === 'organizations' && <OrganizationPage key={data.enterprise.id} data={data} onEdit={setEditor} />}{active === 'company-items' && <CompanyItemsPage key={data.enterprise.id} data={data} onEdit={setEditor} onUpdated={setData} onPendingChange={setItemsPending} />}{active === 'account' && <AccountPage data={data} onChangePassword={() => setPasswordDialog(true)} onChangeAvatar={() => setAvatarDialog(true)} />}{active === 'settings' && <SettingsPage preferences={preferences} error={preferenceError} onChange={changePreferences} />}
       </fieldset><footer className="page-footer"><span>Pandora 管理端</span></footer></main></div>
     {editor && <AdminEditor request={editor} data={data} onClose={() => setEditor(null)} onSaved={saved} />}
+    {avatarDialog && <AvatarDialog onClose={() => setAvatarDialog(false)} />}
     {passwordDialog && <PasswordDialog onClose={() => setPasswordDialog(false)} onChanged={() => setAuthMessage('密码已修改，请使用新密码登录。')} />}
     {toast && <div className="toast" role="status"><Icon name="check" size={18} />{toast}<button className="icon-button" aria-label="关闭保存提示" onClick={() => setToast('')}><Icon name="close" size={16} /></button></div>}
     {logoutConfirm && <LogoutDialog busy={logoutBusy} error={logoutError} onCancel={() => setLogoutConfirm(false)} onConfirm={() => void logout()} />}

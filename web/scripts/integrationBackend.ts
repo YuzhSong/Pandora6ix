@@ -55,8 +55,10 @@ try {
   sessions.subscribe(() => { if (!sessions.read()) repository.clear() })
   const initialization = { loginDomain: domain, name: 'Web 联调测试公司', businessTimezone: 'Asia/Shanghai', adminLoginName: 'admin', adminPassword: password, adminDisplayName: '联调管理员' }
   const key = randomUUID()
-  const initialized = await auth.initialize(initialization, bootstrap, key)
-  assert.deepEqual(await auth.initialize(initialization, bootstrap, key), initialized, '重复初始化应幂等')
+  // Disposable test fixture only; company provisioning is absent from the Web app.
+  const initialize = () => client.request('/admin/enterprise-initializations', { method: 'POST', body: initialization, authenticated: false, headers: { 'X-Bootstrap-Token': bootstrap, 'Idempotency-Key': key } })
+  const initialized = await initialize()
+  assert.deepEqual(await initialize(), initialized, '重复初始化应幂等')
   await auth.login({ enterpriseDomain: domain, loginName: 'admin', password })
   let data = (await repository.getWorkspace())!
   assert.equal(data.people.length, 1); assert.equal(data.enterprise.version, 0)
@@ -66,22 +68,20 @@ try {
   data = await repository.saveUnit({ name: '研发部', kind: 'DEPARTMENT', parentId: data.units[0].id })
   const department = data.units.find(unit => unit.name === '研发部')!
   data = await repository.saveUnit({ name: 'Web 团队', kind: 'TEAM', parentId: department.id })
-  data = await repository.savePerson({ displayName: '测试负责人', loginName: 'manager', jobTitle: '负责人', orgUnitId: data.units[0].id, supervisorId: null, roles: ['FOUNDER'] }, undefined, undefined, randomUUID())
+  await client.request('/admin/users', { method: 'POST', body: { displayName: '测试负责人', loginName: 'manager', jobTitle: '负责人', orgUnitId: data.units[0].id, supervisorUserId: null, roles: ['FOUNDER'], password: randomUUID() } })
+  data = await repository.load()
   const manager = data.people.find(person => person.loginName === 'manager')!
   const staffPassword = randomUUID()
-  data = await repository.savePerson({ displayName: '测试人员', loginName: 'staff', jobTitle: '前端', orgUnitId: department.id, supervisorId: manager.id, roles: ['EMPLOYEE'] }, undefined, undefined, staffPassword)
+  await assert.rejects(repository.savePerson({ displayName: '测试人员', loginName: 'staff', jobTitle: '前端', orgUnitId: department.id, supervisorId: manager.id, roles: ['EMPLOYEE'] }, undefined, undefined, staffPassword), /尚未支持/)
+  await client.request('/admin/users', { method: 'POST', body: { displayName: '测试人员', loginName: 'staff', jobTitle: '前端', orgUnitId: department.id, supervisorUserId: manager.id, roles: ['EMPLOYEE'], password: staffPassword } })
+  data = await repository.load()
   await assert.rejects(auth.login({ enterpriseDomain: domain, loginName: 'staff', password: staffPassword }), (error: unknown) => error instanceof ApiError && error.status === 403)
   assert.ok(sessions.read(), '拒绝普通员工登录不能清除已有管理员身份')
   let staff = data.people.find(person => person.loginName === 'staff')!
   data = await repository.savePerson({ ...staff, displayName: '更新人员' }, staff.id, staff.version)
   staff = data.people.find(person => person.id === staff.id)!
   data = await repository.saveRoles(staff.id, ['EMPLOYEE', 'DEPARTMENT_MANAGER'], staff.version)
-  const tag = { name: '共享标签', colorHex: '#112233' }
-  data = await repository.saveTag(tag)
-  const firstTag = data.tags.find(value => value.name === tag.name)!
-  data = await repository.saveTag({ ...tag, colorHex: '#445566' }, firstTag.id, firstTag.version)
-  // Exercise real seek pagination with >100 results.
-  for (let index = 0; index < 101; index++) await client.request('/tags', { method: 'POST', body: { name: `分页标签 ${index}`, colorHex: '#112233' } })
+  await assert.rejects(repository.saveTag({ name: '不可管理', colorHex: '#112233' }), /不提供标签管理/)
   const itemKey = randomUUID(), command = { title: '真实联调事项', content: '<script>纯文本正文</script>', displayOrder: 1 }
   data = await repository.saveCompanyItem(command, undefined, undefined, itemKey)
   data = await repository.saveCompanyItem(command, undefined, undefined, itemKey)
@@ -89,7 +89,7 @@ try {
   const important = data.companyItems[0]
   data = await repository.saveCompanyItem({ ...command, title: '修改后的事项' }, important.id, important.version)
   data = (await repository.getWorkspace())!
-  assert.equal(data.tags.length, 102); assert.equal(data.enterprise.name, 'Web 联调公司更新')
+  assert.equal(data.tags.length, 0); assert.equal(data.enterprise.name, 'Web 联调公司更新')
   assert.equal(data.people.find(person => person.id === staff.id)?.displayName, '更新人员')
   assert.ok(data.people.find(person => person.id === staff.id)?.roles.includes('DEPARTMENT_MANAGER'))
   assert.equal(data.companyItems[0].title, '修改后的事项')
@@ -103,7 +103,7 @@ try {
   await assert.rejects(revoked.request('/me'), (error: unknown) => error instanceof ApiError && error.status === 401)
   await auth.login({ enterpriseDomain: domain, loginName: 'admin', password: newPassword })
   await auth.logout(); assert.equal(sessions.read(), null)
-  console.log('真实 Spring + H2 + Vite + Web repository 联调通过：初始化幂等、认证、企业/组织/人员/角色、102 标签分页、事项幂等与版本修改、刷新持久化、409、改密及退出撤销。')
+  console.log('真实 Spring + H2 + Vite + Web repository 联调通过：初始化幂等、认证、企业/组织/人员/角色、旧接口人员创建保护、标签管理关闭、事项幂等与版本修改、刷新持久化、409、改密及退出撤销。')
   if (process.argv.includes('--preview')) {
     // Disposable random account in a loopback-only database, solely for browser QA.
     console.log(JSON.stringify({ previewUrl: origin, enterpriseDomain: domain, loginName: 'admin', temporaryPassword: newPassword }))

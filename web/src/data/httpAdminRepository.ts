@@ -2,7 +2,9 @@ import { ApiError } from '../api/client.ts'
 import type { createApiClient } from '../api/client.ts'
 import { requireAdmin, validatePassword } from '../api/auth.ts'
 import { roleLabels } from './types.ts'
-import type { AdminData, AdminRepository, CompanyImportantItem, Enterprise, OrgUnit, Person, Role, Tag, UnitKind } from './types.ts'
+import type { AdminData, AdminRepository, CompanyImportantItem, Enterprise, OrgUnit, Person, Role, UnitKind } from './types.ts'
+import { profilePendingMessage, supportsPersonnelProfile, validatePersonnelProfile } from './personnelProfile.ts'
+import { validateOrganizationEdit } from './organizationEditing.ts'
 
 type Json = Record<string, unknown>
 const invalid = () => new ApiError('服务器返回的管理资料格式不正确，请联系管理员。', 200, 'INVALID_RESPONSE')
@@ -20,15 +22,23 @@ function unit(value: unknown): OrgUnit {
 function person(value: unknown): Person {
   const row = object(value), status = text(row, 'status')
   if (!['ACTIVE', 'DISABLED'].includes(status) || !Array.isArray(row.roles) || !row.roles.length || row.roles.some(role => typeof role !== 'string' || !Object.hasOwn(roleLabels, role))) throw invalid()
-  return { id: text(row, 'id'), displayName: text(row, 'displayName'), loginName: text(row, 'loginName'), jobTitle: nullable(row, 'jobTitle') ?? '', orgUnitId: nullable(row, 'orgUnitId') ?? '', supervisorId: nullable(row, 'supervisorUserId'), roles: [...row.roles] as Role[], status: status as Person['status'], version: version(row) }
+  const profile: Pick<Person, 'gender' | 'idNumber' | 'phoneNumber'> = {}
+  if (Object.hasOwn(row, 'gender')) {
+    const gender = nullable(row, 'gender')
+    if (gender !== null && gender !== 'MALE' && gender !== 'FEMALE') throw invalid()
+    profile.gender = gender
+  }
+  if (Object.hasOwn(row, 'idNumber')) profile.idNumber = nullable(row, 'idNumber')
+  if (Object.hasOwn(row, 'phoneNumber')) profile.phoneNumber = nullable(row, 'phoneNumber')
+  return { id: text(row, 'id'), displayName: text(row, 'displayName'), loginName: text(row, 'loginName'), jobTitle: nullable(row, 'jobTitle') ?? '', orgUnitId: nullable(row, 'orgUnitId') ?? '', supervisorId: nullable(row, 'supervisorUserId'), roles: [...row.roles] as Role[], status: status as Person['status'], version: version(row), ...profile }
 }
-function tag(value: unknown): Tag { const row = object(value); return { id: text(row, 'id'), name: text(row, 'name'), colorHex: text(row, 'colorHex'), version: version(row) } }
 function item(value: unknown): CompanyImportantItem { const row = object(value); return { id: text(row, 'id'), title: text(row, 'title'), content: text(row, 'content'), displayOrder: integer(row, 'displayOrder'), publisherUserId: text(row, 'publisherUserId'), version: version(row) } }
 
 export function createHttpAdminRepository(client: ReturnType<typeof createApiClient>): AdminRepository & { clear(): void } {
   let snapshot: AdminData | null = null
   let generation = 0
   let loadSerial = 0
+  let uncertainPersonnelWrite = false
   const cancelled = () => new ApiError('身份或资料已变化，请重新加载。', 0, 'REQUEST_CANCELLED')
   const current = () => { if (!snapshot) throw new Error('请先登录并加载公司资料。'); return snapshot }
   async function all<T>(path: string, map: (value: unknown) => T): Promise<T[]> {
@@ -56,18 +66,31 @@ export function createHttpAdminRepository(client: ReturnType<typeof createApiCli
     apply(current(), value)
     return copy()
   }
-  const userBody = (value: Person, expectedVersion: number, roles = value.roles) => ({ expectedVersion, displayName: value.displayName, jobTitle: value.jobTitle, orgUnitId: value.orgUnitId || null, supervisorUserId: value.supervisorId, roles, status: value.status ?? 'ACTIVE' })
+  const profileBody = (value: Person) => ({ ...(value.gender !== undefined ? { gender: value.gender } : {}), ...(value.idNumber !== undefined ? { idNumber: value.idNumber } : {}), ...(value.phoneNumber !== undefined ? { phoneNumber: value.phoneNumber } : {}) })
+  const userBody = (value: Person, expectedVersion: number, roles = value.roles) => ({ expectedVersion, displayName: value.displayName, jobTitle: value.jobTitle, orgUnitId: value.orgUnitId || null, supervisorUserId: value.supervisorId, roles, status: value.status ?? 'ACTIVE', ...profileBody(value) })
+  const verifyPerson = (expected: Pick<Person, 'gender' | 'idNumber' | 'phoneNumber'>) => (value: unknown) => {
+    try {
+      const result = person(value)
+      if (Object.entries(expected).some(([key, field]) => result[key as keyof Person] !== field)) throw invalid()
+      return result
+    } catch {
+      uncertainPersonnelWrite = true
+      throw new Error('服务器已处理请求，但未返回一致的人员资料。请关闭窗口并刷新，核实账号及资料后再操作，勿重复创建。')
+    }
+  }
+  const checkPersonnelWrite = () => { if (uncertainPersonnelWrite) throw new Error('上次人员保存结果尚未确认，请先关闭窗口并刷新资料，勿重复提交。') }
   return {
-    clear() { generation++; loadSerial++; snapshot = null },
+    clear() { generation++; loadSerial++; snapshot = null; uncertainPersonnelWrite = false },
     async getWorkspace() {
       const before = generation, serial = ++loadSerial
       const me = requireAdmin(await client.request('/me'))
-      const [company, units, people, tags, companyItems] = await Promise.all([
-        client.request('/admin/enterprise').then(enterprise), all('/admin/org-units', unit), all('/admin/users', person), all('/tags', tag), all('/company-important-items', item),
+      const [company, units, people, companyItems] = await Promise.all([
+        client.request('/admin/enterprise').then(enterprise), all('/admin/org-units', unit), all('/admin/users', person), all('/company-important-items', item),
       ])
       if (before !== generation || serial !== loadSerial) throw cancelled()
       if (!people.some(value => value.id === me.id)) throw invalid()
-      snapshot = { schemaVersion: 2, currentUserId: me.id, enterprise: company, units, people, tags, companyItems }
+      snapshot = { schemaVersion: 2, currentUserId: me.id, enterprise: company, units, people, tags: [], companyItems }
+      uncertainPersonnelWrite = false
       return copy()
     },
     async load() { const data = await this.getWorkspace(); if (!data) throw invalid(); return data },
@@ -76,27 +99,34 @@ export function createHttpAdminRepository(client: ReturnType<typeof createApiCli
       return write('/admin/enterprise', { name, expectedVersion }, enterprise, (data, value) => { data.enterprise = value }, true)
     },
     async saveUnit(input, id, expectedVersion) {
+      validateOrganizationEdit(current(), input, id)
       return write(id ? `/admin/org-units/${encodeURIComponent(id)}` : '/admin/org-units', { ...input, ...(id ? { expectedVersion } : {}) }, unit, (data, value) => { data.units = replace(data.units, value) }, !!id)
     },
     async savePerson(input, id, expectedVersion, initialPassword) {
+      checkPersonnelWrite()
+      const supported = supportsPersonnelProfile(current().people)
+      const oldPerson = current().people.find(value => value.id === id)
+      const profile = profileBody({ ...oldPerson, ...input, id: id ?? '', version: expectedVersion ?? 0 })
+      const profileChanged = Object.entries(profile).some(([key, value]) => value !== oldPerson?.[key as keyof Person])
+      if (!supported && (!id || profileChanged)) throw new Error(profilePendingMessage)
+      if (!id || profileChanged) validatePersonnelProfile(profile)
       if (id) {
         const old = current().people.find(value => value.id === id)
         if (!old || expectedVersion === undefined) throw invalid()
         if (old.loginName !== input.loginName) throw new Error('已创建账号的登录名不能修改。')
-        return write(`/admin/users/${encodeURIComponent(id)}`, userBody({ ...old, ...input }, expectedVersion), person, (data, value) => { data.people = replace(data.people, value) }, true)
+        return write(`/admin/users/${encodeURIComponent(id)}`, userBody({ ...old, ...input }, expectedVersion), verifyPerson(profile), (data, value) => { data.people = replace(data.people, value) }, true)
       }
       validatePassword(initialPassword ?? '')
-      const body = { loginName: input.loginName, password: initialPassword, displayName: input.displayName, jobTitle: input.jobTitle, orgUnitId: input.orgUnitId || null, supervisorUserId: input.supervisorId, roles: input.roles }
-      return write('/admin/users', body, person, (data, value) => { data.people = replace(data.people, value) }, false)
+      const body = { loginName: input.loginName, password: initialPassword, displayName: input.displayName, jobTitle: input.jobTitle, orgUnitId: input.orgUnitId || null, supervisorUserId: input.supervisorId, roles: input.roles, ...profile }
+      return write('/admin/users', body, verifyPerson(profile), (data, value) => { data.people = replace(data.people, value) }, false)
     },
     async saveRoles(personId, roles, expectedVersion) {
+      checkPersonnelWrite()
       const old = current().people.find(value => value.id === personId)
       if (!old) throw invalid()
-      return write(`/admin/users/${encodeURIComponent(personId)}`, userBody(old, expectedVersion, roles), person, (data, value) => { data.people = replace(data.people, value) }, true)
+      return write(`/admin/users/${encodeURIComponent(personId)}`, userBody(old, expectedVersion, roles), verifyPerson(profileBody(old)), (data, value) => { data.people = replace(data.people, value) }, true)
     },
-    async saveTag(input, id, expectedVersion) {
-      return write(id ? `/tags/${encodeURIComponent(id)}` : '/tags', { ...input, ...(id ? { expectedVersion } : {}) }, tag, (data, value) => { data.tags = replace(data.tags, value) }, !!id)
-    },
+    async saveTag() { throw new Error('管理端不提供标签管理。') },
     async saveCompanyItem(input, id, expectedVersion, idempotencyKey) {
       return write(id ? `/company-important-items/${encodeURIComponent(id)}` : '/company-important-items', { ...input, ...(id ? { expectedVersion } : {}) }, item, (data, value) => { data.companyItems = replace(data.companyItems, value) }, !!id, id ? undefined : idempotencyKey)
     },

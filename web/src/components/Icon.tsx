@@ -1,5 +1,8 @@
-export type IconName = 'people' | 'organization' | 'enterprise' | 'roles' | 'tags' | 'search' | 'plus' | 'arrow' | 'logout' | 'close' | 'check' | 'refresh' | 'chevron' | 'shield' | 'layers' | 'settings'
+export type IconName = 'people' | 'organization' | 'enterprise' | 'roles' | 'tags' | 'search' | 'plus' | 'arrow' | 'logout' | 'close' | 'check' | 'refresh' | 'chevron' | 'shield' | 'layers' | 'settings' | 'journal' | 'tasks' | 'chart'
 const paths: Record<IconName, string> = {
+  journal: 'M6 3h12a2 2 0 0 1 2 2v16H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2 M4 17h16 M8 7h8 M8 11h6',
+  tasks: 'M9 5h12 M9 12h12 M9 19h12 M3 5l1 1 2-2 M3 12l1 1 2-2 M3 19l1 1 2-2',
+  chart: 'M4 3v18h17 M8 17v-5 M13 17V7 M18 17V4',
   people: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8 M22 21v-2a4 4 0 0 0-3-3.87 M16 3.13a4 4 0 0 1 0 7.75',
   organization: 'M9 3h6v5H9z M3 16h6v5H3z M15 16h6v5h-6z M12 8v4 M6 16v-4h12v4',
   enterprise: 'M4 21V4h12v17 M16 10h4v11 M2 21h20 M8 8h4 M8 12h4 M8 16h4',
