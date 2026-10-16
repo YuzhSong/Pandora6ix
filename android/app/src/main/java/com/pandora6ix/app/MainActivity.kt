@@ -18,6 +18,7 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -313,7 +314,7 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
                         when (target) {
                             Route.HOME -> HomeScreen(dashboardRepo, selectionRepo, onOpenHome = { homeDetail = it }, onOpenSettings = { showSettings = true })
                             Route.VIEW -> CalendarScreen(CalendarMode.valueOf(modeName), date, taskItems, canCreatePersonal, canCreateDelegated, serverTags, taskRepo, { modeName = it.name }, { dateKey = "${it.year}-${it.month}-${it.day}" }, { calRetry++ }, { detail = it.id }, taskScope = taskScope, onTaskScopeChange = { taskScope = it }, loading = calLoading, error = calError, onRetry = { calRetry++ })
-                            Route.LOGS -> LogsScreen(journalRepo) { detail = it }
+                            Route.LOGS -> LogsScreen(journalRepo, serverTags.toList()) { detail = it }
                             Route.AI -> AiMapScreen()
                             Route.ME -> ProfileScreen(currentUser!!, statistics, notificationsEnabled, showReviewCenter, onOpenTagManage = { showTagManage = true }, onOpenReviews = { showReviews = true }, onOpenSettings = { showSettings = true })
                         }
@@ -885,7 +886,7 @@ private fun within24h(iso: String?): Boolean {
 }
 
 @OptIn(ExperimentalLayoutApi::class)
-@Composable private fun LogsScreen(repo: JournalRepository, onOpen: (String) -> Unit) {
+@Composable private fun LogsScreen(repo: JournalRepository, availableTags: List<TagDto>, onOpen: (String) -> Unit) {
     var expandedLogs by rememberSaveable { mutableStateOf(false) }
     var filterOpen by rememberSaveable { mutableStateOf(false) }
     var historyFilter by rememberSaveable { mutableStateOf("全部日期") }
@@ -901,6 +902,8 @@ private fun within24h(iso: String?): Boolean {
     var confirmExit by rememberSaveable { mutableStateOf(false) }
     // 编辑器业务日期（最近三日可选）；删除确认目标与错误
     var editorDateKey by rememberSaveable { mutableStateOf("") }
+    var tags by rememberSaveable { mutableStateOf(listOf<String>()) }
+    var showTagPicker by rememberSaveable { mutableStateOf(false) }
     var deletingJournal by remember { mutableStateOf<JournalDto?>(null) }
     var deleteError by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
@@ -911,10 +914,13 @@ private fun within24h(iso: String?): Boolean {
         AppCache.readDraft(context, "journal_draft.json")?.let { s -> runCatching { AppCache.json.decodeFromString<JournalDraftDto>(s) }.getOrNull() }
     }
     // 编辑器打开期间草稿实时落盘；发布成功或放弃时清除
-    LaunchedEffect(writing, editorDateKey, entryDrafts) {
+    LaunchedEffect(writing, editorDateKey, entryDrafts, tags) {
         if (writing) AppCache.writeDraft(
             context, "journal_draft.json",
-            AppCache.json.encodeToString(JournalDraftDto.serializer(), JournalDraftDto(editorDateKey, entryDrafts.map { JournalDraftEntryDto(it.entryId, it.content) }))
+            AppCache.json.encodeToString(
+                JournalDraftDto.serializer(),
+                JournalDraftDto(editorDateKey, entryDrafts.map { JournalDraftEntryDto(it.entryId, it.content) }, tags.mapNotNull { n -> availableTags.firstOrNull { it.name == n }?.id })
+            )
         )
     }
     fun todayIso(): String { val t = todayDate(); return "%04d-%02d-%02d".format(t.year, t.month, t.day) }
@@ -951,6 +957,8 @@ private fun within24h(iso: String?): Boolean {
         entryDrafts = draft?.entries?.map { EntryDraft(it.entryId, it.content) }
             ?: editingJournal?.entries?.sortedBy { it.displayOrder }?.map { EntryDraft(it.entryId, it.content) }
             ?: listOf(EntryDraft(null, ""))
+        tags = if (draft != null) draft.tagIds.mapNotNull { id -> availableTags.firstOrNull { it.id == id }?.name }
+        else editingJournal?.tags?.map { it.name } ?: emptyList()
         publishError = null
         writing = true
     }
@@ -959,6 +967,7 @@ private fun within24h(iso: String?): Boolean {
         editorDateKey = dateKey
         editingJournal = journals.firstOrNull { it.workDate == dateKey }
         entryDrafts = editingJournal?.entries?.sortedBy { it.displayOrder }?.map { EntryDraft(it.entryId, it.content) } ?: listOf(EntryDraft(null, ""))
+        tags = editingJournal?.tags?.map { it.name } ?: emptyList()
         publishError = null
     }
     fun closeEditor() {
@@ -979,10 +988,17 @@ private fun within24h(iso: String?): Boolean {
         scope.launch {
             try {
                 val ej = editingJournal
+                // 标签（可多选，先选的为主标签）：名称映射为服务端标签 ID
+                val tagIdList = tags.mapNotNull { n -> availableTags.firstOrNull { it.name == n }?.id }
                 if (ej == null) {
                     try {
                         // 新建一篇（所选日期）：每条携带客户端稳定键
-                        repo.create(editorDateKey, valid.map { EntryCreateDto(clientEntryKey = UUID.randomUUID().toString(), content = it.content.trim()) })
+                        repo.create(
+                            editorDateKey,
+                            valid.map { EntryCreateDto(clientEntryKey = UUID.randomUUID().toString(), content = it.content.trim()) },
+                            tagIdList.ifEmpty { null },
+                            tagIdList.firstOrNull()
+                        )
                     } catch (e: ApiException) {
                         if (e.code == "DAILY_JOURNAL_EXISTS" && e.existingJournalId != null) {
                             // 同日已有日报（如其他设备创建）：并入同一篇继续补充，不新增第二篇
@@ -991,7 +1007,9 @@ private fun within24h(iso: String?): Boolean {
                                 existing.journalId.ifBlank { existing.id },
                                 JournalPatchDto(
                                     expectedVersion = existing.version,
-                                    upsertEntries = valid.map { EntryUpsertDto(clientEntryKey = UUID.randomUUID().toString(), content = it.content.trim()) }
+                                    upsertEntries = valid.map { EntryUpsertDto(clientEntryKey = UUID.randomUUID().toString(), content = it.content.trim()) },
+                                    tagIds = tagIdList,
+                                    primaryTagId = tagIdList.firstOrNull()
                                 )
                             )
                         } else throw e
@@ -1007,7 +1025,7 @@ private fun within24h(iso: String?): Boolean {
                     }
                     repo.patch(
                         ej.journalId.ifBlank { ej.id },
-                        JournalPatchDto(expectedVersion = ej.version, upsertEntries = upserts, deleteEntryIds = deleteIds.ifEmpty { null })
+                        JournalPatchDto(expectedVersion = ej.version, upsertEntries = upserts, deleteEntryIds = deleteIds.ifEmpty { null }, tagIds = tagIdList, primaryTagId = tagIdList.firstOrNull())
                     )
                 }
                 writing = false
@@ -1052,6 +1070,11 @@ private fun within24h(iso: String?): Boolean {
                                     Column(Modifier.weight(1f)) {
                                         Text(dateLabel(j.workDate), fontWeight = FontWeight.SemiBold)
                                         Text("${j.entries.size} 条 · " + if (editable) "可编辑/删除" else "已超过 24 小时", fontSize = 12.sp, color = Ink.copy(alpha = .55f))
+                                        if (j.tags.isNotEmpty()) Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                            j.tags.forEach { t ->
+                                                Text(t.name, fontSize = 11.sp, color = Ink, maxLines = 1, modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(tagHexColor(t.colorHex)).padding(horizontal = 6.dp, vertical = 2.dp))
+                                            }
+                                        }
                                     }
                                     if (editable) {
                                         TextButton({ openEditor(j.workDate) }, enabled = !publishing, contentPadding = PaddingValues(horizontal = 10.dp)) { Text("编辑", color = Ink) }
@@ -1124,6 +1147,14 @@ private fun within24h(iso: String?): Boolean {
                         }
                         val editorEditable = editingJournal == null || within24h(editingJournal?.publishedAt)
                         if (!editorEditable) Text("已超过 24 小时，此日志不可修改；如需更正请联系管理员。", fontSize = 12.sp, color = Ink.copy(alpha = .55f))
+                        Text("· 标签（可多选，先选的为主）", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp, bottom = 6.dp))
+                        if (tags.isNotEmpty()) FlowRow(Modifier.fillMaxWidth().padding(vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            tags.forEach { name ->
+                                val tagColor = availableTags.firstOrNull { it.name == name }?.let { tagHexColor(it.colorHex) } ?: CreamDeep
+                                FilterChip(selected = true, onClick = { tags = tags - name }, label = { Text(name, fontSize = 13.sp) }, colors = FilterChipDefaults.filterChipColors(containerColor = tagColor, labelColor = Ink, selectedContainerColor = tagColor, selectedLabelColor = Ink))
+                            }
+                        }
+                        OutlinedButton({ showTagPicker = true }, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp), border = BorderStroke(1.dp, Ink.copy(alpha = .25f)), colors = ButtonDefaults.outlinedButtonColors(contentColor = Ink)) { Icon(Icons.Default.Add, "选择标签", Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("选择标签", fontSize = 13.sp) }
                         Text("· 完成的工作", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp, bottom = 6.dp))
                     }
                     Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1150,7 +1181,38 @@ private fun within24h(iso: String?): Boolean {
             }
         }
         if (confirmExit) AlertDialog(onDismissRequest = { confirmExit = false }, modifier = Modifier.border(2.dp, CreamDeep, RoundedCornerShape(28.dp)), shape = RoundedCornerShape(28.dp), containerColor = Color.White, titleContentColor = Ink, textContentColor = Ink.copy(alpha = .75f), title = { Text("放弃未保存内容？", fontWeight = FontWeight.Bold) }, text = { Text("退出后当前填写内容会被清空。") }, confirmButton = { TextButton({ confirmExit = false; entryDrafts = listOf(EntryDraft(null, "")); AppCache.deleteDraft(context, "journal_draft.json"); writing = false }, colors = ButtonDefaults.textButtonColors(contentColor = Ink)) { Text("放弃并退出") } }, dismissButton = { TextButton({ confirmExit = false }, colors = ButtonDefaults.textButtonColors(contentColor = Ink)) { Text("继续编辑") } })
-        deletingJournal?.let { j ->
+        if (showTagPicker) AlertDialog(
+        onDismissRequest = { showTagPicker = false },
+        title = { Text("选择标签") },
+        text = {
+            Column {
+                Text("可多选；先选的为主标签。再次点击已选标签可取消。", fontSize = 12.sp, color = Ink.copy(alpha = .6f))
+                Spacer(Modifier.height(6.dp))
+                Column(Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())) {
+                    if (availableTags.isEmpty()) Text("暂无标签，可在「我的 → 标签管理」中创建。", fontSize = 13.sp, color = Ink.copy(alpha = .5f))
+                    availableTags.forEach { tag ->
+                        val selected = tag.name in tags
+                        val isPrimary = selected && tags.first() == tag.name
+                        Row(
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { tags = if (selected) tags - tag.name else tags + tag.name }.padding(horizontal = 4.dp, vertical = 9.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(Modifier.size(14.dp).clip(CircleShape).background(tagHexColor(tag.colorHex)))
+                            Spacer(Modifier.width(10.dp))
+                            Text(tag.name, Modifier.weight(1f), fontSize = 15.sp)
+                            if (selected) {
+                                Text(if (isPrimary) "主标签" else "次标签", fontSize = 12.sp, color = Ink.copy(alpha = .6f))
+                                Spacer(Modifier.width(6.dp))
+                                Icon(Icons.Default.Check, "已选", Modifier.size(18.dp), tint = Ink)
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton({ showTagPicker = false }) { Text("完成") } }
+    )
+    deletingJournal?.let { j ->
             AlertDialog(
                 onDismissRequest = { if (!publishing) deletingJournal = null },
                 title = { Text("删除这篇日志？", fontWeight = FontWeight.Bold) },

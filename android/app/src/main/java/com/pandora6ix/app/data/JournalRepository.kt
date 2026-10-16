@@ -34,10 +34,15 @@ class JournalRepository(private val api: ApiClient) {
     suspend fun journal(journalId: String): JournalDto =
         api.get("/work-logs/$journalId", JournalDto.serializer())
 
-    suspend fun create(workDate: String, entries: List<EntryCreateDto>): JournalDto {
+    suspend fun create(
+        workDate: String,
+        entries: List<EntryCreateDto>,
+        tagIds: List<String>? = null,
+        primaryTagId: String? = null
+    ): JournalDto {
         val body = api.json.encodeToString(
             JournalCreateDto.serializer(),
-            JournalCreateDto(workDate = workDate, entries = entries)
+            JournalCreateDto(workDate = workDate, entries = entries, tagIds = tagIds, primaryTagId = primaryTagId)
         )
         return api.post("/work-logs", body, JournalDto.serializer())
     }

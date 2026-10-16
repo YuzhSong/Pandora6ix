@@ -25,7 +25,8 @@ data class TaskDraftDto(
 @Serializable
 data class JournalDraftDto(
     val dateKey: String,
-    val entries: List<JournalDraftEntryDto>
+    val entries: List<JournalDraftEntryDto>,
+    val tagIds: List<String> = emptyList()
 )
 
 @Serializable
