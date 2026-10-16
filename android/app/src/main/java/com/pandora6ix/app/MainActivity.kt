@@ -1,20 +1,32 @@
 package com.pandora6ix.app
 
+import android.Manifest
+import android.content.Context
+import android.graphics.BitmapFactory
+import android.provider.MediaStore
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -33,15 +45,21 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import com.pandora6ix.app.data.*
 import com.pandora6ix.app.mock.*
 import com.pandora6ix.app.ui.calendar.*
@@ -49,7 +67,59 @@ import com.pandora6ix.app.ui.review.ReviewScreen
 import com.pandora6ix.app.ui.task.ProgressSheet
 import com.pandora6ix.app.ui.theme.*
 import kotlinx.coroutines.launch
+import java.io.File
 import java.util.UUID
+
+/** 默认头像色板（暖色系 8 色，选中即在圆形上显示姓名首字） */
+private val AvatarPalette = listOf(
+    0xFFF2A65A, 0xFFE8837B, 0xFF7BC5A8, 0xFF7FA8E0,
+    0xFFB79AE0, 0xFFE0A0C0, 0xFF8FB573, 0xFFD9B36C
+).map { Color(it) }
+
+/** 圆形头像：照片（本地文件，降采样解码）或默认色板 + 姓名首字 */
+@Composable
+private fun AvatarView(avatarType: String, avatarColorIndex: Int, avatarPath: String, name: String, size: Dp) {
+    Box(
+        Modifier.size(size).clip(CircleShape).background(AvatarPalette[avatarColorIndex.coerceIn(0, AvatarPalette.size - 1)]),
+        contentAlignment = Alignment.Center
+    ) {
+        val photo = avatarType == "photo" && avatarPath.isNotBlank() && File(avatarPath).exists()
+        val bitmap = remember(avatarPath) { if (photo) decodeAvatar(avatarPath) else null }
+        if (photo && bitmap != null) {
+            Image(bitmap.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        } else {
+            Text(name.take(1).ifBlank { "我" }, color = Color.White, fontWeight = FontWeight.Bold, fontSize = (size.value / 2.6f).sp)
+        }
+    }
+}
+
+private fun decodeAvatar(path: String, target: Int = 512) = runCatching {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeFile(path, bounds)
+    var sample = 1
+    while (bounds.outWidth / (sample * 2) >= target) sample *= 2
+    BitmapFactory.decodeFile(path, BitmapFactory.Options().apply { inSampleSize = sample })
+}.getOrNull()
+
+/** 查询媒体库图片（系统按授权范围自动过滤：限制访问时仅返回用户选中的照片），按添加时间倒序 */
+private fun queryGalleryImages(context: Context, limit: Int = 500): List<Uri> = runCatching {
+    val collection = if (Build.VERSION.SDK_INT >= 29) MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
+    else MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+    val uris = mutableListOf<Uri>()
+    context.contentResolver.query(collection, arrayOf(MediaStore.Images.Media._ID), null, null, "${MediaStore.Images.Media.DATE_ADDED} DESC")?.use { c ->
+        val idCol = c.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
+        while (c.moveToNext() && uris.size < limit) uris.add(Uri.withAppendedPath(collection, c.getLong(idCol).toString()))
+    }
+    uris
+}.getOrDefault(emptyList())
+
+private fun decodeUriThumbnail(context: Context, uri: Uri, target: Int = 192) = runCatching {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    context.contentResolver.openInputStream(uri)!!.use { BitmapFactory.decodeStream(it, null, bounds) }
+    var sample = 1
+    while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= target) sample *= 2
+    context.contentResolver.openInputStream(uri)!!.use { BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample }) }
+}.getOrNull()
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -1094,19 +1164,134 @@ private fun within24h(iso: String?): Boolean {
 }
 @Composable private fun AiMapScreen() { Column(Modifier.fillMaxSize().padding(16.dp)) { PageHeader("AI地图"); Spacer(Modifier.height(48.dp)); Icon(Icons.Default.Info, null, Modifier.size(70.dp).align(Alignment.CenterHorizontally), tint = Coral); Text("AI 地图", Modifier.fillMaxWidth().padding(top = 18.dp), textAlign = TextAlign.Center, fontSize = 28.sp, fontWeight = FontWeight.Bold); Text("功能规划中", Modifier.fillMaxWidth().padding(top = 8.dp), textAlign = TextAlign.Center, color = Ink.copy(alpha = .6f)) } }
 @Composable private fun ProfileScreen(user: UserDto, statistics: StatisticsDto?, notificationsEnabled: Boolean, showReviewCenter: Boolean, onOpenReviews: () -> Unit, onOpenSettings: () -> Unit) {
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("profile_avatar", Context.MODE_PRIVATE) }
+    var avatarType by remember { mutableStateOf(prefs.getString("avatarType", "color") ?: "color") }
+    var avatarColorIndex by remember { mutableStateOf(prefs.getInt("avatarColor", 0)) }
+    var avatarPath by remember { mutableStateOf(prefs.getString("avatarPath", "") ?: "") }
+    var showAvatarMenu by remember { mutableStateOf(false) }
+    var showAvatarPalette by remember { mutableStateOf(false) }
+    fun saveAvatar(type: String, colorIndex: Int = avatarColorIndex, path: String = avatarPath) {
+        avatarType = type; avatarColorIndex = colorIndex; avatarPath = path
+        prefs.edit().putString("avatarType", type).putInt("avatarColor", colorIndex).putString("avatarPath", path).apply()
+    }
+    fun importImage(uri: Uri?) {
+        if (uri == null) return
+        runCatching {
+            val dir = File(context.filesDir, "avatars").apply { mkdirs() }
+            val dest = File(dir, "picked_${System.currentTimeMillis()}.jpg")
+            context.contentResolver.openInputStream(uri)!!.use { input -> dest.outputStream().use { output -> input.copyTo(output) } }
+            saveAvatar("photo", path = dest.absolutePath)
+        }.onFailure { Toast.makeText(context, "导入失败，请重试", Toast.LENGTH_SHORT).show() }
+    }
+    // 相册浏览：授权后自建媒体库网格（系统按授权范围自动过滤——限制访问=仅所选照片，全部=整个相册）
+    var showGallery by remember { mutableStateOf(false) }
+    var galleryUris by remember { mutableStateOf(listOf<Uri>()) }
+    fun openGalleryBrowser() {
+        galleryUris = queryGalleryImages(context)
+        showGallery = true
+    }
+    // 相册权限：Android 14 系统弹窗自带"全部/仅所选照片/不允许"三档；13 走 READ_MEDIA_IMAGES；更早走存储权限
+    val galleryPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
+        val allowed = grants[Manifest.permission.READ_MEDIA_IMAGES] == true
+                || grants[Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED] == true
+                || grants[Manifest.permission.READ_EXTERNAL_STORAGE] == true
+        if (allowed) openGalleryBrowser()
+        else Toast.makeText(context, "未授予相册权限，可在系统设置中重新开启", Toast.LENGTH_SHORT).show()
+    }
+    fun photoPerms(): Array<String> = (if (Build.VERSION.SDK_INT >= 33) buildList {
+        add(Manifest.permission.READ_MEDIA_IMAGES)
+        if (Build.VERSION.SDK_INT >= 34) add(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
+    } else listOf(Manifest.permission.READ_EXTERNAL_STORAGE)).toTypedArray()
+    fun pickFromGallery() { galleryPermission.launch(photoPerms()) }
+    var cameraFile by remember { mutableStateOf<File?>(null) }
+    val takePicture = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
+        if (ok) cameraFile?.let { saveAvatar("photo", path = it.absolutePath) }
+    }
+    fun capturePhoto() {
+        runCatching {
+            val dir = File(context.filesDir, "avatars").apply { mkdirs() }
+            val dest = File(dir, "capture_${System.currentTimeMillis()}.jpg")
+            val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", dest)
+            cameraFile = dest
+            takePicture.launch(uri)
+        }.onFailure { Toast.makeText(context, "无法启动相机", Toast.LENGTH_SHORT).show() }
+    }
+    val cameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) capturePhoto() else Toast.makeText(context, "未授予相机权限，可在系统设置中重新开启", Toast.LENGTH_SHORT).show()
+    }
+    val displayName = user.displayName.ifBlank { user.name }.ifBlank { "未命名" }
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         PageHeader("我的", "个人资料")
         Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = CreamDeep), shape = RoundedCornerShape(20.dp)) {
                 Row(Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.AccountCircle, null, Modifier.size(64.dp), tint = WarmOrange)
+                    Box(Modifier.size(64.dp).clickable { showAvatarMenu = true }) {
+                        AvatarView(avatarType, avatarColorIndex, avatarPath, displayName, 64.dp)
+                        Box(Modifier.size(20.dp).align(Alignment.BottomEnd).clip(CircleShape).background(Ink), contentAlignment = Alignment.Center) {
+                            Icon(Icons.Default.PhotoCamera, "更换头像", Modifier.size(12.dp), tint = Color.White)
+                        }
+                    }
                     Column(Modifier.padding(start = 16.dp)) {
-                        Text(user.displayName.ifBlank { user.name }.ifBlank { "未命名" }, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                        Text(displayName, fontSize = 24.sp, fontWeight = FontWeight.Bold)
                         Text(user.jobTitle ?: "未设置职位", color = Ink.copy(alpha = .7f))
                         Text("登录名 ${user.loginName}", fontSize = 12.sp, color = Ink.copy(alpha = .6f))
                     }
                 }
             }
+            if (showAvatarMenu) androidx.compose.ui.window.Dialog(onDismissRequest = { showAvatarMenu = false }) {
+                Surface(shape = RoundedCornerShape(18.dp), color = Color.White, modifier = Modifier.fillMaxWidth().padding(horizontal = 40.dp)) {
+                    Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                        Text("更换头像", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(bottom = 4.dp))
+                        TextButton({ showAvatarMenu = false; pickFromGallery() }, Modifier.fillMaxWidth(), contentPadding = PaddingValues(horizontal = 4.dp, vertical = 1.dp)) { Text("从相册选择", color = Ink, fontSize = 16.sp) }
+                        TextButton({ showAvatarMenu = false; cameraPermission.launch(Manifest.permission.CAMERA) }, Modifier.fillMaxWidth(), contentPadding = PaddingValues(horizontal = 4.dp, vertical = 1.dp)) { Text("拍照", color = Ink, fontSize = 16.sp) }
+                        TextButton({ showAvatarMenu = false; showAvatarPalette = true }, Modifier.fillMaxWidth(), contentPadding = PaddingValues(horizontal = 4.dp, vertical = 1.dp)) { Text("使用默认头像", color = Ink, fontSize = 16.sp) }
+                        TextButton({ showAvatarMenu = false }, Modifier.align(Alignment.End), contentPadding = PaddingValues(horizontal = 8.dp, vertical = 1.dp)) { Text("取消", fontSize = 13.sp, color = Ink.copy(alpha = .6f)) }
+                    }
+                }
+            }
+            if (showAvatarPalette) AlertDialog(
+                onDismissRequest = { showAvatarPalette = false },
+                title = { Text("默认头像", fontWeight = FontWeight.Bold) },
+                text = {
+                    LazyVerticalGrid(columns = GridCells.Fixed(4), modifier = Modifier.height(200.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        items(AvatarPalette.size) { i ->
+                            Box(
+                                Modifier.size(52.dp).clip(CircleShape).background(AvatarPalette[i])
+                                    .border(2.dp, if (avatarType == "color" && avatarColorIndex == i) Ink else Color.Transparent, CircleShape)
+                                    .clickable { saveAvatar("color", colorIndex = i); showAvatarPalette = false },
+                                contentAlignment = Alignment.Center
+                            ) { Text(displayName.take(1), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 20.sp) }
+                        }
+                    }
+                },
+                confirmButton = { TextButton({ showAvatarPalette = false }) { Text("完成") } }
+            )
+            if (showGallery) AlertDialog(
+                onDismissRequest = { showGallery = false },
+                title = { Text("选择头像照片", fontWeight = FontWeight.Bold) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(if (galleryUris.isEmpty()) "当前没有可访问的照片。" else "仅显示已授权可访问的照片；点击照片设为头像。", fontSize = 12.sp, color = Ink.copy(alpha = .55f))
+                        if (galleryUris.isEmpty()) {
+                            TextButton({ galleryPermission.launch(photoPerms()) }, Modifier.fillMaxWidth()) { Text("重新授权 / 管理可访问的照片", color = WarmOrange) }
+                        } else {
+                            LazyVerticalGrid(columns = GridCells.Fixed(3), modifier = Modifier.height(380.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                items(galleryUris.size) { i ->
+                                    val uri = galleryUris[i]
+                                    val bmp = remember(uri) { decodeUriThumbnail(context, uri) }
+                                    Box(Modifier.size(96.dp).clip(RoundedCornerShape(10.dp)).background(CreamDeep).clickable { importImage(uri); showGallery = false }, contentAlignment = Alignment.Center) {
+                                        if (bmp != null) Image(bmp.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                                        else CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = WarmOrange)
+                                    }
+                                }
+                            }
+                            TextButton({ galleryPermission.launch(photoPerms()) }, Modifier.fillMaxWidth()) { Text("管理可访问的照片（增删）", color = WarmOrange) }
+                        }
+                    }
+                },
+                confirmButton = { TextButton({ showGallery = false }) { Text("关闭") } }
+            )
             statistics?.let { st ->
                 Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = WarmCard), shape = RoundedCornerShape(20.dp)) {
                     Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
