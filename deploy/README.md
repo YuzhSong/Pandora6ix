@@ -1,5 +1,7 @@
 # Pandora 云端部署
 
+数据库只读网页入口已按用户授权配置，通过专用 SSH 隧道访问云端 loopback H2 Console；使用、验证、备份兼容性与停用步骤见 [数据库查看](db-console/README.md)。它是独立运维配置，不属于公共 Web/API 路由。
+
 站点：`https://www.rainycode.cn`；业务 API：`https://www.rainycode.cn/api/v1`；健康检查：`https://www.rainycode.cn/backend/health`。Web 与未来 Android 通过同一后端访问云端数据库。
 
 ## 自动发布
