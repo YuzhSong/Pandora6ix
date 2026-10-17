@@ -42,7 +42,8 @@ class ApiException(
         "REVIEW_CONTEXT_CHANGED" -> "审批环境已变化，请刷新后重试"
         "IDEMPOTENCY_CONFLICT" -> "操作已提交，请勿重复操作"
         "DAILY_JOURNAL_EXISTS" -> "今日日报已存在"
-        "JOURNAL_EDIT_WINDOW_EXPIRED" -> "已超过 24 小时，该日志不能再修改或删除"
+        "JOURNAL_EDIT_WINDOW_EXPIRED" -> "只能修改或删除公司时区今天的日志，补交日志提交后不能再修改"
+        "JOURNAL_DATE_OUT_OF_RANGE" -> "只能填写公司时区今天、昨天和前天的日志"
         "WORKFLOW_POLICY_UNCONFIRMED" -> "流程策略未确认，请联系管理员"
         else -> when (httpStatus) {
             400 -> "请求内容有误，请检查后重试"

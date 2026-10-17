@@ -44,7 +44,7 @@ try {
     $domain = 'smoke-' + [Guid]::NewGuid().ToString()
     $initial = Call-Api 'POST' '/admin/enterprise-initializations' @{loginDomain=$domain;name='Runtime smoke enterprise';businessTimezone='Asia/Shanghai';adminLoginName='admin';adminPassword=$password;adminDisplayName='Smoke administrator'} $null @{'X-Bootstrap-Token'=$env:PANDORA_BOOTSTRAP_TOKEN;'Idempotency-Key'='smoke-init'}
     $admin = (Call-Api 'POST' '/auth/login' @{enterpriseDomain=$domain;loginName='admin';password=$password} $null $null).accessToken
-    $employee = Call-Api 'POST' '/admin/users' @{loginName='employee';password=$password;displayName='Smoke employee';orgUnitId=$initial.rootOrgUnitId;roles=@('EMPLOYEE')} $admin $null
+    $employee = Call-Api 'POST' '/admin/users' @{loginName='employee';password=$password;displayName='Smoke employee';orgUnitId=$initial.rootOrgUnitId;roles=@('EMPLOYEE');gender='MALE';idNumber='11010119900101001X';phoneNumber='13800000000'} $admin $null
     $token = (Call-Api 'POST' '/auth/login' @{enterpriseDomain=$domain;loginName='employee';password=$password} $null $null).accessToken
     $today = [TimeZoneInfo]::ConvertTimeBySystemTimeZoneId([DateTimeOffset]::UtcNow,'China Standard Time').ToString('yyyy-MM-dd')
     $body = @{workDate=$today;entries=@(@{clientEntryKey='smoke-entry';content='Persist across a real process restart'});tagIds=@()}

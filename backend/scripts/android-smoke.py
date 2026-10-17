@@ -120,6 +120,9 @@ def main():
 
         admin = login("admin")
         root = initial["rootOrgUnitId"]
+        stop()
+        start()  # Upgrade a real V1 company/account to V3 before new required profiles are written.
+        assert all(api("GET", "/admin/users", admin)["items"][0][k] is None for k in ("gender", "idNumber", "phoneNumber"))
         department = api("POST", "/admin/org-units", admin,
                          {"name": "Department", "kind": "DEPARTMENT", "parentId": root}, 201)["id"]
         team = api("POST", "/admin/org-units", admin,
@@ -128,7 +131,8 @@ def main():
         def user(name, role, organization, supervisor=None):
             return api("POST", "/admin/users", admin, {"loginName": name, "password": password,
                        "displayName": name, "orgUnitId": organization, "supervisorUserId": supervisor,
-                       "jobTitle": "Developer", "roles": [role]}, 201)["id"]
+                       "jobTitle": "Developer", "roles": [role], "gender": "MALE",
+                       "idNumber": "11010119900101001X", "phoneNumber": "13800000000"}, 201)["id"]
 
         founder_id = user("founder", "FOUNDER", root)
         manager_id = user("manager", "DEPARTMENT_MANAGER", department, founder_id)
@@ -137,6 +141,9 @@ def main():
         peer_id = user("peer", "EMPLOYEE", team, lead_id)
         manager, lead, employee, peer = [login(name) for name in ("manager", "lead", "employee", "peer")]
         profile = api("GET", "/me", employee)
+        assert not any(k in profile for k in ("gender", "idNumber", "phoneNumber"))
+        personnel = api("GET", "/admin/users?q=employee", admin)["items"][0]
+        assert personnel["gender"] == "MALE" and personnel["phoneNumber"] == "13800000000"
         assert profile["id"] == employee_id and profile["businessTimezone"] == "Asia/Shanghai"
         assert profile["capabilities"]["createPersonalTasks"] and not profile["capabilities"]["createDelegatedTasks"]
         assert profile["department"] == "Department" and profile["organization"]["id"] == team
@@ -166,7 +173,7 @@ def main():
         rejected = api("POST", "/tasks", employee, task("PERSONAL", [], []), 201)
         assert personal["reviewStatus"] == "PENDING" and pages("/tasks", employee) == []
         stop()
-        start()  # Flyway upgrades persisted V1 data to V2; approved states come only from APIs below.
+        start()  # Verify persisted V3 profiles and workflow records; approved states come only from APIs below.
         assert api("GET", "/work-logs/" + journal["id"], employee)["entries"][0]["entryId"] == journal["entries"][0]["entryId"]
         assert api("GET", "/me/important-entries", employee)["hasManualSelection"]
         assert len(pages("/task-reviews", lead)) == 2
@@ -256,6 +263,20 @@ def main():
         stop()
         start()  # Verify V2 decisions, completion facts, stable entries, sessions and manual empty state.
         assert api("GET", "/statistics", employee) == stats
+        reloaded = api("GET", "/admin/users?q=employee", admin)["items"][0]
+        assert reloaded["idNumber"] == personnel["idNumber"] and reloaded["phoneNumber"] == personnel["phoneNumber"]
+        from datetime import date, timedelta
+        for offset in (1, 2):
+            backfill_date = (date.fromisoformat(today) - timedelta(days=offset)).isoformat()
+            body = {"workDate": backfill_date, "entries": [{"clientEntryKey": "backfill", "content": "One submission"}]}
+            backfill = api("POST", "/work-logs", peer, body, 201)
+            assert backfill["allowedActions"] == []
+            api("POST", "/work-logs", peer, body, 409)
+            assert api("PATCH", "/work-logs/" + backfill["id"], peer, {"expectedVersion": 0}, 409)["code"] == "JOURNAL_EDIT_WINDOW_EXPIRED"
+            api("DELETE", "/work-logs/" + backfill["id"], peer, expected=409)
+        for offset in (-1, 3):
+            invalid_date = (date.fromisoformat(today) - timedelta(days=offset)).isoformat()
+            assert api("POST", "/work-logs", peer, {"workDate": invalid_date, "entries": [{"clientEntryKey": "invalid", "content": "No"}]}, 422)["code"] == "JOURNAL_DATE_OUT_OF_RANGE"
         assert api("GET", "/task-reviews/" + personal["reviewId"], lead)["decision"] == "APPROVED"
         assert api("GET", "/work-logs/" + journal["id"], employee)["entries"][0]["entryId"] == first_id
         selection = api("GET", "/me/important-entries", employee)
@@ -271,13 +292,14 @@ def main():
         changed_session = login("employee", new_password)
         assert api("GET", "/statistics", changed_session) == stats
         api("POST", "/auth/logout", changed_session, expected=204)
-        report = {"passed": True, "httpCalls": calls, "modules": 10, "processStarts": 3,
-                  "v1ToV2Upgrade": True, "sqlApprovalFixtures": False,
+        report = {"passed": True, "httpCalls": calls, "modules": 10, "processStarts": len(logs),
+                  "v1ToV2Upgrade": True, "v1ToV3Upgrade": True, "sqlApprovalFixtures": False,
                   "checks": ["login/profile/password/logout", "dashboard/full details", "real recipients and multi-recipient submission",
                              "direct-supervisor approval/rejection", "calendar day/week/month, ranges, AND tags, pagination",
                              "journal publish/supplement/edit/conflict", "entry selection <=10 and persistent empty set",
                              "progress 100 stays active", "personal completion and per-recipient acceptance",
-                             "tag IDs/primary color/role checks", "own completed facts", "restart persistence"]}
+                             "tag IDs/primary color/role checks", "own completed facts", "restart persistence",
+                             "required personnel profile persistence and privacy", "company-date journal editing and immutable backfills"]}
         # Confirm candidate search returns real IDs, separate from task submission authorization.
         assert {x["id"] for x in pages("/tasks/recipient-candidates?q=employee", lead)} == {employee_id}
         report["httpCalls"] = calls

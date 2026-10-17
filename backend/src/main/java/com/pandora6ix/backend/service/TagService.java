@@ -20,6 +20,7 @@ public class TagService implements com.pandora6ix.backend.application.tags.TagUs
 
     public Map<String, Object> list(
             IdentityService.Actor a, String name, String cursor, int limit) {
+        a.business();
         String query = name == null ? "" : name.toLowerCase(Locale.ROOT);
         return Pages.sqlPage(
                 db,
@@ -36,7 +37,7 @@ public class TagService implements com.pandora6ix.backend.application.tags.TagUs
 
     @Transactional
     public Map<String, Object> create(IdentityService.Actor a, Contracts.TagCreate c) {
-        if (!a.has("ADMIN") && !a.has("FOUNDER") && !a.has("DEPARTMENT_MANAGER"))
+        if (!a.has("FOUNDER") && !a.has("DEPARTMENT_MANAGER"))
             throw BusinessException.forbidden();
         String id = id();
         db.update(
@@ -52,7 +53,8 @@ public class TagService implements com.pandora6ix.backend.application.tags.TagUs
 
     @Transactional
     public Map<String, Object> patch(IdentityService.Actor a, String id, Contracts.TagPatch c) {
-        a.admin();
+        if (!a.has("FOUNDER") && !a.has("DEPARTMENT_MANAGER"))
+            throw BusinessException.forbidden();
         db.entity("enterprise_tag", a.enterpriseId(), id);
         if (c.name() != null && c.name().isBlank())
             throw BusinessException.invalid("Tag name must not be blank.");
@@ -70,12 +72,12 @@ public class TagService implements com.pandora6ix.backend.application.tags.TagUs
     }
 
     /**
-     * 删除标签：与 create 同权限范围（ADMIN/FOUNDER/DEPARTMENT_MANAGER，未来按等级细分）。
+     * 删除标签：与 create 同权限范围（FOUNDER/DEPARTMENT_MANAGER）。
      * 级联清理引用：任务/日报的标签关联行，任务与日报的主标签置空（快照为 JSON 不受影响）。
      */
     @Transactional
     public Map<String, Object> delete(IdentityService.Actor a, String id) {
-        if (!a.has("ADMIN") && !a.has("FOUNDER") && !a.has("DEPARTMENT_MANAGER"))
+        if (!a.has("FOUNDER") && !a.has("DEPARTMENT_MANAGER"))
             throw BusinessException.forbidden();
         db.entity("enterprise_tag", a.enterpriseId(), id);
         db.update("DELETE FROM task_tag WHERE enterprise_id=? AND tag_id=?", a.enterpriseId(), id);
