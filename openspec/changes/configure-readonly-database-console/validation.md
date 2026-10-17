@@ -21,3 +21,5 @@
 ## 限制与维护
 
 仅配置本机 SSH 私钥的用户可访问 localhost 入口，其他电脑需要单独授权。使用 PANDORA_VIEW 视图；PUBLIC 原表无权限。新的业务表需审核白名单，破坏性迁移需处理视图依赖。源码由本轮独立 PR 供非作者审查，云端启用属于用户明确授权的运维配置。
+
+运维实现提交 ad4bb00，审查 PR：https://github.com/YuzhSong/Pandora6ix/pull/15 。云端 tools/manifest.json 记录对应源码/编译 class 摘要；与业务 release.json 分开追溯。

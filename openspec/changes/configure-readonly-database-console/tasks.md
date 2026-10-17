@@ -8,4 +8,4 @@
 
 - [x] 2.1 Stage exact-version tools and private credentials; consistently back up and enable the console with recoverable systemd configuration.
 - [x] 2.2 Validate application health/login, release and business counts, private bind, browser login, read-only rejection, limited tunnel and restart persistence.
-- [ ] 2.3 Open the working local URL, document access/disable steps, run strict validation and submit the review PR without committing secrets.
+- [x] 2.3 Open the working local URL, document access/disable steps, run strict validation and submit the review PR without committing secrets.
