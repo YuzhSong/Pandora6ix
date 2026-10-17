@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import { Icon } from './Icon.tsx'
 
-interface Option { value: string; label: string }
+interface Option { value: string; label: string; depth?: number; accessibleLabel?: string; symbol?: string }
 export function Select({ label, value, options, onChange, disabled = false, required = false }: {
   label: string; value: string; options: Option[]; onChange: (value: string) => void; disabled?: boolean; required?: boolean
 }) {
@@ -56,6 +56,6 @@ export function Select({ label, value, options, onChange, disabled = false, requ
   }
   useEffect(() => { if (open) popup.current?.children[active]?.scrollIntoView({ block: 'nearest' }) }, [active, open])
   return <div className="select-control"><button ref={anchor} type="button" className="select-trigger" role="combobox" aria-label={label} aria-required={required} aria-expanded={open} aria-controls={`${id}-list`} aria-haspopup="listbox" aria-activedescendant={open ? `${id}-option-${active}` : undefined} disabled={disabled || !options.length} onClick={() => open ? popup.current?.hidePopover() : show()} onKeyDown={key}><span>{options[selected]?.label ?? '请选择'}</span><Icon name="chevron" size={15} /></button>
-    <div ref={popup} id={`${id}-list`} popover="auto" role="listbox" aria-label={label} className="select-popup" onKeyDown={key}>{options.map((option, index) => <button key={option.value} id={`${id}-option-${index}`} role="option" aria-selected={option.value === value} tabIndex={-1} type="button" className={index === active ? 'select-option highlighted' : 'select-option'} onMouseEnter={() => setActive(index)} onClick={() => choose(index)}><span>{option.label}</span>{option.value === value && <Icon name="check" size={15} />}</button>)}</div>
+    <div ref={popup} id={`${id}-list`} popover="auto" role="listbox" aria-label={label} className="select-popup" onKeyDown={key}>{options.map((option, index) => <button key={option.value} id={`${id}-option-${index}`} role="option" aria-label={option.accessibleLabel} style={option.depth !== undefined ? { paddingInlineStart: 12 + option.depth * 18 } : undefined} aria-selected={option.value === value} tabIndex={-1} type="button" className={index === active ? 'select-option highlighted' : 'select-option'} onMouseEnter={() => setActive(index)} onClick={() => choose(index)}><span className="select-option-label">{option.symbol && <span className="organization-option-symbol" aria-hidden="true">{option.symbol}</span>}<span>{option.label}</span></span>{option.value === value && <Icon name="check" size={15} />}</button>)}</div>
   </div>
 }

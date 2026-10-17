@@ -9,6 +9,7 @@ lerna-debug.log*
 
 node_modules
 .integration/
+!.env.cloud.example
 dist
 dist-ssr
 *.local

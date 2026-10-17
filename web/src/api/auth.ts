@@ -3,10 +3,6 @@ import type { createApiClient } from './client.ts'
 import type { createSessionStore } from './session.ts'
 
 export interface LoginInput { enterpriseDomain: string; loginName: string; password: string }
-export interface EnterpriseInitialization {
-  loginDomain: string; name: string; businessTimezone: string
-  adminLoginName: string; adminPassword: string; adminDisplayName: string
-}
 export function validatePassword(password: string) {
   if (password.length < 10 || new TextEncoder().encode(password).length > 72) throw new Error('密码至少 10 个字符，UTF-8 编码后不能超过 72 字节。')
 }
@@ -30,10 +26,6 @@ export function createAuthService(client: ReturnType<typeof createApiClient>, se
         await client.request('/auth/logout', { method: 'POST', authenticated: false, headers: { Authorization: `Bearer ${result.accessToken}` } }).catch(() => undefined)
         throw new Error('无法保存登录会话，请允许本站点使用会话存储后重试。')
       }
-    },
-    async initialize(input: EnterpriseInitialization, bootstrapToken: string, idempotencyKey: string) {
-      validatePassword(input.adminPassword)
-      return client.request('/admin/enterprise-initializations', { method: 'POST', body: input, authenticated: false, headers: { 'X-Bootstrap-Token': bootstrapToken, 'Idempotency-Key': idempotencyKey } })
     },
     async logout() {
       try { await client.request('/auth/logout', { method: 'POST' }) }

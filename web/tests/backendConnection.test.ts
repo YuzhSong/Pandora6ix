@@ -47,4 +47,10 @@ test('development proxy keeps business paths and rewrites only the health route'
   for (const target of ['file:///tmp', 'http://user:pass@localhost:8080', 'http://localhost:8080/api', 'http://localhost:8080/?token=secret']) {
     assert.throws(() => createBackendProxy(target))
   }
+  const cloud = createBackendProxy('https://www.rainycode.cn', '/backend/health')
+  assert.equal(cloud['^/api/v1(?:/|$)'].target, 'https://www.rainycode.cn')
+  assert.equal(cloud['^/backend/health(?:\\?|$)'].rewrite!('/backend/health?probe=1'), '/backend/health?probe=1')
+  for (const path of ['https://other.example/health', '//other.example/health', '/health?token=secret']) {
+    assert.throws(() => createBackendProxy('https://www.rainycode.cn', path))
+  }
 })
