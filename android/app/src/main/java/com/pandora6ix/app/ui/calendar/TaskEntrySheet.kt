@@ -84,6 +84,8 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
     var candidates by remember { mutableStateOf<List<RecipientDto>>(emptyList()) }
     var recipientQuery by remember { mutableStateOf("") }
     var candidateOpen by remember { mutableStateOf(false) }
+    // 折叠的部门集合：候选加载时默认全部折叠（浏览模式），检索模式自动展开命中结果
+    var collapsedDepts by remember { mutableStateOf<Set<String>>(emptySet()) }
     var submitting by remember { mutableStateOf(false) }
     var createdTask by remember { mutableStateOf<TaskDto?>(null) }
     val idempotencyKey = remember { UUID.randomUUID().toString() }
@@ -94,10 +96,16 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
         }
     }
     // @ 候选：管理范围内真实用户（服务端接口检索）
+    // 分组键直接用部门显示名：旧后端无 departmentId 时也能正确分出部门，且“所见即所组”
+    fun deptName(c: RecipientDto): String = c.departmentName ?: c.organizationName?.takeIf { n -> n.isNotBlank() } ?: "未分配部门"
     LaunchedEffect(candidateOpen, recipientQuery, kind) {
         if (kind == "DELEGATED" && candidateOpen) {
             val keyword = recipientQuery.substringAfter("@").trim()
-            runCatching { taskRepo.recipientCandidates(keyword.ifBlank { null }) }.getOrNull()?.let { candidates = it.items }
+            runCatching { taskRepo.recipientCandidates(keyword.ifBlank { null }) }.getOrNull()?.let { result ->
+                candidates = result.items
+                // 浏览模式（无关键词）默认按部门全部折叠；检索模式自动展开，让命中成员直接可见
+                collapsedDepts = if (keyword.isBlank()) result.items.map { deptName(it) }.toSet() else emptySet()
+            }
         }
     }
     var tags by rememberSaveable { mutableStateOf(savedDraft?.tags ?: listOf<String>()) }
@@ -224,14 +232,12 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
                         Column(Modifier.width(with(density) { queryWidth.toDp() }).heightIn(max = maxCandidateHeight).clip(RoundedCornerShape(12.dp)).background(CreamDeep).border(1.dp, Ink.copy(alpha = .12f), RoundedCornerShape(12.dp)).padding(vertical = 4.dp)) {
                             Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
                                 if (candidates.isEmpty()) Text("无匹配成员", Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), fontSize = 13.sp, color = Ink.copy(alpha = .5f))
-                                // 按部门分组展示，避免候选人过多时一屏铺平；点击部门头可折叠/展开
-                                var collapsedDepts by remember { mutableStateOf(setOf<String>()) }
-                                candidates.groupBy { it.departmentId ?: it.orgUnitId ?: "unassigned" }
-                                    .forEach { (departmentKey, members) ->
-                                        val dept = members.first().departmentName ?: members.first().organizationName ?: "未分配部门"
-                                        val collapsed = departmentKey in collapsedDepts
+                                // 按部门分组展示（默认折叠，点部门头展开）；折叠状态由外层 collapsedDepts 统一管理
+                                candidates.groupBy { deptName(it) }
+                                    .forEach { (dept, members) ->
+                                        val collapsed = dept in collapsedDepts
                                         Row(
-                                            Modifier.fillMaxWidth().clickable { collapsedDepts = if (collapsed) collapsedDepts - departmentKey else collapsedDepts + departmentKey }.padding(horizontal = 12.dp, vertical = 6.dp),
+                                            Modifier.fillMaxWidth().clickable { collapsedDepts = if (collapsed) collapsedDepts - dept else collapsedDepts + dept }.padding(horizontal = 12.dp, vertical = 6.dp),
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
                                             Icon(if (collapsed) Icons.Default.ExpandMore else Icons.Default.ExpandLess, if (collapsed) "展开" else "收起", Modifier.size(16.dp), tint = Ink.copy(alpha = .55f))
@@ -241,7 +247,12 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
                                         }
                                         if (!collapsed) members.forEach { candidate ->
                                             val selected = candidate.id in selectedRecipientIds
-                                            Row(Modifier.fillMaxWidth().heightIn(min = 44.dp).clickable { selectedRecipientIds = if (selected) selectedRecipientIds - candidate.id else selectedRecipientIds + candidate.id; error = null }.padding(start = 24.dp, end = 12.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                            Row(Modifier.fillMaxWidth().heightIn(min = 44.dp).clickable {
+                                                selectedRecipientIds = if (selected) selectedRecipientIds - candidate.id else selectedRecipientIds + candidate.id
+                                                error = null
+                                                // 选中后清空检索框（保留 @ 前缀语义无需恢复），便于直接检索下一位；候选弹层保持打开
+                                                if (recipientQuery.isNotEmpty()) recipientQuery = ""
+                                            }.padding(start = 24.dp, end = 12.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                                                 Icon(if (selected) Icons.Default.CheckBox else Icons.Default.CheckBoxOutlineBlank, if (selected) "已选" else "未选", tint = Ink)
                                                 Column(Modifier.padding(start = 8.dp).weight(1f)) {
                                                     Text(candidate.displayName.ifBlank { "成员 ${candidate.id.takeLast(4)}" }, fontSize = 14.sp)
