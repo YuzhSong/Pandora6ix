@@ -867,21 +867,28 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
 /** 编辑中的一条工作条目：entryId 非空表示修改已有条目，空表示新增（发布时生成 clientEntryKey） */
 private data class EntryDraft(val entryId: String?, val content: String)
 
-/** publishedAt(ISO) 距今是否在 24 小时内（minSdk 24 无 java.time，用 Calendar 手工解析；解析失败按可编辑处理） */
+/** ISO 日期时间：兼容省略秒位/毫秒（如 2026-10-15T09:30Z）、空格分隔、Z 或 ±hh:mm(:ss 可选无冒号) 偏移 */
+private val IsoDateTime = Regex(
+    "^(\\d{4})-(\\d{2})-(\\d{2})[T ](\\d{2}):(\\d{2})(?::(\\d{2}))?(?:\\.\\d+)?(Z|[+-]\\d{2}:?\\d{2})?$"
+)
+
+/** publishedAt(ISO) 距今是否在 24 小时内（minSdk 24 无 java.time，用正则+Calendar 解析；
+ *  解析失败按可编辑处理，与后端“published_at 为空不拦截”的行为一致） */
 private fun within24h(iso: String?): Boolean {
-    if (iso.isNullOrBlank() || iso.length < 19) return true
+    if (iso.isNullOrBlank()) return true
+    val m = IsoDateTime.matchEntire(iso.trim()) ?: return true
     return try {
         val cal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
         cal.clear()
         cal.set(
-            iso.substring(0, 4).toInt(), iso.substring(5, 7).toInt() - 1, iso.substring(8, 10).toInt(),
-            iso.substring(11, 13).toInt(), iso.substring(14, 16).toInt(), iso.substring(17, 19).toInt()
+            m.groupValues[1].toInt(), m.groupValues[2].toInt() - 1, m.groupValues[3].toInt(),
+            m.groupValues[4].toInt(), m.groupValues[5].toInt(), m.groupValues[6].ifEmpty { "0" }.toInt()
         )
         var createdUtc = cal.timeInMillis
-        val tail = iso.substring(19)
-        if (tail.isNotEmpty() && (tail[0] == '+' || tail[0] == '-')) {
+        val tail = m.groupValues[7]
+        if (tail.isNotEmpty() && tail[0] != 'Z') {
             val oh = tail.substring(1, 3).toInt()
-            val om = if (tail.length >= 6) tail.substring(4, 6).toInt() else 0
+            val om = if (tail.length >= 6) tail.substring(tail.length - 2).toInt() else 0
             createdUtc -= (if (tail[0] == '+') 1 else -1) * (oh * 3600L + om * 60L) * 1000L
         }
         createdUtc >= System.currentTimeMillis() - 24L * 3_600_000L
@@ -1040,6 +1047,8 @@ private fun within24h(iso: String?): Boolean {
                 // 401 已由全局回调处理
             } catch (e: ApiException) {
                 publishError = e.friendlyMessage()
+                // 编辑窗口刚好跨过 24h 边界：刷新列表，使关闭编辑器后卡片状态与服务端一致
+                if (e.code == "JOURNAL_EDIT_WINDOW_EXPIRED") loadJournals()
                 // 版本冲突：重新读取最新一篇，保留用户新增（未发布）的条目，已有条目以服务端为准
                 if (e.code == "VERSION_CONFLICT") {
                     val jid = editingJournal?.journalId?.ifBlank { editingJournal?.id } ?: editingJournal?.id
@@ -1165,11 +1174,11 @@ private fun within24h(iso: String?): Boolean {
                     Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         entryDrafts.forEachIndexed { i, draft ->
                             Row(verticalAlignment = Alignment.Top) {
-                                OutlinedTextField(draft.content, { value -> entryDrafts = entryDrafts.toMutableList().also { it[i] = draft.copy(content = value) } }, Modifier.weight(1f), placeholder = { Text(if (editingJournal == null) "第 ${i + 1} 条：记录完成的工作" else "第 ${i + 1} 条") }, colors = mutedColors, minLines = 2)
-                                if (editingJournal == null && entryDrafts.size > 1) IconButton({ entryDrafts = entryDrafts.filterIndexed { idx, _ -> idx != i } }, Modifier.size(40.dp)) { Icon(Icons.Default.Close, "删除此条", Modifier.size(16.dp)) }
+                                OutlinedTextField(draft.content, { value -> entryDrafts = entryDrafts.toMutableList().also { it[i] = draft.copy(content = value) } }, Modifier.weight(1f), placeholder = { Text("第 ${i + 1} 条：记录完成的工作") }, colors = mutedColors, minLines = 2)
+                                if (entryDrafts.size > 1) IconButton({ entryDrafts = entryDrafts.filterIndexed { idx, _ -> idx != i } }, Modifier.size(40.dp)) { Icon(Icons.Default.Close, "删除此条", Modifier.size(16.dp)) }
                             }
                         }
-                        if (editingJournal == null) TextButton({ entryDrafts = entryDrafts + EntryDraft(null, "") }, enabled = !publishing) { Icon(Icons.Default.Add, null, Modifier.size(14.dp)); Spacer(Modifier.width(4.dp)); Text("添加一条", color = WarmOrange, fontWeight = FontWeight.Bold) }
+                        TextButton({ entryDrafts = entryDrafts + EntryDraft(null, "") }, enabled = !publishing) { Icon(Icons.Default.Add, null, Modifier.size(14.dp)); Spacer(Modifier.width(4.dp)); Text("添加一条", color = WarmOrange, fontWeight = FontWeight.Bold) }
                     }
                     publishError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)) }
                     Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -1240,6 +1249,8 @@ private fun within24h(iso: String?): Boolean {
                                 // 401 已由全局回调处理
                             } catch (e: ApiException) {
                                 deleteError = e.friendlyMessage()
+                                // 编辑窗口刚好跨过 24h 边界：服务端拒绝时立即刷新列表，让卡片状态翻转，避免“显示可编辑却删不了”
+                                if (e.code == "JOURNAL_EDIT_WINDOW_EXPIRED") loadJournals()
                             } catch (e: Exception) {
                                 deleteError = "网络异常，请重试"
                             } finally {
