@@ -64,6 +64,11 @@ public class JournalController {
         return journals.patch(identity.current(), id, c);
     }
 
+    @DeleteMapping("/work-logs/{id}")
+    public Object delete(@PathVariable String id) {
+        return journals.delete(identity.current(), id);
+    }
+
     @GetMapping("/me/important-entry-candidates")
     public Object candidates(
             @RequestParam(required = false) String cursor,

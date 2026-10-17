@@ -35,3 +35,4 @@ sshkey.md
 .DS_Store
 Thumbs.db
 *.log
+.codebuddy/

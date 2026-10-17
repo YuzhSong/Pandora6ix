@@ -1,6 +1,7 @@
 package com.pandora6ix.app.ui.calendar
 
 import com.pandora6ix.app.mock.*
+import com.pandora6ix.app.data.TaskItem
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -17,7 +18,9 @@ class CalendarLayoutTest {
     }
     private val monday = DemoDate(2026, 9, 14)
     private val week = (0..6).map { monday.plusDays(it) }
-    private fun task(id: String, first: Int, last: Int, priority: Int = 3) = WorkTask(id, id, monday.plusDays(first), monday.plusDays(last), "演示", "用户", 0, priorityLevel = priority)
+    private fun task(id: String, first: Int, last: Int, priority: Int = 3) = TaskItem(
+        id, "PERSONAL", id, null, priority, monday.plusDays(first), monday.plusDays(last),
+        "ALL_DAY", null, null, "APPROVED", emptyList(), null, emptyList(), emptyList())
 
     @Test fun monthHasOnlyRequiredWeeksAndNeverDropsEndOfMonth() {
         assertEquals(5, monthWeeks(DemoDate(2026, 9, 19)).size)

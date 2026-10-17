@@ -1,5 +1,7 @@
 package com.pandora6ix.app.ui.calendar
 
+import com.pandora6ix.app.data.*
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -48,12 +50,20 @@ import kotlin.math.abs
 fun CalendarScreen(
     mode: CalendarMode,
     cursor: DemoDate,
-    tasks: List<WorkTask>,
-    canCreateTasks: Boolean,
+    tasks: List<TaskItem>,
+    canCreatePersonal: Boolean,
+    canCreateDelegated: Boolean,
+    availableTags: List<TagDto>,
+    taskRepo: TaskRepository,
     onModeChange: (CalendarMode) -> Unit,
     onCursorChange: (DemoDate) -> Unit,
-    onCreate: (WorkTask) -> Unit,
-    onOpen: (WorkTask) -> Unit
+    onCreated: (TaskDto) -> Unit,
+    onOpen: (TaskItem) -> Unit,
+    taskScope: String = "mine",
+    onTaskScopeChange: (String) -> Unit = {},
+    loading: Boolean = false,
+    error: String? = null,
+    onRetry: () -> Unit = {}
 ) {
     var menu by rememberSaveable { mutableStateOf(false) }
     var adding by rememberSaveable { mutableStateOf(false) }
@@ -76,26 +86,49 @@ fun CalendarScreen(
             }
             val weekStart = mondayOfWeek(cursor)
             val dates = (0..6).map { weekStart.plusDays(it) }
+            var showDatePick by rememberSaveable { mutableStateOf(false) }
             Row(Modifier.fillMaxWidth().height(44.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(when (mode) {
                     CalendarMode.YEAR -> "${cursor.year}年"
                     CalendarMode.MONTH -> cursor.monthLabel()
                     CalendarMode.WEEK -> "${weekStart.shortLabel()}—${dates.last().shortLabel()}"
                     CalendarMode.DAY -> cursor.shortLabelWithWeekday()
-                }, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                }, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f).clickable { showDatePick = true })
                 IconButton({ showTagFilter = true }) {
                     Icon(Icons.Default.Search, "按标签筛选任务", tint = if (filterTags.isEmpty()) Ink else WarmOrange)
+                }
+            }
+            if (showDatePick) DateWheelDialog(
+                initial = cursor,
+                onDismiss = { showDatePick = false },
+                onConfirm = { d -> showDatePick = false; onCursorChange(d) }
+            )
+            // 年视图任务范围：GET /tasks?scope=mine|managed|created（服务端校验可见范围）
+            if (mode == CalendarMode.YEAR) Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf("mine" to "我的任务", "managed" to "我管理的", "created" to "我创建的").forEach { (value, label) ->
+                    val selected = taskScope == value
+                    Text(
+                        label,
+                        Modifier.clip(RoundedCornerShape(14.dp))
+                            .background(if (selected) WarmOrange else WarmCard)
+                            .clickable { if (!selected) onTaskScopeChange(value) }
+                            .padding(horizontal = 12.dp, vertical = 5.dp),
+                        fontSize = 12.sp,
+                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                        color = if (selected) Ink else Ink.copy(alpha = .65f)
+                    )
                 }
             }
             if (filterTags.isNotEmpty()) Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("仅显示：", fontSize = 12.sp, color = Ink.copy(alpha = .6f))
                 filterTags.forEach { name ->
-                    Text(name, Modifier.clip(RoundedCornerShape(10.dp)).background(taskTagColor(name)?.let { Color(it).copy(alpha = .4f) } ?: Ink.copy(alpha = .15f)).padding(horizontal = 8.dp, vertical = 2.dp), fontSize = 12.sp, color = Ink)
+                    val chipBg = availableTags.firstOrNull { it.name == name }?.let { tagHexColor(it.colorHex).copy(alpha = .4f) } ?: Ink.copy(alpha = .15f)
+                    Text(name, Modifier.clip(RoundedCornerShape(10.dp)).background(chipBg).padding(horizontal = 8.dp, vertical = 2.dp), fontSize = 12.sp, color = Ink)
                 }
                 TextButton({ filterTags = emptyList() }, contentPadding = PaddingValues(horizontal = 8.dp)) { Text("清除", fontSize = 12.sp, color = WarmOrange) }
             }
             // 应用标签筛选后的任务集合：空筛选 = 全部任务
-            val visibleTasks = remember(tasks, filterTags) { if (filterTags.isEmpty()) tasks else tasks.filter { task -> filterTags.all { it in task.tags } } }
+            val visibleTasks = remember(tasks, filterTags) { if (filterTags.isEmpty()) tasks else tasks.filter { task -> filterTags.all { name -> task.tags.any { it.name == name } } } }
             val yearGridState = rememberLazyGridState(initialFirstVisibleItemIndex = YearGridAnchorIndex)
             Box(Modifier.fillMaxWidth().weight(1f).pinchToZoom(mode, onModeChange).swipeNavigate(mode) { forward ->
                 onCursorChange(when (mode) {
@@ -121,9 +154,22 @@ fun CalendarScreen(
                         }
                     }
                 }
+                // 加载/失败覆盖层：真实接口三态（不遮住顶部导航）
+                if (loading) Box(Modifier.fillMaxSize().background(Cream.copy(alpha = .45f)), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        CircularProgressIndicator(color = WarmOrange, strokeWidth = 3.dp)
+                        Text("正在加载…", color = Ink.copy(alpha = .6f), fontSize = 13.sp)
+                    }
+                }
+                if (error != null) Box(Modifier.fillMaxSize().background(Cream.copy(alpha = .45f)), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(error, color = Ink.copy(alpha = .75f))
+                        Button(onRetry, colors = ButtonDefaults.buttonColors(containerColor = Ink), shape = RoundedCornerShape(12.dp)) { Text("重试") }
+                    }
+                }
             }
         }
-        if (canCreateTasks) FloatingActionButton(onClick = { adding = true }, modifier = Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 48.dp), shape = CircleShape, containerColor = WarmOrange, contentColor = Color.White) { Icon(Icons.Default.Add, "添加任务", Modifier.size(30.dp)) }
+        if (canCreatePersonal || canCreateDelegated) FloatingActionButton(onClick = { adding = true }, modifier = Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 48.dp), shape = CircleShape, containerColor = WarmOrange, contentColor = Color.White) { Icon(Icons.Default.Add, "添加任务", Modifier.size(30.dp)) }
         val atToday = when (mode) {
             CalendarMode.DAY -> cursor == today
             CalendarMode.WEEK -> mondayOfWeek(cursor) == mondayOfWeek(today)
@@ -132,7 +178,7 @@ fun CalendarScreen(
         }
         if (!atToday) Button(onClick = { onCursorChange(today) }, modifier = Modifier.align(Alignment.BottomEnd).fillMaxWidth(.25f).height(34.dp), shape = RoundedCornerShape(topStart = 17.dp, bottomStart = 17.dp), contentPadding = PaddingValues(horizontal = 4.dp), colors = ButtonDefaults.buttonColors(containerColor = Ink)) { Text("回到今天", fontSize = 12.sp, maxLines = 1) }
     }
-    if (adding && canCreateTasks) TaskEntrySheet(cursor, canCreateTasks, onDismiss = { adding = false }, onSave = { task -> if (canCreateTasks) { onCreate(task); onCursorChange(task.start); adding = false } })
+    if (adding && (canCreatePersonal || canCreateDelegated)) TaskEntrySheet(cursor, canCreatePersonal, canCreateDelegated, availableTags, taskRepo, onDismiss = { adding = false }, onCreated = { task -> onCreated(task) })
     if (showTagFilter) {
         var pending by remember { mutableStateOf(filterTags) }
         AlertDialog(
@@ -143,10 +189,10 @@ fun CalendarScreen(
                     Text("可多选；任务需同时包含所选的全部标签才会显示。", fontSize = 12.sp, color = Ink.copy(alpha = .6f))
                     Spacer(Modifier.height(6.dp))
                     Column(Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())) {
-                        MockData.taskTags.forEach { tag ->
+                        availableTags.forEach { tag ->
                             val selected = tag.name in pending
                             Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { pending = if (selected) pending - tag.name else pending + tag.name }.padding(horizontal = 4.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Box(Modifier.size(14.dp).clip(CircleShape).background(Color(tag.color)))
+                                Box(Modifier.size(14.dp).clip(CircleShape).background(tagHexColor(tag.colorHex)))
                                 Spacer(Modifier.width(10.dp))
                                 Text(tag.name, Modifier.weight(1f), fontSize = 15.sp)
                                 if (selected) Icon(Icons.Default.Check, "已选", Modifier.size(18.dp), tint = Ink)
@@ -174,7 +220,7 @@ fun CalendarScreen(
     }
 }
 
-@Composable private fun CompactMonth(cursor: DemoDate, tasks: List<WorkTask>, today: DemoDate, onSelect: (DemoDate) -> Unit, onOpen: (WorkTask) -> Unit) {
+@Composable private fun CompactMonth(cursor: DemoDate, tasks: List<TaskItem>, today: DemoDate, onSelect: (DemoDate) -> Unit, onOpen: (TaskItem) -> Unit) {
     var overflowDates by remember { mutableStateOf<List<DemoDate>?>(null) }
     Column(Modifier.fillMaxSize().padding(horizontal = 8.dp)) {
         Row(Modifier.fillMaxWidth().height(20.dp)) { listOf("一", "二", "三", "四", "五", "六", "日").forEach { Text("周$it", Modifier.weight(1f), fontSize = 11.sp, textAlign = TextAlign.Center, color = Ink.copy(alpha = .6f)) } }
@@ -209,7 +255,7 @@ fun CalendarScreen(
     }
 }
 
-@Composable private fun AllDayTasks(dates: List<DemoDate>, tasks: List<WorkTask>, onSelect: (WorkTask, DemoDate) -> Unit) {
+@Composable private fun AllDayTasks(dates: List<DemoDate>, tasks: List<TaskItem>, onSelect: (TaskItem, DemoDate) -> Unit) {
     val lanes = packTaskRows(tasks.filter(::isAllDay), dates)
     Row(Modifier.fillMaxWidth().padding(end = 8.dp, bottom = 6.dp)) {
         Text("全天", Modifier.width(40.dp).padding(top = 4.dp), fontSize = 12.sp, textAlign = TextAlign.Center, color = Ink.copy(alpha = .7f))
@@ -220,7 +266,7 @@ fun CalendarScreen(
     }
 }
 
-@Composable private fun DateLane(lane: List<TaskSegment>, dates: List<DemoDate>, height: Int, compact: Boolean, onSelect: (WorkTask, DemoDate) -> Unit) {
+@Composable private fun DateLane(lane: List<TaskSegment>, dates: List<DemoDate>, height: Int, compact: Boolean, onSelect: (TaskItem, DemoDate) -> Unit) {
     BoxWithConstraints(Modifier.fillMaxWidth().height(height.dp)) {
         val cellWidth = maxWidth / dates.size
         lane.forEach { segment ->
@@ -233,17 +279,18 @@ fun CalendarScreen(
     }
 }
 
-// 任务颜色：优先取主标签颜色，无标签任务回退到既有色板
-private fun taskColor(task: WorkTask): Color =
-    task.tags.firstOrNull()?.let { name -> taskTagColor(name)?.let { Color(it) } }
-        ?: listOf(Peach, Sky, Mint, Lilac)[task.colorIndex.mod(4)]
+// 任务颜色：优先服务端 displayColor（主标签颜色），无则用主标签目录 colorHex，最后回退既有色板
+private fun taskColor(task: TaskItem): Color =
+    task.displayColorHex?.let { hex -> runCatching { Color(android.graphics.Color.parseColor(hex)) }.getOrNull() }
+        ?: task.tags.firstOrNull()?.let { tag -> tag.colorHex.takeIf { it.isNotBlank() }?.let { hex -> runCatching { Color(android.graphics.Color.parseColor(hex)) }.getOrNull() } }
+        ?: listOf(Peach, Sky, Mint, Lilac)[task.priorityLevel.mod(4)]
 private fun Modifier.calendarGuides(): Modifier = drawBehind {
     val effect = PathEffect.dashPathEffect(floatArrayOf(3.dp.toPx(), 4.dp.toPx()))
     for (i in 1..6) drawLine(Ink.copy(alpha = .06f), Offset(size.width * i / 7, 0f), Offset(size.width * i / 7, size.height), pathEffect = effect)
     drawLine(Ink.copy(alpha = .08f), Offset(0f, size.height), Offset(size.width, size.height), pathEffect = effect)
 }
 
-@Composable private fun TimeGrid(dates: List<DemoDate>, tasks: List<WorkTask>, dayMode: Boolean, onSelect: (WorkTask, DemoDate) -> Unit) {
+@Composable private fun TimeGrid(dates: List<DemoDate>, tasks: List<TaskItem>, dayMode: Boolean, onSelect: (TaskItem, DemoDate) -> Unit) {
     val hourHeight = if (dayMode) 60.dp else 56.dp
     val density = LocalDensity.current
     val scroll = rememberScrollState(with(density) { (hourHeight * 8).roundToPx() })
@@ -260,7 +307,7 @@ private fun Modifier.calendarGuides(): Modifier = drawBehind {
             dates.forEachIndexed { index, date ->
                 val entries = tasks.mapNotNull { task -> timeRangeOnDate(task, date)?.let { task to it } }.filter { !it.second.isEmpty() }.sortedBy { it.second.first }
                 // One column per simultaneous cluster, allowing non-overlapping events to regain full width.
-                val clusters = mutableListOf<MutableList<Pair<WorkTask, IntRange>>>()
+                val clusters = mutableListOf<MutableList<Pair<TaskItem, IntRange>>>()
                 entries.forEach { entry ->
                     val last = clusters.lastOrNull()
                     if (last != null && entry.second.first <= last.maxOf { it.second.last }) last.add(entry) else clusters.add(mutableListOf(entry))
@@ -368,7 +415,7 @@ private const val YearGridAnchorIndex = YearGridSpanYears * 12
 
 @Composable private fun YearGrid(
     cursor: DemoDate,
-    tasks: List<WorkTask>,
+    tasks: List<TaskItem>,
     today: DemoDate,
     state: LazyGridState,
     onYearChange: (Int) -> Unit,

@@ -69,6 +69,23 @@ public class TagService implements com.pandora6ix.backend.application.tags.TagUs
         return view(db.entity("enterprise_tag", a.enterpriseId(), id));
     }
 
+    /**
+     * 删除标签：与 create 同权限范围（ADMIN/FOUNDER/DEPARTMENT_MANAGER，未来按等级细分）。
+     * 级联清理引用：任务/日报的标签关联行，任务与日报的主标签置空（快照为 JSON 不受影响）。
+     */
+    @Transactional
+    public Map<String, Object> delete(IdentityService.Actor a, String id) {
+        if (!a.has("ADMIN") && !a.has("FOUNDER") && !a.has("DEPARTMENT_MANAGER"))
+            throw BusinessException.forbidden();
+        db.entity("enterprise_tag", a.enterpriseId(), id);
+        db.update("DELETE FROM task_tag WHERE enterprise_id=? AND tag_id=?", a.enterpriseId(), id);
+        db.update("DELETE FROM work_log_tag WHERE enterprise_id=? AND tag_id=?", a.enterpriseId(), id);
+        db.update("UPDATE task SET primary_tag_id=NULL WHERE enterprise_id=? AND primary_tag_id=?", a.enterpriseId(), id);
+        db.update("UPDATE work_log SET primary_tag_id=NULL WHERE enterprise_id=? AND primary_tag_id=?", a.enterpriseId(), id);
+        db.update("DELETE FROM enterprise_tag WHERE enterprise_id=? AND id=?", a.enterpriseId(), id);
+        return Map.of("tagId", id);
+    }
+
     public List<String> validate(IdentityService.Actor a, List<String> tags, String primary) {
         var ids = tags == null ? List.<String>of() : new ArrayList<>(new LinkedHashSet<>(tags));
         if (ids.isEmpty() ? primary != null : primary == null || !ids.contains(primary))

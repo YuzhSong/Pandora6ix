@@ -151,6 +151,8 @@ def read_schemas():
     item = obj({**versioned, "itemId": ID, "publisherUserId": ID, "title": STRING, "content": STRING, "displayOrder": INTEGER, "createdAt": INSTANT})
     selection = obj({"entries": array(ref("WorkEntry")), "hasManualSelection": BOOLEAN, "requiresSelection": BOOLEAN, "candidateCount": INTEGER, "version": INTEGER})
     stats = obj({"total": INTEGER, "completed": INTEGER, "uncompleted": INTEGER, "basis": {"type": "string", "const": "OWN_APPROVED_ASSIGNMENTS"}})
+    journalDeleted = obj({"journalId": ID})
+    tagDeleted = obj({"tagId": ID})
     review = obj({**versioned, "reviewId": ID, "taskId": ID, "reviewerUserId": ID, "submittedByUserId": ID,
         "taskVersion": INTEGER, "currentTaskVersion": INTEGER, "attemptNo": INTEGER, "submittedAt": INSTANT,
         "submittedSnapshot": {"type": "object", "additionalProperties": True},
@@ -160,6 +162,7 @@ def read_schemas():
         "isCurrent": BOOLEAN, "allowedActions": array({"type": "string", "enum": ["APPROVE", "REJECT"]})})
     schemas = {"Tag": tag, "Assignment": assignment, "ProgressRecord": progress, "CompletionRequestView": completion, "Task": task,
         "WorkEntry": entry, "Journal": journal, "Enterprise": enterprise, "OrgUnit": org, "User": user, "CompanyItem": item, "ImportantSelection": selection, "Statistics": stats,
+        "JournalDeleted": journalDeleted, "TagDeleted": tagDeleted,
         "TaskReview": review, "ReviewDecisionResult": obj({"review": ref("TaskReview"), "task": ref("Task")}),
         "Recipient": obj({"id": ID, "displayName": STRING, "orgUnitId": nullable(ID), "jobTitle": nullable(STRING), "organizationName": nullable(STRING), "relationship": STRING}),
         "LoginResult": obj({"accessToken": STRING, "tokenType": {"type": "string", "const": "Bearer"}, "expiresAt": INSTANT, "user": ref("User")}),
@@ -185,7 +188,8 @@ RESPONSES = {
     ("POST", "/tasks/{id}/complete"): "Assignment", ("POST", "/task-assignments/{id}/progress-records"): "ProgressResult",
     ("POST", "/task-assignments/{id}/completion-requests"): "CompletionResult", ("POST", "/task-completion-requests/{id}/decision"): "CompletionResult",
     ("GET", "/task-reviews"): "TaskReviewPage", ("GET", "/task-reviews/{id}"): "TaskReview", ("POST", "/task-reviews/{id}/decision"): "ReviewDecisionResult",
-    ("GET", "/calendar"): "Calendar", ("GET", "/work-logs"): "JournalPage", ("POST", "/work-logs"): "Journal", ("GET", "/work-logs/{id}"): "Journal", ("PATCH", "/work-logs/{id}"): "Journal",
+    ("GET", "/calendar"): "Calendar", ("GET", "/work-logs"): "JournalPage", ("POST", "/work-logs"): "Journal", ("GET", "/work-logs/{id}"): "Journal", ("PATCH", "/work-logs/{id}"): "Journal", ("DELETE", "/work-logs/{id}"): "JournalDeleted",
+    ("DELETE", "/tags/{id}"): "TagDeleted",
     ("GET", "/work-log-entries/{id}"): "WorkEntry", ("GET", "/me/important-entry-candidates"): "WorkEntryPage", ("GET", "/me/important-entries"): "ImportantSelection", ("PUT", "/me/important-entries"): "ImportantSelection",
     ("GET", "/company-important-items"): "CompanyItemPage", ("POST", "/company-important-items"): "CompanyItem", ("GET", "/company-important-items/{id}"): "CompanyItem", ("PATCH", "/company-important-items/{id}"): "CompanyItem",
     ("GET", "/dashboard"): "Dashboard", ("GET", "/dashboard/task-items"): "TaskPage", ("GET", "/statistics"): "Statistics",
@@ -203,7 +207,7 @@ def generate():
         if file.name == "HealthController.java":
             continue
         source = file.read_text(encoding="utf-8")
-        for method in re.finditer(r'@(Get|Post|Patch|Put)Mapping\("([^"]+)"\)\s*(?:@ResponseStatus\(([^)]+)\)\s*)?public\s+\S+\s+(\w+)\((.*?)\)\s*\{', source, re.S):
+        for method in re.finditer(r'@(Get|Post|Patch|Put|Delete)Mapping\("([^"]+)"\)\s*(?:@ResponseStatus\(([^)]+)\)\s*)?public\s+\S+\s+(\w+)\((.*?)\)\s*\{', source, re.S):
             verb, path, status, name, params = method.groups()
             verb = verb.upper()
             no_body = (verb, path) in (("POST", "/auth/logout"), ("POST", "/me/password"))

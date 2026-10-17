@@ -137,6 +137,7 @@ public final class Contracts {
     public record JournalPatch(
             @NotNull @Min(0) Long expectedVersion,
             @Size(max = 100) List<@NotNull @Valid EntryUpsert> upsertEntries,
+            @Size(max = 100) List<@NotBlank String> deleteEntryIds,
             @Size(max = 100) List<@NotBlank String> tagIds,
             String primaryTagId) {}
 

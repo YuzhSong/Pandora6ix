@@ -46,6 +46,11 @@ public class TaskController {
         return tags.patch(identity.current(), id, c);
     }
 
+    @DeleteMapping("/tags/{id}")
+    public Object tagDelete(@PathVariable String id) {
+        return tags.delete(identity.current(), id);
+    }
+
     @GetMapping("/tasks/recipient-candidates")
     public Object candidates(
             @RequestParam(required = false) String q,

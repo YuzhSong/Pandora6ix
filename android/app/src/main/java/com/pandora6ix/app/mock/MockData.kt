@@ -54,7 +54,9 @@ data class WorkTask(
     val endMinute: Int? = null,
     val priorityLevel: Int = 3,
     // 标签列表：首个为主标签（决定视图中的任务颜色），其余为次标签
-    val tags: List<String> = emptyList()
+    val tags: List<String> = emptyList(),
+    // 服务端 displayColor（主标签颜色 #RRGGBB）；为空时视图回退本地配色
+    val displayColorHex: String? = null
 )
 
 // 任务标签目录：每个标签一种颜色（ARGB Long，UI 侧转 Color）
