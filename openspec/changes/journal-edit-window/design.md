@@ -1,5 +1,9 @@
 # Design: journal-edit-window
 
+## 合并前审查修正
+
+删除条目前原子清理 personal_important_selection 引用，并递增选择状态版本；保留手动空集，拒绝旧版本回写。patch/delete 先锁作者 app_user，与 saveSelection 同序串行化，避免选择与删除竞态。通过已选条目 PATCH、整篇 DELETE 和旧选择版本冲突回归。
+
 ## 窗口判定
 
 - 服务端为权威：`work_log.published_at`（NOT NULL DEFAULT CURRENT_TIMESTAMP）为创建时刻，`now <= published_at + 24h` 允许 PATCH/DELETE；超窗抛 409 `JOURNAL_EDIT_WINDOW_EXPIRED`

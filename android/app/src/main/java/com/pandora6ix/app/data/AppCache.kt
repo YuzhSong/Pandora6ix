@@ -4,6 +4,7 @@ import android.content.Context
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.io.File
+import java.security.MessageDigest
 
 /** 任务草稿（未提交的添加任务内容，持久化到缓存目录） */
 @Serializable
@@ -41,7 +42,13 @@ data class JournalDraftEntryDto(val entryId: String?, val content: String)
 object AppCache {
     val json = Json { ignoreUnknownKeys = true }
 
-    private fun draftDir(context: Context): File = File(context.cacheDir, "drafts").apply { mkdirs() }
+    private fun draftDir(context: Context): File {
+        val owner = SessionStore(context).ownerId ?: error("A verified account is required")
+        val scope = MessageDigest.getInstance("SHA-256").digest(owner.toByteArray())
+            .joinToString("") { "%02x".format(it) }
+        // Shared legacy drafts have no reliable owner and are never restored into an account.
+        return File(context.cacheDir, "drafts/$scope").apply { mkdirs() }
+    }
 
     fun writeDraft(context: Context, name: String, content: String) {
         runCatching { File(draftDir(context), name).writeText(content) }
@@ -58,7 +65,8 @@ object AppCache {
 
     /** 清点可清理缓存：仅列出非空分类 */
     fun collect(context: Context, currentAvatarPath: String?): List<CacheItem> {
-        val draftFiles = File(context.cacheDir, "drafts").listFiles()?.filter { it.isFile } ?: emptyList()
+        val draftFiles = runCatching { draftDir(context).listFiles()?.filter { it.isFile } ?: emptyList() }
+            .getOrDefault(emptyList())
         val avatarFiles = (File(context.filesDir, "avatars").listFiles()?.filter { it.isFile } ?: emptyList())
             .filter { it.absolutePath != currentAvatarPath }
         return buildList {

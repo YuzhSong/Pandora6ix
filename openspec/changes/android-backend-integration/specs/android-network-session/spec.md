@@ -25,3 +25,11 @@ ApiClient SHALL 以 `BuildConfig` 配置的 API 基址发起 HTTPS 请求，统�
 #### Scenario: 换号登录
 - **WHEN** 账号 A 退出后账号 B 登录
 - **THEN** B 看不到 A 的任何个人数据
+
+#### Scenario: 空请求体退出
+- **WHEN** 登录用户退出并发送无业务参数的 POST /auth/logout
+- **THEN** 网络库发送有效的空请求体，服务器撤销会话；旧账号在途响应不得清除新会话或更新新账号界面
+
+#### Scenario: 隔离已持久化草稿
+- **WHEN** 新账号打开任务或日报编辑器
+- **THEN** 只读取以已验证账号 ID 隔离的草稿；没有可信归属的旧共享草稿不自动导入

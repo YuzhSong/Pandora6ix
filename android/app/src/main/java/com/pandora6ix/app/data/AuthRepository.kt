@@ -15,11 +15,11 @@ class AuthRepository(private val api: ApiClient, private val session: SessionSto
             LoginRequest(enterpriseDomain.trim(), loginName.trim(), password)
         )
         val result = api.post("/auth/login", body, LoginResult.serializer())
-        session.save(result.accessToken)
+        session.save(result.accessToken, result.user.id)
         return result.user
     }
 
-    suspend fun me(): UserDto = api.get("/me", UserDto.serializer())
+    suspend fun me(): UserDto = api.get("/me", UserDto.serializer()).also { session.bindOwner(it.id) }
 
     suspend fun changePassword(currentPassword: String, newPassword: String) {
         val body = api.json.encodeToString(

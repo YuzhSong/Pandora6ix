@@ -12,7 +12,13 @@ class SessionStore(context: Context) {
     val token: String?
         get() = prefs.getString(KEY_TOKEN, null)
 
-    fun save(token: String) = prefs.edit().putString(KEY_TOKEN, token).apply()
+    val ownerId: String?
+        get() = prefs.getString("owner_id", null)
+
+    fun save(token: String, ownerId: String) = prefs.edit()
+        .putString(KEY_TOKEN, token).putString("owner_id", ownerId).apply()
+
+    fun bindOwner(ownerId: String) = prefs.edit().putString("owner_id", ownerId).apply()
 
     fun clear() = prefs.edit().clear().apply()
 

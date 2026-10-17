@@ -209,10 +209,16 @@ public class JournalService implements com.pandora6ix.backend.application.journa
     @Transactional
     public Map<String, Object> delete(IdentityService.Actor a, String id) {
         a.business();
+        db.lock("app_user", a.enterpriseId(), a.id());
         var row = db.lock("work_log", a.enterpriseId(), id);
         scope.read(a, str(row, "author_user_id"));
         if (!a.id().equals(row.get("author_user_id"))) throw BusinessException.forbidden();
         checkEditWindow(row);
+        for (var entry : db.rows(
+                "SELECT id FROM work_log_entry WHERE enterprise_id=? AND work_log_id=?",
+                a.enterpriseId(), id)) {
+            removeSelectionReference(a, str(entry, "id"));
+        }
         db.update(
                 "DELETE FROM work_log_entry WHERE enterprise_id=? AND work_log_id=?",
                 a.enterpriseId(),
@@ -225,9 +231,19 @@ public class JournalService implements com.pandora6ix.backend.application.journa
         return Map.of("journalId", id);
     }
 
+    private void removeSelectionReference(IdentityService.Actor a, String entryId) {
+        int removed = db.update(
+                "DELETE FROM personal_important_selection WHERE enterprise_id=? AND owner_user_id=? AND entry_id=?",
+                a.enterpriseId(), a.id(), entryId);
+        if (removed > 0) db.update(
+                "UPDATE personal_important_selection_state SET version=version+1 WHERE enterprise_id=? AND owner_user_id=?",
+                a.enterpriseId(), a.id());
+    }
+
     @Transactional
     public Map<String, Object> patch(IdentityService.Actor a, String id, Contracts.JournalPatch c) {
         a.business();
+        db.lock("app_user", a.enterpriseId(), a.id());
         var row = db.lock("work_log", a.enterpriseId(), id);
         scope.read(a, str(row, "author_user_id"));
         if (!a.id().equals(row.get("author_user_id"))) throw BusinessException.forbidden();
@@ -288,6 +304,7 @@ public class JournalService implements com.pandora6ix.backend.application.journa
             if (!touched.add(entryId))
                 throw BusinessException.invalid(
                         "An entry cannot be updated and deleted in one request.");
+            removeSelectionReference(a, entryId);
             if (db.update(
                         "DELETE FROM work_log_entry WHERE enterprise_id=? AND work_log_id=? AND"
                             + " author_user_id=? AND id=?",

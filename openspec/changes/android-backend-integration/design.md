@@ -1,5 +1,9 @@
 # Design
 
+## 合并前审查修正
+
+空 POST 发送合法空请求体；请求捕获发起时令牌，丢弃换号后的旧响应。草稿目录与头像偏好按已验证 userId 隔离，旧共享草稿不自动迁移；身份切换清理界面任务/统计缓存。真机换号场景仍需验收。
+
 ## 技术选型
 
 - HTTP/JSON：OkHttp 4 + kotlinx.serialization + Kotlin Coroutines（Compose 已随依赖携带协程）。不引入 Retrofit/Hilt，保持轻量渐进。

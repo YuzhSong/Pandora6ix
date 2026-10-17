@@ -895,6 +895,8 @@ class BusinessApiIntegrationTests {
         var entries = (List<?>) j.get("entries");
         String first = str((Map<String, Object>) entries.get(0), "entryId");
         String second = str((Map<String, Object>) entries.get(1), "entryId");
+        request("PUT", "/me/important-entries", employeeToken,
+                fields("expectedVersion", 0, "entryIds", List.of(first, second)), 200);
         // 在原条目上删改：修改一条 + 删除一条，不追加新条目
         var patched =
                 request(
@@ -912,6 +914,11 @@ class BusinessApiIntegrationTests {
         var remain = (List<?>) patched.get("entries");
         assertEquals(1, remain.size());
         assertEquals("Revised content", str((Map<String, Object>) remain.get(0), "content"));
+        var selection = request("GET", "/me/important-entries", employeeToken, null, 200);
+        assertEquals(1, entries(selection).size());
+        assertEquals(2L, ((Number) selection.get("version")).longValue());
+        request("PUT", "/me/important-entries", employeeToken,
+                fields("expectedVersion", 1, "entryIds", List.of(second)), 409);
         // 同一请求 upsert 与 delete 重叠
         request(
                 "PATCH",
@@ -952,6 +959,10 @@ class BusinessApiIntegrationTests {
                 OffsetDateTime.now(ZoneOffset.UTC),
                 id);
         request("DELETE", "/work-logs/" + id, employeeToken, null, 200);
+        selection = request("GET", "/me/important-entries", employeeToken, null, 200);
+        assertTrue(entries(selection).isEmpty());
+        assertEquals(true, selection.get("hasManualSelection"));
+        assertEquals(3L, ((Number) selection.get("version")).longValue());
         request("GET", "/work-logs/" + id, employeeToken, null, 404);
         var again = journal(employeeToken, today, 1);
         assertNotEquals(id, str(again, "id"));

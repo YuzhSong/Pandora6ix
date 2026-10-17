@@ -232,6 +232,11 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
         // 登录后加载企业标签目录与本人统计
         var statistics by remember { mutableStateOf<StatisticsDto?>(null) }
         LaunchedEffect(currentUser?.id) {
+            taskItems.clear()
+            taskDtoById.clear()
+            serverTags.clear()
+            statistics = null
+            progressTaskId = null
             if (currentUser == null) return@LaunchedEffect
             runCatching { calendarRepo.tags() }.getOrNull()?.let { list ->
                 serverTags.clear(); serverTags.addAll(list)
@@ -1261,7 +1266,7 @@ private fun within24h(iso: String?): Boolean {
 @Composable private fun AiMapScreen() { Column(Modifier.fillMaxSize().padding(16.dp)) { PageHeader("AI地图"); Spacer(Modifier.height(48.dp)); Icon(Icons.Default.Info, null, Modifier.size(70.dp).align(Alignment.CenterHorizontally), tint = Coral); Text("AI 地图", Modifier.fillMaxWidth().padding(top = 18.dp), textAlign = TextAlign.Center, fontSize = 28.sp, fontWeight = FontWeight.Bold); Text("功能规划中", Modifier.fillMaxWidth().padding(top = 8.dp), textAlign = TextAlign.Center, color = Ink.copy(alpha = .6f)) } }
 @Composable private fun ProfileScreen(user: UserDto, statistics: StatisticsDto?, notificationsEnabled: Boolean, showReviewCenter: Boolean, onOpenTagManage: () -> Unit, onOpenReviews: () -> Unit, onOpenSettings: () -> Unit) {
     val context = LocalContext.current
-    val prefs = remember { context.getSharedPreferences("profile_avatar", Context.MODE_PRIVATE) }
+    val prefs = remember { context.getSharedPreferences("profile_avatar_" + SessionStore(context).ownerId, Context.MODE_PRIVATE) }
     var avatarType by remember { mutableStateOf(prefs.getString("avatarType", "color") ?: "color") }
     var avatarColorIndex by remember { mutableStateOf(prefs.getInt("avatarColor", 0)) }
     var avatarPath by remember { mutableStateOf(prefs.getString("avatarPath", "") ?: "") }
@@ -1510,7 +1515,7 @@ private fun SettingsScreen(
     var toast by remember { mutableStateOf<String?>(null) }
     // 真实缓存清点：草稿（任务/日报未发布内容）+ 被替换的旧头像副本
     val context = LocalContext.current
-    val avatarPrefs = remember { context.getSharedPreferences("profile_avatar", Context.MODE_PRIVATE) }
+    val avatarPrefs = remember { context.getSharedPreferences("profile_avatar_" + SessionStore(context).ownerId, Context.MODE_PRIVATE) }
     var cacheVersion by remember { mutableStateOf(0) }
     val cacheItems = remember(cacheVersion) { AppCache.collect(context, avatarPrefs.getString("avatarPath", null)) }
     val totalCache = cacheItems.sumOf { it.size }

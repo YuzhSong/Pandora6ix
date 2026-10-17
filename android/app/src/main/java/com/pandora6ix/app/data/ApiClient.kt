@@ -92,13 +92,7 @@ class ApiClient(private val session: SessionStore) {
     /** 401 会话失效回调（由应用层注册，用于回到登录页） */
     var onSessionExpired: (() -> Unit)? = null
 
-    private val http: OkHttpClient = OkHttpClient.Builder()
-        .addInterceptor { chain ->
-            val builder = chain.request().newBuilder()
-            session.token?.let { builder.header("Authorization", "Bearer $it") }
-            chain.proceed(builder.build())
-        }
-        .build()
+    private val http: OkHttpClient = OkHttpClient.Builder().build()
 
     suspend fun <T> get(path: String, dataSerializer: DeserializationStrategy<T>): T =
         call("GET", path, null, null, dataSerializer)
@@ -138,9 +132,13 @@ class ApiClient(private val session: SessionStore) {
         val tokenAtRequest = session.token
         val builder = Request.Builder()
             .url(BuildConfig.API_BASE_URL + path)
-            .method(method, body?.toRequestBody("application/json".toMediaType()))
+            .method(method, (body ?: if (method in setOf("POST", "PUT", "PATCH")) "" else null)
+                ?.toRequestBody("application/json".toMediaType()))
+        tokenAtRequest?.let { builder.header("Authorization", "Bearer $it") }
         idempotencyKey?.let { builder.header("Idempotency-Key", it) }
         http.newCall(builder.build()).execute().use { resp ->
+            // A previous account's in-flight response must never update the new account's UI.
+            if (session.token != tokenAtRequest) throw SessionExpiredException()
             val text = resp.body?.string().orEmpty()
             when {
                 resp.code == 401 && tokenAtRequest != null -> {
