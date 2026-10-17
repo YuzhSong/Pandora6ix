@@ -1,5 +1,7 @@
 # Android 当前后端契约 V0.2
 
+2026-10-17 兼容增量：最新人员字段、接收人 departmentId/departmentName、公司日期日报改删及补交只读规则见 [联调交接](CLIENT_HANDOFF_20261017.md)。日报新增 businessToday/allowedActions；纯 ADMIN 不获得标签或私有业务权限。新后端变更经审查入 dev 后生效，下面保留 2026-10-15 基线说明。
+
 2026-10-15，`backend-syz` 基于 `dev ec288d4`。以当前已合入 dev 的 Android-lj / Android-swj 源码和用户本轮十模块清单为准。需求 V1.3 / API0.1 是历史基线；用户已明确确认本轮开放直属上级审批后端，覆盖旧文档中“审批全部 Reserved”的限制。消息 inbox / 已读仍未开放。业务接口的机器可读定义为 [openapi.json](openapi.json)。本轮只改后端，不代表 Android 已接入网络。
 
 ## 十模块入口

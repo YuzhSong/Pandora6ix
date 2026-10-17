@@ -88,7 +88,7 @@ def command_schemas():
         properties = {}
         required = []
         for field in split_fields(source[start:end - 1]):
-            cleaned = re.sub(r"@\w+(?:\([^)]*\))?\s*", "", field).strip()
+            cleaned = re.sub(r'@\w+(?:\((?:[^"()]|"(?:\\.|[^"\\])*")*\))?\s*', "", field).strip()
             field_type, field_name = cleaned.rsplit(" ", 1)
             schema = java_type(field_type)
             outer_annotations = field.split("List<", 1)[0]
@@ -140,11 +140,16 @@ def read_schemas():
     entry = obj({**versioned, "entryId": ID, "journalId": ID, "workLogId": ID, "workDate": DATE, "authorUserId": ID,
         "clientEntryKey": STRING, "content": STRING, "displayOrder": INTEGER, "recordedAt": INSTANT, "eligible": BOOLEAN})
     journal = obj({**versioned, "journalId": ID, "authorUserId": ID, "workDate": DATE, "publishedAt": INSTANT,
+        "businessToday": DATE, "allowedActions": array({"type": "string", "enum": ["EDIT", "DELETE"]}),
         "primaryTagId": nullable(ID), "entries": array(ref("WorkEntry")), "tags": array(ref("Tag")), "tagIds": array(ID)})
     enterprise = obj({**versioned, "name": STRING, "loginDomain": STRING, "businessTimezone": nullable(STRING), "status": STRING,
         "createdAt": INSTANT, "rootOrgUnitId": ID, "adminUserId": ID})
     org = obj({**versioned, "name": STRING, "kind": {"type": "string", "enum": ["COMPANY", "DEPARTMENT", "TEAM"]}, "parentId": nullable(ID)})
-    user = obj({**versioned, "displayName": STRING, "name": STRING, "loginName": STRING, "orgUnitId": nullable(ID), "supervisorUserId": nullable(ID),
+    user = obj({**versioned, "displayName": STRING, "loginName": STRING, "orgUnitId": nullable(ID), "supervisorUserId": nullable(ID),
+        "jobTitle": nullable(STRING), "status": STRING, "roles": array(STRING),
+        "gender": nullable({"type": "string", "enum": ["MALE", "FEMALE"]}), "idNumber": nullable(STRING), "phoneNumber": nullable(STRING)},
+        ("id", "version", "displayName", "loginName", "roles", "gender", "idNumber", "phoneNumber"))
+    profile = obj({**versioned, "displayName": STRING, "name": STRING, "orgUnitId": nullable(ID), "supervisorUserId": nullable(ID),
         "jobTitle": nullable(STRING), "status": STRING, "roles": array(STRING), "businessTimezone": nullable(STRING), "department": nullable(STRING),
         "organization": nullable(ref("OrgUnit")), "enterprise": ref("Enterprise"),
         "capabilities": obj({name: BOOLEAN for name in ("admin", "business", "manage", "createPersonalTasks", "createDelegatedTasks", "reviewTasks", "createTags", "publishCompanyItems")})})
@@ -161,11 +166,11 @@ def read_schemas():
         "decidedByUserId": nullable(ID), "decisionNote": nullable(STRING), "decidedAt": nullable(INSTANT),
         "isCurrent": BOOLEAN, "allowedActions": array({"type": "string", "enum": ["APPROVE", "REJECT"]})})
     schemas = {"Tag": tag, "Assignment": assignment, "ProgressRecord": progress, "CompletionRequestView": completion, "Task": task,
-        "WorkEntry": entry, "Journal": journal, "Enterprise": enterprise, "OrgUnit": org, "User": user, "CompanyItem": item, "ImportantSelection": selection, "Statistics": stats,
+        "WorkEntry": entry, "Journal": journal, "Enterprise": enterprise, "OrgUnit": org, "User": user, "Profile": profile, "CompanyItem": item, "ImportantSelection": selection, "Statistics": stats,
         "JournalDeleted": journalDeleted, "TagDeleted": tagDeleted,
         "TaskReview": review, "ReviewDecisionResult": obj({"review": ref("TaskReview"), "task": ref("Task")}),
-        "Recipient": obj({"id": ID, "displayName": STRING, "orgUnitId": nullable(ID), "jobTitle": nullable(STRING), "organizationName": nullable(STRING), "relationship": STRING}),
-        "LoginResult": obj({"accessToken": STRING, "tokenType": {"type": "string", "const": "Bearer"}, "expiresAt": INSTANT, "user": ref("User")}),
+        "Recipient": obj({"id": ID, "displayName": STRING, "orgUnitId": nullable(ID), "jobTitle": nullable(STRING), "organizationName": nullable(STRING), "departmentId": nullable(ID), "departmentName": nullable(STRING), "relationship": STRING}),
+        "LoginResult": obj({"accessToken": STRING, "tokenType": {"type": "string", "const": "Bearer"}, "expiresAt": INSTANT, "user": ref("Profile")}),
         "ProgressResult": obj({"record": ref("ProgressRecord"), "assignment": ref("Assignment")}),
         "CompletionResult": obj({"request": ref("CompletionRequestView"), "assignment": ref("Assignment")}),
         "Calendar": obj({"mode": {"type": "string", "enum": ["day", "week", "month"]}, "anchorDate": DATE, "rangeStart": DATE, "rangeEnd": DATE,
@@ -179,7 +184,7 @@ def read_schemas():
 
 
 RESPONSES = {
-    ("POST", "/auth/login"): "LoginResult", ("GET", "/me"): "User", ("POST", "/admin/enterprise-initializations"): "Enterprise",
+    ("POST", "/auth/login"): "LoginResult", ("GET", "/me"): "Profile", ("POST", "/admin/enterprise-initializations"): "Enterprise",
     ("GET", "/admin/enterprise"): "Enterprise", ("PATCH", "/admin/enterprise"): "Enterprise",
     ("GET", "/admin/org-units"): "OrgUnitPage", ("POST", "/admin/org-units"): "OrgUnit", ("PATCH", "/admin/org-units/{id}"): "OrgUnit",
     ("GET", "/admin/users"): "UserPage", ("POST", "/admin/users"): "User", ("PATCH", "/admin/users/{id}"): "User",
@@ -216,7 +221,7 @@ def generate():
             if path == "/auth/login":
                 operation["security"] = []
             if path == "/admin/enterprise-initializations":
-                operation["security"] = [{"bootstrapSecret": []}, {"bearerAuth": []}]
+                operation["security"] = [{"bootstrapSecret": []}]
             for parameter in split_fields(params):
                 command = re.search(r"@RequestBody\s+Contracts\.(\w+)", parameter)
                 if command:

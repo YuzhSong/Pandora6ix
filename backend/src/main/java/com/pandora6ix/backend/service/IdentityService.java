@@ -192,8 +192,7 @@ public class IdentityService
                         "reviewTasks",
                         actor.businessRank() < 3,
                         "createTags",
-                        actor.has("ADMIN")
-                                || actor.has("FOUNDER")
+                        actor.has("FOUNDER")
                                 || actor.has("DEPARTMENT_MANAGER"),
                         "publishCompanyItems",
                         actor.has("ADMIN") || actor.has("FOUNDER")));
@@ -288,10 +287,10 @@ public class IdentityService
                                 provided.getBytes(StandardCharsets.UTF_8));
         String replayScope;
         if (!bootstrapValid) {
-            var a = current();
-            a.admin();
-            replayScope = hash("ADMIN:" + a.enterpriseId() + ":" + a.id());
-        } else replayScope = hash("BOOTSTRAP:" + bootstrap);
+            current(); // Anonymous callers retain 401; a company's authenticated ADMIN gets 403.
+            throw BusinessException.forbidden();
+        }
+        replayScope = hash("BOOTSTRAP:" + bootstrap);
         if (key != null && (key.isBlank() || key.length() > 128))
             throw BusinessException.invalid("Idempotency-Key must contain 1–128 characters.");
         db.one("SELECT id FROM enterprise_initialization_lock WHERE id=1 FOR UPDATE");

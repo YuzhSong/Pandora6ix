@@ -319,7 +319,7 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
                         when (target) {
                             Route.HOME -> HomeScreen(dashboardRepo, selectionRepo, onOpenHome = { homeDetail = it }, onOpenSettings = { showSettings = true })
                             Route.VIEW -> CalendarScreen(CalendarMode.valueOf(modeName), date, taskItems, canCreatePersonal, canCreateDelegated, serverTags, taskRepo, { modeName = it.name }, { dateKey = "${it.year}-${it.month}-${it.day}" }, { calRetry++ }, { detail = it.id }, taskScope = taskScope, onTaskScopeChange = { taskScope = it }, loading = calLoading, error = calError, onRetry = { calRetry++ })
-                            Route.LOGS -> LogsScreen(journalRepo, serverTags.toList()) { detail = it }
+                            Route.LOGS -> LogsScreen(journalRepo, serverTags.toList(), currentUser?.businessTimezone) { detail = it }
                             Route.AI -> AiMapScreen()
                             Route.ME -> ProfileScreen(currentUser!!, statistics, notificationsEnabled, showReviewCenter, onOpenTagManage = { showTagManage = true }, onOpenReviews = { showReviews = true }, onOpenSettings = { showSettings = true })
                         }
@@ -867,38 +867,8 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
 /** 编辑中的一条工作条目：entryId 非空表示修改已有条目，空表示新增（发布时生成 clientEntryKey） */
 private data class EntryDraft(val entryId: String?, val content: String)
 
-/** ISO 日期时间：兼容省略秒位/毫秒（如 2026-10-15T09:30Z）、空格分隔、Z 或 ±hh:mm(:ss 可选无冒号) 偏移 */
-private val IsoDateTime = Regex(
-    "^(\\d{4})-(\\d{2})-(\\d{2})[T ](\\d{2}):(\\d{2})(?::(\\d{2}))?(?:\\.\\d+)?(Z|[+-]\\d{2}:?\\d{2})?$"
-)
-
-/** publishedAt(ISO) 距今是否在 24 小时内（minSdk 24 无 java.time，用正则+Calendar 解析；
- *  解析失败按可编辑处理，与后端“published_at 为空不拦截”的行为一致） */
-private fun within24h(iso: String?): Boolean {
-    if (iso.isNullOrBlank()) return true
-    val m = IsoDateTime.matchEntire(iso.trim()) ?: return true
-    return try {
-        val cal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
-        cal.clear()
-        cal.set(
-            m.groupValues[1].toInt(), m.groupValues[2].toInt() - 1, m.groupValues[3].toInt(),
-            m.groupValues[4].toInt(), m.groupValues[5].toInt(), m.groupValues[6].ifEmpty { "0" }.toInt()
-        )
-        var createdUtc = cal.timeInMillis
-        val tail = m.groupValues[7]
-        if (tail.isNotEmpty() && tail[0] != 'Z') {
-            val oh = tail.substring(1, 3).toInt()
-            val om = if (tail.length >= 6) tail.substring(tail.length - 2).toInt() else 0
-            createdUtc -= (if (tail[0] == '+') 1 else -1) * (oh * 3600L + om * 60L) * 1000L
-        }
-        createdUtc >= System.currentTimeMillis() - 24L * 3_600_000L
-    } catch (e: Exception) {
-        true
-    }
-}
-
 @OptIn(ExperimentalLayoutApi::class)
-@Composable private fun LogsScreen(repo: JournalRepository, availableTags: List<TagDto>, onOpen: (String) -> Unit) {
+@Composable private fun LogsScreen(repo: JournalRepository, availableTags: List<TagDto>, businessTimezone: String?, onOpen: (String) -> Unit) {
     var expandedLogs by rememberSaveable { mutableStateOf(false) }
     var filterOpen by rememberSaveable { mutableStateOf(false) }
     var historyFilter by rememberSaveable { mutableStateOf("全部日期") }
@@ -935,14 +905,15 @@ private fun within24h(iso: String?): Boolean {
             )
         )
     }
-    fun todayIso(): String { val t = todayDate(); return "%04d-%02d-%02d".format(t.year, t.month, t.day) }
+    fun businessDate(): DemoDate = com.pandora6ix.app.data.journalBusinessDate(businessTimezone)
+    fun todayIso(): String { val t = businessDate(); return "%04d-%02d-%02d".format(t.year, t.month, t.day) }
     fun isoOf(d: DemoDate): String = "%04d-%02d-%02d".format(d.year, d.month, d.day)
-    fun threeDays(): List<DemoDate> { val t = todayDate(); return listOf(t, t.plusDays(-1), t.plusDays(-2)) }
+    fun threeDays(): List<DemoDate> { val t = businessDate(); return listOf(t, t.plusDays(-1), t.plusDays(-2)) }
     fun loadJournals() {
         loading = true; loadError = null
         scope.launch {
             try {
-                val t = todayDate()
+                val t = businessDate()
                 val start = t.plusDays(-30)
                 val from = "%04d-%02d-%02d".format(start.year, start.month, start.day)
                 val to = "%04d-%02d-%02d".format(t.year, t.month, t.day)
@@ -963,8 +934,10 @@ private fun within24h(iso: String?): Boolean {
     val filteredEntries = if (historyFilter == "全部日期") flatEntries else flatEntries.filter { dateLabel(it.first) == historyFilter }
     val filterOptions = listOf("全部日期") + journals.map { dateLabel(it.workDate) }.distinct()
     fun openEditor(dateKey: String) {
-        val draft = savedJournalDraft
+        if (businessTimezone.isNullOrBlank()) { publishError = "请管理员先配置公司业务时区"; return }
+        val draft = savedJournalDraft?.takeIf { it.dateKey == dateKey && it.dateKey in threeDays().map(::isoOf) && (it.dateKey == todayIso() || journals.none { j -> j.workDate == it.dateKey }) }
         editorDateKey = draft?.dateKey ?: dateKey
+        if (editorDateKey != todayIso() && journals.any { it.workDate == editorDateKey }) { publishError = "补交日志提交后不能再次编辑"; return }
         editingJournal = journals.firstOrNull { it.workDate == editorDateKey }
         entryDrafts = draft?.entries?.map { EntryDraft(it.entryId, it.content) }
             ?: editingJournal?.entries?.sortedBy { it.displayOrder }?.map { EntryDraft(it.entryId, it.content) }
@@ -976,6 +949,7 @@ private fun within24h(iso: String?): Boolean {
     }
     fun switchEditorDate(dateKey: String) {
         if (dateKey == editorDateKey) return
+        if (dateKey != todayIso() && journals.any { it.workDate == dateKey }) { publishError = "该日期已提交，不能再次编辑"; return }
         editorDateKey = dateKey
         editingJournal = journals.firstOrNull { it.workDate == dateKey }
         entryDrafts = editingJournal?.entries?.sortedBy { it.displayOrder }?.map { EntryDraft(it.entryId, it.content) } ?: listOf(EntryDraft(null, ""))
@@ -986,6 +960,7 @@ private fun within24h(iso: String?): Boolean {
         if (entryDrafts.any { it.content.isNotBlank() }) confirmExit = true else writing = false
     }
     fun publish() {
+        if (editorDateKey !in threeDays().map(::isoOf) || (editorDateKey != todayIso() && editingJournal != null)) { publishError = "只能编辑今日的日志；昨天和前天仅可补交一次"; return }
         val valid = entryDrafts.filter { it.content.isNotBlank() }
         // 从草稿列表移除的既有条目 = 删除（PATCH deleteEntryIds）；不在原条目上追加新条目代替删改
         val deleteIds = editingJournal?.entries
@@ -1015,6 +990,7 @@ private fun within24h(iso: String?): Boolean {
                         if (e.code == "DAILY_JOURNAL_EXISTS" && e.existingJournalId != null) {
                             // 同日已有日报（如其他设备创建）：并入同一篇继续补充，不新增第二篇
                             val existing = repo.journal(e.existingJournalId!!)
+                            if (existing.workDate != todayIso()) { loadJournals(); throw e }
                             repo.patch(
                                 existing.journalId.ifBlank { existing.id },
                                 JournalPatchDto(
@@ -1047,8 +1023,6 @@ private fun within24h(iso: String?): Boolean {
                 // 401 已由全局回调处理
             } catch (e: ApiException) {
                 publishError = e.friendlyMessage()
-                // 编辑窗口刚好跨过 24h 边界：刷新列表，使关闭编辑器后卡片状态与服务端一致
-                if (e.code == "JOURNAL_EDIT_WINDOW_EXPIRED") loadJournals()
                 // 版本冲突：重新读取最新一篇，保留用户新增（未发布）的条目，已有条目以服务端为准
                 if (e.code == "VERSION_CONFLICT") {
                     val jid = editingJournal?.journalId?.ifBlank { editingJournal?.id } ?: editingJournal?.id
@@ -1073,17 +1047,17 @@ private fun within24h(iso: String?): Boolean {
             LazyColumn(Modifier.fillMaxWidth().weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 16.dp)) {
                 item { Button({ openEditor(todayIso()) }, Modifier.fillMaxWidth(), enabled = !publishing, colors = ButtonDefaults.buttonColors(containerColor = Ink), shape = RoundedCornerShape(14.dp)) { Icon(Icons.Default.Add, null); Spacer(Modifier.width(6.dp)); Text(if (todayJournal != null) "补充今日工作" else "记录今日工作") } }
                 item {
-                    // 最近三日：创建后 24 小时内的日报可编辑/删除
+                    // 最近三日：今日可改删，昨天和前天补交后只读
                     val recent = journals.filter { it.workDate in threeDays().map { d -> isoOf(d) } }
                     if (recent.isNotEmpty()) Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("最近三日 · 可在 24 小时内修改或删除", fontSize = 13.sp, color = Ink.copy(alpha = .55f))
+                        Text("今天可修改或删除 · 昨天和前天仅可补交一次", fontSize = 13.sp, color = Ink.copy(alpha = .55f))
                         recent.forEach { j ->
-                            val editable = within24h(j.publishedAt)
+                            val editable = j.workDate == todayIso() && "EDIT" in j.allowedActions
                             Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = WarmCard), shape = RoundedCornerShape(14.dp)) {
                                 Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                                     Column(Modifier.weight(1f)) {
                                         Text(dateLabel(j.workDate), fontWeight = FontWeight.SemiBold)
-                                        Text("${j.entries.size} 条 · " + if (editable) "可编辑/删除" else "已超过 24 小时", fontSize = 12.sp, color = Ink.copy(alpha = .55f))
+                                        Text("${j.entries.size} 条 · " + if (editable) "可编辑/删除" else "已提交，仅可查看", fontSize = 12.sp, color = Ink.copy(alpha = .55f))
                                         if (j.tags.isNotEmpty()) Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                             j.tags.forEach { t ->
                                                 Text(t.name, fontSize = 11.sp, color = Ink, maxLines = 1, modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(tagHexColor(t.colorHex)).padding(horizontal = 6.dp, vertical = 2.dp))
@@ -1141,6 +1115,7 @@ private fun within24h(iso: String?): Boolean {
             Card(Modifier.align(Alignment.Center).imePadding().fillMaxWidth(.9f).fillMaxHeight(if (imeVisible) .92f else .8f).border(2.dp, CreamDeep, RoundedCornerShape(24.dp)).clickable { }, shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = WarmCard)) {
                 Column(Modifier.fillMaxSize().padding(20.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) { Text(if (editingJournal != null) "编辑日志" else "记录日志", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f)); IconButton({ closeEditor() }) { Icon(Icons.Default.Close, "关闭") } }
+                    Text(if (editorDateKey == todayIso()) "今天的日志可在公司时区今日内修改或删除" else "补交日志仅可提交一次，提交后不能修改或删除", fontSize = 12.sp, color = Ink.copy(alpha = .6f))
                     if (imeVisible) {
                         Text(parseIsoDate(editorDateKey)?.shortLabelWithWeekday() ?: "", Modifier.padding(top = 2.dp, bottom = 8.dp), color = Ink.copy(alpha = .6f), fontSize = 13.sp)
                     } else {
@@ -1159,8 +1134,8 @@ private fun within24h(iso: String?): Boolean {
                                 )
                             }
                         }
-                        val editorEditable = editingJournal == null || within24h(editingJournal?.publishedAt)
-                        if (!editorEditable) Text("已超过 24 小时，此日志不可修改；如需更正请联系管理员。", fontSize = 12.sp, color = Ink.copy(alpha = .55f))
+                        val editorEditable = editingJournal == null || (editingJournal?.workDate == todayIso() && "EDIT" in editingJournal!!.allowedActions)
+                        if (!editorEditable) Text("补交日志已提交，不能再次修改。今日的日志可在今日内修改。", fontSize = 12.sp, color = Ink.copy(alpha = .55f))
                         Text("· 标签（可多选，先选的为主）", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp, bottom = 6.dp))
                         if (tags.isNotEmpty()) FlowRow(Modifier.fillMaxWidth().padding(vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             tags.forEach { name ->
@@ -1174,11 +1149,11 @@ private fun within24h(iso: String?): Boolean {
                     Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         entryDrafts.forEachIndexed { i, draft ->
                             Row(verticalAlignment = Alignment.Top) {
-                                OutlinedTextField(draft.content, { value -> entryDrafts = entryDrafts.toMutableList().also { it[i] = draft.copy(content = value) } }, Modifier.weight(1f), placeholder = { Text("第 ${i + 1} 条：记录完成的工作") }, colors = mutedColors, minLines = 2)
-                                if (entryDrafts.size > 1) IconButton({ entryDrafts = entryDrafts.filterIndexed { idx, _ -> idx != i } }, Modifier.size(40.dp)) { Icon(Icons.Default.Close, "删除此条", Modifier.size(16.dp)) }
+                                OutlinedTextField(draft.content, { value -> entryDrafts = entryDrafts.toMutableList().also { it[i] = draft.copy(content = value) } }, Modifier.weight(1f), placeholder = { Text(if (editingJournal == null) "第 ${i + 1} 条：记录完成的工作" else "第 ${i + 1} 条") }, colors = mutedColors, minLines = 2)
+                                if (editingJournal == null && entryDrafts.size > 1) IconButton({ entryDrafts = entryDrafts.filterIndexed { idx, _ -> idx != i } }, Modifier.size(40.dp)) { Icon(Icons.Default.Close, "删除此条", Modifier.size(16.dp)) }
                             }
                         }
-                        TextButton({ entryDrafts = entryDrafts + EntryDraft(null, "") }, enabled = !publishing) { Icon(Icons.Default.Add, null, Modifier.size(14.dp)); Spacer(Modifier.width(4.dp)); Text("添加一条", color = WarmOrange, fontWeight = FontWeight.Bold) }
+                        if (editingJournal == null) TextButton({ entryDrafts = entryDrafts + EntryDraft(null, "") }, enabled = !publishing) { Icon(Icons.Default.Add, null, Modifier.size(14.dp)); Spacer(Modifier.width(4.dp)); Text("添加一条", color = WarmOrange, fontWeight = FontWeight.Bold) }
                     }
                     publishError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)) }
                     Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -1186,7 +1161,7 @@ private fun within24h(iso: String?): Boolean {
                         Button(
                             { publish() },
                             Modifier.weight(1f),
-                            enabled = !publishing && (entryDrafts.any { it.content.isNotBlank() } || (editingJournal?.entries?.any { e -> entryDrafts.none { it.entryId == e.entryId } } == true)) && (editingJournal == null || within24h(editingJournal?.publishedAt)),
+                            enabled = !publishing && (entryDrafts.any { it.content.isNotBlank() } || (editingJournal?.entries?.any { e -> entryDrafts.none { it.entryId == e.entryId } } == true)) && (editingJournal == null || (editingJournal?.workDate == todayIso() && "EDIT" in editingJournal!!.allowedActions)),
                             colors = ButtonDefaults.buttonColors(containerColor = Ink),
                             shape = RoundedCornerShape(14.dp)
                         ) { Text(if (publishing) "发布中…" else "发布") }
@@ -1249,8 +1224,6 @@ private fun within24h(iso: String?): Boolean {
                                 // 401 已由全局回调处理
                             } catch (e: ApiException) {
                                 deleteError = e.friendlyMessage()
-                                // 编辑窗口刚好跨过 24h 边界：服务端拒绝时立即刷新列表，让卡片状态翻转，避免“显示可编辑却删不了”
-                                if (e.code == "JOURNAL_EDIT_WINDOW_EXPIRED") loadJournals()
                             } catch (e: Exception) {
                                 deleteError = "网络异常，请重试"
                             } finally {

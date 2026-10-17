@@ -77,7 +77,8 @@ public class DirectoryService {
             if (parent == null)
                 throw BusinessException.invalid("Department and team require a parent.");
             var p = db.entity("org_unit", a.enterpriseId(), parent);
-            if ("TEAM".equals(p.get("kind"))
+            if (("DEPARTMENT".equals(kind) && !"COMPANY".equals(p.get("kind")))
+                    || "TEAM".equals(p.get("kind"))
                     || ("TEAM".equals(kind) && !"DEPARTMENT".equals(p.get("kind"))))
                 throw BusinessException.invalid("Organization parent kind is invalid.");
         }
@@ -111,15 +112,25 @@ public class DirectoryService {
         a.admin();
         lockEnterprise(a);
         var old = db.entity("org_unit", a.enterpriseId(), id);
-        if (!c.kind().equals(old.get("kind")))
-            throw BusinessException.policy(
-                    "Changing an organization's kind requires a reviewed hierarchy migration.");
+        if (number(old, "version") != c.expectedVersion()) checkVersion(0);
+        if (!c.kind().equals(old.get("kind"))) {
+            if ("COMPANY".equals(old.get("kind")) || "COMPANY".equals(c.kind()))
+                throw BusinessException.invalid("Company root kind cannot be changed.");
+            if (!db.rows("SELECT id FROM org_unit WHERE enterprise_id=? AND parent_id=?",
+                    a.enterpriseId(), id).isEmpty())
+                throw BusinessException.invalid("Move child organizations before changing kind.");
+            String incompatible = "TEAM".equals(c.kind()) ? "DEPARTMENT_MANAGER" : "TEAM_LEAD";
+            if (!db.rows("SELECT u.id FROM app_user u JOIN user_role r ON r.enterprise_id=u.enterprise_id AND r.user_id=u.id WHERE u.enterprise_id=? AND u.org_unit_id=? AND r.role_code=?",
+                    a.enterpriseId(), id, incompatible).isEmpty())
+                throw BusinessException.invalid("Manager roles do not match the new organization kind.");
+        }
         orgParent(a, id, c.kind(), c.parentId());
         checkVersion(
                 db.update(
-                        "UPDATE org_unit SET name=?,parent_id=?,version=version+1 WHERE"
+                        "UPDATE org_unit SET name=?,kind=?,parent_id=?,version=version+1 WHERE"
                                 + " enterprise_id=? AND id=? AND version=?",
                         c.name(),
+                        c.kind(),
                         c.parentId(),
                         a.enterpriseId(),
                         id,
@@ -150,6 +161,9 @@ public class DirectoryService {
     private Map<String, Object> user(IdentityService.Actor a, String id) {
         var row = db.entity("app_user", a.enterpriseId(), id);
         var result = view(row);
+        result.put("gender", row.get("gender"));
+        result.put("idNumber", row.get("id_number"));
+        result.put("phoneNumber", row.get("phone_number"));
         result.put(
                 "roles",
                 identity.actor(id, a.enterpriseId(), str(row, "org_unit_id"), null).roles());
@@ -202,11 +216,12 @@ public class DirectoryService {
         a.admin();
         lockEnterprise(a);
         String id = id();
+        validatePhone(c.phoneNumber());
         userRefs(a, id, c.orgUnitId(), c.supervisorUserId(), c.roles());
         db.update(
                 "INSERT INTO"
-                    + " app_user(id,enterprise_id,login_name,password_hash,display_name,org_unit_id,supervisor_user_id,job_title)"
-                    + " VALUES(?,?,?,?,?,?,?,?)",
+                    + " app_user(id,enterprise_id,login_name,password_hash,display_name,org_unit_id,supervisor_user_id,job_title,gender,id_number,phone_number)"
+                    + " VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                 id,
                 a.enterpriseId(),
                 c.loginName(),
@@ -214,7 +229,7 @@ public class DirectoryService {
                 c.displayName(),
                 c.orgUnitId(),
                 c.supervisorUserId(),
-                c.jobTitle());
+                c.jobTitle(), c.gender(), c.idNumber(), c.phoneNumber());
         roles(a, id, c.roles());
         return user(a, id);
     }
@@ -225,6 +240,7 @@ public class DirectoryService {
         a.admin();
         lockEnterprise(a);
         var old = db.entity("app_user", a.enterpriseId(), id);
+        validatePhone(c.phoneNumber());
         if (!Set.of("ACTIVE", "DISABLED").contains(c.status()))
             throw BusinessException.invalid("Unknown account status.");
         userRefs(a, id, c.orgUnitId(), c.supervisorUserId(), c.roles());
@@ -244,13 +260,14 @@ public class DirectoryService {
         checkVersion(
                 db.update(
                         "UPDATE app_user SET"
-                            + " display_name=?,org_unit_id=?,supervisor_user_id=?,job_title=?,status=?,version=version+1"
+                            + " display_name=?,org_unit_id=?,supervisor_user_id=?,job_title=?,status=?,gender=COALESCE(?,gender),id_number=COALESCE(?,id_number),phone_number=COALESCE(?,phone_number),version=version+1"
                             + " WHERE enterprise_id=? AND id=? AND version=?",
                         c.displayName(),
                         c.orgUnitId(),
                         c.supervisorUserId(),
                         c.jobTitle(),
                         c.status(),
+                        c.gender(), c.idNumber(), c.phoneNumber(),
                         a.enterpriseId(),
                         id,
                         c.expectedVersion()));
@@ -261,5 +278,10 @@ public class DirectoryService {
                     a.enterpriseId(),
                     id);
         return user(a, id);
+    }
+
+    private void validatePhone(String phone) {
+        if (phone != null && phone.replaceAll("[^0-9]", "").length() < 6)
+            throw BusinessException.invalid("phoneNumber must contain at least six digits.");
     }
 }

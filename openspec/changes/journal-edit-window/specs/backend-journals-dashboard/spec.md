@@ -1,14 +1,14 @@
 ## ADDED Requirements
 
-### Requirement: 日报 24 小时编辑窗口
-日报 SHALL 仅允许作者在其创建时刻（published_at）起 24 小时内通过 `PATCH /work-logs/{id}` 修改或通过 `DELETE /work-logs/{id}` 删除；超窗请求返回 409 `JOURNAL_EDIT_WINDOW_EXPIRED`，非作者请求返回 403。删除 SHALL 级联移除该日志的全部条目与标签关联。
+### Requirement: 日报公司业务日期编辑窗口
+日报 SHALL 仅允许作者在 workDate 等于企业时区 today 时通过 PATCH 修改或 DELETE 删除；跨公司日期或补交日报立即返回 409 JOURNAL_EDIT_WINDOW_EXPIRED，非作者请求返回 403。删除 SHALL 原子清理条目、标签与个人重要事项引用，并递增受影响选择版本。
 
-#### Scenario: 窗口内修改与删除
-- **WHEN** 作者在创建后 24 小时内修改内容或删除整篇日报
-- **THEN** 操作成功，删除后条目与标签关联一并移除，且当日唯一约束解除（可重新创建同日日报）
+#### Scenario: 今天内修改与删除
+- **WHEN** 作者修改或删除今天的日报
+- **THEN** 操作成功，条目稳定 ID 保持，删除解除同日唯一约束
 
-#### Scenario: 超窗拒绝
-- **WHEN** 创建已超过 24 小时后请求 PATCH 或 DELETE
+#### Scenario: 补交及跨日后只读
+- **WHEN** 作者修改或删除昨天、前天或更早的日报，即使刚提交
 - **THEN** 返回 409 JOURNAL_EDIT_WINDOW_EXPIRED，内容保持不变
 
 #### Scenario: 非作者操作
@@ -27,7 +27,7 @@
 - **THEN** 同一事务移除对应选择引用并递增选择版本，保留手动选择状态和其他条目，不补选；旧版本保存返回 409
 
 ### Requirement: 日报创建日期窗口
-创建界面 SHALL 允许在最近三个自然日（今天、昨天、前天）中选择业务日期创建日报；服务端 create 不限制历史日期，同日唯一约束维持 409 DAILY_JOURNAL_EXISTS + existingJournalId 语义。
+创建界面 SHALL 允许在最近三个自然日（今天、昨天、前天）中选择业务日期创建日报；服务端 create 也仅允许该三个公司业务日期，其他日期返回 422 JOURNAL_DATE_OUT_OF_RANGE；昨天/前天仅可补交一篇，提交后不可修改或删除，同日唯一约束维持 409 DAILY_JOURNAL_EXISTS + existingJournalId 语义。
 
 #### Scenario: 为昨天创建日报
 - **WHEN** 用户在创建界面选择昨天并发布

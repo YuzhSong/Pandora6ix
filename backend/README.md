@@ -1,5 +1,7 @@
 # Pandora 后端实施记录
 
+2026-10-17 更新：Web #12 / Android #13 已审核合入 dev 并部署，backend-syz 已同步 a493dfe 后补齐组织转换、人员资料持久化、管理员权限与公司日期日报规则。新提交待非作者审查后进入 dev；字段、日期规则、test 等级 1 与上线边界详见 [联调交接](CLIENT_HANDOFF_20261017.md)。系统操作日志存储方案仍待甲方确认。
+
 2026-10-15 更新：`backend-syz` 已合入 `dev ec288d4`。用户确认开放直属上级审批，新增审核列表、详情和决定，打通真实任务闭环；Android 所需十模块契约与对接示例见 [ANDROID_API_V0.2.md](ANDROID_API_V0.2.md)。变更 [complete-android-backend-workflows](../openspec/changes/archive/2026-10-15-complete-android-backend-workflows/proposal.md) 已随云端部署批次同步 dev 并归档，部署入口见 [云端部署](../deploy/README.md)。下面 2026-10-13 段落记录原始实施基线。
 
 2026-10-13；在 `backend-syz` 从 `dev a8adf5d` 开始开发，经 [PR #10](https://github.com/YuzhSong/Pandora6ix/pull/10) 合并到 `dev f5283e6`，随后同步回 `backend-syz`。只涉及 backend 与 OpenSpec。依据 docs 中需求 V1.3、API0.1、DB0.2 和后端缺口清单，变更 [`implement-backend-confirmed-apis`](../openspec/changes/archive/2026-10-13-implement-backend-confirmed-apis/proposal.md) 已在合并验证后归档并同步主规格。

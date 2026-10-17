@@ -79,7 +79,8 @@ public class BusinessDb {
         Map<String, Object> result = new LinkedHashMap<>();
         row.forEach(
                 (k, v) -> {
-                    if (Set.of("password_hash", "token_hash", "enterprise_id", "submitted_snapshot")
+                    if (Set.of("password_hash", "token_hash", "enterprise_id", "submitted_snapshot",
+                                    "gender", "id_number", "phone_number")
                             .contains(k)) return;
                     StringBuilder camel = new StringBuilder();
                     boolean upper = false;

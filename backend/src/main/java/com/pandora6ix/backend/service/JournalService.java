@@ -9,10 +9,7 @@ import com.pandora6ix.backend.repository.BusinessDb;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Duration;
-import java.time.Instant;
 import java.time.LocalDate;
-import java.time.OffsetDateTime;
 import java.util.*;
 
 @Service
@@ -110,6 +107,10 @@ public class JournalService implements com.pandora6ix.backend.application.journa
         var linked = tags.linked(a, "work_log_tag", "work_log_id", str(journal, "id"));
         result.put("tags", linked);
         result.put("tagIds", linked.stream().map(t -> t.get("id")).toList());
+        result.put("businessToday", identity.today(a).toString());
+        result.put("allowedActions", a.id().equals(journal.get("author_user_id"))
+                && ((java.sql.Date) journal.get("work_date")).toLocalDate().equals(identity.today(a))
+                ? List.of("EDIT", "DELETE") : List.of());
         return result;
     }
 
@@ -143,7 +144,10 @@ public class JournalService implements com.pandora6ix.backend.application.journa
     @Transactional
     public Map<String, Object> create(IdentityService.Actor a, Contracts.JournalCreate c) {
         a.business();
-        identity.zone(a);
+        LocalDate today = identity.today(a);
+        if (c.workDate().isBefore(today.minusDays(2)) || c.workDate().isAfter(today))
+            throw new BusinessException(422, "JOURNAL_DATE_OUT_OF_RANGE",
+                    "Journals can only be created for today and the previous two business dates.");
         db.lock("app_user", a.enterpriseId(), a.id());
         var duplicate =
                 db.optional(
@@ -194,15 +198,13 @@ public class JournalService implements com.pandora6ix.backend.application.journa
                 order);
     }
 
-    /** 24 小时编辑窗口：自创建时刻（published_at）起算，超窗禁止修改或删除 */
-    private void checkEditWindow(Map<String, Object> row) {
-        var published = (OffsetDateTime) row.get("published_at");
-        if (published != null
-                && published.toInstant().isBefore(Instant.now().minus(Duration.ofHours(24))))
+    /** Company business date is authoritative: backfilled journals are immutable immediately. */
+    private void checkEditWindow(IdentityService.Actor a, Map<String, Object> row) {
+        if (!((java.sql.Date) row.get("work_date")).toLocalDate().equals(identity.today(a)))
             throw new BusinessException(
                     409,
                     "JOURNAL_EDIT_WINDOW_EXPIRED",
-                    "Journals can only be edited or deleted within 24 hours after creation.",
+                    "Only journals for today's business date can be edited or deleted.",
                     Map.of());
     }
 
@@ -213,7 +215,7 @@ public class JournalService implements com.pandora6ix.backend.application.journa
         var row = db.lock("work_log", a.enterpriseId(), id);
         scope.read(a, str(row, "author_user_id"));
         if (!a.id().equals(row.get("author_user_id"))) throw BusinessException.forbidden();
-        checkEditWindow(row);
+        checkEditWindow(a, row);
         for (var entry : db.rows(
                 "SELECT id FROM work_log_entry WHERE enterprise_id=? AND work_log_id=?",
                 a.enterpriseId(), id)) {
@@ -247,7 +249,7 @@ public class JournalService implements com.pandora6ix.backend.application.journa
         var row = db.lock("work_log", a.enterpriseId(), id);
         scope.read(a, str(row, "author_user_id"));
         if (!a.id().equals(row.get("author_user_id"))) throw BusinessException.forbidden();
-        checkEditWindow(row);
+        checkEditWindow(a, row);
         List<String> tagIds = null;
         if (c.tagIds() != null) tagIds = tags.validate(a, c.tagIds(), c.primaryTagId());
         else if (c.primaryTagId() != null)

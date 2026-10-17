@@ -1,5 +1,7 @@
 # 后端验证记录
 
+2026-10-17：最新增量验证、PR 合并与云端边界见 [本轮验证](../openspec/changes/complete-client-administration-backend/validation.md)，接口交接见 [CLIENT_HANDOFF_20261017.md](CLIENT_HANDOFF_20261017.md)。后端完整包 58 项及另增公司时区边界 1 项通过，Android 18 项、Web 66 项通过；112 次真实 HTTP 与 Web 仓库真接口验证通过。云端仅已部署原 #12/#13，新的公司日期规则需本次 PR 合并后发布。
+
 ## 2026-10-15：Android 十模块与真实任务闭环
 
 分支 `backend-syz` 已将 `dev ec288d4` 合入，本地合并提交 `2334626`。本轮业务修改随后按用户明确确认随云端部署批次同步 dev，不单独创建 PR，云端发布记录见 [部署说明](../deploy/README.md)。依据当前 Android-lj/Android-swj（均已是该 dev 的祖先）、用户十模块清单及本轮明确确认的直属上级审批实施；现行契约见 [ANDROID_API_V0.2.md](ANDROID_API_V0.2.md)，OpenSpec 记录在 complete-android-backend-workflows 变更（合并后按流程归档）。

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { ApiError, createApiClient } from '../src/api/client.ts'
 import { createHttpAdminRepository } from '../src/data/httpAdminRepository.ts'
+import type { PersonInput } from '../src/data/types.ts'
 
 const company = { id: 'company', name: '公司', loginDomain: 'team', businessTimezone: 'Asia/Shanghai', version: 0 }
 const employee = { id: 'employee', displayName: '员工', loginName: 'staff', jobTitle: null, orgUnitId: null, supervisorUserId: 'admin', roles: ['EMPLOYEE'], status: 'DISABLED', version: 0 }
@@ -13,18 +14,31 @@ function reader(url: string) {
   if (url.includes('/admin/org-units')) return { items: [{ id: 'root', name: '公司', kind: 'COMPANY', parentId: null, version: 0 }], nextCursor: null }
   return { items: [], nextCursor: null }
 }
-test('maps null organization and supervisor fields; retrieves every opaque cursor page', async () => {
+
+test('workspace does not request tags or employee business records; tag writes are unavailable', async () => {
   const calls: string[] = []
   const repository = createHttpAdminRepository(createApiClient({ baseUrl: '/api/v1', fetcher: async url => {
-    calls.push(String(url))
-    if (String(url).includes('/tags')) return Response.json({ data: { items: [{ id: calls.length.toString(), name: '标签', colorHex: '#112233', version: 0 }], nextCursor: String(url).includes('cursor=') ? null : 'opaque+/=' } })
-    return Response.json({ data: reader(String(url)) })
+    calls.push(String(url)); return Response.json({ data: reader(String(url)) })
   } }))
-  const data = (await repository.getWorkspace())!
+  const data = await repository.getWorkspace()
+  assert.deepEqual(data.tags, [])
+  await assert.rejects(repository.saveTag({ name: '标签', colorHex: '#112233' }), /不提供标签管理/)
+  assert.ok(calls.every(url => !/tags|journals|tasks|statistics/.test(url)))
+})
+
+test('maps null organization and supervisor fields; retrieves every opaque user cursor page', async () => {
+  const calls: string[] = []
+  const repository = createHttpAdminRepository(createApiClient({ baseUrl: '/api/v1', fetcher: async url => {
+    const path = String(url); calls.push(path)
+    if (path.includes('/admin/users')) return Response.json({ data: { items: path.includes('cursor=') ? [employee] : [administrator], nextCursor: path.includes('cursor=') ? null : 'opaque+/=' } })
+    return Response.json({ data: reader(path) })
+  } }))
+  const data = await repository.getWorkspace()
   assert.equal(data.people[1].orgUnitId, ''); assert.equal(data.people[1].supervisorId, 'admin')
-  assert.equal(data.people[1].status, 'DISABLED'); assert.equal(data.tags.length, 2)
+  assert.equal(data.people[1].status, 'DISABLED'); assert.equal(data.people.length, 2)
   assert.ok(calls.some(url => url.includes('cursor=opaque%2B%2F%3D')))
 })
+
 test('role patch sends full server command while preserving profile, status and stale version', async () => {
   let submitted: Record<string, unknown> | undefined
   const repository = createHttpAdminRepository(createApiClient({ baseUrl: '/api/v1', fetcher: async (url, options) => {
@@ -56,4 +70,82 @@ test('clearing identity while a write is pending prevents an old-company snapsho
   const pending = repository.saveEnterprise('旧公司返回', 0)
   repository.clear(); release(Response.json({ data: { ...company, name: '旧公司返回', version: 1 } }))
   await assert.rejects(pending, (error: unknown) => error instanceof ApiError && error.code === 'REQUEST_CANCELLED')
+})
+
+const personal = { gender: 'FEMALE' as const, idNumber: '00000020000101000X', phoneNumber: '00000000000' }
+const newPerson: PersonInput = { displayName: '测试员工', loginName: 'new-staff', jobTitle: '测试', orgUnitId: 'root', supervisorId: null, roles: ['EMPLOYEE'], ...personal }
+
+test('old server blocks incomplete employee creation and personal edits before sending a write', async () => {
+  let writes = 0
+  const repository = createHttpAdminRepository(createApiClient({ baseUrl: '/api/v1', fetcher: async (url, options) => {
+    if (options?.method === 'POST' || options?.method === 'PATCH') writes++
+    return Response.json({ data: reader(String(url)) })
+  } }))
+  await repository.getWorkspace()
+  await assert.rejects(repository.savePerson(newPerson, undefined, undefined, 'valid-password'), /尚未支持/)
+  await assert.rejects(repository.savePerson({ ...newPerson, loginName: 'staff' }, 'employee', 0), /尚未支持/)
+  assert.equal(writes, 0)
+})
+
+test('supported employee creation uses one request including login and personal fields', async () => {
+  const writes: Record<string, unknown>[] = []
+  const repository = createHttpAdminRepository(createApiClient({ baseUrl: '/api/v1', fetcher: async (url, options) => {
+    if (options?.method === 'POST') {
+      const body = JSON.parse(options.body as string); writes.push(body)
+      assert.ok(String(url).endsWith('/admin/users'))
+      return Response.json({ data: { ...employee, ...body, id: 'new', status: 'ACTIVE', version: 0 } })
+    }
+    if (String(url).includes('/admin/users')) return Response.json({ data: { items: [administrator, employee].map(value => ({ ...value, gender: null, idNumber: null, phoneNumber: null })), nextCursor: null } })
+    return Response.json({ data: reader(String(url)) })
+  } }))
+  await repository.getWorkspace()
+  const data = await repository.savePerson(newPerson, undefined, undefined, 'valid-password')
+  assert.equal(writes.length, 1)
+  assert.deepEqual(writes[0], { loginName: 'new-staff', password: 'valid-password', displayName: '测试员工', jobTitle: '测试', orgUnitId: 'root', supervisorUserId: null, roles: ['EMPLOYEE'], ...personal })
+  assert.equal(data.people.find(value => value.id === 'new')?.idNumber, personal.idNumber)
+  assert.ok(data.people.every(value => !('password' in value)))
+})
+
+test('role-only and ordinary edits preserve supported personal fields and status', async () => {
+  let submitted: Record<string, unknown> = {}
+  const staff = { ...employee, ...personal }
+  const repository = createHttpAdminRepository(createApiClient({ baseUrl: '/api/v1', fetcher: async (url, options) => {
+    if (options?.method === 'PATCH') {
+      submitted = JSON.parse(options.body as string)
+      return Response.json({ data: { ...staff, ...submitted, version: 1 } })
+    }
+    if (String(url).includes('/admin/users')) return Response.json({ data: { items: [{ ...administrator, ...personal }, staff], nextCursor: null } })
+    return Response.json({ data: reader(String(url)) })
+  } }))
+  await repository.getWorkspace()
+  await repository.saveRoles('employee', ['EMPLOYEE', 'ADMIN'], 0)
+  assert.equal(submitted.idNumber, personal.idNumber); assert.equal(submitted.status, 'DISABLED')
+  await repository.savePerson({ displayName: '新姓名', loginName: 'staff', jobTitle: '', orgUnitId: '', supervisorId: 'admin', roles: ['EMPLOYEE', 'ADMIN'] }, 'employee', 1)
+  assert.equal(submitted.phoneNumber, personal.phoneNumber)
+})
+
+test('missing personal fields in a write response never report success or allow duplicate retry', async () => {
+  let writes = 0
+  const repository = createHttpAdminRepository(createApiClient({ baseUrl: '/api/v1', fetcher: async (url, options) => {
+    if (options?.method === 'POST') { writes++; return Response.json({ data: { ...employee, id: 'new' } }) }
+    if (String(url).includes('/admin/users')) return Response.json({ data: { items: [{ ...administrator, gender: null, idNumber: null, phoneNumber: null }], nextCursor: null } })
+    return Response.json({ data: reader(String(url)) })
+  } }))
+  await repository.getWorkspace()
+  await assert.rejects(repository.savePerson(newPerson, undefined, undefined, 'valid-password'), /核实账号/)
+  await assert.rejects(repository.savePerson(newPerson, undefined, undefined, 'valid-password'), /勿重复提交/)
+  assert.equal(writes, 1)
+})
+
+test('organization kind is submitted; backend policy rejection leaves the original type available', async () => {
+  let submitted: Record<string, unknown> = {}
+  const repository = createHttpAdminRepository(createApiClient({ baseUrl: '/api/v1', fetcher: async (url, options) => {
+    if (options?.method === 'PATCH') { submitted = JSON.parse(options.body as string); return Response.json({ error: { code: 'WORKFLOW_POLICY_UNCONFIRMED', message: '后端暂不支持修改组织类型' } }, { status: 409 }) }
+    if (String(url).includes('/admin/org-units')) return Response.json({ data: { items: [{ id: 'root', name: '公司', kind: 'COMPANY', parentId: null, version: 0 }, { id: 'leaf', name: '部门', kind: 'DEPARTMENT', parentId: 'root', version: 0 }, { id: 'other', name: '其他部门', kind: 'DEPARTMENT', parentId: 'root', version: 0 }], nextCursor: null } })
+    return Response.json({ data: reader(String(url)) })
+  } }))
+  await repository.load()
+  await assert.rejects(repository.saveUnit({ name: '团队', kind: 'TEAM', parentId: 'other' }, 'leaf', 0), (error: unknown) => error instanceof ApiError && error.code === 'WORKFLOW_POLICY_UNCONFIRMED' && error.status === 409)
+  assert.equal(submitted.kind, 'TEAM'); assert.equal(submitted.expectedVersion, 0)
+  assert.equal((await repository.load()).units.find(unit => unit.id === 'leaf')?.kind, 'DEPARTMENT')
 })

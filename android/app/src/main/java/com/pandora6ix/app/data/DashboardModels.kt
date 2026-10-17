@@ -120,6 +120,8 @@ data class JournalDto(
     val authorUserId: String = "",
     val workDate: String = "",
     val publishedAt: String? = null,
+    val businessToday: String? = null,
+    val allowedActions: List<String> = emptyList(),
     val primaryTagId: String? = null,
     val entries: List<WorkEntryDto> = emptyList(),
     val tags: List<TagDto> = emptyList(),

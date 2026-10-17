@@ -15,6 +15,9 @@ export interface Person {
   id: string; displayName: string; loginName: string; jobTitle: string
   orgUnitId: string; supervisorId: string | null; roles: Role[]; version: number
   status?: 'ACTIVE' | 'DISABLED'
+  gender?: 'MALE' | 'FEMALE' | null
+  idNumber?: string | null
+  phoneNumber?: string | null
 }
 export interface Tag { id: string; name: string; colorHex: string; version: number }
 export interface CompanyImportantItem { id: string; title: string; content: string; displayOrder: number; publisherUserId: string; version: number }

@@ -52,7 +52,10 @@ public final class Contracts {
             String orgUnitId,
             String supervisorUserId,
             @Size(max = 128) String jobTitle,
-            @NotEmpty List<@NotBlank String> roles) {}
+            @NotEmpty List<@NotBlank String> roles,
+            @NotBlank @Pattern(regexp = "MALE|FEMALE") String gender,
+            @NotBlank @Pattern(regexp = "[0-9]{15}|[0-9]{17}[0-9X]") String idNumber,
+            @NotBlank @Size(min = 6, max = 24) @Pattern(regexp = "[+]?[0-9 ()-]+") String phoneNumber) {}
 
     public record UserPatch(
             @NotNull @Min(0) Long expectedVersion,
@@ -61,7 +64,10 @@ public final class Contracts {
             String supervisorUserId,
             @Size(max = 128) String jobTitle,
             @NotBlank String status,
-            @NotEmpty List<@NotBlank String> roles) {}
+            @NotEmpty List<@NotBlank String> roles,
+            @Pattern(regexp = "MALE|FEMALE") String gender,
+            @Pattern(regexp = "[0-9]{15}|[0-9]{17}[0-9X]") String idNumber,
+            @Size(min = 6, max = 24) @Pattern(regexp = "[+]?[0-9 ()-]+") String phoneNumber) {}
 
     public record TagCreate(
             @NotBlank @Size(max = 64) String name,
