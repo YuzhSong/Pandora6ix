@@ -1,5 +1,7 @@
 # Android 与后端对接清单
 
+2026-10-17：#13 已合并到 dev 并部署；backend-syz 后续修正了日报公司日期规则与部门分组元数据，详见 [最新交接](CLIENT_HANDOFF_20261017.md)。本次含必要 Android 契约适配，需构建更新客户端；真机全流程尚未验收。
+
 **2026-10-15 更新：** `backend-syz` 已同步 `dev ec288d4`，安卓成员两分支的当前改动均已包含于 dev。用户本轮明确确认实施直属上级审批；最新十模块端点、DTO、版本与审批流程以 [ANDROID_API_V0.2.md](ANDROID_API_V0.2.md) 和 [OpenAPI](openapi.json) 为准，覆盖旧 API0.1 的审批 Reserved 说明。本轮不修改 Android 源码。
 
 2026-10-13。PR #10 已合并到 `dev f5283e6`，`backend-syz` 已同步该提交。本清单依据安卓现有源码、docs 需求 V1.3/API0.1 与已实现 [OpenAPI](openapi.json) 核对；只记录对接工作，不修改安卓代码或新增业务接口。

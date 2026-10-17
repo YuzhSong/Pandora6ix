@@ -226,11 +226,12 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
                                 if (candidates.isEmpty()) Text("无匹配成员", Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), fontSize = 13.sp, color = Ink.copy(alpha = .5f))
                                 // 按部门分组展示，避免候选人过多时一屏铺平；点击部门头可折叠/展开
                                 var collapsedDepts by remember { mutableStateOf(setOf<String>()) }
-                                candidates.groupBy { it.organizationName?.takeIf { n -> n.isNotBlank() } ?: "未分配部门" }
-                                    .forEach { (dept, members) ->
-                                        val collapsed = dept in collapsedDepts
+                                candidates.groupBy { it.departmentId ?: it.orgUnitId ?: "unassigned" }
+                                    .forEach { (departmentKey, members) ->
+                                        val dept = members.first().departmentName ?: members.first().organizationName ?: "未分配部门"
+                                        val collapsed = departmentKey in collapsedDepts
                                         Row(
-                                            Modifier.fillMaxWidth().clickable { collapsedDepts = if (collapsed) collapsedDepts - dept else collapsedDepts + dept }.padding(horizontal = 12.dp, vertical = 6.dp),
+                                            Modifier.fillMaxWidth().clickable { collapsedDepts = if (collapsed) collapsedDepts - departmentKey else collapsedDepts + departmentKey }.padding(horizontal = 12.dp, vertical = 6.dp),
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
                                             Icon(if (collapsed) Icons.Default.ExpandMore else Icons.Default.ExpandLess, if (collapsed) "展开" else "收起", Modifier.size(16.dp), tint = Ink.copy(alpha = .55f))

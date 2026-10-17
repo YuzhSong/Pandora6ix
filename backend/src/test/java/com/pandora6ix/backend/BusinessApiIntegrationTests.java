@@ -119,7 +119,7 @@ class BusinessApiIntegrationTests {
                                         "jobTitle",
                                         "Developer",
                                         "roles",
-                                        roles),
+                                        roles, "gender", "MALE", "idNumber", "11010119900101001X", "phoneNumber", "+86 13800000000"),
                                 201)
                         .get("id");
     }
@@ -197,13 +197,13 @@ class BusinessApiIntegrationTests {
         List<Object> work = new ArrayList<>();
         for (int i = 0; i < count; i++)
             work.add(fields("clientEntryKey", "entry-" + i, "content", "Work content " + i));
-        return request(
+        var created = request(
                 "POST",
                 "/work-logs",
                 token,
                 fields(
                         "workDate",
-                        date.toString(),
+                        (date.isBefore(today.minusDays(2)) ? today : date).toString(),
                         "entries",
                         work,
                         "tagIds",
@@ -211,6 +211,11 @@ class BusinessApiIntegrationTests {
                         "primaryTagId",
                         null),
                 201);
+        if (date.isBefore(today.minusDays(2))) {
+            db.update("UPDATE work_log SET work_date=? WHERE id=?", date, created.get("id"));
+            return request("GET", "/work-logs/" + created.get("id"), token, null, 200);
+        }
+        return created;
     }
 
     private Map<String, Object> taskBody(
@@ -776,20 +781,20 @@ class BusinessApiIntegrationTests {
                 request(
                         "POST",
                         "/admin/enterprise-initializations",
-                        adminToken,
+                        null,
                         body,
                         201,
                         "Idempotency-Key",
-                        "initialization-key");
+                        "initialization-key", "X-Bootstrap-Token", "integration-tests-only-bootstrap");
         var retry =
                 request(
                         "POST",
                         "/admin/enterprise-initializations",
-                        adminToken,
+                        null,
                         body,
                         201,
                         "Idempotency-Key",
-                        "initialization-key");
+                        "initialization-key", "X-Bootstrap-Token", "integration-tests-only-bootstrap");
         assertEquals(first, retry);
         assertFalse(json.writeValueAsString(first).contains(PASSWORD));
         body.put("name", "Different");
@@ -800,7 +805,7 @@ class BusinessApiIntegrationTests {
                 body,
                 409,
                 "Idempotency-Key",
-                "initialization-key");
+                "initialization-key", "X-Bootstrap-Token", "integration-tests-only-bootstrap");
     }
 
     @Test
@@ -941,10 +946,10 @@ class BusinessApiIntegrationTests {
                 422);
         // 非作者删除
         request("DELETE", "/work-logs/" + id, managerToken, null, 403);
-        // 超 24 小时窗口：修改与删除均被拒绝
+        // 公司日期跨日即不可修改或删除，即使刚刚发表
         db.update(
-                "UPDATE work_log SET published_at=? WHERE id=?",
-                OffsetDateTime.now(ZoneOffset.UTC).minusHours(25),
+                "UPDATE work_log SET work_date=? WHERE id=?",
+                today.minusDays(1),
                 id);
         request(
                 "PATCH",
@@ -955,8 +960,8 @@ class BusinessApiIntegrationTests {
         request("DELETE", "/work-logs/" + id, employeeToken, null, 409);
         // 窗口内删除成功，删除后不可读且同日可重建
         db.update(
-                "UPDATE work_log SET published_at=? WHERE id=?",
-                OffsetDateTime.now(ZoneOffset.UTC),
+                "UPDATE work_log SET work_date=? WHERE id=?",
+                today,
                 id);
         request("DELETE", "/work-logs/" + id, employeeToken, null, 200);
         selection = request("GET", "/me/important-entries", employeeToken, null, 200);
@@ -1073,7 +1078,7 @@ class BusinessApiIntegrationTests {
                                 PASSWORD,
                                 "adminDisplayName",
                                 "Admin"),
-                        201);
+                        201, "X-Bootstrap-Token", "integration-tests-only-bootstrap");
         var item =
                 request(
                         "POST",
@@ -1126,7 +1131,7 @@ class BusinessApiIntegrationTests {
                         "orgUnitId",
                         other.get("rootOrgUnitId"),
                         "roles",
-                        List.of("EMPLOYEE")),
+                        List.of("EMPLOYEE"), "gender", "MALE", "idNumber", "11010119900101001X", "phoneNumber", "13800000000"),
                 404);
         assertTrue(
                 db.rows(
@@ -1249,20 +1254,20 @@ class BusinessApiIntegrationTests {
                 request(
                         "POST",
                         "/tags",
-                        adminToken,
+                        founderToken,
                         fields("name", "Shared", "colorHex", "#654321"),
                         201);
         request("POST", "/tags", employeeToken, fields("name", "No", "colorHex", "#123456"), 403);
         request(
                 "PATCH",
                 "/tags/" + first.get("id"),
-                managerToken,
+                employeeToken,
                 fields("expectedVersion", 0, "name", "No"),
                 403);
         request(
                 "PATCH",
                 "/tags/" + first.get("id"),
-                adminToken,
+                founderToken,
                 fields("expectedVersion", 0, "colorHex", "#111111"),
                 200);
         request(
@@ -2034,4 +2039,186 @@ class BusinessApiIntegrationTests {
                 request("GET", "/company-important-items/" + id, employeeToken, null, 200)
                         .get("content"));
     }
+
+    private Map<String, Object> personnelCommand(String name) {
+        return fields("loginName", name, "password", PASSWORD, "displayName", name,
+                "orgUnitId", team, "supervisorUserId", lead, "jobTitle", "Developer",
+                "roles", List.of("EMPLOYEE"), "gender", "FEMALE",
+                "idNumber", "11010119900101001X", "phoneNumber", "+86 (010) 1234-5678");
+    }
+
+    private Map<String, Object> personnelPatch(String id, long version, List<String> roles) {
+        var row = db.entity("app_user", enterprise, id);
+        return fields("expectedVersion", version, "displayName", row.get("display_name"),
+                "orgUnitId", row.get("org_unit_id"), "supervisorUserId", row.get("supervisor_user_id"),
+                "jobTitle", row.get("job_title"), "status", row.get("status"), "roles", roles);
+    }
+
+    @Test
+    void personnelProfilePersistsLoginAndRoleEditsWithoutBusinessLeakage() throws Exception {
+        var created = request("POST", "/admin/users", adminToken, personnelCommand("profile"), 201);
+        String id = str(created, "id");
+        assertEquals("FEMALE", created.get("gender"));
+        assertEquals("11010119900101001X", created.get("idNumber"));
+        assertEquals("+86 (010) 1234-5678", created.get("phoneNumber"));
+        assertFalse(created.containsKey("passwordHash"));
+        var profile = request("GET", "/me", login("profile"), null, 200);
+        for (String key : List.of("gender", "idNumber", "phoneNumber", "passwordHash"))
+            assertFalse(profile.containsKey(key));
+        var patch = personnelPatch(id, 0, List.of("EMPLOYEE", "ADMIN"));
+        patch.put("gender", null); patch.put("idNumber", null); patch.put("phoneNumber", null);
+        var edited = request("PATCH", "/admin/users/" + id, adminToken, patch, 200);
+        assertEquals(created.get("idNumber"), edited.get("idNumber"));
+        assertEquals(created.get("phoneNumber"), edited.get("phoneNumber"));
+        assertEquals(created.get("gender"), edited.get("gender"));
+        request("PATCH", "/admin/users/" + id, adminToken, patch, 409);
+        patch = personnelPatch(id, 1, List.of("EMPLOYEE"));
+        patch.put("gender", "MALE"); patch.put("phoneNumber", "021-87654321");
+        request("PATCH", "/admin/users/" + id, adminToken, patch, 200);
+        var reloaded = items(request("GET", "/admin/users?q=profile", adminToken, null, 200)).getFirst();
+        assertEquals("021-87654321", reloaded.get("phoneNumber"));
+        assertEquals("MALE", reloaded.get("gender"));
+        request("POST", "/admin/users", adminToken, personnelCommand("profile"), 409);
+        assertEquals(1, db.rows("SELECT id FROM app_user WHERE enterprise_id=? AND login_name='profile'", enterprise).size());
+        assertEquals(1, db.rows("SELECT role_code FROM user_role WHERE enterprise_id=? AND user_id=?", enterprise, id).size());
+    }
+
+    @Test
+    void legacyProfileNullsAndInvalidPersonnelWritesAreAtomic() throws Exception {
+        var legacy = items(request("GET", "/admin/users?q=admin", adminToken, null, 200)).getFirst();
+        for (String key : List.of("gender", "idNumber", "phoneNumber")) {
+            assertTrue(legacy.containsKey(key)); assertNull(legacy.get(key));
+        }
+        var edited = request("PATCH", "/admin/users/" + admin, adminToken,
+                personnelPatch(admin, 0, List.of("ADMIN")), 200);
+        assertNull(edited.get("idNumber"));
+        for (String key : List.of("gender", "idNumber", "phoneNumber")) {
+            var body = personnelCommand("missing-" + key); body.remove(key);
+            request("POST", "/admin/users", adminToken, body, 422);
+        }
+        for (var invalid : List.of(fields("gender", "UNKNOWN"), fields("idNumber", "bad-id"),
+                fields("phoneNumber", "(---)---"), fields("phoneNumber", "12345"))) {
+            var body = personnelCommand("invalid"); body.putAll(invalid);
+            request("POST", "/admin/users", adminToken, body, 422);
+        }
+        var body = personnelCommand("invalid-role"); body.put("roles", List.of("TEAM_LEAD", "INVALID"));
+        request("POST", "/admin/users", adminToken, body, 422);
+        assertTrue(db.rows("SELECT id FROM app_user WHERE enterprise_id=? AND (login_name LIKE 'missing-%' OR login_name IN ('invalid','invalid-role'))", enterprise).isEmpty());
+        body = personnelPatch(employee, 0, List.of("ADMIN")); body.put("idNumber", "invalid");
+        request("PATCH", "/admin/users/" + employee, adminToken, body, 422);
+        assertEquals(0, number(db.entity("app_user", enterprise, employee), "version"));
+        assertEquals(List.of("EMPLOYEE"), db.rows("SELECT role_code FROM user_role WHERE enterprise_id=? AND user_id=?", enterprise, employee).stream().map(r -> str(r,"role_code")).toList());
+    }
+
+    @Test
+    void leafOrganizationConversionKeepsIdAndEnforcesHierarchyVersionsAndRoles() throws Exception {
+        String leaf = createOrg("Leaf", "DEPARTMENT", root);
+        var converted = request("PATCH", "/admin/org-units/" + leaf, adminToken,
+                fields("expectedVersion", 0, "name", "Leaf team", "kind", "TEAM", "parentId", department), 200);
+        assertEquals(leaf, converted.get("id")); assertEquals("TEAM", converted.get("kind"));
+        request("PATCH", "/admin/org-units/" + leaf, adminToken,
+                fields("expectedVersion", 0, "name", "Stale", "kind", "DEPARTMENT", "parentId", root), 409);
+        request("PATCH", "/admin/org-units/" + leaf, adminToken,
+                fields("expectedVersion", 1, "name", "Leaf", "kind", "DEPARTMENT", "parentId", root), 200);
+        request("PATCH", "/admin/org-units/" + root, adminToken,
+                fields("expectedVersion", 0, "name", "No", "kind", "DEPARTMENT", "parentId", department), 422);
+        request("PATCH", "/admin/org-units/" + department, adminToken,
+                fields("expectedVersion", 0, "name", "No", "kind", "TEAM", "parentId", leaf), 422);
+        createUser("leaf-manager", leaf, founder, List.of("DEPARTMENT_MANAGER"));
+        request("PATCH", "/admin/org-units/" + leaf, adminToken,
+                fields("expectedVersion", 2, "name", "No", "kind", "TEAM", "parentId", department), 422);
+        request("PATCH", "/admin/org-units/" + team, adminToken,
+                fields("expectedVersion", 0, "name", "No", "kind", "DEPARTMENT", "parentId", root), 422);
+        request("POST", "/admin/org-units", adminToken,
+                fields("name", "Nested department", "kind", "DEPARTMENT", "parentId", department), 422);
+        assertEquals("DEPARTMENT", db.entity("org_unit", enterprise, leaf).get("kind"));
+    }
+
+    @Test
+    void concurrentOrganizationConversionAndManagerPromotionPreserveRoleKindInvariant() throws Exception {
+        String leaf = createOrg("Concurrent leaf", "DEPARTMENT", root);
+        String member = createUser("concurrent-member", leaf, founder, List.of("EMPLOYEE"));
+        var start = new CountDownLatch(1);
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var conversion = executor.submit(() -> { start.await(); return raw("PATCH", "/admin/org-units/"+leaf, adminToken,
+                    fields("expectedVersion", 0, "name", "Concurrent leaf", "kind", "TEAM", "parentId", department)); });
+            var promotion = executor.submit(() -> { start.await(); return raw("PATCH", "/admin/users/"+member, adminToken,
+                    personnelPatch(member, 0, List.of("DEPARTMENT_MANAGER"))); });
+            start.countDown();
+            var statuses = List.of(conversion.get(20, TimeUnit.SECONDS).status(), promotion.get(20, TimeUnit.SECONDS).status()).stream().sorted().toList();
+            assertEquals(List.of(200, 422), statuses);
+        }
+        String kind = str(db.entity("org_unit", enterprise, leaf), "kind");
+        boolean managerRole = !db.rows("SELECT role_code FROM user_role WHERE enterprise_id=? AND user_id=? AND role_code='DEPARTMENT_MANAGER'", enterprise, member).isEmpty();
+        assertEquals("DEPARTMENT".equals(kind), managerRole);
+    }
+
+    @Test
+    void pureAdministratorCannotProvisionCompaniesOrAccessBusinessAndEmployeesCannotCreateAccounts() throws Exception {
+        var body = fields("loginDomain", "denied-"+UUID.randomUUID(), "name", "Denied", "adminLoginName", "admin", "adminPassword", PASSWORD, "adminDisplayName", "Admin");
+        request("POST", "/admin/enterprise-initializations", adminToken, body, 403);
+        assertTrue(db.rows("SELECT id FROM enterprise WHERE login_domain=?", body.get("loginDomain")).isEmpty());
+        request("POST", "/admin/users", employeeToken, personnelCommand("denied"), 403);
+        request("POST", "/admin/users", null, personnelCommand("denied"), 401);
+        for (String path : List.of("/tags", "/tasks", "/work-logs", "/statistics"))
+            request("GET", path, adminToken, null, 403);
+        request("POST", "/tags", adminToken, fields("name", "No", "colorHex", "#123456"), 403);
+        var tag = request("POST", "/tags", founderToken, fields("name", "Business", "colorHex", "#123456"), 201);
+        request("PATCH", "/tags/"+tag.get("id"), adminToken, fields("expectedVersion", 0, "name", "No"), 403);
+        request("DELETE", "/tags/"+tag.get("id"), adminToken, null, 403);
+        assertEquals(false, ((Map<?,?>)request("GET", "/me", adminToken, null, 200).get("capabilities")).get("createTags"));
+    }
+
+    @Test
+    void recipientCandidatesExposeStableDepartmentMetadataWithoutPersonnelSecrets() throws Exception {
+        var candidates = items(request("GET", "/tasks/recipient-candidates?limit=1", managerToken, null, 200));
+        assertEquals(1, candidates.size());
+        var value = candidates.getFirst();
+        assertEquals(department, value.get("departmentId"));
+        assertEquals("Department", value.get("departmentName"));
+        assertEquals(team, value.get("orgUnitId")); assertEquals("Team", value.get("organizationName"));
+        for (String key : List.of("gender", "idNumber", "phoneNumber", "passwordHash")) assertFalse(value.containsKey(key));
+        var next = request("GET", "/tasks/recipient-candidates?limit=1", managerToken, null, 200).get("nextCursor");
+        assertNotNull(next);
+        var second = items(request("GET", "/tasks/recipient-candidates?limit=1&cursor="+next, managerToken, null, 200)).getFirst();
+        assertNotEquals(value.get("id"), second.get("id"));
+        assertEquals(department, second.get("departmentId"));
+    }
+
+    @Test
+    void journalBusinessDatesAllowTodayEditsAndOneTimeBackfillsOnly() throws Exception {
+        for (int offset : List.of(-1, -2)) {
+            var old = journal(employeeToken, today.plusDays(offset), 1);
+            assertEquals(List.of(), old.get("allowedActions"));
+            request("PATCH", "/work-logs/"+old.get("id"), employeeToken, fields("expectedVersion", 0), 409);
+            request("DELETE", "/work-logs/"+old.get("id"), employeeToken, null, 409);
+            request("POST", "/work-logs", employeeToken, fields("workDate", today.plusDays(offset), "entries", List.of(fields("clientEntryKey", "x", "content", "Again"))), 409);
+        }
+        for (int offset : List.of(-3, 1)) {
+            var rejected = request("POST", "/work-logs", employeeToken, fields("workDate", today.plusDays(offset), "entries", List.of(fields("clientEntryKey", "x", "content", "No"))), 422);
+            assertEquals("JOURNAL_DATE_OUT_OF_RANGE", rejected.get("code"));
+        }
+        var current = journal(employeeToken, today, 1);
+        assertEquals(List.of("EDIT", "DELETE"), current.get("allowedActions"));
+        assertEquals(today.toString(), current.get("businessToday"));
+        request("PATCH", "/work-logs/"+current.get("id"), employeeToken, fields("expectedVersion", 0, "upsertEntries", List.of(fields("entryId", entries(current).getFirst().get("entryId"), "content", "Same ID"))), 200);
+        request("DELETE", "/work-logs/"+current.get("id"), employeeToken, null, 200);
+    }
+
+
+    @Test
+    void journalEditDateUsesCompanyTimezoneRatherThanElapsedHours() throws Exception {
+        db.update("UPDATE enterprise SET business_timezone='Pacific/Kiritimati' WHERE id=?", enterprise);
+        LocalDate companyToday = LocalDate.now(ZoneId.of("Pacific/Kiritimati"));
+        var journal = request("POST", "/work-logs", employeeToken,
+                fields("workDate", companyToday, "entries", List.of(fields("clientEntryKey", "zone", "content", "Timezone boundary"))), 201);
+        assertEquals(companyToday.toString(), journal.get("businessToday"));
+        db.update("UPDATE enterprise SET business_timezone='Etc/GMT+12' WHERE id=?", enterprise);
+        assertTrue(LocalDate.now(ZoneId.of("Etc/GMT+12")).isBefore(companyToday));
+        assertEquals(List.of(), request("GET", "/work-logs/"+journal.get("id"), employeeToken, null, 200).get("allowedActions"));
+        request("PATCH", "/work-logs/"+journal.get("id"), employeeToken, fields("expectedVersion", 0), 409);
+        request("DELETE", "/work-logs/"+journal.get("id"), employeeToken, null, 409);
+        assertEquals(0, number(db.entity("work_log", enterprise, str(journal, "id")), "version"));
+    }
+
 }

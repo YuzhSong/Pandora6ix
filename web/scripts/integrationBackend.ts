@@ -13,10 +13,10 @@ import { createSessionStore } from '../src/api/session.ts'
 import { createHttpAdminRepository } from '../src/data/httpAdminRepository.ts'
 import { createBackendProxy } from '../dev/backendProxy.ts'
 
-// Uses an unchanged copy of backend source and a fresh database under web/.integration.
-// No team server, team credentials, or original backend output is touched.
+// Uses an explicitly supplied backend artifact or the documented source-copy artifact,
+// with a fresh database under web/.integration. No team server or credentials are used.
 const revision = execFileSync('git', ['log', '-1', '--format=%h', '--', 'backend'], { cwd: path.resolve('..'), encoding: 'utf8' }).trim()
-const jar = path.resolve(`.integration/backend-${revision}/target/backend-0.0.1-SNAPSHOT.jar`)
+const jar = process.env.PANDORA_INTEGRATION_JAR ? path.resolve(process.env.PANDORA_INTEGRATION_JAR) : path.resolve(`.integration/backend-${revision}/target/backend-0.0.1-SNAPSHOT.jar`)
 if (!existsSync(jar)) throw new Error('请先按 README 在 .integration/backend 构建后端原样副本。')
 const probe = createNetServer()
 await new Promise<void>(resolve => probe.listen(0, '127.0.0.1', resolve))
@@ -68,12 +68,12 @@ try {
   data = await repository.saveUnit({ name: '研发部', kind: 'DEPARTMENT', parentId: data.units[0].id })
   const department = data.units.find(unit => unit.name === '研发部')!
   data = await repository.saveUnit({ name: 'Web 团队', kind: 'TEAM', parentId: department.id })
-  await client.request('/admin/users', { method: 'POST', body: { displayName: '测试负责人', loginName: 'manager', jobTitle: '负责人', orgUnitId: data.units[0].id, supervisorUserId: null, roles: ['FOUNDER'], password: randomUUID() } })
+  const personnel = { gender: 'MALE' as const, idNumber: '11010119900101001X', phoneNumber: '13800000000' }
+  await client.request('/admin/users', { method: 'POST', body: { displayName: '测试负责人', loginName: 'manager', jobTitle: '负责人', orgUnitId: data.units[0].id, supervisorUserId: null, roles: ['FOUNDER'], password: randomUUID(), ...personnel } })
   data = await repository.load()
   const manager = data.people.find(person => person.loginName === 'manager')!
   const staffPassword = randomUUID()
-  await assert.rejects(repository.savePerson({ displayName: '测试人员', loginName: 'staff', jobTitle: '前端', orgUnitId: department.id, supervisorId: manager.id, roles: ['EMPLOYEE'] }, undefined, undefined, staffPassword), /尚未支持/)
-  await client.request('/admin/users', { method: 'POST', body: { displayName: '测试人员', loginName: 'staff', jobTitle: '前端', orgUnitId: department.id, supervisorUserId: manager.id, roles: ['EMPLOYEE'], password: staffPassword } })
+  data = await repository.savePerson({ displayName: '测试人员', loginName: 'staff', jobTitle: '前端', orgUnitId: department.id, supervisorId: manager.id, roles: ['EMPLOYEE'], ...personnel }, undefined, undefined, staffPassword)
   data = await repository.load()
   await assert.rejects(auth.login({ enterpriseDomain: domain, loginName: 'staff', password: staffPassword }), (error: unknown) => error instanceof ApiError && error.status === 403)
   assert.ok(sessions.read(), '拒绝普通员工登录不能清除已有管理员身份')
@@ -81,6 +81,13 @@ try {
   data = await repository.savePerson({ ...staff, displayName: '更新人员' }, staff.id, staff.version)
   staff = data.people.find(person => person.id === staff.id)!
   data = await repository.saveRoles(staff.id, ['EMPLOYEE', 'DEPARTMENT_MANAGER'], staff.version)
+  assert.equal(data.people.find(person => person.id === staff.id)!.idNumber, personnel.idNumber)
+  data = await repository.load()
+  assert.equal(data.people.find(person => person.id === staff.id)!.phoneNumber, personnel.phoneNumber)
+  const leaf = data.units.find(unit => unit.kind === 'TEAM')!
+  data = await repository.saveUnit({ name: leaf.name, kind: 'DEPARTMENT', parentId: data.units.find(unit => unit.kind === 'COMPANY')!.id }, leaf.id, leaf.version)
+  assert.equal(data.units.find(unit => unit.id === leaf.id)!.kind, 'DEPARTMENT')
+  data = await repository.saveUnit({ name: leaf.name, kind: 'TEAM', parentId: department.id }, leaf.id, data.units.find(unit => unit.id === leaf.id)!.version)
   await assert.rejects(repository.saveTag({ name: '不可管理', colorHex: '#112233' }), /不提供标签管理/)
   const itemKey = randomUUID(), command = { title: '真实联调事项', content: '<script>纯文本正文</script>', displayOrder: 1 }
   data = await repository.saveCompanyItem(command, undefined, undefined, itemKey)
@@ -103,7 +110,7 @@ try {
   await assert.rejects(revoked.request('/me'), (error: unknown) => error instanceof ApiError && error.status === 401)
   await auth.login({ enterpriseDomain: domain, loginName: 'admin', password: newPassword })
   await auth.logout(); assert.equal(sessions.read(), null)
-  console.log('真实 Spring + H2 + Vite + Web repository 联调通过：初始化幂等、认证、企业/组织/人员/角色、旧接口人员创建保护、标签管理关闭、事项幂等与版本修改、刷新持久化、409、改密及退出撤销。')
+  console.log('真实 Spring + H2 + Vite + Web repository 联调通过：初始化幂等、认证、企业/组织/人员/角色、人员资料持久化与组织类型双向转换、标签管理关闭、事项幂等与版本修改、刷新持久化、409、改密及退出撤销。')
   if (process.argv.includes('--preview')) {
     // Disposable random account in a loopback-only database, solely for browser QA.
     console.log(JSON.stringify({ previewUrl: origin, enterpriseDomain: domain, loginName: 'admin', temporaryPassword: newPassword }))

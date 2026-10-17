@@ -29,6 +29,8 @@ data class RecipientDto(
     val orgUnitId: String? = null,
     val jobTitle: String? = null,
     val organizationName: String? = null,
+    val departmentId: String? = null,
+    val departmentName: String? = null,
     val relationship: String = ""
 )
 
@@ -135,11 +137,21 @@ data class CompletionResultDto(
 class TaskRepository(private val api: ApiClient) {
 
     suspend fun recipientCandidates(q: String? = null, limit: Int = 50): RecipientPageDto {
+        val values = mutableListOf<RecipientDto>()
+        val seen = mutableSetOf<String>()
+        var cursor: String? = null
+        do {
         val query = buildString {
             append("/tasks/recipient-candidates?limit=").append(limit.coerceIn(1, 100))
             q?.takeIf { it.isNotBlank() }?.let { append("&q=").append(URLEncoder.encode(it, "UTF-8")) }
+            cursor?.let { append("&cursor=").append(URLEncoder.encode(it, "UTF-8")) }
         }
-        return api.get(query, RecipientPageDto.serializer())
+        val page = api.get(query, RecipientPageDto.serializer())
+        values.addAll(page.items)
+        cursor = page.nextCursor
+        check(cursor == null || seen.add(cursor)) { "Repeated recipient cursor" }
+        } while (cursor != null)
+        return RecipientPageDto(items = values)
     }
 
     suspend fun create(command: TaskCreateDto, idempotencyKey: String): TaskDto {

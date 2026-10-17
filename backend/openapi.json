@@ -146,7 +146,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/User"
+                      "$ref": "#/components/schemas/Profile"
                     },
                     "requestId": {
                       "type": "string"
@@ -532,9 +532,6 @@
         "security": [
           {
             "bootstrapSecret": []
-          },
-          {
-            "bearerAuth": []
           }
         ],
         "requestBody": {
@@ -5819,13 +5816,32 @@
               "pattern": "\\S"
             },
             "minItems": 1
+          },
+          "gender": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^(?:MALE|FEMALE)$"
+          },
+          "idNumber": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^(?:[0-9]{15}|[0-9]{17}[0-9X])$"
+          },
+          "phoneNumber": {
+            "type": "string",
+            "minLength": 6,
+            "pattern": "^(?:[+]?[0-9 ()-]+)$",
+            "maxLength": 24
           }
         },
         "required": [
           "loginName",
           "password",
           "displayName",
-          "roles"
+          "roles",
+          "gender",
+          "idNumber",
+          "phoneNumber"
         ],
         "additionalProperties": false
       },
@@ -5887,6 +5903,41 @@
               "pattern": "\\S"
             },
             "minItems": 1
+          },
+          "gender": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?:MALE|FEMALE)$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "idNumber": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?:[0-9]{15}|[0-9]{17}[0-9X])$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "phoneNumber": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 6,
+                "maxLength": 24,
+                "pattern": "^(?:[+]?[0-9 ()-]+)$"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -7032,6 +7083,20 @@
             "type": "string",
             "format": "date-time"
           },
+          "businessToday": {
+            "type": "string",
+            "format": "date"
+          },
+          "allowedActions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "EDIT",
+                "DELETE"
+              ]
+            }
+          },
           "primaryTagId": {
             "anyOf": [
               {
@@ -7157,10 +7222,111 @@
           "displayName": {
             "type": "string"
           },
-          "name": {
+          "loginName": {
             "type": "string"
           },
-          "loginName": {
+          "orgUnitId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "supervisorUserId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "jobTitle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "gender": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "MALE",
+                  "FEMALE"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "idNumber": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "phoneNumber": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "displayName",
+          "loginName",
+          "roles",
+          "gender",
+          "idNumber",
+          "phoneNumber"
+        ]
+      },
+      "Profile": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "name": {
             "type": "string"
           },
           "orgUnitId": {
@@ -7529,6 +7695,27 @@
               }
             ]
           },
+          "departmentId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "departmentName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "relationship": {
             "type": "string"
           }
@@ -7549,7 +7736,7 @@
             "format": "date-time"
           },
           "user": {
-            "$ref": "#/components/schemas/User"
+            "$ref": "#/components/schemas/Profile"
           }
         }
       },
