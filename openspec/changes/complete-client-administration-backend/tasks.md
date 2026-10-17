@@ -20,4 +20,4 @@
 - [x] 4.1 Add meaningful regressions for creation/login/profile persistence, legacy/role-only edits, rollback, conflict, privacy, tenant isolation, unsafe organization changes and concurrent directory edits.
 - [x] 4.2 Update HTTP/Web smoke fixtures and verify old-schema migration, restart persistence and existing workflows.
 - [x] 4.3 Run backend package/OpenAPI, Android build/unit tests, Web tests/lint/build and strict OpenSpec validation; record precise limitations.
-- [ ] 4.4 Verify merged PR #12/#13 deployment, commit backend-syz and open a review PR linked to this OpenSpec change. Keep audit storage undecided.
+- [x] 4.4 Verify merged PR #12/#13 deployment, commit backend-syz and open a review PR linked to this OpenSpec change. Keep audit storage undecided.

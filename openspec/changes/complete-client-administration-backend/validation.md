@@ -17,6 +17,8 @@
 - Real Spring + H2 + Vite + Web repository acceptance passes: profile creation and reload, role edits preserving identity/phone, department↔team persistence, company items, authentication, password and logout. Tests use the explicitly selected current backend jar and a fresh loopback-only database.
 - Android assembleDebug and 18 JVM tests pass. Web 66 tests, lint (two existing warnings) and build pass. Device/end-to-end UI acceptance is not claimed.
 
+Implementation pushed on backend-syz as 4809241; review PR: https://github.com/YuzhSong/Pandora6ix/pull/14 (base dev a493dfe). Final packaged-runtime check also passed health/controller discovery, database migrations and protected profile.
+
 ## Live account and release boundary
 
 User explicitly selected department-manager level 1. Existing test account was updated through administrator PATCH, moved from Android team to its parent 产品研发部, assigned DEPARTMENT_MANAGER, and given the existing FOUNDER as direct supervisor. Original credentials remain local and unchanged. Login confirms manage/createDelegatedTasks true and 16 recipient candidates; no task was submitted. The pre-change profile was saved outside Git in the local private Pandora directory.
