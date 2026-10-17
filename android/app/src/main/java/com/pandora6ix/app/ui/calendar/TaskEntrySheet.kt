@@ -96,7 +96,7 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
         }
     }
     // @ 候选：管理范围内真实用户（服务端接口检索）
-    fun deptKey(c: RecipientDto): String = c.departmentId ?: c.orgUnitId ?: "unassigned"
+    // 分组键直接用部门显示名：旧后端无 departmentId 时也能正确分出部门，且“所见即所组”
     fun deptName(c: RecipientDto): String = c.departmentName ?: c.organizationName?.takeIf { n -> n.isNotBlank() } ?: "未分配部门"
     LaunchedEffect(candidateOpen, recipientQuery, kind) {
         if (kind == "DELEGATED" && candidateOpen) {
@@ -104,7 +104,7 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
             runCatching { taskRepo.recipientCandidates(keyword.ifBlank { null }) }.getOrNull()?.let { result ->
                 candidates = result.items
                 // 浏览模式（无关键词）默认按部门全部折叠；检索模式自动展开，让命中成员直接可见
-                collapsedDepts = if (keyword.isBlank()) result.items.map { deptKey(it) }.toSet() else emptySet()
+                collapsedDepts = if (keyword.isBlank()) result.items.map { deptName(it) }.toSet() else emptySet()
             }
         }
     }
@@ -233,12 +233,11 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
                             Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
                                 if (candidates.isEmpty()) Text("无匹配成员", Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), fontSize = 13.sp, color = Ink.copy(alpha = .5f))
                                 // 按部门分组展示（默认折叠，点部门头展开）；折叠状态由外层 collapsedDepts 统一管理
-                                candidates.groupBy { it.departmentId ?: it.orgUnitId ?: "unassigned" }
-                                    .forEach { (departmentKey, members) ->
-                                        val dept = members.first().departmentName ?: members.first().organizationName ?: "未分配部门"
-                                        val collapsed = departmentKey in collapsedDepts
+                                candidates.groupBy { deptName(it) }
+                                    .forEach { (dept, members) ->
+                                        val collapsed = dept in collapsedDepts
                                         Row(
-                                            Modifier.fillMaxWidth().clickable { collapsedDepts = if (collapsed) collapsedDepts - departmentKey else collapsedDepts + departmentKey }.padding(horizontal = 12.dp, vertical = 6.dp),
+                                            Modifier.fillMaxWidth().clickable { collapsedDepts = if (collapsed) collapsedDepts - dept else collapsedDepts + dept }.padding(horizontal = 12.dp, vertical = 6.dp),
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
                                             Icon(if (collapsed) Icons.Default.ExpandMore else Icons.Default.ExpandLess, if (collapsed) "展开" else "收起", Modifier.size(16.dp), tint = Ink.copy(alpha = .55f))
