@@ -11,7 +11,8 @@ data class TaskCreateDto(
     val title: String,
     val description: String? = null,
     val priorityLevel: Int,
-    val timeKind: String = "ALL_DAY",
+    // 不给默认值：ApiClient 的 Json 使用 encodeDefaults=false，等于默认值的字段会被省略，导致后端 @NotNull 校验失败
+    val timeKind: String,
     val startDate: String,
     val endDate: String,
     val startTime: String? = null,

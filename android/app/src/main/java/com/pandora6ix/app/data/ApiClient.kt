@@ -44,18 +44,43 @@ class ApiException(
         "DAILY_JOURNAL_EXISTS" -> "今日日报已存在"
         "JOURNAL_EDIT_WINDOW_EXPIRED" -> "只能修改或删除公司时区今天的日志，补交日志提交后不能再修改"
         "JOURNAL_DATE_OUT_OF_RANGE" -> "只能填写公司时区今天、昨天和前天的日志"
-        "WORKFLOW_POLICY_UNCONFIRMED" -> "流程策略未确认，请联系管理员"
+        // 任务时间等业务校验：字段级错误优先，其次按服务端英文原因给出人话
+        "VALIDATION_FAILED" -> when {
+            fieldErrors.isNotEmpty() -> fieldMessage(fieldErrors.first())
+            message.contains("must be after start") -> "同一天的任务，结束时间必须晚于开始时间"
+            message.contains("must not precede") -> "结束日期不能早于开始日期"
+            message.contains("strict HH:mm") -> "开始与结束时间需精确到分钟（HH:mm）"
+            message.contains("ALL_DAY") -> "全天任务不填写具体时间"
+            else -> if (message.isBlank()) "输入内容有误，请检查后重试" else message
+        }
+        // 创建/编辑任务的流程策略拦截：账号未配置直属上级、上级不是有效审批人
+        "WORKFLOW_POLICY_UNCONFIRMED" -> when {
+            message.contains("direct-supervisor") -> "你的账号未配置直属上级，请联系管理员配置后再提交"
+            message.contains("reviewer") -> "你的直属上级不是有效审批人，请联系管理员确认审批关系"
+            else -> "流程策略未确认，请联系管理员"
+        }
         else -> when (httpStatus) {
             400 -> "请求内容有误，请检查后重试"
             401 -> "登录已过期，请重新登录"
             403 -> "没有权限执行此操作"
             404 -> "内容不存在或已被移除"
             409 -> "操作冲突，请刷新后重试"
-            422 -> fieldErrors.firstOrNull()?.message ?: "输入内容有误，请检查后重试"
+            422 -> fieldErrors.firstOrNull()?.let(::fieldMessage) ?: "输入内容有误，请检查后重试"
             in 500..599 -> "服务暂时不可用，请稍后重试"
             else -> "操作失败，请稍后重试"
         }
     }
+}
+
+/** 字段级校验错误的中文提示：能识别的字段给出人话，其余保留字段名便于排查 */
+private fun fieldMessage(error: FieldError): String = when (error.field) {
+    "startDate" -> "请选择开始日期"
+    "endDate" -> "请选择结束日期"
+    "kind" -> "请选择任务类型"
+    "timeKind" -> "请选择全天或指定时间"
+    "priorityLevel" -> "请选择重要程度"
+    "title" -> "请填写任务名称"
+    else -> if (error.message.isBlank()) "输入内容有误，请检查后重试" else "${error.field}：${error.message}"
 }
 
 /** 会话失效（带 token 的请求返回 401）：调用方应回到登录页，不得自动重试或回退 MockData */

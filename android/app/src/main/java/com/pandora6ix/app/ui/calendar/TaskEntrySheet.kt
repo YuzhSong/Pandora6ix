@@ -57,7 +57,7 @@ internal fun tagHexColor(hex: String): Color =
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
-fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateDelegated: Boolean, availableTags: List<TagDto>, taskRepo: TaskRepository, onDismiss: () -> Unit, onCreated: (TaskDto) -> Unit) {
+fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateDelegated: Boolean, availableTags: List<TagDto>, taskRepo: TaskRepository, businessTimezone: String? = null, onDismiss: () -> Unit, onCreated: (TaskDto) -> Unit) {
     val context = LocalContext.current
     val density = LocalDensity.current
     val candidateGap = with(density) { 8.dp.roundToPx() }
@@ -75,8 +75,10 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
     var startKey by rememberSaveable { mutableStateOf(savedDraft?.startKey ?: initialDate.key()) }
     var endKey by rememberSaveable { mutableStateOf(savedDraft?.endKey ?: initialDate.key()) }
     var allDay by rememberSaveable { mutableStateOf(savedDraft?.allDay ?: false) }
-    var startMinute by rememberSaveable { mutableIntStateOf(savedDraft?.startMinute ?: 540) }
-    var endMinute by rememberSaveable { mutableIntStateOf(savedDraft?.endMinute ?: 600) }
+    // 默认时间取公司业务时区的当前时刻，避免与现实时间不一致、也避免默认落在过去
+    val nowMinute = remember(businessTimezone) { businessNowMinute(businessTimezone) }
+    var startMinute by rememberSaveable { mutableIntStateOf(savedDraft?.startMinute ?: nowMinute.coerceAtMost(23 * 60 + 58)) }
+    var endMinute by rememberSaveable { mutableIntStateOf(savedDraft?.endMinute ?: (nowMinute + 60).coerceAtMost(23 * 60 + 59)) }
     var priority by rememberSaveable { mutableIntStateOf(savedDraft?.priority ?: 3) }
     // 任务类型/接收人相关状态不跨弹层打开残留：优先用草稿恢复，其次按能力初始化
     var kind by remember { mutableStateOf(savedDraft?.kind ?: if (canCreateDelegated) "DELEGATED" else "PERSONAL") }
@@ -121,7 +123,7 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
     val sheetScope = rememberCoroutineScope()
     val fieldColors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Ink.copy(alpha = .65f), unfocusedBorderColor = Ink.copy(alpha = .25f), focusedLabelColor = Ink, cursorColor = Ink)
     val buttonColors = ButtonDefaults.outlinedButtonColors(contentColor = Ink)
-    val buttonBorder = BorderStroke(1.dp, Ink.copy(alpha = .25f))
+    val buttonBorder = BorderStroke(1.dp, HairLine)
     fun pickDate(target: String) { datePickTarget = target }
     fun pickTime(target: String) { timePickTarget = target }
     fun nameOf(id: String): String = candidates.firstOrNull { it.id == id }?.displayName?.ifBlank { null } ?: "成员 ${id.takeLast(4)}"
@@ -131,6 +133,9 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
             title.isBlank() -> "请填写任务名称"
             kind == "DELEGATED" && selectedRecipientIds.isEmpty() -> "请至少选择一位接收人"
             !validTaskInterval(startKey.date(), endKey.date(), if (allDay) null else startMinute, if (allDay) null else endMinute) -> "结束日期和时间必须晚于开始时间"
+            // 截止时间不能早于公司业务时区的当前时刻（服务端也按业务时区判定）
+            !deadlineNotPast(endKey, if (allDay) null else endMinute, allDay, businessTimezone) ->
+                "截止时间不能早于当前时间（公司时间 ${businessNowLabel(businessTimezone)}）"
             else -> null
         }
         if (error != null) return
@@ -182,7 +187,7 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
                     Text("全天任务", Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
                     Switch(allDay, { allDay = it; error = null }, colors = SwitchDefaults.colors(checkedTrackColor = Ink))
                 }
-                Text("开始与结束", fontWeight = FontWeight.SemiBold)
+                Text("开始与结束", Modifier.fillMaxWidth(), fontWeight = FontWeight.SemiBold)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton({ pickDate("start") }, Modifier.weight(1f), colors = buttonColors, border = buttonBorder, contentPadding = PaddingValues(8.dp)) { Text(startKey.date().let { "开始\n${it.year}/${it.month}/${it.day}" }, fontSize = 13.sp) }
                     OutlinedButton({ pickDate("end") }, Modifier.weight(1f), colors = buttonColors, border = buttonBorder, contentPadding = PaddingValues(8.dp)) { Text(endKey.date().let { "结束\n${it.year}/${it.month}/${it.day}" }, fontSize = 13.sp) }
@@ -203,7 +208,7 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
                             OutlinedButton({ tags = tags - name }, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp), border = BorderStroke(1.dp, tagColor), colors = ButtonDefaults.outlinedButtonColors(contentColor = Ink)) { Text(name, fontSize = 13.sp) }
                         }
                     }
-                    OutlinedButton({ showTagPicker = true }, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp), border = BorderStroke(1.dp, Ink.copy(alpha = .25f)), colors = ButtonDefaults.outlinedButtonColors(contentColor = Ink)) { Icon(Icons.Default.Add, "选择标签", Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("选择标签", fontSize = 13.sp) }
+                    OutlinedButton({ showTagPicker = true }, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp), border = BorderStroke(1.dp, HairLine), colors = ButtonDefaults.outlinedButtonColors(contentColor = Ink)) { Icon(Icons.Default.Add, "选择标签", Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("选择标签", fontSize = 13.sp) }
                 }
                 if (kind == "DELEGATED") {
                 Text("接收人（可多选，输入 @ 检索）", fontWeight = FontWeight.SemiBold)
@@ -258,7 +263,7 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
                 }
             }
             error?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp) }
-            Button(onClick = { submit() }, Modifier.fillMaxWidth().padding(vertical = 12.dp), enabled = !submitting, colors = ButtonDefaults.buttonColors(containerColor = Ink)) { Text(if (submitting) "提交中…" else "提交任务") }
+            Button(onClick = { submit() }, Modifier.fillMaxWidth().padding(vertical = 12.dp), enabled = !submitting, colors = ButtonDefaults.buttonColors(containerColor = ThemeButton, contentColor = OnThemeButton)) { Text(if (submitting) "提交中…" else "提交任务") }
         }
     }
     if (confirmExit) AlertDialog(onDismissRequest = { confirmExit = false; sheetScope.launch { sheetState.show() } }, title = { Text("放弃未保存的任务？") }, text = { Text("关闭后，本次填写的内容会清空。") }, confirmButton = { TextButton({ confirmExit = false; AppCache.deleteDraft(context, "task_draft.json"); onDismiss() }) { Text("放弃") } }, dismissButton = { TextButton({ confirmExit = false; sheetScope.launch { sheetState.show() } }) { Text("继续填写") } })
