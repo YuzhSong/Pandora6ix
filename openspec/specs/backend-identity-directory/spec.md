@@ -58,3 +58,40 @@ The existing administrator user update endpoint SHALL accept an optional loginNa
 #### Scenario: Concurrent rename requests
 - **WHEN** concurrent requests use the same version of one account or attempt to claim the same name for separate local accounts
 - **THEN** only one conflicting write succeeds, with stale or duplicate requests rejected atomically.
+
+### Requirement: Empty organization deletion
+The backend SHALL allow ADMIN to delete an empty department or team in their own enterprise using DELETE /admin/org-units/{id} with a required nonnegative expectedVersion JSON field. Success SHALL return 204. Company roots, units with children and units with assigned users including disabled accounts SHALL be preserved. Concurrent directory writes SHALL preserve these constraints.
+
+#### Scenario: Empty leaf deleted
+- **WHEN** an administrator deletes an empty unit with its current version
+- **THEN** it disappears from directory reads and a repeated delete returns 404
+
+#### Scenario: Protected or occupied unit
+- **WHEN** deletion targets the root, a unit with children or a unit with assigned accounts
+- **THEN** the server returns 409 with a specific blocking code and preserves all records
+
+#### Scenario: Version and authority boundaries
+- **WHEN** deletion has a stale version, a foreign enterprise identifier, a non-admin actor or no authentication
+- **THEN** it returns 409, 404, 403 or 401 respectively without removing the unit
+
+### Requirement: Administrator employee password reset
+An authenticated ADMIN SHALL reset a non-ADMIN employee password in the same enterprise using POST /admin/users/{id}/password-reset with expectedVersion and newPassword. The server SHALL enforce password length and BCrypt byte limits, reject stale versions, increment the user version and revoke all target sessions atomically. Profiles, roles and business data SHALL be preserved. Responses SHALL NOT contain plaintext passwords or hashes.
+
+#### Scenario: Recover employee access
+- **WHEN** an administrator resets an employee password using the current version
+- **THEN** the new password works, the old password and all previous sessions fail, and directory and business associations remain unchanged
+
+#### Scenario: Reject invalid authority or input
+- **WHEN** reset targets another enterprise, an administrator account, stale version, invalid password, or is requested without administrator authority
+- **THEN** the command is rejected without changing passwords, sessions or personnel data
+
+### Requirement: Controlled employee credential maintenance
+Offline maintenance SHALL preview an explicit employee login mapping before applying it to one enterprise. Applying SHALL preserve user IDs and business data, protect ADMIN accounts, reject stale identities and login collisions, store only BCrypt password hashes and revoke affected sessions atomically. The tool SHALL NOT print passwords or password hashes and SHALL refuse to create a missing database.
+
+#### Scenario: Apply reviewed mapping
+- **WHEN** the operator applies a valid mapping and supplied password to the existing stopped database
+- **THEN** all selected logins/password hashes/versions and session revocations commit together while profiles, roles and business references remain unchanged
+
+#### Scenario: Preview or invalid mapping
+- **WHEN** apply is absent or a mapping targets an administrator, missing identity or conflicting login
+- **THEN** no account, password or session changes persist
