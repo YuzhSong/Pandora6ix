@@ -36,4 +36,3 @@ The picker SHALL use only the existing backend candidate response and its comple
 #### Scenario: Candidate request fails
 - **WHEN** loading a changed query fails
 - **THEN** old candidates are not presented as matching the new query and the user can retry without losing selected person IDs.
-
