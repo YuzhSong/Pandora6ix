@@ -52,6 +52,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pandora6ix.app.data.ApiException
 import com.pandora6ix.app.data.SessionExpiredException
+import com.pandora6ix.app.data.businessDateTimeLabel
 import com.pandora6ix.app.data.TagDto
 import com.pandora6ix.app.data.TaskRepository
 import com.pandora6ix.app.data.TaskReviewDto
@@ -79,7 +80,7 @@ import java.util.UUID
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ReviewScreen(taskRepo: TaskRepository, availableTags: List<TagDto>, onBack: () -> Unit) {
+fun ReviewScreen(taskRepo: TaskRepository, availableTags: List<TagDto>, businessTimezone: String? = null, onBack: () -> Unit) {
     var scope by rememberSaveable { mutableStateOf("pending") }
     var items by remember { mutableStateOf<List<TaskReviewDto>>(emptyList()) }
     var nextCursor by remember { mutableStateOf<String?>(null) }
@@ -109,7 +110,7 @@ fun ReviewScreen(taskRepo: TaskRepository, availableTags: List<TagDto>, onBack: 
     LaunchedEffect(scope, loadRetry) { load(append = false) }
 
     selected?.let { review ->
-        ReviewDetail(review, taskRepo, availableTags, onBack = { selected = null }, onChanged = { load(append = false) })
+        ReviewDetail(review, taskRepo, availableTags, businessTimezone, onBack = { selected = null }, onChanged = { load(append = false) })
         return
     }
 
@@ -137,7 +138,7 @@ fun ReviewScreen(taskRepo: TaskRepository, availableTags: List<TagDto>, onBack: 
                 )
                 else -> LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     items(items, key = { it.id }) { review ->
-                        ReviewCard(review) { selected = review }
+                        ReviewCard(review, businessTimezone) { selected = review }
                     }
                     nextCursor?.let { cursor ->
                         item {
@@ -166,7 +167,7 @@ private fun QueueTab(label: String, selected: Boolean, modifier: Modifier = Modi
 }
 
 @Composable
-private fun ReviewCard(review: TaskReviewDto, onOpen: () -> Unit) {
+private fun ReviewCard(review: TaskReviewDto, businessTimezone: String?, onOpen: () -> Unit) {
     val snapshot = parseSnapshot(review.submittedSnapshot)
     Card(Modifier.fillMaxWidth().clickable(onClick = onOpen), colors = CardDefaults.cardColors(containerColor = WarmCard), shape = RoundedCornerShape(16.dp)) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -177,7 +178,7 @@ private fun ReviewCard(review: TaskReviewDto, onOpen: () -> Unit) {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(kindLabel(snapshot.kind), fontSize = 12.sp, color = Ink.copy(alpha = .6f))
                 Text("第 ${review.attemptNo} 次提交", fontSize = 12.sp, color = Ink.copy(alpha = .6f))
-                review.submittedAt?.let { Text(timeLabel(it), fontSize = 12.sp, color = Ink.copy(alpha = .6f)) }
+                review.submittedAt?.let { Text(timeLabel(it, businessTimezone), fontSize = 12.sp, color = Ink.copy(alpha = .6f)) }
             }
             if (review.decision != "PENDING" && review.decisionNote?.isNotBlank() == true) {
                 Text("批注：${review.decisionNote}", fontSize = 12.sp, color = Ink.copy(alpha = .6f), maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -189,7 +190,7 @@ private fun ReviewCard(review: TaskReviewDto, onOpen: () -> Unit) {
 /** 详情：快照字段 + 审批操作。409 后重读最新 review；成功后回调刷新队列 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ReviewDetail(review: TaskReviewDto, taskRepo: TaskRepository, availableTags: List<TagDto>, onBack: () -> Unit, onChanged: () -> Unit) {
+private fun ReviewDetail(review: TaskReviewDto, taskRepo: TaskRepository, availableTags: List<TagDto>, businessTimezone: String?, onBack: () -> Unit, onChanged: () -> Unit) {
     var current by remember { mutableStateOf(review) }
     var comment by rememberSaveable { mutableStateOf("") }
     var submitting by remember { mutableStateOf(false) }
@@ -237,7 +238,7 @@ private fun ReviewDetail(review: TaskReviewDto, taskRepo: TaskRepository, availa
     androidx.activity.compose.BackHandler(onBack = onBack)
     Column(Modifier.fillMaxSize()) {
         TopAppBar(
-            title = { Column { Text("审批详情", fontWeight = FontWeight.Bold); Text("第 ${current.attemptNo} 次提交 · ${timeLabel(current.submittedAt)}", fontSize = 12.sp, color = Ink.copy(alpha = .6f)) } },
+            title = { Column { Text("审批详情", fontWeight = FontWeight.Bold); Text("第 ${current.attemptNo} 次提交 · ${timeLabel(current.submittedAt, businessTimezone)}", fontSize = 12.sp, color = Ink.copy(alpha = .6f)) } },
             navigationIcon = { IconButton(onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") } },
             colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
         )
@@ -283,7 +284,7 @@ private fun ReviewDetail(review: TaskReviewDto, taskRepo: TaskRepository, availa
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(if (current.decision == "APPROVED") "已批准" else "已驳回", fontWeight = FontWeight.Bold)
                         current.decisionNote?.takeIf { it.isNotBlank() }?.let { Text("批注：$it", fontSize = 13.sp, color = Ink.copy(alpha = .75f)) }
-                        current.decidedAt?.let { Text("决定时间 ${timeLabel(it)}", fontSize = 12.sp, color = Ink.copy(alpha = .6f)) }
+                        current.decidedAt?.let { Text("决定时间 ${timeLabel(it, businessTimezone)}", fontSize = 12.sp, color = Ink.copy(alpha = .6f)) }
                     }
                 }
             }
@@ -410,11 +411,8 @@ private fun dateRangeLabel(start: String?, end: String?): String {
 
 private fun shortTime(time: String?): String = time?.take(5).orEmpty().ifBlank { "未设置" }
 
-/** ISO 时间 → "MM-dd HH:mm"（展示用，不做时区换算） */
-private fun timeLabel(iso: String?): String {
-    val v = iso ?: return ""
-    return buildString {
-        append(v.substring(5, 10))
-        if (v.length >= 16) append(" ").append(v.substring(11, 16))
-    }
+/** 提交时间按公司业务时区展示："MM-dd HH:mm"（后端返回 UTC 时间戳，直接切片会差一个时区） */
+private fun timeLabel(iso: String?, timezone: String?): String {
+    val label = businessDateTimeLabel(iso, timezone)
+    return label.ifBlank { iso?.take(10).orEmpty() }
 }

@@ -37,12 +37,14 @@ class CalendarRepository(private val api: ApiClient) {
         scope: String = "mine",
         from: String? = null,
         to: String? = null,
-        limit: Int = 100
+        limit: Int = 100,
+        cursor: String? = null
     ): TaskPageDto {
         val query = buildString {
             append("/tasks?scope=").append(url(scope))
             from?.let { append("&from=").append(url(it)) }
             to?.let { append("&to=").append(url(it)) }
+            cursor?.let { append("&cursor=").append(url(it)) }
             append("&limit=").append(limit.coerceIn(1, 100))
         }
         return api.get(query, TaskPageDto.serializer())
