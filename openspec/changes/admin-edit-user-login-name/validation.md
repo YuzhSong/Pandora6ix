@@ -38,4 +38,4 @@ QA script, synthetic runtime data, `verification.json` and screenshots remain ou
 
 ## Delivery boundary
 
-Submit backend-syz to dev for non-author review. No automatic merge, deployment or OpenSpec archive before merge. This PR permits manual administrator-maintained names; it does not generate pinyin or bulk-rename existing cloud accounts.
+Submitted [PR #19](https://github.com/YuzhSong/Pandora6ix/pull/19), backend-syz → dev, for non-author review. No automatic merge, deployment or OpenSpec archive before merge. This PR permits manual administrator-maintained names; it does not generate pinyin or bulk-rename existing cloud accounts.

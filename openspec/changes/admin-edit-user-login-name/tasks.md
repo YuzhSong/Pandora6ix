@@ -13,4 +13,4 @@
 ## 3. Verification and delivery
 
 - [x] 3.1 Run backend tests/package, API contract drift check, strict OpenSpec validation and diff checks.
-- [ ] 3.2 Record validation evidence and submit backend-syz PR to dev without merge or production data edits.
+- [x] 3.2 Record validation evidence and submit backend-syz PR to dev without merge or production data edits.
