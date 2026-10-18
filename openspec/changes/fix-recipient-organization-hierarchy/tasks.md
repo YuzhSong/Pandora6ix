@@ -11,4 +11,4 @@
 ## 3. Verify and update the pending PR
 
 - [x] 3.1 Run Android unit tests and assembleDebug, strict OpenSpec validation and diff checks; confirm no journal behavior changes.
-- [ ] 3.2 Update PR #16 source and description with validation evidence; leave both PRs unmerged.
+- [x] 3.2 Update PR #16 source and description with validation evidence; leave both PRs unmerged.
