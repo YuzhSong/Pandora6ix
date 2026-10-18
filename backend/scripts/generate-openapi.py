@@ -158,6 +158,9 @@ def read_schemas():
     stats = obj({"total": INTEGER, "completed": INTEGER, "uncompleted": INTEGER, "basis": {"type": "string", "const": "OWN_APPROVED_ASSIGNMENTS"}})
     journalDeleted = obj({"journalId": ID})
     tagDeleted = obj({"tagId": ID})
+    notification = obj({"id": ID, "kind": {"type": "string", "enum": ["NEW_TASK", "DEADLINE", "STATUS"]},
+        "taskId": ID, "assignmentId": nullable(ID), "title": STRING, "body": STRING, "dedupeKey": STRING,
+        "dueAt": nullable(INSTANT), "createdAt": INSTANT, "readAt": nullable(INSTANT)})
     review = obj({**versioned, "reviewId": ID, "taskId": ID, "reviewerUserId": ID, "submittedByUserId": ID,
         "taskVersion": INTEGER, "currentTaskVersion": INTEGER, "attemptNo": INTEGER, "submittedAt": INSTANT,
         "submittedSnapshot": {"type": "object", "additionalProperties": True},
@@ -168,6 +171,7 @@ def read_schemas():
     schemas = {"Tag": tag, "Assignment": assignment, "ProgressRecord": progress, "CompletionRequestView": completion, "Task": task,
         "WorkEntry": entry, "Journal": journal, "Enterprise": enterprise, "OrgUnit": org, "User": user, "Profile": profile, "CompanyItem": item, "ImportantSelection": selection, "Statistics": stats,
         "JournalDeleted": journalDeleted, "TagDeleted": tagDeleted,
+        "Notification": notification, "UnreadCount": obj({"unreadCount": INTEGER}),
         "TaskReview": review, "ReviewDecisionResult": obj({"review": ref("TaskReview"), "task": ref("Task")}),
         "Recipient": obj({"id": ID, "displayName": STRING, "orgUnitId": nullable(ID), "jobTitle": nullable(STRING), "organizationName": nullable(STRING), "departmentId": nullable(ID), "departmentName": nullable(STRING), "relationship": STRING}),
         "LoginResult": obj({"accessToken": STRING, "tokenType": {"type": "string", "const": "Bearer"}, "expiresAt": INSTANT, "user": ref("Profile")}),
@@ -177,7 +181,7 @@ def read_schemas():
             "today": DATE, "businessTimezone": STRING, "tasks": array(ref("Task")), "nextCursor": nullable(STRING), "totalCount": INTEGER}),
         "Error": obj({"error": obj({"code": STRING, "message": STRING, "fieldErrors": array(obj({"field": STRING, "message": STRING})), "existingJournalId": ID}, ("code", "message", "fieldErrors")),
             "requestId": STRING, "timestamp": INSTANT, "status": INTEGER, "code": STRING, "message": STRING, "path": STRING}, ("error", "requestId"))}
-    for name in ("Tag", "Task", "Journal", "WorkEntry", "CompanyItem", "OrgUnit", "User", "Recipient", "TaskReview"):
+    for name in ("Tag", "Task", "Journal", "WorkEntry", "CompanyItem", "OrgUnit", "User", "Recipient", "TaskReview", "Notification"):
         schemas[name + "Page"] = obj({"items": array(ref(name)), "nextCursor": nullable(STRING), "moreUrl": STRING}, ("items", "nextCursor"))
     schemas["Dashboard"] = obj({"companyImportantItems": ref("CompanyItemPage"), "companyTasks": ref("TaskPage"), "personalImportantEntries": ref("ImportantSelection"), "workEntries": ref("WorkEntryPage"), "statistics": ref("Statistics")})
     return schemas
@@ -198,6 +202,8 @@ RESPONSES = {
     ("GET", "/work-log-entries/{id}"): "WorkEntry", ("GET", "/me/important-entry-candidates"): "WorkEntryPage", ("GET", "/me/important-entries"): "ImportantSelection", ("PUT", "/me/important-entries"): "ImportantSelection",
     ("GET", "/company-important-items"): "CompanyItemPage", ("POST", "/company-important-items"): "CompanyItem", ("GET", "/company-important-items/{id}"): "CompanyItem", ("PATCH", "/company-important-items/{id}"): "CompanyItem",
     ("GET", "/dashboard"): "Dashboard", ("GET", "/dashboard/task-items"): "TaskPage", ("GET", "/statistics"): "Statistics",
+    ("GET", "/notifications"): "NotificationPage", ("GET", "/notifications/unread-count"): "UnreadCount",
+    ("POST", "/notifications/{id}/read"): "Notification",
 }
 
 

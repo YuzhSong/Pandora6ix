@@ -5,6 +5,7 @@ import static com.pandora6ix.backend.repository.BusinessDb.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.pandora6ix.backend.repository.BusinessDb;
+import com.pandora6ix.backend.service.NotificationService;
 
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -27,6 +28,7 @@ class BusinessApiIntegrationTests {
     @Autowired MockMvc mvc;
     @Autowired JsonMapper json;
     @Autowired BusinessDb db;
+    @Autowired NotificationService notifications;
     private static final String PASSWORD = "integration-password-123";
     private String domain,
             enterprise,
@@ -1446,7 +1448,7 @@ class BusinessApiIntegrationTests {
     }
 
     @Test
-    void minuteValidationAndUnconfirmedTimedEndpointsAreDistinct() throws Exception {
+    void timedTasksMayCrossDaysWhileIncreasingEndpointsAreRequired() throws Exception {
         var body = taskBody("PERSONAL", List.of(employee), List.of(), null);
         body.put("timeKind", "TIMED");
         body.put("startTime", "09:15:00");
@@ -1454,11 +1456,33 @@ class BusinessApiIntegrationTests {
         request("POST", "/tasks", employeeToken, body, 422);
         body.put("startTime", "09:15");
         request("POST", "/tasks", employeeToken, body, 201);
+        // 跨天 TIMED 允许：22:30 → 次日 02:15，结束时刻可以早于开始时刻
+        body.put("startTime", "22:30");
+        body.put("endTime", "02:15");
         body.put("endDate", today.plusDays(1).toString());
-        request("POST", "/tasks", employeeToken, body, 409);
-        body.put("endDate", today.toString());
+        request("POST", "/tasks", employeeToken, body, 201);
+        // 同日必须正时长：同刻或不递增按 422 拒绝
+        body.put("startTime", "09:15");
         body.put("endTime", "09:15");
-        request("POST", "/tasks", employeeToken, body, 409);
+        body.put("endDate", today.toString());
+        request("POST", "/tasks", employeeToken, body, 422);
+        body.put("endTime", "08:00");
+        request("POST", "/tasks", employeeToken, body, 422);
+    }
+
+    @Test
+    void allDayTaskMaySpanMultipleDays() throws Exception {
+        var body = taskBody("PERSONAL", List.of(employee), List.of(), null);
+        body.put("endDate", today.plusDays(3).toString());
+        var created = request("POST", "/tasks", employeeToken, body, 201);
+        var stored =
+                db.one(
+                        "SELECT * FROM task WHERE enterprise_id=? AND id=?",
+                        enterprise,
+                        created.get("id"));
+        assertEquals(today.plusDays(3).toString(), str(stored, "end_date"));
+        assertNull(stored.get("start_minute"));
+        assertNull(stored.get("end_minute"));
     }
 
     @Test
@@ -2350,6 +2374,130 @@ class BusinessApiIntegrationTests {
         request("PATCH", "/work-logs/"+journal.get("id"), employeeToken, fields("expectedVersion", 0), 409);
         request("DELETE", "/work-logs/"+journal.get("id"), employeeToken, null, 409);
         assertEquals(0, number(db.entity("work_log", enterprise, str(journal, "id")), "version"));
+    }
+
+    @Test
+    void approvedDelegationNotifiesEveryRecipientAndReadingIsIdempotent() throws Exception {
+        var task = createTask(managerToken, "DELEGATED", List.of(employee, peer));
+        reviewDecision(founderToken, task, "APPROVE");
+        for (String token : List.of(employeeToken, peerToken)) {
+            var list = items(request("GET", "/notifications", token, null, 200));
+            assertEquals(1, list.size());
+            assertEquals("NEW_TASK", list.getFirst().get("kind"));
+            assertEquals(str(task, "id"), list.getFirst().get("taskId"));
+            assertEquals(1, unread(token));
+        }
+        String id = str(items(request("GET", "/notifications", employeeToken, null, 200)).getFirst(), "id");
+        request("POST", "/notifications/"+id+"/read", peerToken, null, 404);
+        assertNotNull(request("POST", "/notifications/"+id+"/read", employeeToken, null, 200).get("readAt"));
+        assertEquals(0, unread(employeeToken));
+        request("POST", "/notifications/"+id+"/read", employeeToken, null, 200);
+        assertEquals(0, unread(employeeToken));
+        assertEquals(1, unread(peerToken));
+    }
+
+    @Test
+    void progressAndAcceptanceNotifyCreatorAndRecipientWithoutDuplicates() throws Exception {
+        var task = createTask(managerToken, "DELEGATED", List.of(employee));
+        reviewDecision(founderToken, task, "APPROVE");
+        String taskId = str(task, "id");
+        String assignmentId = assignment(taskId, employee);
+        request("POST", "/task-assignments/"+assignmentId+"/progress-records", employeeToken,
+                fields("expectedVersion", 1, "progressPercent", 50), 201);
+        assertEquals(1, countKind(managerToken, "STATUS"));
+        request("POST", "/task-assignments/"+assignmentId+"/progress-records", employeeToken,
+                fields("expectedVersion", 2, "progressPercent", 50), 201);
+        assertEquals(1, countKind(managerToken, "STATUS"));
+        var submitted = request("POST", "/task-assignments/"+assignmentId+"/completion-requests", employeeToken,
+                fields("expectedVersion", 3, "note", "done"), 201);
+        assertEquals(2, countKind(managerToken, "STATUS"));
+        var completion = (Map<String, Object>) submitted.get("request");
+        request("POST", "/task-completion-requests/"+str(completion, "id")+"/decision", managerToken,
+                fields("expectedVersion", 0, "decision", "ACCEPT"), 200);
+        assertEquals(3, countKind(employeeToken, "STATUS"));
+        assertEquals(3, countKind(managerToken, "STATUS"));
+    }
+
+    @Test
+    void deadlineScanNotifiesPendingWorkOnlyAndNeverRepeats() throws Exception {
+        ZoneId zone = ZoneId.of("Asia/Shanghai");
+        LocalTime now = LocalTime.now(zone);
+        LocalDate end = LocalDate.now(zone);
+        int endMinute = 23 * 60 + 59;
+        // 深夜运行时把截止时刻放到次日凌晨，保证仍落在未来 24 小时窗口内
+        if (now.isAfter(LocalTime.of(22, 0))) {
+            end = end.plusDays(1);
+            endMinute = 30;
+        }
+        var delegated = createTask(managerToken, "DELEGATED", List.of(employee));
+        reviewDecision(founderToken, delegated, "APPROVE");
+        dueAt(str(delegated, "id"), end, endMinute);
+        // Approval is a visibility boundary: pending and rejected tasks must stay private.
+        var pending = createTask(managerToken, "DELEGATED", List.of(peer));
+        dueAt(str(pending, "id"), end, endMinute);
+        var rejected = createTask(managerToken, "DELEGATED", List.of(peer));
+        reviewDecision(founderToken, rejected, "REJECT");
+        dueAt(str(rejected, "id"), end, endMinute);
+        var personal = createTask(employeeToken, "PERSONAL", List.of());
+        reviewDecision(leadToken, personal, "APPROVE");
+        dueAt(str(personal, "id"), end, endMinute);
+        request("POST", "/tasks/"+str(personal, "id")+"/complete", employeeToken,
+                fields("expectedAssignmentVersion", 1), 200);
+        assertTrue(notifications.scanDeadlines() >= 1);
+        assertEquals(1, countKind(employeeToken, "DEADLINE"));
+        assertEquals(0, unread(peerToken));
+        assertNotNull(items(request("GET", "/notifications?limit=100", employeeToken, null, 200)).stream()
+                .filter(n -> "DEADLINE".equals(n.get("kind"))).findFirst().get().get("dueAt"));
+        // 已完成的任务不产生截止提醒（US29），重复扫描也不重复生成
+        notifications.scanDeadlines();
+        assertEquals(1, countKind(employeeToken, "DEADLINE"));
+    }
+
+    @Test
+    void returningToEarlierProgressIsANewEventAndPersonalStatusIsNotDuplicated() throws Exception {
+        var task = createTask(employeeToken, "PERSONAL", List.of());
+        reviewDecision(leadToken, task, "APPROVE");
+        String assignmentId = assignment(str(task, "id"), employee);
+        int version = 1;
+        for (int progress : List.of(50, 75, 50, 50)) {
+            request("POST", "/task-assignments/"+assignmentId+"/progress-records", employeeToken,
+                    fields("expectedVersion", version++, "progressPercent", progress), 201);
+        }
+        assertEquals(3, countKind(employeeToken, "STATUS"));
+        assertEquals(0, countKind(peerToken, "STATUS"));
+    }
+
+    @Test
+    void concurrentDuplicateNotificationsKeepOneRecordWithoutFailingCallers() throws Exception {
+        var task = createTask(employeeToken, "PERSONAL", List.of());
+        var start = new CountDownLatch(1);
+        try (var pool = Executors.newFixedThreadPool(8)) {
+            var results = new ArrayList<Future<?>>();
+            for (int i = 0; i < 8; i++) results.add(pool.submit(() -> {
+                start.await();
+                notifications.emit(enterprise, employee, "STATUS", str(task, "id"), null,
+                        "Concurrent", "Same event", "concurrent-test", null);
+                return null;
+            }));
+            start.countDown();
+            for (var result : results) result.get(15, TimeUnit.SECONDS);
+        }
+        assertEquals(1, countKind(employeeToken, "STATUS"));
+    }
+
+    private void dueAt(String taskId, LocalDate end, int endMinute) {
+        db.update("UPDATE task SET start_date=?,end_date=?,time_kind='TIMED',start_minute=0,end_minute=?"
+                + " WHERE enterprise_id=? AND id=?", end, end, endMinute, enterprise, taskId);
+    }
+
+    private long unread(String token) throws Exception {
+        return number(request("GET", "/notifications/unread-count", token, null, 200), "unreadCount");
+    }
+
+    private long countKind(String token, String kind) throws Exception {
+        return items(request("GET", "/notifications?limit=100", token, null, 200)).stream()
+                .filter(n -> kind.equals(n.get("kind")))
+                .count();
     }
 
 }

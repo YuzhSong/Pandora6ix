@@ -21,18 +21,21 @@ public class TaskReviewService {
     private final ScopeService scope;
     private final TaskService tasks;
     private final JsonMapper json;
+    private final NotificationService notifications;
 
     public TaskReviewService(
             BusinessDb db,
             IdentityService identity,
             ScopeService scope,
             TaskService tasks,
-            JsonMapper json) {
+            JsonMapper json,
+            NotificationService notifications) {
         this.db = db;
         this.identity = identity;
         this.scope = scope;
         this.tasks = tasks;
         this.json = json;
+        this.notifications = notifications;
     }
 
     private void authorize(IdentityService.Actor a, Map<String, Object> review) {
@@ -193,7 +196,7 @@ public class TaskReviewService {
                         a.enterpriseId(),
                         task.get("id"),
                         review.get("task_version")));
-        if (approve)
+        if (approve) {
             db.update(
                     "UPDATE task_assignment SET"
                         + " execution_status='ACTIVE',activated_at=CURRENT_TIMESTAMP,version=version+1"
@@ -201,6 +204,9 @@ public class TaskReviewService {
                         + " execution_status='PENDING_APPROVAL'",
                     a.enterpriseId(),
                     task.get("id"));
+            // 提醒与激活在同一事务：任务未生效则不产生新任务提醒
+            notifications.taskApproved(a.enterpriseId(), str(task, "id"), str(task, "title"));
+        }
         return fields("review", detail(a, id), "task", tasks.detail(a, str(task, "id")));
     }
 }
