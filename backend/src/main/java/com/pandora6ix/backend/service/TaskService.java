@@ -25,18 +25,21 @@ public class TaskService
     private final ScopeService scope;
     private final TagService tags;
     private final JsonMapper json;
+    private final NotificationService notifications;
 
     public TaskService(
             BusinessDb db,
             IdentityService identity,
             ScopeService scope,
             TagService tags,
-            JsonMapper json) {
+            JsonMapper json,
+            NotificationService notifications) {
         this.db = db;
         this.identity = identity;
         this.scope = scope;
         this.tags = tags;
         this.json = json;
+        this.notifications = notifications;
     }
 
     public Map<String, Object> candidates(
@@ -79,6 +82,11 @@ public class TaskService
                 });
     }
 
+    /**
+     * 任务时间：ALL_DAY 不带时刻（跨天由日期区间表达）；TIMED 带严格 HH:mm。
+     * 时间区间的起点是 startDate+startTime、终点是 endDate+endTime，因此**允许跨天**；
+     * 同日时结束时刻必须晚于开始时刻，跨天则由日期递增保证区间为正。
+     */
     private int[] time(
             TimeKind kind, LocalDate start, LocalDate end, String startTime, String endTime) {
         if (end.isBefore(start))
@@ -98,9 +106,8 @@ public class TaskService
                         LocalTime.parse(startTime).getHour() * 60
                                 + LocalTime.parse(startTime).getMinute(),
                 to = LocalTime.parse(endTime).getHour() * 60 + LocalTime.parse(endTime).getMinute();
-        if (!start.equals(end) || to <= from)
-            throw BusinessException.policy(
-                    "Cross-day and non-increasing TIMED endpoints await Q-04 confirmation.");
+        if (start.equals(end) && to <= from)
+            throw BusinessException.invalid("TIMED end must be after start on the same day.");
         return new int[] {from, to};
     }
 
@@ -603,6 +610,15 @@ public class TaskService
                 a.id(),
                 c.progressPercent(),
                 c.note());
+        // 进度变化提醒：同一进度的重复提交由去重键拦截
+        notifications.statusChanged(
+                a.enterpriseId(),
+                str(task, "creator_user_id"),
+                str(task, "id"),
+                id,
+                str(task, "title"),
+                "的进度更新为 " + c.progressPercent() + "%",
+                id + "|STATUS|P" + c.progressPercent());
         return fields(
                 "record",
                 view(db.entity("task_progress_record", a.enterpriseId(), record)),
@@ -638,6 +654,14 @@ public class TaskService
                         a.enterpriseId(),
                         assignment.get("id"),
                         c.expectedAssignmentVersion()));
+        notifications.statusChanged(
+                a.enterpriseId(),
+                a.id(),
+                taskId,
+                str(assignment, "id"),
+                str(task, "title"),
+                "已由本人标记完成",
+                str(assignment, "id") + "|STATUS|COMPLETED");
         return view(db.entity("task_assignment", a.enterpriseId(), str(assignment, "id")));
     }
 
@@ -670,6 +694,14 @@ public class TaskService
                 id,
                 a.id(),
                 c.note());
+        notifications.statusChanged(
+                a.enterpriseId(),
+                str(task, "creator_user_id"),
+                str(task, "id"),
+                id,
+                str(task, "title"),
+                "已提交完成申请，等待验收",
+                request + "|STATUS|REQUESTED");
         return fields(
                 "request",
                 view(db.entity("task_completion_request", a.enterpriseId(), request)),
@@ -719,6 +751,15 @@ public class TaskService
                             + " enterprise_id=? AND id=?",
                     a.enterpriseId(),
                     assignmentId);
+        String statusText = accept ? "的完成申请已验收通过" : "的完成申请被驳回，请继续处理";
+        notifications.statusChanged(
+                a.enterpriseId(),
+                str(assignment, "recipient_user_id"),
+                str(task, "id"),
+                assignmentId,
+                str(task, "title"),
+                statusText,
+                id + "|STATUS|" + (accept ? "ACCEPTED" : "REJECTED"));
         return fields(
                 "request",
                 view(db.entity("task_completion_request", a.enterpriseId(), id)),

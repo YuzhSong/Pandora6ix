@@ -156,16 +156,21 @@ private data class HomeDetail(
     val id: String? = null
 )
 
-// 应用主题：预置背景配色方案（key 用于 rememberSaveable 持久化当前选择）
-private data class AppTheme(val key: String, val label: String, val background: Color, val backgroundDeep: Color, val dashboard: Color)
-private val appThemes = listOf(
-    AppTheme("warm", "暖米", Cream, CreamDeep, WarmDashboard),
-    AppTheme("mint", "薄荷", Color(0xFFE8F4EC), Color(0xFFD9EAE0), Color(0xFFE2F0E7)),
-    AppTheme("sky", "晴空", Color(0xFFE9F1FA), Color(0xFFD9E7F4), Color(0xFFE3EDF8)),
-    AppTheme("sakura", "樱花", Color(0xFFFBF0F3), Color(0xFFF7E1E8), Color(0xFFF9E7EB)),
-    AppTheme("lilac", "紫藤", Color(0xFFF1EDFA), Color(0xFFE4DEF3), Color(0xFFEAE5F7))
-)
-private val LocalAppTheme = staticCompositionLocalOf { appThemes.first() }
+/** 提醒轮询间隔（后台无消息服务，按固定间隔比对本人任务快照） */
+private const val REMINDER_POLL_MILLIS = 15L * 60L * 1000L
+/** 截止时间提前量预设值（分钟）：1 / 2 / 6 / 12 / 24 小时 */
+private val REMINDER_LEAD_OPTIONS = listOf(60, 120, 360, 720, 1440)
+
+/** 提前量展示：1440 → "24 小时"，90 → "1 小时 30 分钟"，45 → "45 分钟" */
+private fun leadLabel(minutes: Int): String {
+    val hours = minutes / 60
+    val rest = minutes % 60
+    return when {
+        hours == 0 -> "$rest 分钟"
+        rest == 0 -> "$hours 小时"
+        else -> "$hours 小时 $rest 分钟"
+    }
+}
 
 @Composable
 fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
@@ -182,7 +187,6 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
         // 进度记录浮层：从任务详情进入，显示当前任务的执行关系
         var progressTaskId by remember { mutableStateOf<String?>(null) }
         var fontScale by rememberSaveable { mutableStateOf(1f) }
-        var notificationsEnabled by rememberSaveable { mutableStateOf(true) }
         var themeKey by rememberSaveable { mutableStateOf("warm") }
         var currentUser by remember { mutableStateOf<UserDto?>(null) }
         var authChecked by remember { mutableStateOf(false) }
@@ -204,6 +208,21 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
         val baseDensity = LocalDensity.current
         val scaledDensity = remember(baseDensity, fontScale) { Density(baseDensity.density, baseDensity.fontScale * fontScale) }
         val dashboardRepo = remember { DashboardRepository(api) }
+        // 通知提醒：偏好本地持久化（按账号隔离），提醒以页内弹窗为主、系统通知为辅
+        val appContext = LocalContext.current
+        val notifyPrefs = remember(currentUser?.id) { NotificationPrefs(appContext, currentUser?.id) }
+        var notifyMaster by remember(currentUser?.id) { mutableStateOf(notifyPrefs.master) }
+        var notifyNewTask by remember(currentUser?.id) { mutableStateOf(notifyPrefs.newTask) }
+        var notifyDeadline by remember(currentUser?.id) { mutableStateOf(notifyPrefs.deadline) }
+        var notifyStatus by remember(currentUser?.id) { mutableStateOf(notifyPrefs.statusChange) }
+        var notifyLeadMinutes by remember(currentUser?.id) { mutableIntStateOf(notifyPrefs.leadMinutes) }
+        val reminderQueue = remember { mutableStateListOf<ReminderEvent>() }
+        // Android 13+ 需运行时申请通知权限；开启提醒时按需询问，被拒也不影响页内弹窗
+        val notifyPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+        fun requestNotifyPermission() {
+            if (NotificationHelper.canPostNotifications(appContext)) return
+            if (NotificationHelper.needsRuntimePermission()) notifyPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
 
         // 启动恢复会话：已有 token 时用 GET /me 校验；失败（含 401）回到登录页
         LaunchedEffect(Unit) {
@@ -242,6 +261,22 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
                 serverTags.clear(); serverTags.addAll(list)
             }
             runCatching { calendarRepo.statistics() }.getOrNull()?.let { statistics = it }
+        }
+        // 提醒轮询：登录后按固定间隔比对本人任务快照，产出弹窗（+ 有权限时发系统通知）
+        LaunchedEffect(currentUser?.id, notifyMaster, notifyNewTask, notifyDeadline, notifyStatus, notifyLeadMinutes) {
+            // 权限只在用户主动开启提醒时申请（见设置页），进入软件不打扰
+            if (currentUser == null || !notifyMaster) return@LaunchedEffect
+            NotificationHelper.createChannel(appContext)
+            while (true) {
+                val events = runCatching {
+                    collectReminders(calendarRepo, notifyPrefs, currentUser?.businessTimezone)
+                }.getOrElse { emptyList() }
+                events.forEach { event ->
+                    NotificationHelper.notify(appContext, NotificationHelper.idOf(event.key), event.title, event.message)
+                    reminderQueue.add(event)
+                }
+                kotlinx.coroutines.delay(REMINDER_POLL_MILLIS)
+            }
         }
         // 视图页：按当前模式与日期加载真实任务；日/周/月走 /calendar，年视图按 /tasks 全年区间查询
         var calLoading by remember { mutableStateOf(false) }
@@ -298,8 +333,30 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
             Surface(Modifier.padding(padding).fillMaxSize(), color = theme.background) {
                 when {
                     homeDetail != null -> HomeItemDetailScreen(dashboardRepo, homeDetail!!) { homeDetail = null }
-                    showSettings -> SettingsScreen(fontScale = fontScale, onFontScaleChange = { fontScale = it }, notificationsEnabled = notificationsEnabled, onNotificationsChange = { notificationsEnabled = it }, themeKey = themeKey, onThemeChange = { themeKey = it }, auth = auth, onLoggedOut = { currentUser = null }, onClose = { showSettings = false })
-                    showReviews -> ReviewScreen(taskRepo, serverTags) { showReviews = false }
+                    showSettings -> SettingsScreen(
+                        fontScale = fontScale,
+                        onFontScaleChange = { fontScale = it },
+                        notificationsEnabled = notifyMaster,
+                        onNotificationsChange = { enabled ->
+                            notifyMaster = enabled
+                            notifyPrefs.master = enabled
+                            if (enabled) requestNotifyPermission()
+                        },
+                        newTaskEnabled = notifyNewTask,
+                        onNewTaskChange = { notifyNewTask = it; notifyPrefs.newTask = it },
+                        deadlineEnabled = notifyDeadline,
+                        onDeadlineChange = { notifyDeadline = it; notifyPrefs.deadline = it },
+                        statusChangeEnabled = notifyStatus,
+                        onStatusChangeChange = { notifyStatus = it; notifyPrefs.statusChange = it },
+                        leadMinutes = notifyLeadMinutes,
+                        onLeadMinutesChange = { notifyLeadMinutes = it; notifyPrefs.leadMinutes = it },
+                        themeKey = themeKey,
+                        onThemeChange = { themeKey = it },
+                        auth = auth,
+                        onLoggedOut = { currentUser = null },
+                        onClose = { showSettings = false }
+                    )
+                    showReviews -> ReviewScreen(taskRepo, serverTags, currentUser?.businessTimezone) { showReviews = false }
                     showTagManage -> TagManageScreen(
                         tagRepo,
                         // TODO(权限)：标签管理权限待定级——未来按角色/等级填充（如 capabilities.createTags 与更细的修改/删除权限）
@@ -318,12 +375,16 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
                     else -> AnimatedContent(current, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "page") { target ->
                         when (target) {
                             Route.HOME -> HomeScreen(dashboardRepo, selectionRepo, onOpenHome = { homeDetail = it }, onOpenSettings = { showSettings = true })
-                            Route.VIEW -> CalendarScreen(CalendarMode.valueOf(modeName), date, taskItems, canCreatePersonal, canCreateDelegated, serverTags, taskRepo, { modeName = it.name }, { dateKey = "${it.year}-${it.month}-${it.day}" }, { calRetry++ }, { detail = it.id }, taskScope = taskScope, onTaskScopeChange = { taskScope = it }, loading = calLoading, error = calError, onRetry = { calRetry++ })
+                            Route.VIEW -> CalendarScreen(CalendarMode.valueOf(modeName), date, taskItems, canCreatePersonal, canCreateDelegated, serverTags, taskRepo, { modeName = it.name }, { dateKey = "${it.year}-${it.month}-${it.day}" }, { calRetry++ }, { detail = it.id }, taskScope = taskScope, onTaskScopeChange = { taskScope = it }, businessTimezone = currentUser?.businessTimezone, loading = calLoading, error = calError, onRetry = { calRetry++ })
                             Route.LOGS -> LogsScreen(journalRepo, serverTags.toList(), currentUser?.businessTimezone) { detail = it }
                             Route.AI -> AiMapScreen()
-                            Route.ME -> ProfileScreen(currentUser!!, statistics, notificationsEnabled, showReviewCenter, onOpenTagManage = { showTagManage = true }, onOpenReviews = { showReviews = true }, onOpenSettings = { showSettings = true })
+                            Route.ME -> ProfileScreen(currentUser!!, statistics, notifyMaster, showReviewCenter, onOpenTagManage = { showTagManage = true }, onOpenReviews = { showReviews = true }, onOpenSettings = { showSettings = true })
                         }
                     }
+                }
+                // 提醒弹窗：逐条展示，关闭后显示下一条
+                reminderQueue.firstOrNull()?.let { event ->
+                    ReminderDialog(event) { if (reminderQueue.isNotEmpty()) reminderQueue.removeAt(0) }
                 }
             }
         }
@@ -374,7 +435,7 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
                         }
                     }
                 }
-            }, Modifier.fillMaxWidth().height(50.dp), enabled = !loading, colors = ButtonDefaults.buttonColors(containerColor = Ink), shape = RoundedCornerShape(14.dp)) { Text(if (loading) "登录中…" else "登录", fontSize = 16.sp) }
+            }, Modifier.fillMaxWidth().height(50.dp), enabled = !loading, colors = ButtonDefaults.buttonColors(containerColor = ThemeButton, contentColor = OnThemeButton), shape = RoundedCornerShape(14.dp)) { Text(if (loading) "登录中…" else "登录", fontSize = 16.sp) }
         }
     }
 }
@@ -451,6 +512,7 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
         HomePanelDef("个人十大重要事项", d?.personalImportantEntries?.entries?.map { it.content } ?: emptyList()),
         HomePanelDef("个人日志", entryPager.items.map { it.content })
     )
+    val panelAccent = LocalAppTheme.current.accent
     fun openItem(panelIndex: Int, index: Int, text: String) {
         val kind: String?
         val id: String?
@@ -461,7 +523,7 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
             3 -> { kind = "WORK_ENTRY"; id = entryPager.items.getOrNull(index)?.id }
             else -> { kind = null; id = null }
         }
-        onOpenHome(HomeDetail(panels[panelIndex].title, index, text, WarmOrange, kind, id))
+        onOpenHome(HomeDetail(panels[panelIndex].title, index, text, panelAccent, kind, id))
     }
     Box(Modifier.fillMaxSize().background(LocalAppTheme.current.dashboard)) {
       Column(Modifier.fillMaxSize().padding(horizontal = 10.dp)) {
@@ -475,7 +537,7 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
             when {
                 dashError != null -> Column(Modifier.align(Alignment.Center).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(dashError!!, color = Ink.copy(alpha = .7f))
-                    Button({ loadDashboard() }, colors = ButtonDefaults.buttonColors(containerColor = Ink), shape = RoundedCornerShape(12.dp)) { Text("重试") }
+                    Button({ loadDashboard() }, colors = ButtonDefaults.buttonColors(containerColor = ThemeButton, contentColor = OnThemeButton), shape = RoundedCornerShape(12.dp)) { Text("重试") }
                 }
                 d == null -> Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     CircularProgressIndicator(color = WarmOrange, strokeWidth = 3.dp)
@@ -721,7 +783,7 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
                     }
                     loadError != null -> Column(Modifier.fillMaxWidth().weight(1f), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text(loadError!!, color = Ink.copy(alpha = .7f))
-                        Button({ retry++ }, colors = ButtonDefaults.buttonColors(containerColor = Ink), shape = RoundedCornerShape(12.dp)) { Text("重试") }
+                        Button({ retry++ }, colors = ButtonDefaults.buttonColors(containerColor = ThemeButton, contentColor = OnThemeButton), shape = RoundedCornerShape(12.dp)) { Text("重试") }
                     }
                     else -> Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())) {
                         if (selected.isEmpty()) {
@@ -769,7 +831,7 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
                                 Box(
                                     Modifier.size(26.dp).clip(CircleShape)
                                         .background(if (isSelected) accent else if (canAdd) accent.copy(alpha = .12f) else Color.Transparent)
-                                        .border(1.5.dp, if (isSelected || canAdd) accent else Ink.copy(alpha = .25f), CircleShape)
+                                        .border(1.5.dp, if (isSelected || canAdd) accent else HairLine, CircleShape)
                                         .clickable(enabled = canAdd) { toggle(entry) },
                                     contentAlignment = Alignment.Center
                                 ) {
@@ -853,7 +915,7 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
                         }
                         error != null -> Column(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             Text(error!!, color = MaterialTheme.colorScheme.error)
-                            Button({ attempt++ }, colors = ButtonDefaults.buttonColors(containerColor = Ink), shape = RoundedCornerShape(12.dp)) { Text("重试") }
+                            Button({ attempt++ }, colors = ButtonDefaults.buttonColors(containerColor = ThemeButton, contentColor = OnThemeButton), shape = RoundedCornerShape(12.dp)) { Text("重试") }
                         }
                         else -> Text(content ?: detail.text, fontSize = 19.sp, lineHeight = 30.sp, fontWeight = FontWeight.Medium)
                     }
@@ -1045,7 +1107,8 @@ private data class EntryDraft(val entryId: String?, val content: String)
         Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
             PageHeader("日志")
             LazyColumn(Modifier.fillMaxWidth().weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 16.dp)) {
-                item { Button({ openEditor(todayIso()) }, Modifier.fillMaxWidth(), enabled = !publishing, colors = ButtonDefaults.buttonColors(containerColor = Ink), shape = RoundedCornerShape(14.dp)) { Icon(Icons.Default.Add, null); Spacer(Modifier.width(6.dp)); Text(if (todayJournal != null) "补充今日工作" else "记录今日工作") } }
+                // 主操作与视图页「回到今年」同为实心主题按钮
+                item { Button({ openEditor(todayIso()) }, Modifier.fillMaxWidth(), enabled = !publishing, colors = ButtonDefaults.buttonColors(containerColor = ThemeButton, contentColor = OnThemeButton), shape = RoundedCornerShape(14.dp)) { Icon(Icons.Default.Add, null); Spacer(Modifier.width(6.dp)); Text(if (todayJournal != null) "补充今日工作" else "记录今日工作") } }
                 item {
                     // 最近三日：今日可改删，昨天和前天补交后只读
                     val recent = journals.filter { it.workDate in threeDays().map { d -> isoOf(d) } }
@@ -1095,11 +1158,12 @@ private data class EntryDraft(val entryId: String?, val content: String)
                 if (loadError != null && journals.isEmpty()) item {
                     Column(Modifier.fillMaxWidth().padding(vertical = 16.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text(loadError!!, color = Ink.copy(alpha = .7f))
-                        Button({ loadRetry++ }, colors = ButtonDefaults.buttonColors(containerColor = Ink), shape = RoundedCornerShape(12.dp)) { Text("重试") }
+                        Button({ loadRetry++ }, colors = ButtonDefaults.buttonColors(containerColor = ThemeButton, contentColor = OnThemeButton), shape = RoundedCornerShape(12.dp)) { Text("重试") }
                     }
                 }
                 items(if (expandedLogs) filteredEntries else filteredEntries.take(5)) { (workDate, entry) ->
-                    val time = entry.recordedAt?.substringAfter("T")?.take(5).orEmpty()
+                    // recordedAt 是 UTC 时间戳，按公司业务时区换算后再展示，保证与现实时间一致
+                    val time = businessTimeLabel(entry.recordedAt, businessTimezone)
                     val title = if (time.isBlank()) dateLabel(workDate) else "${dateLabel(workDate)} · $time"
                     DetailCard(title, entry.content, Color.White) { onOpen("日志 · $title§${entry.content}") }
                 }
@@ -1143,7 +1207,7 @@ private data class EntryDraft(val entryId: String?, val content: String)
                                 FilterChip(selected = true, onClick = { tags = tags - name }, label = { Text(name, fontSize = 13.sp) }, colors = FilterChipDefaults.filterChipColors(containerColor = tagColor, labelColor = Ink, selectedContainerColor = tagColor, selectedLabelColor = Ink))
                             }
                         }
-                        OutlinedButton({ showTagPicker = true }, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp), border = BorderStroke(1.dp, Ink.copy(alpha = .25f)), colors = ButtonDefaults.outlinedButtonColors(contentColor = Ink)) { Icon(Icons.Default.Add, "选择标签", Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("选择标签", fontSize = 13.sp) }
+                        OutlinedButton({ showTagPicker = true }, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp), border = BorderStroke(1.dp, HairLine), colors = ButtonDefaults.outlinedButtonColors(contentColor = Ink)) { Icon(Icons.Default.Add, "选择标签", Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("选择标签", fontSize = 13.sp) }
                         Text("· 完成的工作", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp, bottom = 6.dp))
                     }
                     Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1162,7 +1226,7 @@ private data class EntryDraft(val entryId: String?, val content: String)
                             { publish() },
                             Modifier.weight(1f),
                             enabled = !publishing && (entryDrafts.any { it.content.isNotBlank() } || (editingJournal?.entries?.any { e -> entryDrafts.none { it.entryId == e.entryId } } == true)) && (editingJournal == null || (editingJournal?.workDate == todayIso() && "EDIT" in editingJournal!!.allowedActions)),
-                            colors = ButtonDefaults.buttonColors(containerColor = Ink),
+                            colors = ButtonDefaults.buttonColors(containerColor = ThemeButton, contentColor = OnThemeButton),
                             shape = RoundedCornerShape(14.dp)
                         ) { Text(if (publishing) "发布中…" else "发布") }
                     }
@@ -1392,7 +1456,7 @@ private data class EntryDraft(val entryId: String?, val content: String)
                 Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     Text("组织信息", fontSize = 18.sp, fontWeight = FontWeight.Bold)
                     ProfileInfoRow("所属企业", user.enterprise?.name ?: "未设置")
-                    DashedDivider(Ink.copy(alpha = .18f))
+                    DashedDivider(HairLine)
                     ProfileInfoRow("所属部门", user.department ?: user.organization?.name ?: "未设置")
                     ProfileInfoRow("当前角色", user.roles.joinToString("、").ifBlank { "未设置" })
                     ProfileInfoRow("业务时区", user.businessTimezone ?: "未设置")
@@ -1403,17 +1467,17 @@ private data class EntryDraft(val entryId: String?, val content: String)
                 SettingsRow(icon = Icons.Default.Label, title = "标签管理", onClick = onOpenTagManage) {
                     Icon(Icons.Default.ChevronRight, null, Modifier.size(20.dp), tint = Ink.copy(alpha = .4f))
                 }
-                DashedDivider(Ink.copy(alpha = .18f))
+                DashedDivider(HairLine)
                 if (showReviewCenter) {
                     SettingsRow(icon = Icons.Default.FactCheck, title = "审批中心", onClick = onOpenReviews) {
                         Icon(Icons.Default.ChevronRight, null, Modifier.size(20.dp), tint = Ink.copy(alpha = .4f))
                     }
-                    DashedDivider(Ink.copy(alpha = .18f))
+                    DashedDivider(HairLine)
                 }
                 SettingsRow(icon = Icons.Default.Tune, title = "全部设置", onClick = onOpenSettings) {
                     Icon(Icons.Default.ChevronRight, null, Modifier.size(20.dp), tint = Ink.copy(alpha = .4f))
                 }
-                DashedDivider(Ink.copy(alpha = .18f))
+                DashedDivider(HairLine)
                 SettingsRow(icon = Icons.Default.Notifications, title = "消息通知", onClick = onOpenSettings) {
                     Text(if (notificationsEnabled) "已开启" else "已关闭", color = Ink.copy(alpha = .55f), fontSize = 13.sp)
                 }
@@ -1482,6 +1546,14 @@ private fun SettingsScreen(
     onFontScaleChange: (Float) -> Unit,
     notificationsEnabled: Boolean,
     onNotificationsChange: (Boolean) -> Unit,
+    newTaskEnabled: Boolean,
+    onNewTaskChange: (Boolean) -> Unit,
+    deadlineEnabled: Boolean,
+    onDeadlineChange: (Boolean) -> Unit,
+    statusChangeEnabled: Boolean,
+    onStatusChangeChange: (Boolean) -> Unit,
+    leadMinutes: Int,
+    onLeadMinutesChange: (Int) -> Unit,
     themeKey: String,
     onThemeChange: (String) -> Unit,
     auth: AuthRepository,
@@ -1496,6 +1568,7 @@ private fun SettingsScreen(
     var showLogoutDialog by remember { mutableStateOf(false) }
     var showPasswordDialog by remember { mutableStateOf(false) }
     var showThemeDialog by remember { mutableStateOf(false) }
+    var showLeadDialog by remember { mutableStateOf(false) }
     var toast by remember { mutableStateOf<String?>(null) }
     // 真实缓存清点：草稿（任务/日报未发布内容）+ 被替换的旧头像副本
     val context = LocalContext.current
@@ -1523,10 +1596,31 @@ private fun SettingsScreen(
                     ) {
                         Text(fontScaleLabel(fontScale), color = Ink.copy(alpha = 0.55f), fontSize = 13.sp)
                     }
-                    DashedDivider(Ink.copy(alpha = 0.18f))
+                    DashedDivider(HairLine)
+                    SettingsRow(
+                        icon = Icons.Default.Lock,
+                        title = "修改密码",
+                        onClick = { showPasswordDialog = true }
+                    ) {
+                        Text("已设置", color = Ink.copy(alpha = 0.55f), fontSize = 13.sp)
+                    }
+                    DashedDivider(HairLine)
+                    SettingsRow(
+                        icon = Icons.Default.Palette,
+                        title = "切换主题",
+                        onClick = { showThemeDialog = true }
+                    ) {
+                        Text(appThemes.firstOrNull { it.key == themeKey }?.label ?: "暖米", color = Ink.copy(alpha = 0.55f), fontSize = 13.sp)
+                    }
+                }
+                Spacer(Modifier.height(18.dp))
+                // 通知提醒独立成一级分区：主开关 + 三个同级开关（提前量是截止时间临近的子项）
+                SettingsSectionLabel("通知提醒")
+                SettingsCard {
                     SettingsRow(
                         icon = Icons.Default.Notifications,
                         title = "通知提醒",
+                        subtitle = "默认关闭，开启后按下方分项提醒",
                         onClick = { onNotificationsChange(!notificationsEnabled) }
                     ) {
                         Switch(
@@ -1540,21 +1634,45 @@ private fun SettingsScreen(
                             )
                         )
                     }
-                    DashedDivider(Ink.copy(alpha = 0.18f))
-                    SettingsRow(
-                        icon = Icons.Default.Lock,
-                        title = "修改密码",
-                        onClick = { showPasswordDialog = true }
-                    ) {
-                        Text("已设置", color = Ink.copy(alpha = 0.55f), fontSize = 13.sp)
-                    }
-                    DashedDivider(Ink.copy(alpha = 0.18f))
-                    SettingsRow(
-                        icon = Icons.Default.Palette,
-                        title = "切换主题",
-                        onClick = { showThemeDialog = true }
-                    ) {
-                        Text(appThemes.firstOrNull { it.key == themeKey }?.label ?: "暖米", color = Ink.copy(alpha = 0.55f), fontSize = 13.sp)
+                    // 总控关闭则全部静默：不展示分项
+                    if (notificationsEnabled) {
+                        DashedDivider(HairLine)
+                        SettingsRow(
+                            icon = Icons.Default.Assignment,
+                            title = "新任务提醒",
+                            subtitle = "你被派发了新任务，或个人任务批准生效时提醒",
+                            onClick = { onNewTaskChange(!newTaskEnabled) }
+                        ) {
+                            ReminderSwitch(newTaskEnabled, onNewTaskChange)
+                        }
+                        DashedDivider(HairLine)
+                        SettingsRow(
+                            icon = Icons.Default.Schedule,
+                            title = "截止时间临近",
+                            subtitle = "任务截止前 ${leadLabel(leadMinutes)}提醒；已完成任务不再提醒",
+                            onClick = { onDeadlineChange(!deadlineEnabled) }
+                        ) {
+                            ReminderSwitch(deadlineEnabled, onDeadlineChange)
+                        }
+                        // 提前提醒时间是「截止时间临近」的子项：缩进展示
+                        if (deadlineEnabled) {
+                            SubValueRow(
+                                icon = Icons.Default.Timelapse,
+                                title = "提前提醒时间",
+                                subtitle = "截止前多久提醒，可自定义到分钟",
+                                value = leadLabel(leadMinutes),
+                                onClick = { showLeadDialog = true }
+                            )
+                        }
+                        DashedDivider(HairLine)
+                        SettingsRow(
+                            icon = Icons.Default.SyncAlt,
+                            title = "任务状态变化",
+                            subtitle = "他人更新了你参与任务的进度或验收结果时提醒",
+                            onClick = { onStatusChangeChange(!statusChangeEnabled) }
+                        ) {
+                            ReminderSwitch(statusChangeEnabled, onStatusChangeChange)
+                        }
                     }
                 }
                 Spacer(Modifier.height(18.dp))
@@ -1578,12 +1696,12 @@ private fun SettingsScreen(
                     ) {
                         Text("v0.1.0", color = Ink.copy(alpha = 0.5f), fontSize = 13.sp)
                     }
-                    DashedDivider(Ink.copy(alpha = 0.18f))
+                    DashedDivider(HairLine)
                     SettingsRow(icon = Icons.Default.Logout, title = "退出登录", isDestructive = true, onClick = { showLogoutDialog = true })
                 }
             }
             if (toast != null) {
-                Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(20.dp)) {
+                Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(20.dp), contentAlignment = Alignment.Center) {
                     Card(
                         shape = RoundedCornerShape(14.dp),
                         colors = CardDefaults.cardColors(containerColor = Ink.copy(alpha = 0.88f)),
@@ -1620,6 +1738,78 @@ private fun SettingsScreen(
                 }
             },
             confirmButton = { TextButton({ showFontDialog = false }) { Text("关闭", color = Ink) } }
+        )
+    }
+    if (showLeadDialog) {
+        // 预设之外可自定义到分钟：小时 + 分钟，范围 1 分钟 – 72 小时
+        var hourText by remember { mutableStateOf((leadMinutes / 60).toString()) }
+        var minuteText by remember { mutableStateOf((leadMinutes % 60).toString()) }
+        var leadError by remember { mutableStateOf<String?>(null) }
+        fun applyCustom() {
+            val hours = hourText.toIntOrNull() ?: 0
+            val minutes = minuteText.toIntOrNull() ?: 0
+            val total = hours * 60 + minutes
+            leadError = when {
+                minutes > 59 -> "分钟需在 0–59 之间"
+                total < 1 -> "请填写大于 0 的提醒提前量"
+                total > NotificationPrefs.MAX_LEAD_MINUTES -> "自定义范围：1 分钟 – 72 小时"
+                else -> null
+            }
+            if (leadError == null) {
+                onLeadMinutesChange(total)
+                showLeadDialog = false
+            }
+        }
+        AlertDialog(
+            onDismissRequest = { showLeadDialog = false },
+            title = { Text("提前提醒时间") },
+            text = {
+                Column {
+                    Text("常用时长：", fontSize = 12.sp, color = Ink.copy(alpha = 0.55f))
+                    REMINDER_LEAD_OPTIONS.forEach { minutes ->
+                        Row(
+                            Modifier.fillMaxWidth().clickable { onLeadMinutesChange(minutes); showLeadDialog = false }.padding(vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = leadMinutes == minutes,
+                                onClick = { onLeadMinutesChange(minutes); showLeadDialog = false },
+                                colors = RadioButtonDefaults.colors(selectedColor = WarmOrange)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text("截止前 ${leadLabel(minutes)}", fontSize = 15.sp)
+                        }
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Text("自定义（精确到分钟）：", fontSize = 12.sp, color = Ink.copy(alpha = 0.55f))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedTextField(
+                            value = hourText,
+                            onValueChange = { input -> hourText = input.filter(Char::isDigit).take(2); leadError = null },
+                            label = { Text("小时") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                                keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
+                            )
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        OutlinedTextField(
+                            value = minuteText,
+                            onValueChange = { input -> minuteText = input.filter(Char::isDigit).take(2); leadError = null },
+                            label = { Text("分钟") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                                keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
+                            )
+                        )
+                    }
+                    if (leadError != null) Text(leadError!!, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                }
+            },
+            confirmButton = { TextButton(::applyCustom) { Text("确定", color = Ink) } },
+            dismissButton = { TextButton({ showLeadDialog = false }) { Text("取消", color = Ink) } }
         )
     }
     if (showPasswordDialog) {
@@ -1780,6 +1970,7 @@ private fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
 private fun SettingsRow(
     icon: ImageVector,
     title: String,
+    subtitle: String? = null,
     isDestructive: Boolean = false,
     onClick: () -> Unit,
     trailing: @Composable () -> Unit = {}
@@ -1796,13 +1987,68 @@ private fun SettingsRow(
             Icon(icon, null, Modifier.size(19.dp), tint = tint)
         }
         Spacer(Modifier.width(12.dp))
-        Text(title, fontSize = 15.sp, color = if (isDestructive) CoralDark else Ink, modifier = Modifier.weight(1f))
+        Column(Modifier.weight(1f)) {
+            Text(title, fontSize = 15.sp, color = if (isDestructive) CoralDark else Ink)
+            if (!subtitle.isNullOrBlank())
+                Text(subtitle, fontSize = 12.sp, color = Ink.copy(alpha = 0.5f), lineHeight = 18.sp)
+        }
         trailing()
     }
+}
+
+/** 通知提醒分项开关：与设置行统一的暖色开关 */
+@Composable
+private fun ReminderSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    Switch(
+        checked = checked,
+        onCheckedChange = onCheckedChange,
+        colors = SwitchDefaults.colors(
+            checkedThumbColor = Cream,
+            checkedTrackColor = WarmOrange,
+            uncheckedThumbColor = Cream,
+            uncheckedTrackColor = Ink.copy(alpha = 0.25f)
+        )
+    )
 }
 
 private fun fontScaleLabel(s: Float): String = when {
     s <= 0.9f -> "小"
     s >= 1.15f -> "大"
     else -> "标准"
+}
+
+/** 子项取值行（如提前提醒时间）：缩进展示，点击弹出选择弹窗 */
+@Composable
+private fun SubValueRow(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    value: String,
+    onClick: () -> Unit
+) {
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(start = 50.dp, end = 14.dp, top = 8.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(icon, null, Modifier.size(16.dp), tint = WarmOrange.copy(alpha = 0.65f))
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, fontSize = 14.sp, color = Ink)
+            Text(subtitle, fontSize = 12.sp, color = Ink.copy(alpha = 0.5f), lineHeight = 18.sp)
+        }
+        Text(value, color = WarmOrange, fontSize = 13.sp)
+        Spacer(Modifier.width(4.dp))
+        Icon(Icons.Default.ChevronRight, null, Modifier.size(18.dp), tint = Ink.copy(alpha = 0.4f))
+    }
+}
+
+/** 提醒弹窗：新任务 / 截止临近 / 状态变化统一入口，逐条确认 */
+@Composable
+private fun ReminderDialog(event: ReminderEvent, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(event.title, fontWeight = FontWeight.Bold) },
+        text = { Text(event.message, color = Ink.copy(alpha = 0.75f), lineHeight = 22.sp) },
+        confirmButton = { TextButton(onDismiss) { Text("知道了", color = Ink) } }
+    )
 }

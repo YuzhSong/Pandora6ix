@@ -61,6 +61,7 @@ fun CalendarScreen(
     onOpen: (TaskItem) -> Unit,
     taskScope: String = "mine",
     onTaskScopeChange: (String) -> Unit = {},
+    businessTimezone: String? = null,
     loading: Boolean = false,
     error: String? = null,
     onRetry: () -> Unit = {}
@@ -164,7 +165,7 @@ fun CalendarScreen(
                 if (error != null) Box(Modifier.fillMaxSize().background(Cream.copy(alpha = .45f)), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text(error, color = Ink.copy(alpha = .75f))
-                        Button(onRetry, colors = ButtonDefaults.buttonColors(containerColor = Ink), shape = RoundedCornerShape(12.dp)) { Text("重试") }
+                        Button(onRetry, colors = ButtonDefaults.buttonColors(containerColor = ThemeButton, contentColor = OnThemeButton), shape = RoundedCornerShape(12.dp)) { Text("重试") }
                     }
                 }
             }
@@ -176,9 +177,9 @@ fun CalendarScreen(
             CalendarMode.MONTH -> cursor.year == today.year && cursor.month == today.month
             CalendarMode.YEAR -> cursor.year == today.year
         }
-        if (!atToday) Button(onClick = { onCursorChange(today) }, modifier = Modifier.align(Alignment.BottomEnd).fillMaxWidth(.25f).height(34.dp), shape = RoundedCornerShape(topStart = 17.dp, bottomStart = 17.dp), contentPadding = PaddingValues(horizontal = 4.dp), colors = ButtonDefaults.buttonColors(containerColor = Ink)) { Text("回到今天", fontSize = 12.sp, maxLines = 1) }
+        if (!atToday) Button(onClick = { onCursorChange(today) }, modifier = Modifier.align(Alignment.BottomEnd).fillMaxWidth(.25f).height(34.dp), shape = RoundedCornerShape(topStart = 17.dp, bottomStart = 17.dp), contentPadding = PaddingValues(horizontal = 4.dp), colors = ButtonDefaults.buttonColors(containerColor = ThemeButton, contentColor = OnThemeButton)) { Text("回到今年", fontSize = 12.sp, maxLines = 1) }
     }
-    if (adding && (canCreatePersonal || canCreateDelegated)) TaskEntrySheet(cursor, canCreatePersonal, canCreateDelegated, availableTags, taskRepo, onDismiss = { adding = false }, onCreated = { task -> onCreated(task) })
+    if (adding && (canCreatePersonal || canCreateDelegated)) TaskEntrySheet(cursor, canCreatePersonal, canCreateDelegated, availableTags, taskRepo, businessTimezone, onDismiss = { adding = false }, onCreated = { task -> onCreated(task) })
     if (showTagFilter) {
         var pending by remember { mutableStateOf(filterTags) }
         AlertDialog(
