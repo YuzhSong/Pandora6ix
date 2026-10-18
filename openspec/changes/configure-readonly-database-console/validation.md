@@ -30,4 +30,3 @@
 - Verified stop then cold start, actual desktop shortcut completion, HTTP read-only authentication and SELECT of all 32 current people, and the running Chrome window titled H2 Console.
 - Verified a missing-script failure returns exit 1 and writes a sanitized diagnostic rather than reporting success. Browser automation tools could not initialize in this session, so verification used the actual Windows launcher, browser process title and real Console HTTP protocol.
 - PR #15 remains open and unmerged.
-
