@@ -237,8 +237,8 @@ private fun TagEditDialog(initialName: String, initialColorHex: String, busy: Bo
     }
 }
 
-/** Color → #RRGGBB（服务端契约要求 #RRGGBB） */
+/** Color → #RRGGBB（服务端契约要求 #RRGGBB；Compose sRGB 的 ARGB 存于 value 高 32 位，须先 shr 32） */
 private fun tagHexToHex6(color: Color): String {
-    val argb = color.value.toLong() and 0xFFFFFFFFL
+    val argb = (color.value shr 32).toLong() and 0xFFFFFFFFL
     return "#%02X%02X%02X".format((argb shr 16 and 0xFF).toInt(), (argb shr 8 and 0xFF).toInt(), (argb and 0xFF).toInt())
 }

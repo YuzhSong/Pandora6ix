@@ -37,6 +37,8 @@ import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -46,6 +48,7 @@ import com.pandora6ix.app.data.*
 import com.pandora6ix.app.mock.*
 import com.pandora6ix.app.ui.theme.*
 import java.util.UUID
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 private fun DemoDate.key() = "$year-$month-$day"
@@ -82,8 +85,14 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
     var kind by remember { mutableStateOf(savedDraft?.kind ?: if (canCreateDelegated) "DELEGATED" else "PERSONAL") }
     var selectedRecipientIds by remember { mutableStateOf(savedDraft?.recipientIds ?: listOf()) }
     var candidates by remember { mutableStateOf<List<RecipientDto>>(emptyList()) }
+    val candidateNames = remember { mutableStateMapOf<String, String>() }
     var recipientQuery by remember { mutableStateOf("") }
     var candidateOpen by remember { mutableStateOf(false) }
+    val candidateGroups = remember(candidates) { recipientOrganizationTree(candidates) }
+    var collapsedGroups by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var candidateLoading by remember { mutableStateOf(false) }
+    var candidateError by remember { mutableStateOf(false) }
+    var candidateRetry by remember { mutableIntStateOf(0) }
     var submitting by remember { mutableStateOf(false) }
     var createdTask by remember { mutableStateOf<TaskDto?>(null) }
     val idempotencyKey = remember { UUID.randomUUID().toString() }
@@ -93,11 +102,27 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
             queryVisibility.bringIntoView()
         }
     }
-    // @ 候选：管理范围内真实用户（服务端接口检索）
-    LaunchedEffect(candidateOpen, recipientQuery, kind) {
+    // 候选范围由后端授权；组织 ID 决定层级和折叠状态，名称只用于显示。
+    LaunchedEffect(candidateOpen, recipientQuery, kind, candidateRetry) {
         if (kind == "DELEGATED" && candidateOpen) {
             val keyword = recipientQuery.substringAfter("@").trim()
-            runCatching { taskRepo.recipientCandidates(keyword.ifBlank { null }) }.getOrNull()?.let { candidates = it.items }
+            candidates = emptyList()
+            candidateLoading = true
+            candidateError = false
+            try {
+                val result = taskRepo.recipientCandidates(keyword.ifBlank { null })
+                candidates = result.items
+                candidateNames.putAll(result.items.associate { it.id to it.displayName })
+                collapsedGroups = if (keyword.isBlank()) {
+                    recipientOrganizationTree(result.items).flatMap { it.groupKeys }.toSet()
+                } else emptySet()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                candidateError = true
+            } finally {
+                candidateLoading = false
+            }
         }
     }
     var tags by rememberSaveable { mutableStateOf(savedDraft?.tags ?: listOf<String>()) }
@@ -124,7 +149,7 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
     val buttonBorder = BorderStroke(1.dp, Ink.copy(alpha = .25f))
     fun pickDate(target: String) { datePickTarget = target }
     fun pickTime(target: String) { timePickTarget = target }
-    fun nameOf(id: String): String = candidates.firstOrNull { it.id == id }?.displayName?.ifBlank { null } ?: "成员 ${id.takeLast(4)}"
+    fun nameOf(id: String): String = candidateNames[id]?.ifBlank { null } ?: "成员 ${id.takeLast(4)}"
     /** 提交创建：POST /tasks（非幂等，携带 Idempotency-Key；失败重试复用同一键） */
     fun submit() {
         error = when {
@@ -223,33 +248,30 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
                         val maxCandidateHeight = with(density) { (queryTop - candidateGap - candidateInset).coerceAtLeast(0).toDp() }.coerceAtMost(280.dp)
                         Column(Modifier.width(with(density) { queryWidth.toDp() }).heightIn(max = maxCandidateHeight).clip(RoundedCornerShape(12.dp)).background(CreamDeep).border(1.dp, Ink.copy(alpha = .12f), RoundedCornerShape(12.dp)).padding(vertical = 4.dp)) {
                             Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
-                                if (candidates.isEmpty()) Text("无匹配成员", Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), fontSize = 13.sp, color = Ink.copy(alpha = .5f))
-                                // 按部门分组展示，避免候选人过多时一屏铺平；点击部门头可折叠/展开
-                                var collapsedDepts by remember { mutableStateOf(setOf<String>()) }
-                                candidates.groupBy { it.departmentId ?: it.orgUnitId ?: "unassigned" }
-                                    .forEach { (departmentKey, members) ->
-                                        val dept = members.first().departmentName ?: members.first().organizationName ?: "未分配部门"
-                                        val collapsed = departmentKey in collapsedDepts
-                                        Row(
-                                            Modifier.fillMaxWidth().clickable { collapsedDepts = if (collapsed) collapsedDepts - departmentKey else collapsedDepts + departmentKey }.padding(horizontal = 12.dp, vertical = 6.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Icon(if (collapsed) Icons.Default.ExpandMore else Icons.Default.ExpandLess, if (collapsed) "展开" else "收起", Modifier.size(16.dp), tint = Ink.copy(alpha = .55f))
-                                            Spacer(Modifier.width(4.dp))
-                                            Text(dept, Modifier.weight(1f), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                                            Text("${members.size} 人", fontSize = 11.sp, color = Ink.copy(alpha = .5f))
-                                        }
-                                        if (!collapsed) members.forEach { candidate ->
-                                            val selected = candidate.id in selectedRecipientIds
-                                            Row(Modifier.fillMaxWidth().heightIn(min = 44.dp).clickable { selectedRecipientIds = if (selected) selectedRecipientIds - candidate.id else selectedRecipientIds + candidate.id; error = null }.padding(start = 24.dp, end = 12.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                                                Icon(if (selected) Icons.Default.CheckBox else Icons.Default.CheckBoxOutlineBlank, if (selected) "已选" else "未选", tint = Ink)
-                                                Column(Modifier.padding(start = 8.dp).weight(1f)) {
-                                                    Text(candidate.displayName.ifBlank { "成员 ${candidate.id.takeLast(4)}" }, fontSize = 14.sp)
-                                                    candidate.jobTitle?.takeIf { it.isNotBlank() }?.let { Text(it, fontSize = 11.sp, color = Ink.copy(alpha = .5f)) }
-                                                }
-                                            }
-                                        }
+                                when {
+                                    candidateLoading -> Text("正在加载成员…", Modifier.padding(12.dp), fontSize = 13.sp)
+                                    candidateError -> {
+                                        Text("成员加载失败，请重试", Modifier.padding(horizontal = 12.dp, vertical = 8.dp), fontSize = 13.sp)
+                                        TextButton({ candidateRetry++ }) { Text("重试", color = Ink) }
                                     }
+                                    candidates.isEmpty() -> Text("无匹配成员", Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), fontSize = 13.sp, color = Ink.copy(alpha = .5f))
+                                }
+                                candidateGroups.forEach { group ->
+                                    key(group.key) {
+                                        RecipientGroupRows(
+                                            group, collapsedGroups, selectedRecipientIds.toSet(),
+                                            onToggleGroup = { groupKey ->
+                                                collapsedGroups = if (groupKey in collapsedGroups) collapsedGroups - groupKey else collapsedGroups + groupKey
+                                            },
+                                            onTogglePerson = { candidate ->
+                                                val selected = candidate.id in selectedRecipientIds
+                                                selectedRecipientIds = if (selected) selectedRecipientIds - candidate.id else selectedRecipientIds + candidate.id
+                                                error = null
+                                                if (recipientQuery.isNotEmpty()) recipientQuery = ""
+                                            }
+                                        )
+                                    }
+                                }
                             }
                             TextButton({ candidateOpen = false }, Modifier.fillMaxWidth()) { Text("完成", fontSize = 13.sp, color = Ink) }
                         }
@@ -327,6 +349,54 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
             }) { Text("知道了", color = Ink, fontWeight = FontWeight.Bold) }
         }
     )
+}
+
+@Composable
+private fun RecipientGroupRows(
+    group: RecipientOrganizationGroup,
+    collapsedGroups: Set<String>,
+    selectedIds: Set<String>,
+    onToggleGroup: (String) -> Unit,
+    onTogglePerson: (RecipientDto) -> Unit
+) {
+    val collapsed = group.key in collapsedGroups
+    Column {
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = 44.dp)
+                .semantics { stateDescription = if (collapsed) "已折叠" else "已展开" }
+                .clickable { onToggleGroup(group.key) }
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(if (collapsed) Icons.Default.ExpandMore else Icons.Default.ExpandLess, if (collapsed) "展开" else "收起", Modifier.size(16.dp), tint = Ink.copy(alpha = .55f))
+            Spacer(Modifier.width(4.dp))
+            Text(group.name, Modifier.weight(1f), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            Text("${group.memberCount} 人", fontSize = 11.sp, color = Ink.copy(alpha = .5f))
+        }
+        if (!collapsed) {
+            group.members.forEach { candidate ->
+                key(candidate.id) {
+                    val selected = candidate.id in selectedIds
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = 44.dp).clickable { onTogglePerson(candidate) }
+                            .padding(start = 24.dp, end = 12.dp, top = 6.dp, bottom = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(if (selected) Icons.Default.CheckBox else Icons.Default.CheckBoxOutlineBlank, if (selected) "已选" else "未选", tint = Ink)
+                        Column(Modifier.padding(start = 8.dp).weight(1f)) {
+                            Text(candidate.displayName.ifBlank { "成员 ${candidate.id.takeLast(4)}" }, fontSize = 14.sp)
+                            candidate.jobTitle?.takeIf { it.isNotBlank() }?.let { Text(it, fontSize = 11.sp, color = Ink.copy(alpha = .5f)) }
+                        }
+                    }
+                }
+            }
+            Column(Modifier.padding(start = 12.dp)) {
+                group.children.forEach { child ->
+                    key(child.key) { RecipientGroupRows(child, collapsedGroups, selectedIds, onToggleGroup, onTogglePerson) }
+                }
+            }
+        }
+    }
 }
 
 /** 时间选择：左列小时 00–23、右列分钟 00–59，上下滚动或点击选择 */
