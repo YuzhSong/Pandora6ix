@@ -40,3 +40,20 @@ JDK 23 构建未修改的后端 4809241 副本，输出在忽略目录 web/.inte
 - Both new OpenSpec changes validate strictly, OpenAPI generator --check verifies 48 operations, and git diff --check passes. No commit, push, deployment or cloud credential reset has been performed.
 
 - 按最新界面要求，移除统一初始密码登记入口与弹窗，并精简批量交付说明文字；保留新建/重置成功后的交付记录。Web 生产构建通过。
+# Rebase and integration review — 2026-10-18
+
+PR 20 was rebased from `2138c6a520be73eecf2799f975b7a200cab2979b` onto latest dev `11c96fe0f5e9b0005b0d9d089e8b8460e2884310`. Resolved conflicts in backend README, Web feedback and AdminEditor by retaining administrator login-name editing from PR 19 alongside PR 20's partial legacy-profile editing, account handoff and new error messages. Updated the archived login-name proposal link.
+
+The automatically merged real-backend integration script still attempted password recovery using the pre-rename login `staff`. It now uses the current account login name, verifying rename followed by password reset in the same run.
+
+| Check | Result |
+| --- | --- |
+| Java 21 backend package | 80 tests passed, no failures/errors/skips |
+| Web unit tests / lint / production build | 88 tests passed; lint has the two existing App.tsx effect warnings; TypeScript/Vite build passed |
+| OpenAPI / OpenSpec / diff | 51 operations verified; all three PR 20 changes passed strict validation; no whitespace errors |
+| Spring + file-H2 + Vite + HTTP repository | Passed creation/login, profile preservation and single-field legacy supplementation, role edits, rename, organization conversion/deletion, password reset/session revocation and CSV creation |
+| Offline maintenance test | Disposable H2 preview, commit, independent BCrypt salts, identity/reference preservation, collision/admin guards, rollback, duplicate mapping and missing-file refusal passed |
+
+Rendered target flow: local ADMIN login → edit existing employee login name → retain duplicate-name draft → save/reload on desktop and narrow screen → reset the renamed employee password → receive the current account handoff and invalidate the employee's old session. Browser plugin not available; regular Playwright 1.62.1 used the existing Chromium revision 1223 without installing project dependencies. At `http://127.0.0.1:53498`, desktop 1365×900 and narrow 390×844 both passed page identity, nonblank page, no framework overlay, no unexpected console/page errors, usable editor, save/reload and historical empty-profile editing. Reset after rename succeeded; the replacement password was absent from localStorage. Screenshots were captured and inspected for the narrow editor and desktop reset handoff.
+
+Evidence and executable QA script are outside Git at `%LOCALAPPDATA%/Pandora/pr20-rebase-qa/`: `verification.json`, `duplicate-name.png`, `renamed-employee.png`, `mobile-editor.png`, `mobile-saved.png`, `reset-after-rename.png`, `verify-rebase.mjs`. Local test processes were stopped. No offline maintenance script or credential update was run against the cloud database.
