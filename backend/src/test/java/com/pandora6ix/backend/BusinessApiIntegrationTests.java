@@ -2135,6 +2135,138 @@ class BusinessApiIntegrationTests {
     }
 
     @Test
+    void deleteEmptyOrganizationsRequiresCurrentVersionAndPreservesOtherRecords() throws Exception {
+        String emptyDepartment = createOrg("Disposable department", "DEPARTMENT", root);
+        String emptyTeam = createOrg("Disposable team", "TEAM", emptyDepartment);
+        String path = "/admin/org-units/" + emptyTeam;
+        assertEquals("VERSION_CONFLICT", request("DELETE", path, adminToken, fields("expectedVersion", 1), 409).get("code"));
+        request("DELETE", path, adminToken, fields(), 422);
+        request("DELETE", path, adminToken, fields("expectedVersion", -1), 422);
+        request("DELETE", path, adminToken, null, 400);
+        request("DELETE", path, adminToken, fields("expectedVersion", 0), 204);
+        request("DELETE", path, adminToken, fields("expectedVersion", 0), 404);
+        request("DELETE", "/admin/org-units/" + emptyDepartment, adminToken, fields("expectedVersion", 0), 204);
+        assertEquals(3, items(request("GET", "/admin/org-units", adminToken, null, 200)).size());
+        assertEquals(team, db.entity("app_user", enterprise, employee).get("org_unit_id"));
+    }
+
+    @Test
+    void deleteOrganizationRefusesRootChildrenAndAllAssignedAccounts() throws Exception {
+        assertEquals("ORG_ROOT_DELETE_FORBIDDEN", request("DELETE", "/admin/org-units/" + root, adminToken, fields("expectedVersion", 0), 409).get("code"));
+        assertEquals("ORG_HAS_CHILDREN", request("DELETE", "/admin/org-units/" + department, adminToken, fields("expectedVersion", 0), 409).get("code"));
+        assertEquals("ORG_HAS_MEMBERS", request("DELETE", "/admin/org-units/" + team, adminToken, fields("expectedVersion", 0), 409).get("code"));
+        String leaf = createOrg("Disabled account department", "DEPARTMENT", root);
+        String disabled = createUser("disabled-delete", leaf, founder, List.of("EMPLOYEE"));
+        db.update("UPDATE app_user SET status='DISABLED' WHERE id=?", disabled);
+        assertEquals("ORG_HAS_MEMBERS", request("DELETE", "/admin/org-units/" + leaf, adminToken, fields("expectedVersion", 0), 409).get("code"));
+        assertNotNull(db.entity("org_unit", enterprise, leaf));
+    }
+
+    @Test
+    void deleteOrganizationRequiresAdminAndHidesForeignEnterpriseUnits() throws Exception {
+        String leaf = createOrg("Private leaf", "DEPARTMENT", root);
+        String path = "/admin/org-units/" + leaf;
+        request("DELETE", path, null, fields("expectedVersion", 0), 401);
+        request("DELETE", path, employeeToken, fields("expectedVersion", 0), 403);
+        request("DELETE", path, founderToken, fields("expectedVersion", 0), 403);
+        var other = request("POST", "/admin/enterprise-initializations", null,
+                fields("loginDomain", "delete-other-" + UUID.randomUUID(), "name", "Other", "adminLoginName", "admin", "adminPassword", PASSWORD, "adminDisplayName", "Admin"),
+                201, "X-Bootstrap-Token", "integration-tests-only-bootstrap");
+        String otherToken = (String) request("POST", "/auth/login", null,
+                fields("enterpriseDomain", other.get("loginDomain"), "loginName", "admin", "password", PASSWORD), 200).get("accessToken");
+        assertEquals("RESOURCE_NOT_FOUND", request("DELETE", path, otherToken, fields("expectedVersion", 0), 404).get("code"));
+        assertNotNull(db.entity("org_unit", enterprise, leaf));
+    }
+
+    @Test
+    void concurrentOrganizationDeletionAndChildCreationPreserveHierarchy() throws Exception {
+        String leaf = createOrg("Concurrent deletion", "DEPARTMENT", root);
+        var start = new CountDownLatch(1);
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var deletion = executor.submit(() -> { start.await(); return raw("DELETE", "/admin/org-units/" + leaf, adminToken, fields("expectedVersion", 0)); });
+            var creation = executor.submit(() -> { start.await(); return raw("POST", "/admin/org-units", adminToken, fields("name", "Concurrent child", "kind", "TEAM", "parentId", leaf)); });
+            start.countDown();
+            int removed = deletion.get(20, TimeUnit.SECONDS).status();
+            int created = creation.get(20, TimeUnit.SECONDS).status();
+            assertTrue((removed == 204 && created == 404) || (removed == 409 && created == 201), removed + "/" + created);
+            assertEquals(removed == 204, db.rows("SELECT id FROM org_unit WHERE enterprise_id=? AND id=?", enterprise, leaf).isEmpty());
+            assertEquals(removed == 204, db.rows("SELECT id FROM org_unit WHERE enterprise_id=? AND parent_id=?", enterprise, leaf).isEmpty());
+        }
+    }
+
+    @Test
+    void concurrentOrganizationDeletionAndPersonnelTransferPreserveMembership() throws Exception {
+        String leaf = createOrg("Concurrent transfer", "DEPARTMENT", root);
+        var patch = personnelPatch(employee, 0, List.of("EMPLOYEE"));
+        patch.put("orgUnitId", leaf);
+        var start = new CountDownLatch(1);
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var deletion = executor.submit(() -> { start.await(); return raw("DELETE", "/admin/org-units/" + leaf, adminToken, fields("expectedVersion", 0)); });
+            var transfer = executor.submit(() -> { start.await(); return raw("PATCH", "/admin/users/" + employee, adminToken, patch); });
+            start.countDown();
+            int removed = deletion.get(20, TimeUnit.SECONDS).status();
+            int moved = transfer.get(20, TimeUnit.SECONDS).status();
+            assertTrue((removed == 204 && moved == 404) || (removed == 409 && moved == 200), removed + "/" + moved);
+            assertEquals(removed == 204 ? team : leaf, db.entity("app_user", enterprise, employee).get("org_unit_id"));
+        }
+    }
+
+    @Test
+    void adminResetsEmployeePasswordAndRevokesEveryOldSessionWithoutChangingProfile() throws Exception {
+        String secondSession = login("employee");
+        var before = db.entity("app_user", enterprise, employee);
+        var result = request("POST", "/admin/users/" + employee + "/password-reset", adminToken,
+                fields("expectedVersion", 0, "newPassword", "Employee-new-password"), 200);
+        assertEquals(employee, result.get("id"));
+        assertEquals(1, ((Number) result.get("version")).intValue());
+        assertFalse(result.containsKey("passwordHash")); assertFalse(result.containsKey("password")); assertFalse(result.containsKey("newPassword"));
+        var after = db.entity("app_user", enterprise, employee);
+        for (String key : List.of("display_name", "login_name", "org_unit_id", "supervisor_user_id", "job_title", "gender", "id_number", "phone_number", "status"))
+            assertEquals(before.get(key), after.get(key), key);
+        request("GET", "/me", employeeToken, null, 401);
+        request("GET", "/me", secondSession, null, 401);
+        request("GET", "/me", peerToken, null, 200);
+        request("GET", "/me", adminToken, null, 200);
+        request("POST", "/auth/login", null, fields("enterpriseDomain", domain, "loginName", "employee", "password", PASSWORD), 401);
+        request("POST", "/auth/login", null, fields("enterpriseDomain", domain, "loginName", "employee", "password", "Employee-new-password"), 200);
+    }
+
+    @Test
+    void employeePasswordResetEnforcesAuthorityScopeVersionAndPasswordBounds() throws Exception {
+        String path = "/admin/users/" + employee + "/password-reset";
+        var command = fields("expectedVersion", 0, "newPassword", "Employee-new-password");
+        request("POST", path, null, command, 401);
+        request("POST", path, employeeToken, command, 403);
+        request("POST", path, founderToken, command, 403);
+        assertEquals("ADMIN_PASSWORD_RESET_FORBIDDEN", request("POST", "/admin/users/" + admin + "/password-reset", adminToken, command, 403).get("code"));
+        request("POST", path, adminToken, fields("expectedVersion", 9, "newPassword", "Employee-new-password"), 409);
+        request("POST", path, adminToken, fields("newPassword", "Employee-new-password"), 422);
+        request("POST", path, adminToken, fields("expectedVersion", -1, "newPassword", "Employee-new-password"), 422);
+        request("POST", path, adminToken, fields("expectedVersion", 0, "newPassword", "short"), 422);
+        request("POST", path, adminToken, fields("expectedVersion", 0, "newPassword", "密".repeat(25)), 422);
+        request("POST", "/admin/users/" + UUID.randomUUID() + "/password-reset", adminToken, command, 404);
+        var other = request("POST", "/admin/enterprise-initializations", null,
+                fields("loginDomain", "reset-other-" + UUID.randomUUID(), "name", "Other", "adminLoginName", "admin", "adminPassword", PASSWORD, "adminDisplayName", "Admin"),
+                201, "X-Bootstrap-Token", "integration-tests-only-bootstrap");
+        String otherToken = (String) request("POST", "/auth/login", null, fields("enterpriseDomain", other.get("loginDomain"), "loginName", "admin", "password", PASSWORD), 200).get("accessToken");
+        request("POST", path, otherToken, command, 404);
+        assertEquals(0, number(db.entity("app_user", enterprise, employee), "version"));
+        request("GET", "/me", employeeToken, null, 200);
+    }
+
+    @Test
+    void concurrentEmployeePasswordResetsAllowOnlyOneCurrentVersion() throws Exception {
+        var start = new CountDownLatch(1);
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var first = executor.submit(() -> { start.await(); return raw("POST", "/admin/users/" + employee + "/password-reset", adminToken, fields("expectedVersion", 0, "newPassword", "Employee-password-one")); });
+            var second = executor.submit(() -> { start.await(); return raw("POST", "/admin/users/" + employee + "/password-reset", adminToken, fields("expectedVersion", 0, "newPassword", "Employee-password-two")); });
+            start.countDown();
+            assertEquals(List.of(200, 409), List.of(first.get(20, TimeUnit.SECONDS).status(), second.get(20, TimeUnit.SECONDS).status()).stream().sorted().toList());
+        }
+        assertEquals(1, number(db.entity("app_user", enterprise, employee), "version"));
+    }
+
+    @Test
     void concurrentOrganizationConversionAndManagerPromotionPreserveRoleKindInvariant() throws Exception {
         String leaf = createOrg("Concurrent leaf", "DEPARTMENT", root);
         String member = createUser("concurrent-member", leaf, founder, List.of("EMPLOYEE"));

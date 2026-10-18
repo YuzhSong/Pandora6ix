@@ -2,14 +2,17 @@ import { useEffect, useRef } from 'react'
 import type { AdminData, Person } from '../data/types.ts'
 import { RoleBadge } from './RoleBadge.tsx'
 import { Icon } from './Icon.tsx'
-import { genderLabels, maskIdentity } from '../data/personnelProfile.ts'
+import { genderLabels } from '../data/personnelProfile.ts'
+import { AccountInformation } from './AccountInformation.tsx'
 
-export function PersonDetails({ person, data, onClose, onEdit, editLabel = '编辑资料' }: {
+export function PersonDetails({ person, data, onClose, onEdit, onResetPassword, initialPassword, editLabel = '编辑资料' }: {
   person: Person
   data: AdminData
   onClose: () => void
   editLabel?: string
   onEdit: () => void
+  onResetPassword?: () => void
+  initialPassword?: string
 }) {
   const dialog = useRef<HTMLDialogElement>(null)
   useEffect(() => {
@@ -28,10 +31,10 @@ export function PersonDetails({ person, data, onClose, onEdit, editLabel = '编�
       </div>
       <div className="dialog-body">
         <div className="account-identity"><span className="avatar">{person.displayName.slice(0, 1)}</span><div><h3>{person.displayName}</h3><span>{person.jobTitle || '未设置职位'}</span></div></div>
+        <AccountInformation account={{ loginName: person.loginName, enterpriseDomain: data.enterprise.loginDomain }} initialPassword={initialPassword} />
         <dl className="info-list profile-details">
-          <div><dt>登录名</dt><dd>{person.loginName}</dd></div>
           <div><dt>性别</dt><dd>{person.gender ? genderLabels[person.gender] : '未填写'}</dd></div>
-          <div><dt>身份证号</dt><dd>{maskIdentity(person.idNumber)}</dd></div>
+          <div><dt>身份证号</dt><dd>{person.idNumber || '未填写'}</dd></div>
           <div><dt>电话号码</dt><dd>{person.phoneNumber || '未填写'}</dd></div>
           <div><dt>所属组织</dt><dd>{parent ? `${parent.name} / ` : ''}{organization?.name}</dd></div>
           <div><dt>直属上级</dt><dd>{data.people.find(item => item.id === person.supervisorId)?.displayName || '未设置'}</dd></div>
@@ -39,7 +42,7 @@ export function PersonDetails({ person, data, onClose, onEdit, editLabel = '编�
           <div><dt>直接下属</dt><dd>{reports.length ? reports.map(item => item.displayName).join('、') : '无'}</dd></div>
         </dl>
       </div>
-      <div className="dialog-footer"><button className="button secondary" onClick={onClose}>关闭</button><button className="button primary" onClick={onEdit}>{editLabel}</button></div>
+      <div className="dialog-footer"><button className="button secondary" onClick={onClose}>关闭</button>{onResetPassword && <button className="button secondary" onClick={onResetPassword}>重置密码</button>}<button className="button primary" onClick={onEdit}>{editLabel}</button></div>
     </dialog>
   )
 }

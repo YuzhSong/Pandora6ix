@@ -1,5 +1,9 @@
 # Pandora 后端实施记录
 
+2026-10-18 本地新增：管理员重置员工密码（保留人员及业务关联、撤销员工旧会话），见 [密码重置契约](EMPLOYEE_PASSWORD_RESET.md)；一次性员工拼音账号维护脚本见 [运维执行说明](scripts/EMPLOYEE_ACCOUNT_MAINTENANCE.md)。两者均未在本轮部署或执行云端凭据修改。
+
+2026-10-18 本地新增：空部门/团队删除接口与 Web 确认流程，权限、版本和依赖校验见 [组织删除契约](ORG_DELETION.md)。需部署本次后端后生效；无数据库迁移。
+
 2026-10-17 更新：Web #12 / Android #13 已审核合入 dev 并部署，backend-syz 已同步 a493dfe 后补齐组织转换、人员资料持久化、管理员权限与公司日期日报规则。新提交待非作者审查后进入 dev；字段、日期规则、test 等级 1 与上线边界详见 [联调交接](CLIENT_HANDOFF_20261017.md)。系统操作日志存储方案仍待甲方确认。
 
 2026-10-15 更新：`backend-syz` 已合入 `dev ec288d4`。用户确认开放直属上级审批，新增审核列表、详情和决定，打通真实任务闭环；Android 所需十模块契约与对接示例见 [ANDROID_API_V0.2.md](ANDROID_API_V0.2.md)。变更 [complete-android-backend-workflows](../openspec/changes/archive/2026-10-15-complete-android-backend-workflows/proposal.md) 已随云端部署批次同步 dev 并归档，部署入口见 [云端部署](../deploy/README.md)。下面 2026-10-13 段落记录原始实施基线。

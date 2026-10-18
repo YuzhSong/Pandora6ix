@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createSeed } from '../src/data/seed.ts'
-import { organizationParents, validateOrganizationEdit } from '../src/data/organizationEditing.ts'
+import { organizationDeletionBlocker, organizationParents, validateOrganizationEdit } from '../src/data/organizationEditing.ts'
 
 test('a leaf team can become a department; a department with children cannot become a team', () => {
   const data = createSeed()
@@ -21,4 +21,17 @@ test('root changes, cyclic parents and manager-role mismatches are rejected', ()
   data.people = [{ ...data.people[0], orgUnitId: team.id, roles: ['TEAM_LEAD'] }]
   assert.throws(() => validateOrganizationEdit(data, { name: team.name, kind: 'DEPARTMENT', parentId: root.id }, team.id), /负责人角色/)
   assert.ok(organizationParents(data, 'TEAM', root.id).length === 0)
+})
+
+test('deletion blocks roots, children and disabled members but permits empty leaves', () => {
+  const data = createSeed()
+  const root = data.units.find(unit => unit.kind === 'COMPANY')!
+  const team = data.units.find(unit => unit.kind === 'TEAM')!
+  assert.match(organizationDeletionBlocker(data, root.id)!, /根组织/)
+  assert.match(organizationDeletionBlocker(data, team.parentId!)!, /下级组织/)
+  data.people = [{ ...data.people[0], orgUnitId: team.id, status: 'DISABLED' }]
+  assert.match(organizationDeletionBlocker(data, team.id)!, /停用账号/)
+  data.people = []
+  assert.equal(organizationDeletionBlocker(data, team.id), null)
+  assert.match(organizationDeletionBlocker(data, 'missing')!, /不存在/)
 })

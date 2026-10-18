@@ -45,6 +45,12 @@ public final class Contracts {
             @NotBlank String kind,
             String parentId) {}
 
+    public record OrgDelete(@NotNull @Min(0) Long expectedVersion) {}
+
+    public record UserPasswordReset(
+            @NotNull @Min(0) Long expectedVersion,
+            @NotBlank @Size(min = 10, max = 72) String newPassword) {}
+
     public record UserCreate(
             @NotBlank @Size(max = 128) String loginName,
             @NotBlank @Size(min = 10, max = 72) String password,

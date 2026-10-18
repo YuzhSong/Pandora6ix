@@ -138,6 +138,22 @@ public class DirectoryService {
         return view(db.entity("org_unit", a.enterpriseId(), id));
     }
 
+    @Transactional
+    public void deleteOrg(IdentityService.Actor a, String id, Contracts.OrgDelete c) {
+        a.admin();
+        lockEnterprise(a);
+        var old = db.entity("org_unit", a.enterpriseId(), id);
+        if (number(old, "version") != c.expectedVersion()) checkVersion(0);
+        if ("COMPANY".equals(old.get("kind")))
+            throw new BusinessException(409, "ORG_ROOT_DELETE_FORBIDDEN", "Company root cannot be deleted.");
+        if (!db.rows("SELECT id FROM org_unit WHERE enterprise_id=? AND parent_id=?", a.enterpriseId(), id).isEmpty())
+            throw new BusinessException(409, "ORG_HAS_CHILDREN", "Move or delete child organizations first.");
+        if (!db.rows("SELECT id FROM app_user WHERE enterprise_id=? AND org_unit_id=?", a.enterpriseId(), id).isEmpty())
+            throw new BusinessException(409, "ORG_HAS_MEMBERS", "Move all assigned accounts, including disabled accounts, first.");
+        checkVersion(db.update("DELETE FROM org_unit WHERE enterprise_id=? AND id=? AND version=?",
+                a.enterpriseId(), id, c.expectedVersion()));
+    }
+
     private void lockEnterprise(IdentityService.Actor a) {
         db.one("SELECT id FROM enterprise WHERE id=? FOR UPDATE", a.enterpriseId());
     }
@@ -277,6 +293,21 @@ public class DirectoryService {
                     "UPDATE auth_session SET revoked=TRUE WHERE enterprise_id=? AND user_id=?",
                     a.enterpriseId(),
                     id);
+        return user(a, id);
+    }
+
+    @Transactional
+    public Map<String, Object> resetPassword(IdentityService.Actor a, String id, Contracts.UserPasswordReset c) {
+        a.admin();
+        lockEnterprise(a);
+        var old = db.lock("app_user", a.enterpriseId(), id);
+        if (identity.actor(id, a.enterpriseId(), str(old, "org_unit_id"), null).has("ADMIN"))
+            throw new BusinessException(403, "ADMIN_PASSWORD_RESET_FORBIDDEN", "Use the administrator's own password-change flow.");
+        if (number(old, "version") != c.expectedVersion()) checkVersion(0);
+        String hash = identity.encode(c.newPassword());
+        checkVersion(db.update("UPDATE app_user SET password_hash=?,version=version+1 WHERE enterprise_id=? AND id=? AND version=?",
+                hash, a.enterpriseId(), id, c.expectedVersion()));
+        db.update("UPDATE auth_session SET revoked=TRUE WHERE enterprise_id=? AND user_id=?", a.enterpriseId(), id);
         return user(a, id);
     }
 

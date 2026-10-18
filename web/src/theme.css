@@ -370,6 +370,10 @@ body { background: var(--canvas-gradient); background-attachment: fixed; min-hei
 .entry-page > footer { padding: 20px; font-size: calc(11px * var(--font-scale)); color: var(--muted); letter-spacing: .02em; }
 .select-control { min-width: 0; }
 .filters .select-control { width: 166px; flex-shrink: 0; }
+.filters .select-control.organization-filter { width: 280px; max-width: 100%; }
+.select-popup[data-hierarchical='true'] { box-sizing: border-box; }
+.select-popup[data-hierarchical='true'] .select-option-label { flex: 1; }
+.select-popup[data-hierarchical='true'] .select-option-label > span:last-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .filters .search-box { height: 42px; border-radius: 11px; }
 .filters .search-box input { font-size: calc(13px * var(--font-scale)); }
 .select-trigger { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 16px; height: 42px; border: 1px solid var(--border); border-radius: 11px; padding: 0 13px; color: var(--text); background: var(--surface); text-align: left; font-size: calc(13px * var(--font-scale)); font-weight: 400; }
@@ -415,3 +419,36 @@ body { background: var(--canvas-gradient); background-attachment: fixed; min-hei
 :root[data-theme='dark'] .dialog-body :is(input, textarea, select)[aria-invalid='true'], :root[data-theme='dark'] .auth-card input[aria-invalid='true'] { border-color: #c8685e; box-shadow: 0 0 0 2px #c8685e15; }
 .validation-announcement { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 @media (prefers-reduced-transparency: reduce) { .workspace-header, .panel, :root[data-theme='dark'] .panel, .entry-card.auth-card, :root[data-theme='dark'] .entry-card.auth-card { background: var(--surface); backdrop-filter: none; } }
+.organization-delete-note { margin: 0 28px 18px; color: var(--muted); font-size: 13px; line-height: 1.6; }
+.organization-delete-dialog p { color: var(--text); font-size: calc(14px * var(--font-scale)); overflow-wrap: anywhere; }
+.organization-delete-dialog p.error-message { color: #b25f5f; }
+.personnel-actions { flex-wrap: wrap; column-gap: 18px; row-gap: 10px; }
+.personnel-identity .person-login-name { color: var(--text); overflow-wrap: anywhere; }
+.account-information { padding: 18px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+.account-information-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 18px; }
+.account-information-heading h3 { margin: 0; font-size: calc(15px * var(--font-scale)); }
+.account-information > label { display: flex; flex-direction: column; gap: 8px; font-size: calc(13px * var(--font-scale)); margin-bottom: 16px; }
+.account-information input { font-size: calc(14px * var(--font-scale)); }
+.account-information > p, .account-handoff-intro { color: var(--muted); font-size: calc(13px * var(--font-scale)); line-height: 1.7; }
+.account-information > .account-copy-feedback { margin: 8px 0 0; }
+.account-password { display: flex; align-items: center; gap: 8px; }
+.account-password input { flex: 1; }
+.account-password button { flex-shrink: 0; }
+.account-handoff-intro { margin: 0 0 18px; }
+.personnel-toolbar { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.personnel-toolbar .button { white-space: nowrap; }
+.bulk-personnel-dialog { width: 900px; }
+.credential-tools-dialog[open] { display: flex; flex-direction: column; max-height: 90vh; overflow: hidden; }
+.credential-tools-dialog > form { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.credential-tools-dialog .dialog-head, .credential-tools-dialog .dialog-footer { flex-shrink: 0; }
+.credential-tools-dialog .dialog-body { min-height: 0; overflow-y: auto; }
+.credential-tools-dialog .dialog-body > fieldset, .credential-tools-dialog .dialog-body fieldset { border: 0; padding: 0; margin: 16px 0; min-width: 0; }
+.credential-tools-dialog fieldset > label { display: flex; flex-direction: column; gap: 8px; margin: 16px 0; font-size: calc(13px * var(--font-scale)); }
+.credential-list-label { display: flex; flex-direction: column; gap: 8px; }
+.credential-delivery-actions > div { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
+.credential-delivery-actions > p { margin: 10px 0 0; font-size: calc(13px * var(--font-scale)); color: var(--muted); }
+.bulk-result-table { overflow-x: auto; max-height: 320px; margin-top: 16px; }
+.bulk-result-table table { width: 100%; }
+.bulk-result-table td { white-space: normal; overflow-wrap: anywhere; }
+.bulk-row-error { color: #b25f5f; max-width: 320px; }
+@media (max-width: 680px) { .panel[aria-label='人员与角色'] > .panel-heading { flex-wrap: wrap; gap: 16px; }.personnel-toolbar { justify-content: flex-start; }.credential-tools-dialog .dialog-footer { flex-wrap: wrap; } }

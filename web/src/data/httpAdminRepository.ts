@@ -4,7 +4,7 @@ import { requireAdmin, validatePassword } from '../api/auth.ts'
 import { roleLabels } from './types.ts'
 import type { AdminData, AdminRepository, CompanyImportantItem, Enterprise, OrgUnit, Person, Role, UnitKind } from './types.ts'
 import { profilePendingMessage, supportsPersonnelProfile, validatePersonnelProfile } from './personnelProfile.ts'
-import { validateOrganizationEdit } from './organizationEditing.ts'
+import { organizationDeletionBlocker, validateOrganizationEdit } from './organizationEditing.ts'
 
 type Json = Record<string, unknown>
 const invalid = () => new ApiError('服务器返回的管理资料格式不正确，请联系管理员。', 200, 'INVALID_RESPONSE')
@@ -40,7 +40,7 @@ export function createHttpAdminRepository(client: ReturnType<typeof createApiCli
   let loadSerial = 0
   let uncertainPersonnelWrite = false
   const cancelled = () => new ApiError('身份或资料已变化，请重新加载。', 0, 'REQUEST_CANCELLED')
-  const current = () => { if (!snapshot) throw new Error('请先登录并加载公司资料。'); return snapshot }
+  const current = () => { if (!snapshot) throw new ApiError('页面资料已失效，请关闭当前窗口，点击右上角“刷新数据”后重试。', 0, 'WORKSPACE_NOT_LOADED'); return snapshot }
   async function all<T>(path: string, map: (value: unknown) => T): Promise<T[]> {
     const values: T[] = [], seen = new Set<string>()
     let cursor: string | null = null
@@ -102,6 +102,17 @@ export function createHttpAdminRepository(client: ReturnType<typeof createApiCli
       validateOrganizationEdit(current(), input, id)
       return write(id ? `/admin/org-units/${encodeURIComponent(id)}` : '/admin/org-units', { ...input, ...(id ? { expectedVersion } : {}) }, unit, (data, value) => { data.units = replace(data.units, value) }, !!id)
     },
+    async deleteUnit(id, expectedVersion) {
+      const blocker = organizationDeletionBlocker(current(), id)
+      if (blocker) throw new Error(blocker)
+      const before = generation
+      const response = await client.request(`/admin/org-units/${encodeURIComponent(id)}`, { method: 'DELETE', body: { expectedVersion } })
+      if (generation !== before) throw cancelled()
+      if (response !== undefined) throw invalid()
+      loadSerial++ // Older reads must not restore a successfully deleted unit.
+      current().units = current().units.filter(unit => unit.id !== id)
+      return copy()
+    },
     async savePerson(input, id, expectedVersion, initialPassword) {
       checkPersonnelWrite()
       const supported = supportsPersonnelProfile(current().people)
@@ -109,7 +120,8 @@ export function createHttpAdminRepository(client: ReturnType<typeof createApiCli
       const profile = profileBody({ ...oldPerson, ...input, id: id ?? '', version: expectedVersion ?? 0 })
       const profileChanged = Object.entries(profile).some(([key, value]) => value !== oldPerson?.[key as keyof Person])
       if (!supported && (!id || profileChanged)) throw new Error(profilePendingMessage)
-      if (!id || profileChanged) validatePersonnelProfile(profile)
+      if (id && Object.entries(profile).some(([key, value]) => value == null && oldPerson?.[key as keyof Person] != null)) throw new Error('已填写的性别、身份证号和电话号码暂不支持清空，请保留原值或填写新值。')
+      if (!id || profileChanged) validatePersonnelProfile(profile, !!id)
       if (id) {
         const old = current().people.find(value => value.id === id)
         if (!old || expectedVersion === undefined) throw invalid()
@@ -119,6 +131,17 @@ export function createHttpAdminRepository(client: ReturnType<typeof createApiCli
       validatePassword(initialPassword ?? '')
       const body = { loginName: input.loginName, password: initialPassword, displayName: input.displayName, jobTitle: input.jobTitle, orgUnitId: input.orgUnitId || null, supervisorUserId: input.supervisorId, roles: input.roles, ...profile }
       return write('/admin/users', body, verifyPerson(profile), (data, value) => { data.people = replace(data.people, value) }, false)
+    },
+    async resetPersonPassword(personId, newPassword, expectedVersion) {
+      const old = current().people.find(person => person.id === personId)
+      if (!old) throw invalid()
+      if (old.roles.includes('ADMIN')) throw new Error('管理员账号请使用本人修改密码功能。')
+      validatePassword(newPassword)
+      return write(`/admin/users/${encodeURIComponent(personId)}/password-reset`, { expectedVersion, newPassword }, value => {
+        const result = verifyPerson(profileBody(old))(value)
+        if (result.id !== personId || result.loginName !== old.loginName || result.version !== expectedVersion + 1) throw invalid()
+        return result
+      }, (data, value) => { data.people = replace(data.people, value) }, false)
     },
     async saveRoles(personId, roles, expectedVersion) {
       checkPersonnelWrite()
