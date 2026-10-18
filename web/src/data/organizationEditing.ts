@@ -1,5 +1,14 @@
 import type { AdminData, UnitInput, UnitKind } from './types.ts'
 
+export function organizationDeletionBlocker(data: AdminData, id: string): string | null {
+  const unit = data.units.find(unit => unit.id === id)
+  if (!unit) return '该组织已不存在，请刷新资料。'
+  if (unit.kind === 'COMPANY') return '公司根组织不能删除。'
+  if (data.units.some(unit => unit.parentId === id)) return '请先调整或删除下级组织，再删除此组织。'
+  if (data.people.some(person => person.orgUnitId === id)) return '请先转移全部直属人员（包括停用账号），再删除此组织。'
+  return null
+}
+
 export function organizationParents(data: AdminData, kind: UnitKind, id?: string) {
   const excluded = new Set(id ? [id] : [])
   let changed = true

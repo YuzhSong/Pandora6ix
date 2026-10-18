@@ -12,6 +12,7 @@ import { createAuthService } from '../src/api/auth.ts'
 import { createSessionStore } from '../src/api/session.ts'
 import { createHttpAdminRepository } from '../src/data/httpAdminRepository.ts'
 import { createBackendProxy } from '../dev/backendProxy.ts'
+import { bulkPersonnelTemplate, createBulkPersonnel, previewBulkPersonnel } from '../src/data/bulkPersonnel.ts'
 
 // Uses an explicitly supplied backend artifact or the documented source-copy artifact,
 // with a fresh database under web/.integration. No team server or credentials are used.
@@ -62,6 +63,12 @@ try {
   await auth.login({ enterpriseDomain: domain, loginName: 'admin', password })
   let data = (await repository.getWorkspace())!
   assert.equal(data.people.length, 1); assert.equal(data.enterprise.version, 0)
+  const legacyAdmin = data.people[0]
+  assert.equal(legacyAdmin.gender, null); assert.equal(legacyAdmin.idNumber, null)
+  data = await repository.savePerson({ ...legacyAdmin, phoneNumber: '+86 (010) 12345678' }, legacyAdmin.id, legacyAdmin.version)
+  data = await repository.load()
+  assert.equal(data.people[0].phoneNumber, '+86 (010) 12345678')
+  assert.equal(data.people[0].gender, null); assert.equal(data.people[0].idNumber, null)
   const oldVersion = data.enterprise.version
   data = await repository.saveEnterprise('Web 联调公司更新', oldVersion)
   await assert.rejects(repository.saveEnterprise('冲突覆盖', oldVersion), (error: unknown) => error instanceof ApiError && error.status === 409)
@@ -75,6 +82,15 @@ try {
   const staffPassword = randomUUID()
   data = await repository.savePerson({ displayName: '测试人员', loginName: 'staff', jobTitle: '前端', orgUnitId: department.id, supervisorId: manager.id, roles: ['EMPLOYEE'], ...personnel }, undefined, undefined, staffPassword)
   data = await repository.load()
+  assert.equal(data.people.find(person => person.loginName === 'staff')?.gender, personnel.gender)
+  assert.equal(data.people.find(person => person.loginName === 'staff')?.idNumber, personnel.idNumber)
+  const employeeSession = await client.request<{ accessToken: string; user: { roles: string[] } }>('/auth/login', { method: 'POST', authenticated: false, body: { enterpriseDomain: domain, loginName: 'staff', password: staffPassword } })
+  assert.ok(employeeSession.user.roles.includes('EMPLOYEE'), '新增人员的账号应可真实登录')
+  const employeeClient = createApiClient({ baseUrl: `${origin}/api/v1`, getAccessToken: () => employeeSession.accessToken })
+  const employeeMe = await employeeClient.request<Record<string, unknown>>('/me')
+  assert.ok(!Object.hasOwn(employeeMe, 'idNumber') && !Object.hasOwn(employeeMe, 'phoneNumber'), '非管理端投影不得泄露证件或电话')
+  await assert.rejects(employeeClient.request('/admin/users'), (error: unknown) => error instanceof ApiError && error.status === 403)
+  await employeeClient.request('/auth/logout', { method: 'POST' })
   await assert.rejects(auth.login({ enterpriseDomain: domain, loginName: 'staff', password: staffPassword }), (error: unknown) => error instanceof ApiError && error.status === 403)
   assert.ok(sessions.read(), '拒绝普通员工登录不能清除已有管理员身份')
   let staff = data.people.find(person => person.loginName === 'staff')!
@@ -95,8 +111,45 @@ try {
   assert.equal(data.people.find(person => person.id === staff.id)!.phoneNumber, personnel.phoneNumber)
   const leaf = data.units.find(unit => unit.kind === 'TEAM')!
   data = await repository.saveUnit({ name: leaf.name, kind: 'DEPARTMENT', parentId: data.units.find(unit => unit.kind === 'COMPANY')!.id }, leaf.id, leaf.version)
+  data = await repository.load()
   assert.equal(data.units.find(unit => unit.id === leaf.id)!.kind, 'DEPARTMENT')
   data = await repository.saveUnit({ name: leaf.name, kind: 'TEAM', parentId: department.id }, leaf.id, data.units.find(unit => unit.id === leaf.id)!.version)
+  data = await repository.load()
+  assert.equal(data.units.find(unit => unit.id === leaf.id)!.kind, 'TEAM')
+  assert.equal(data.units.find(unit => unit.id === leaf.id)!.parentId, department.id)
+  await assert.rejects(repository.deleteUnit(department.id, department.version), /下级组织/)
+  data = await repository.saveUnit({ name: '删除联调部门', kind: 'DEPARTMENT', parentId: data.units.find(unit => unit.kind === 'COMPANY')!.id })
+  const disposableDepartment = data.units.find(unit => unit.name === '删除联调部门')!
+  data = await repository.saveUnit({ name: '删除联调团队', kind: 'TEAM', parentId: disposableDepartment.id })
+  const disposableTeam = data.units.find(unit => unit.name === '删除联调团队')!
+  await assert.rejects(repository.deleteUnit(disposableTeam.id, disposableTeam.version + 1), (error: unknown) => error instanceof ApiError && error.code === 'VERSION_CONFLICT')
+  data = await repository.deleteUnit(disposableTeam.id, disposableTeam.version)
+  assert.ok(!data.units.some(unit => unit.id === disposableTeam.id))
+  data = await repository.load()
+  assert.ok(!data.units.some(unit => unit.id === disposableTeam.id))
+  data = await repository.deleteUnit(disposableDepartment.id, disposableDepartment.version)
+  data = await repository.load()
+  assert.ok(!data.units.some(unit => unit.id === disposableDepartment.id))
+  const previousStaff = data.people.find(person => person.id === staff.id)!
+  const oldStaffSession = await client.request<{ accessToken: string }>('/auth/login', { method: 'POST', authenticated: false, body: { enterpriseDomain: domain, loginName: previousStaff.loginName, password: staffPassword } })
+  const resetPassword = randomUUID()
+  data = await repository.resetPersonPassword(staff.id, resetPassword, previousStaff.version)
+  assert.equal(data.people.find(person => person.id === staff.id)!.phoneNumber, personnel.phoneNumber)
+  assert.equal(data.people.find(person => person.id === staff.id)!.version, previousStaff.version + 1)
+  const oldStaffClient = createApiClient({ baseUrl: `${origin}/api/v1`, getAccessToken: () => oldStaffSession.accessToken })
+  await assert.rejects(oldStaffClient.request('/me'), (reason: unknown) => reason instanceof ApiError && reason.status === 401)
+  await assert.rejects(client.request('/auth/login', { method: 'POST', authenticated: false, body: { enterpriseDomain: domain, loginName: previousStaff.loginName, password: staffPassword } }), (reason: unknown) => reason instanceof ApiError && reason.status === 401)
+  const newStaffSession = await client.request<{ accessToken: string }>('/auth/login', { method: 'POST', authenticated: false, body: { enterpriseDomain: domain, loginName: previousStaff.loginName, password: resetPassword } })
+  await client.request('/auth/logout', { method: 'POST', authenticated: false, headers: { Authorization: `Bearer ${newStaffSession.accessToken}` } })
+  const batchPassword = randomUUID()
+  const batchPreview = previewBulkPersonnel(bulkPersonnelTemplate() + ['批量甲,batch-one', '批量乙,batch-two'].map(prefix => `${prefix},${batchPassword},女,000000200001010001,00000000001,开发,${department.name},manager`).join('\n'), data)
+  assert.deepEqual(batchPreview.errors, [])
+  let batchCreated = 0
+  await createBulkPersonnel(batchPreview.rows, repository, { stopped: () => false, onRow: (_, status, message) => { assert.notEqual(status, 'failed', message) }, onCreated: (next, account) => { data = next; batchCreated++; assert.equal(account.initialPassword, batchPassword) } })
+  assert.equal(batchCreated, 2)
+  data = await repository.load()
+  assert.ok(data.people.some(person => person.loginName === 'batch-one'))
+  assert.ok(data.people.some(person => person.loginName === 'batch-two'))
   await assert.rejects(repository.saveTag({ name: '不可管理', colorHex: '#112233' }), /不提供标签管理/)
   const itemKey = randomUUID(), command = { title: '真实联调事项', content: '<script>纯文本正文</script>', displayOrder: 1 }
   data = await repository.saveCompanyItem(command, undefined, undefined, itemKey)
@@ -120,7 +173,7 @@ try {
   await assert.rejects(revoked.request('/me'), (error: unknown) => error instanceof ApiError && error.status === 401)
   await auth.login({ enterpriseDomain: domain, loginName: 'admin', password: newPassword })
   await auth.logout(); assert.equal(sessions.read(), null)
-  console.log('真实 Spring + H2 + Vite + Web repository 联调通过：初始化幂等、认证、企业/组织/人员/角色、人员资料持久化与组织类型双向转换、标签管理关闭、事项幂等与版本修改、刷新持久化、409、改密及退出撤销。')
+  console.log('真实 Spring + H2 + Vite + Web repository 联调通过：人员创建与资料持久化、权限隔离、角色资料保留、组织类型转换及删除、员工密码重置与旧会话撤销、CSV 批量创建、标签关闭、事项幂等与版本、改密及退出。')
   if (process.argv.includes('--preview')) {
     // Disposable random account in a loopback-only database, solely for browser QA.
     console.log(JSON.stringify({ previewUrl: origin, enterpriseDomain: domain, loginName: 'admin', temporaryPassword: newPassword }))

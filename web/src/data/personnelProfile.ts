@@ -7,10 +7,10 @@ export function supportsPersonnelProfile(people: Person[]) {
   return people.length > 0 && people.every(person => person.gender !== undefined && person.idNumber !== undefined && person.phoneNumber !== undefined)
 }
 
-export function validatePersonnelProfile(profile: Pick<Person, 'gender' | 'idNumber' | 'phoneNumber'>) {
-  if (!profile.gender || !Object.hasOwn(genderLabels, profile.gender)) throw new Error('请选择性别。')
-  if (!/^(?:\d{15}|\d{17}[\dX])$/.test(profile.idNumber ?? '')) throw new Error('请填写 15 位或 18 位身份证号，末位 X 使用大写。')
-  if (!/^\+?[\d ()-]{6,24}$/.test(profile.phoneNumber ?? '') || (profile.phoneNumber?.replace(/\D/g, '').length ?? 0) < 6) throw new Error('请填写有效的电话号码，可包含区号、空格或短横线。')
+export function validatePersonnelProfile(profile: Pick<Person, 'gender' | 'idNumber' | 'phoneNumber'>, partial = false) {
+  if ((!partial || profile.gender != null) && (!profile.gender || !Object.hasOwn(genderLabels, profile.gender))) throw new Error('请选择性别。')
+  if ((!partial || profile.idNumber != null) && !/^(?:\d{15}|\d{17}[\dX])$/.test(profile.idNumber ?? '')) throw new Error('请填写 15 位或 18 位身份证号，末位 X 使用大写。')
+  if ((!partial || profile.phoneNumber != null) && (!/^\+?[\d ()-]{6,24}$/.test(profile.phoneNumber ?? '') || (profile.phoneNumber?.replace(/\D/g, '').length ?? 0) < 6)) throw new Error('请填写有效的电话号码，可包含区号、空格或短横线。')
 }
 
 export function maskIdentity(value?: string | null) {

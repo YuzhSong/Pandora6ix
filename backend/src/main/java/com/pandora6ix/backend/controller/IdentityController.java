@@ -78,6 +78,12 @@ public class IdentityController {
         return directory.patchOrg(identity.current(), id, c);
     }
 
+    @DeleteMapping("/admin/org-units/{id}")
+    public ResponseEntity<Void> orgDelete(@PathVariable String id, @Valid @RequestBody Contracts.OrgDelete c) {
+        directory.deleteOrg(identity.current(), id, c);
+        return ResponseEntity.noContent().build();
+    }
+
     @GetMapping("/admin/users")
     public Object users(
             @RequestParam(required = false) String q,
@@ -95,5 +101,10 @@ public class IdentityController {
     @PatchMapping("/admin/users/{id}")
     public Object userPatch(@PathVariable String id, @Valid @RequestBody Contracts.UserPatch c) {
         return directory.patchUser(identity.current(), id, c);
+    }
+
+    @PostMapping("/admin/users/{id}/password-reset")
+    public Object resetPassword(@PathVariable String id, @Valid @RequestBody Contracts.UserPasswordReset c) {
+        return directory.resetPassword(identity.current(), id, c);
     }
 }

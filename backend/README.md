@@ -1,6 +1,6 @@
 # Pandora 后端实施记录
 
-2026-10-18 更新：`backend-syz` 已同步 `dev 4c4b032`。管理员登录名维护变更见 [admin-edit-user-login-name](../openspec/changes/admin-edit-user-login-name/proposal.md)，包含 Web 配套入口，待 PR 审阅合并后才会上线。
+2026-10-18 更新：`backend-syz` 已同步 `dev 4c4b032`。管理员登录名维护变更见 [admin-edit-user-login-name](../openspec/changes/archive/2026-10-18-admin-edit-user-login-name/proposal.md)，包含 Web 配套入口，已通过 PR #19 合入 dev 并部署。
 
 ## 管理员修改现有登录名
 
@@ -24,6 +24,9 @@
 仅本公司 ADMIN 有权操作；未登录 401、无管理员权限 403、其他公司对象 404、重名 `409 LOGIN_NAME_TAKEN`、过期版本 `409 VERSION_CONFLICT`、非法名称 `422 VALIDATION_FAILED`（含 loginName 字段错误）。所有失败均回滚整笔修改。最后一个有效管理员等原有保护继续生效。
 
 Web 已同时开放编辑输入，只在名称变化时发送该字段，并核对返回值；旧后端忽略字段时不会显示改名成功。历史人员尚未补齐的资料可保持为空，新增人员或实际修改资料仍需通过原校验。本变更不执行云端员工批量改名。
+2026-10-18 本地新增：管理员重置员工密码（保留人员及业务关联、撤销员工旧会话），见 [密码重置契约](EMPLOYEE_PASSWORD_RESET.md)；一次性员工拼音账号维护脚本见 [运维执行说明](scripts/EMPLOYEE_ACCOUNT_MAINTENANCE.md)。两者均未在本轮部署或执行云端凭据修改。
+
+2026-10-18 本地新增：空部门/团队删除接口与 Web 确认流程，权限、版本和依赖校验见 [组织删除契约](ORG_DELETION.md)。需部署本次后端后生效；无数据库迁移。
 
 2026-10-17 更新：Web #12 / Android #13 已审核合入 dev 并部署，backend-syz 已同步 a493dfe 后补齐组织转换、人员资料持久化、管理员权限与公司日期日报规则。新提交待非作者审查后进入 dev；字段、日期规则、test 等级 1 与上线边界详见 [联调交接](CLIENT_HANDOFF_20261017.md)。系统操作日志存储方案仍待甲方确认。
 

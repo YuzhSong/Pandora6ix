@@ -192,6 +192,7 @@ RESPONSES = {
     ("GET", "/admin/enterprise"): "Enterprise", ("PATCH", "/admin/enterprise"): "Enterprise",
     ("GET", "/admin/org-units"): "OrgUnitPage", ("POST", "/admin/org-units"): "OrgUnit", ("PATCH", "/admin/org-units/{id}"): "OrgUnit",
     ("GET", "/admin/users"): "UserPage", ("POST", "/admin/users"): "User", ("PATCH", "/admin/users/{id}"): "User",
+    ("POST", "/admin/users/{id}/password-reset"): "User",
     ("GET", "/tags"): "TagPage", ("POST", "/tags"): "Tag", ("PATCH", "/tags/{id}"): "Tag",
     ("GET", "/tasks/recipient-candidates"): "RecipientPage", ("GET", "/tasks"): "TaskPage", ("POST", "/tasks"): "Task", ("GET", "/tasks/{id}"): "Task", ("PATCH", "/tasks/{id}"): "Task",
     ("POST", "/tasks/{id}/complete"): "Assignment", ("POST", "/task-assignments/{id}/progress-records"): "ProgressResult",
@@ -221,7 +222,7 @@ def generate():
         for method in re.finditer(r'@(Get|Post|Patch|Put|Delete)Mapping\("([^"]+)"\)\s*(?:@ResponseStatus\(([^)]+)\)\s*)?public\s+\S+\s+(\w+)\((.*?)\)\s*\{', source, re.S):
             verb, path, status, name, params = method.groups()
             verb = verb.upper()
-            no_body = (verb, path) in (("POST", "/auth/logout"), ("POST", "/me/password"))
+            no_body = (verb, path) in (("POST", "/auth/logout"), ("POST", "/me/password"), ("DELETE", "/admin/org-units/{id}"))
             status_code = "204" if no_body else "201" if status and "CREATED" in status else "200"
             operation = {"operationId": file.stem + "_" + name, "tags": [file.stem.replace("Controller", "")], "parameters": [], "responses": {}}
             if path == "/auth/login":
@@ -258,8 +259,8 @@ def generate():
                 operation["responses"][str(error)] = {"description": "Structured error; unavailable private objects use uniform 404.", "content": {"application/json": {"schema": ref("Error")}}}
             document["paths"].setdefault(path, {})[verb.lower()] = operation
             count += 1
-    if count != len(RESPONSES) + 2:
-        raise RuntimeError(f"Controller parser omitted routes: {count} vs {len(RESPONSES) + 2}")
+    if count != len(RESPONSES) + 3:
+        raise RuntimeError(f"Controller parser omitted routes: {count} vs {len(RESPONSES) + 3}")
     # Resolve every local schema reference before exporting; JSON syntax alone is insufficient.
     stack = [document]
     while stack:
