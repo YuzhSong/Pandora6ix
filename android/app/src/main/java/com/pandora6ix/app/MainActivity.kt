@@ -69,6 +69,7 @@ import com.pandora6ix.app.ui.task.ProgressSheet
 import com.pandora6ix.app.ui.tags.TagManageScreen
 import com.pandora6ix.app.ui.theme.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.ensureActive
 import java.io.File
 import java.util.UUID
 
@@ -216,7 +217,7 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
         var notifyDeadline by remember(currentUser?.id) { mutableStateOf(notifyPrefs.deadline) }
         var notifyStatus by remember(currentUser?.id) { mutableStateOf(notifyPrefs.statusChange) }
         var notifyLeadMinutes by remember(currentUser?.id) { mutableIntStateOf(notifyPrefs.leadMinutes) }
-        val reminderQueue = remember { mutableStateListOf<ReminderEvent>() }
+        val reminderQueue = remember(currentUser?.id, notifyMaster) { mutableStateListOf<ReminderEvent>() }
         // Android 13+ 需运行时申请通知权限；开启提醒时按需询问，被拒也不影响页内弹窗
         val notifyPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
         fun requestNotifyPermission() {
@@ -266,11 +267,17 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
         LaunchedEffect(currentUser?.id, notifyMaster, notifyNewTask, notifyDeadline, notifyStatus, notifyLeadMinutes) {
             // 权限只在用户主动开启提醒时申请（见设置页），进入软件不打扰
             if (currentUser == null || !notifyMaster) return@LaunchedEffect
+            val reminderOwner = currentUser!!.id
             NotificationHelper.createChannel(appContext)
             while (true) {
                 val events = runCatching {
                     collectReminders(calendarRepo, notifyPrefs, currentUser?.businessTimezone)
-                }.getOrElse { emptyList() }
+                }.getOrElse {
+                    if (it is kotlinx.coroutines.CancellationException) throw it
+                    emptyList()
+                }
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (currentUser?.id != reminderOwner || !notifyMaster) return@LaunchedEffect
                 events.forEach { event ->
                     NotificationHelper.notify(appContext, NotificationHelper.idOf(event.key), event.title, event.message)
                     reminderQueue.add(event)

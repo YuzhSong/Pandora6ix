@@ -2283,8 +2283,8 @@ class BusinessApiIntegrationTests {
         var completion = (Map<String, Object>) submitted.get("request");
         request("POST", "/task-completion-requests/"+str(completion, "id")+"/decision", managerToken,
                 fields("expectedVersion", 0, "decision", "ACCEPT"), 200);
-        // 验收结果通知接收人：进度与申请验收通知发起人
-        assertEquals(1, countKind(employeeToken, "STATUS"));
+        assertEquals(3, countKind(employeeToken, "STATUS"));
+        assertEquals(3, countKind(managerToken, "STATUS"));
     }
 
     @Test
@@ -2301,6 +2301,12 @@ class BusinessApiIntegrationTests {
         var delegated = createTask(managerToken, "DELEGATED", List.of(employee));
         reviewDecision(founderToken, delegated, "APPROVE");
         dueAt(str(delegated, "id"), end, endMinute);
+        // Approval is a visibility boundary: pending and rejected tasks must stay private.
+        var pending = createTask(managerToken, "DELEGATED", List.of(peer));
+        dueAt(str(pending, "id"), end, endMinute);
+        var rejected = createTask(managerToken, "DELEGATED", List.of(peer));
+        reviewDecision(founderToken, rejected, "REJECT");
+        dueAt(str(rejected, "id"), end, endMinute);
         var personal = createTask(employeeToken, "PERSONAL", List.of());
         reviewDecision(leadToken, personal, "APPROVE");
         dueAt(str(personal, "id"), end, endMinute);
@@ -2308,11 +2314,44 @@ class BusinessApiIntegrationTests {
                 fields("expectedAssignmentVersion", 1), 200);
         assertTrue(notifications.scanDeadlines() >= 1);
         assertEquals(1, countKind(employeeToken, "DEADLINE"));
+        assertEquals(0, unread(peerToken));
         assertNotNull(items(request("GET", "/notifications?limit=100", employeeToken, null, 200)).stream()
                 .filter(n -> "DEADLINE".equals(n.get("kind"))).findFirst().get().get("dueAt"));
         // 已完成的任务不产生截止提醒（US29），重复扫描也不重复生成
         notifications.scanDeadlines();
         assertEquals(1, countKind(employeeToken, "DEADLINE"));
+    }
+
+    @Test
+    void returningToEarlierProgressIsANewEventAndPersonalStatusIsNotDuplicated() throws Exception {
+        var task = createTask(employeeToken, "PERSONAL", List.of());
+        reviewDecision(leadToken, task, "APPROVE");
+        String assignmentId = assignment(str(task, "id"), employee);
+        int version = 1;
+        for (int progress : List.of(50, 75, 50, 50)) {
+            request("POST", "/task-assignments/"+assignmentId+"/progress-records", employeeToken,
+                    fields("expectedVersion", version++, "progressPercent", progress), 201);
+        }
+        assertEquals(3, countKind(employeeToken, "STATUS"));
+        assertEquals(0, countKind(peerToken, "STATUS"));
+    }
+
+    @Test
+    void concurrentDuplicateNotificationsKeepOneRecordWithoutFailingCallers() throws Exception {
+        var task = createTask(employeeToken, "PERSONAL", List.of());
+        var start = new CountDownLatch(1);
+        try (var pool = Executors.newFixedThreadPool(8)) {
+            var results = new ArrayList<Future<?>>();
+            for (int i = 0; i < 8; i++) results.add(pool.submit(() -> {
+                start.await();
+                notifications.emit(enterprise, employee, "STATUS", str(task, "id"), null,
+                        "Concurrent", "Same event", "concurrent-test", null);
+                return null;
+            }));
+            start.countDown();
+            for (var result : results) result.get(15, TimeUnit.SECONDS);
+        }
+        assertEquals(1, countKind(employeeToken, "STATUS"));
     }
 
     private void dueAt(String taskId, LocalDate end, int endMinute) {

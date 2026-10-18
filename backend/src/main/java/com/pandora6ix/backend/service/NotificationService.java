@@ -5,6 +5,7 @@ import static com.pandora6ix.backend.repository.BusinessDb.*;
 import com.pandora6ix.backend.api.BusinessException;
 import com.pandora6ix.backend.repository.BusinessDb;
 
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -60,7 +61,8 @@ public class NotificationService {
                         userId,
                         dedupeKey);
         if (existing.isPresent()) return;
-        db.update(
+        try {
+            db.update(
                 "INSERT INTO"
                     + " notification(id,enterprise_id,user_id,kind,task_id,assignment_id,title,body,dedupe_key,due_at)"
                     + " VALUES(?,?,?,?,?,?,?,?,?,?)",
@@ -74,6 +76,10 @@ public class NotificationService {
                 body,
                 dedupeKey,
                 dueAt == null ? null : Timestamp.from(dueAt));
+        } catch (DuplicateKeyException ex) {
+            // A competing scan may insert after the existence check. Only ignore that event.
+            if (count(enterpriseId, dedupeKey, userId) == 0) throw ex;
+        }
     }
 
     /** 审批批准并激活执行关系：为每位被激活的接收人生成新任务提醒 */
@@ -100,7 +106,7 @@ public class NotificationService {
         }
     }
 
-    /** 执行状态或审批状态变化：通知指定用户 */
+    /** 执行状态变化：通知创建人与执行人；个人任务只产生一条。 */
     public void statusChanged(
             String enterpriseId,
             String userId,
@@ -109,9 +115,13 @@ public class NotificationService {
             String title,
             String statusText,
             String dedupeKey) {
-        emit(
+        var recipients = new LinkedHashSet<String>();
+        recipients.add(userId);
+        recipients.add(str(db.entity("task", enterpriseId, taskId), "creator_user_id"));
+        recipients.add(str(db.entity("task_assignment", enterpriseId, assignmentId), "recipient_user_id"));
+        for (String recipient : recipients) emit(
                 enterpriseId,
-                userId,
+                recipient,
                 STATUS,
                 taskId,
                 assignmentId,
@@ -184,8 +194,8 @@ public class NotificationService {
                                 + " assignment_id,a.recipient_user_id FROM task t JOIN"
                                 + " task_assignment a ON a.enterprise_id=t.enterprise_id AND"
                                 + " a.task_id=t.id WHERE t.enterprise_id=? AND"
-                                + " t.review_status<>'REJECTED' AND t.end_date BETWEEN ? AND ? AND"
-                                + " a.execution_status<>'COMPLETED'",
+                                + " t.review_status='APPROVED' AND t.end_date BETWEEN ? AND ? AND"
+                                + " a.execution_status IN ('ACTIVE','AWAITING_ACCEPTANCE')",
                             enterpriseId,
                             businessToday.minusDays(1),
                             businessToday.plusDays(2));

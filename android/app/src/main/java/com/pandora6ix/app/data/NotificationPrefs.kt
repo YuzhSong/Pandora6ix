@@ -13,7 +13,7 @@ object ReminderKind {
  * 通知提醒偏好（本地保存，按账号隔离）：主开关 + 三个子开关 + 截止提前量。
  * 同时保存任务状态快照（识别新增/变化）与已提醒记录（避免重复打扰）。
  */
-class NotificationPrefs(context: Context, ownerId: String?) {
+class NotificationPrefs(context: Context, val ownerId: String?) {
 
     private val prefs = context.getSharedPreferences("notify_" + (ownerId ?: "anon"), Context.MODE_PRIVATE)
 
@@ -51,6 +51,8 @@ class NotificationPrefs(context: Context, ownerId: String?) {
     }
 
     /** 任务状态快照：key = 任务id|执行关系id，value = 执行状态|审批状态 */
+    fun hasSnapshot(): Boolean = prefs.contains("snapshot")
+
     fun snapshot(): Map<String, String> {
         val raw = prefs.getString("snapshot", null) ?: return emptyMap()
         if (raw.isBlank()) return emptyMap()

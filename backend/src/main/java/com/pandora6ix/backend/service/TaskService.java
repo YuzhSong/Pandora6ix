@@ -610,15 +610,15 @@ public class TaskService
                 a.id(),
                 c.progressPercent(),
                 c.note());
-        // 进度变化提醒：同一进度的重复提交由去重键拦截
-        notifications.statusChanged(
+        // Consecutive identical progress is quiet; a later return to that percentage is a new event.
+        if (number(assignment, "progress_percent") != c.progressPercent()) notifications.statusChanged(
                 a.enterpriseId(),
                 str(task, "creator_user_id"),
                 str(task, "id"),
                 id,
                 str(task, "title"),
                 "的进度更新为 " + c.progressPercent() + "%",
-                id + "|STATUS|P" + c.progressPercent());
+                record + "|STATUS|PROGRESS");
         return fields(
                 "record",
                 view(db.entity("task_progress_record", a.enterpriseId(), record)),
