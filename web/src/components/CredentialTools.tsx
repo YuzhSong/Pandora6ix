@@ -28,8 +28,7 @@ function CopyDownload({ accounts }: { accounts: CreatedAccountReceipt[] }) {
 export function ExportAccountsDialog({ data, passwords, onClose }: { data: AdminData; passwords: Record<string, string>; onClose: () => void }) {
   const employees = data.people.filter(person => !person.roles.includes('ADMIN'))
   const accounts = employees.filter(person => passwords[person.id] !== undefined).map(person => ({ personId: person.id, displayName: person.displayName, loginName: person.loginName, enterpriseDomain: data.enterprise.loginDomain, initialPassword: passwords[person.id] }))
-  const missing = employees.filter(person => passwords[person.id] === undefined)
-  return <Frame title="批量交付账号与密码" wide onClose={onClose}><div className="dialog-body">{missing.length > 0 && <p className="panel-note">缺少交付密码：{missing.map(person => person.displayName).join('、')}</p>}<label className="credential-list-label">交付清单（{accounts.length} 人）<textarea readOnly rows={12} value={credentialListText(accounts)} onFocus={event => event.target.select()} /></label><CopyDownload accounts={accounts} /></div><div className="dialog-footer"><button className="button secondary" onClick={onClose}>关闭</button></div></Frame>
+  return <Frame title="批量交付账号与密码" wide onClose={onClose}><div className="dialog-body"><label className="credential-list-label">交付清单（{accounts.length} 人）<textarea readOnly rows={12} value={credentialListText(accounts)} onFocus={event => event.target.select()} /></label><CopyDownload accounts={accounts} /></div><div className="dialog-footer"><button className="button secondary" onClick={onClose}>关闭</button></div></Frame>
 }
 
 export function ResetEmployeePasswordDialog({ person, onClose, onReset }: { person: Person; onClose: () => void; onReset: (data: AdminData, account: CreatedAccountReceipt) => void }) {
