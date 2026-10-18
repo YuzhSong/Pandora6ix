@@ -7,4 +7,11 @@
 - `MainActivity.kt` and `JournalRepository.kt` have no difference from current origin/dev. The business-date / allowedActions journal policy is retained; the PR title's original 24-hour description is superseded.
 - Backend/API authorization and pagination are unchanged. Candidate metadata already supplies department and organization IDs; no backend release, schema change or cloud data change was required.
 - No device/emulator interaction test was run. Native/browser automation could not initialize in this session; UI evidence is compilation plus pure hierarchy tests, not a claimed visual/device acceptance.
-- Keep PR #15 and PR #16 open for review; do not merge or archive these changes in this task.
+- Implementation initially left PR #15 and PR #16 open for review. The user subsequently explicitly requested closing #15 and merging #16.
+
+## Merge and archive, 2026-10-18
+
+- PR #15 was closed without merge; the existing cloud/local database console remains installed.
+- PR #16 head `9a3c311cad6983714b37570310d1f2836f1045fa` merged into dev as `4c4b0328b91eff3ad2af266f08e55ef9e04874a8` at the user's request.
+- Ran `openspec archive fix-recipient-organization-hierarchy --yes` after the merge and prior successful validation. Three requirements were synchronized to the new main specification; all six tasks were complete.
+- Archival follow-up changes only OpenSpec documentation. No module source, runtime data or credentials are included.
