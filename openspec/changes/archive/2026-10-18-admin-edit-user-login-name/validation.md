@@ -39,3 +39,13 @@ QA script, synthetic runtime data, `verification.json` and screenshots remain ou
 ## Delivery boundary
 
 Submitted [PR #19](https://github.com/YuzhSong/Pandora6ix/pull/19), backend-syz → dev, for non-author review. No automatic merge, deployment or OpenSpec archive before merge. This PR permits manual administrator-maintained names; it does not generate pinyin or bulk-rename existing cloud accounts.
+
+## Post-merge integration review (2026-10-18)
+
+The user subsequently requested review and merge of PRs 17, 18 and 19 into dev and explicitly excluded PR 20. PR 19 merged as `862c068e14990eaac93b14765fcf701dc69bd29e`; reviewed PR 17 merged as `5dde68f43a5771ea329868d8497f514fe84ca104`.
+
+Combined PR 17/18/19 code passed 72 backend tests and packaging, 70 Web tests, Web lint/build, 49-operation OpenAPI drift verification, and a fresh file-H2 Spring/Vite/Web integration run including rename persistence and old/new login behavior. PR 17 Android passed 30 unit tests and debug APK assembly. Deployment receiver tests passed eight applicable Windows cases with three Linux-only cases skipped locally; Linux CI executes them during deployment.
+
+`openspec archive admin-edit-user-login-name --yes` synchronized both directory requirements and preserved all eight completed tasks. All 18 main specifications pass strict validation. The archive and cross-day automated-check completion notes are carried by PR 18; no runtime code is changed in that follow-up. PR 17's physical-device acceptance and future notification-API consumption remain pending in their active changes.
+
+Existing checks report two App.tsx lint warnings and a high-severity source-map-js 1.2.1 advisory in the Vite/PostCSS development dependency chain; these PRs do not modify dependency manifests or locks. No dependency upgrade is included in this integration.
