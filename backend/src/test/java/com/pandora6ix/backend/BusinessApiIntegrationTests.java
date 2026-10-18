@@ -2055,6 +2055,137 @@ class BusinessApiIntegrationTests {
     }
 
     @Test
+    void administratorRenamesLoginWithoutChangingIdentityPasswordProfileOrBusinessRelations() throws Exception {
+        var task = createTask(employeeToken, "PERSONAL", List.of());
+        var journal = journal(employeeToken, today, 1);
+        var before = new LinkedHashMap<>(db.entity("app_user", enterprise, employee));
+        var beforeRoles = db.rows("SELECT * FROM user_role WHERE enterprise_id=? AND user_id=?", enterprise, employee);
+        var taskBefore = db.entity("task", enterprise, str(task, "id"));
+        var journalBefore = db.entity("work_log", enterprise, str(journal, "id"));
+        var patch = personnelPatch(employee, 0, List.of("EMPLOYEE"));
+        patch.put("loginName", "zhang.san");
+        var edited = request("PATCH", "/admin/users/" + employee, adminToken, patch, 200);
+        assertEquals(employee, edited.get("id"));
+        assertEquals("zhang.san", edited.get("loginName"));
+        assertFalse(edited.containsKey("passwordHash"));
+        var after = new LinkedHashMap<>(db.entity("app_user", enterprise, employee));
+        assertEquals(1, number(after, "version"));
+        for (String key : List.of("login_name", "version")) { before.remove(key); after.remove(key); }
+        assertEquals(before, after);
+        assertEquals(beforeRoles, db.rows("SELECT * FROM user_role WHERE enterprise_id=? AND user_id=?", enterprise, employee));
+        assertEquals(taskBefore, db.entity("task", enterprise, str(task, "id")));
+        assertEquals(journalBefore, db.entity("work_log", enterprise, str(journal, "id")));
+        assertEquals(employee, request("GET", "/me", login("zhang.san"), null, 200).get("id"));
+        assertEquals(employee, request("GET", "/me", employeeToken, null, 200).get("id"));
+        request("GET", "/tasks/" + task.get("id"), employeeToken, null, 200);
+        request("GET", "/work-logs/" + journal.get("id"), employeeToken, null, 200);
+        request("POST", "/auth/login", null, fields("enterpriseDomain", domain,
+                "loginName", "employee", "password", PASSWORD), 401);
+        assertEquals(employee, items(request("GET", "/admin/users?q=zhang.san", adminToken, null, 200)).getFirst().get("id"));
+    }
+
+    @Test
+    void omittedNullAndUnchangedLoginNamesPreserveLegacyUpdates() throws Exception {
+        request("PATCH", "/admin/users/" + employee, adminToken,
+                personnelPatch(employee, 0, List.of("EMPLOYEE")), 200);
+        var patch = personnelPatch(employee, 1, List.of("EMPLOYEE", "ADMIN"));
+        patch.put("loginName", null);
+        request("PATCH", "/admin/users/" + employee, adminToken, patch, 200);
+        patch = personnelPatch(employee, 2, List.of("EMPLOYEE"));
+        patch.put("loginName", "employee");
+        request("PATCH", "/admin/users/" + employee, adminToken, patch, 200);
+        assertEquals("employee", db.entity("app_user", enterprise, employee).get("login_name"));
+        assertNotNull(login("employee"));
+        assertEquals("VERSION_CONFLICT", request("PATCH", "/admin/users/" + employee,
+                adminToken, patch, 409).get("code"));
+    }
+
+    @Test
+    void invalidDuplicateAndStaleLoginRenamesLeaveTheWholeAccountUntouched() throws Exception {
+        var before = db.entity("app_user", enterprise, employee);
+        var rolesBefore = db.rows("SELECT * FROM user_role WHERE enterprise_id=? AND user_id=?", enterprise, employee);
+        for (String value : List.of("", "   ", "\t\n", "\u2003", " zhang.san", "zhang.san ", "\u2003zhang.san", "x".repeat(129), "peer")) {
+            var patch = personnelPatch(employee, 0, List.of("EMPLOYEE", "ADMIN"));
+            patch.put("displayName", "Must not save"); patch.put("loginName", value);
+            var error = request("PATCH", "/admin/users/" + employee, adminToken, patch, value.equals("peer") ? 409 : 422);
+            assertEquals(value.equals("peer") ? "LOGIN_NAME_TAKEN" : "VALIDATION_FAILED", error.get("code"));
+            if (!value.equals("peer")) assertTrue(error.get("fieldErrors").toString().contains("loginName"));
+            assertEquals(before, db.entity("app_user", enterprise, employee));
+            assertEquals(rolesBefore, db.rows("SELECT * FROM user_role WHERE enterprise_id=? AND user_id=?", enterprise, employee));
+        }
+        var valid = personnelPatch(employee, 0, List.of("EMPLOYEE")); valid.put("loginName", "x".repeat(128));
+        request("PATCH", "/admin/users/" + employee, adminToken, valid, 200);
+        valid.put("loginName", "peer");
+        assertEquals("VERSION_CONFLICT", request("PATCH", "/admin/users/" + employee, adminToken, valid, 409).get("code"));
+    }
+
+    @Test
+    void loginRenameIsAdministratorOnlyAndEnterpriseScoped() throws Exception {
+        var patch = personnelPatch(employee, 0, List.of("EMPLOYEE")); patch.put("loginName", "local.new");
+        request("PATCH", "/admin/users/" + employee, employeeToken, patch, 403);
+        request("PATCH", "/admin/users/" + employee, managerToken, patch, 403);
+        request("PATCH", "/admin/users/" + employee, null, patch, 401);
+        var other = request("POST", "/admin/enterprise-initializations", null,
+                fields("loginDomain", "rename-" + UUID.randomUUID(), "name", "Other", "businessTimezone", "UTC",
+                        "adminLoginName", "foreign.login", "adminPassword", PASSWORD, "adminDisplayName", "Other admin"),
+                201, "X-Bootstrap-Token", "integration-tests-only-bootstrap");
+        String otherId = str(other, "adminUserId");
+        var otherBefore = db.entity("app_user", str(other, "id"), otherId);
+        request("PATCH", "/admin/users/" + otherId, adminToken, patch, 404);
+        var otherLogin = request("POST", "/auth/login", null, fields("enterpriseDomain", other.get("loginDomain"),
+                "loginName", "foreign.login", "password", PASSWORD), 200);
+        request("PATCH", "/admin/users/" + employee, str(otherLogin, "accessToken"), patch, 404);
+        patch.put("loginName", "foreign.login");
+        request("PATCH", "/admin/users/" + employee, adminToken, patch, 200);
+        assertEquals(otherBefore, db.entity("app_user", str(other, "id"), otherId));
+        assertNotNull(login("foreign.login"));
+    }
+
+    @Test
+    void renamedAdministratorKeepsSessionAndLastAdminProtection() throws Exception {
+        var patch = personnelPatch(admin, 0, List.of("ADMIN")); patch.put("loginName", "guanliyuan");
+        request("PATCH", "/admin/users/" + admin, adminToken, patch, 200);
+        request("GET", "/admin/users", adminToken, null, 200);
+        assertEquals(admin, request("GET", "/me", login("guanliyuan"), null, 200).get("id"));
+        patch = personnelPatch(admin, 1, List.of("EMPLOYEE")); patch.put("loginName", "must.not.save");
+        assertEquals("LAST_ADMIN_REQUIRED", request("PATCH", "/admin/users/" + admin, adminToken, patch, 409).get("code"));
+        assertEquals("guanliyuan", db.entity("app_user", enterprise, admin).get("login_name"));
+    }
+
+    @Test
+    void concurrentRenamesOfOneAccountRejectTheStaleVersion() throws Exception {
+        var first = personnelPatch(employee, 0, List.of("EMPLOYEE")); first.put("loginName", "rename.one");
+        var second = personnelPatch(employee, 0, List.of("EMPLOYEE")); second.put("loginName", "rename.two");
+        var start = new CountDownLatch(1);
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var a = executor.submit(() -> { start.await(); return raw("PATCH", "/admin/users/" + employee, adminToken, first); });
+            var b = executor.submit(() -> { start.await(); return raw("PATCH", "/admin/users/" + employee, adminToken, second); });
+            start.countDown();
+            var results = List.of(a.get(20, TimeUnit.SECONDS), b.get(20, TimeUnit.SECONDS));
+            assertEquals(List.of(200, 409), results.stream().map(Result::status).sorted().toList());
+            assertTrue(results.stream().filter(r -> r.status() == 409).findFirst().orElseThrow().body().contains("VERSION_CONFLICT"));
+        }
+        assertEquals(1, number(db.entity("app_user", enterprise, employee), "version"));
+    }
+
+    @Test
+    void concurrentAccountsClaimingOneLoginNameDoNotPartiallyUpdateTheLoser() throws Exception {
+        var first = personnelPatch(employee, 0, List.of("EMPLOYEE")); first.put("loginName", "shared.login");
+        var second = personnelPatch(peer, 0, List.of("EMPLOYEE")); second.put("loginName", "shared.login");
+        var start = new CountDownLatch(1);
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var a = executor.submit(() -> { start.await(); return raw("PATCH", "/admin/users/" + employee, adminToken, first); });
+            var b = executor.submit(() -> { start.await(); return raw("PATCH", "/admin/users/" + peer, adminToken, second); });
+            start.countDown();
+            var results = List.of(a.get(20, TimeUnit.SECONDS), b.get(20, TimeUnit.SECONDS));
+            assertEquals(List.of(200, 409), results.stream().map(Result::status).sorted().toList());
+            assertTrue(results.stream().filter(r -> r.status() == 409).findFirst().orElseThrow().body().contains("LOGIN_NAME_TAKEN"));
+        }
+        assertEquals(1, db.rows("SELECT id FROM app_user WHERE enterprise_id=? AND login_name='shared.login'", enterprise).size());
+        assertEquals(1, number(db.entity("app_user", enterprise, employee), "version") + number(db.entity("app_user", enterprise, peer), "version"));
+    }
+
+    @Test
     void personnelProfilePersistsLoginAndRoleEditsWithoutBusinessLeakage() throws Exception {
         var created = request("POST", "/admin/users", adminToken, personnelCommand("profile"), 201);
         String id = str(created, "id");

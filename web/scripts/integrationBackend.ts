@@ -80,6 +80,15 @@ try {
   let staff = data.people.find(person => person.loginName === 'staff')!
   data = await repository.savePerson({ ...staff, displayName: '更新人员' }, staff.id, staff.version)
   staff = data.people.find(person => person.id === staff.id)!
+  data = await repository.savePerson({ ...staff, loginName: 'zhang.san' }, staff.id, staff.version)
+  staff = data.people.find(person => person.id === staff.id)!
+  assert.equal(staff.loginName, 'zhang.san')
+  const anonymous = createApiClient({ baseUrl: `${origin}/api/v1` })
+  await assert.rejects(anonymous.request('/auth/login', { method: 'POST', authenticated: false, body: { enterpriseDomain: domain, loginName: 'staff', password: staffPassword } }), (error: unknown) => error instanceof ApiError && error.status === 401)
+  const renamed = await anonymous.request<{ accessToken: string; user: { id: string } }>('/auth/login', { method: 'POST', authenticated: false, body: { enterpriseDomain: domain, loginName: 'zhang.san', password: staffPassword } })
+  assert.equal(renamed.user.id, staff.id)
+  await anonymous.request('/auth/logout', { method: 'POST', authenticated: false, headers: { Authorization: `Bearer ${renamed.accessToken}` } })
+  await assert.rejects(repository.savePerson({ ...staff, loginName: 'admin' }, staff.id, staff.version), (error: unknown) => error instanceof ApiError && error.code === 'LOGIN_NAME_TAKEN')
   data = await repository.saveRoles(staff.id, ['EMPLOYEE', 'DEPARTMENT_MANAGER'], staff.version)
   assert.equal(data.people.find(person => person.id === staff.id)!.idNumber, personnel.idNumber)
   data = await repository.load()
@@ -98,6 +107,7 @@ try {
   data = (await repository.getWorkspace())!
   assert.equal(data.tags.length, 0); assert.equal(data.enterprise.name, 'Web 联调公司更新')
   assert.equal(data.people.find(person => person.id === staff.id)?.displayName, '更新人员')
+  assert.equal(data.people.find(person => person.id === staff.id)?.loginName, 'zhang.san')
   assert.ok(data.people.find(person => person.id === staff.id)?.roles.includes('DEPARTMENT_MANAGER'))
   assert.equal(data.companyItems[0].title, '修改后的事项')
   assert.equal(data.companyItems[0].publisherUserId, data.currentUserId)
