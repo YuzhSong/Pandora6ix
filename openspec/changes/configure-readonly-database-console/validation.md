@@ -23,3 +23,11 @@
 仅配置本机 SSH 私钥的用户可访问 localhost 入口，其他电脑需要单独授权。使用 PANDORA_VIEW 视图；PUBLIC 原表无权限。新的业务表需审核白名单，破坏性迁移需处理视图依赖。源码由本轮独立 PR 供非作者审查，云端启用属于用户明确授权的运维配置。
 
 运维实现提交 ad4bb00，审查 PR：https://github.com/YuzhSong/Pandora6ix/pull/15 。云端 tools/manifest.json 记录对应源码/编译 class 摘要；与业务 release.json 分开追溯。
+# Desktop launch repair, 2026-10-18
+
+- Reproduced the desktop target invocation and confirmed the cloud Console was healthy. The prior local tunnel was no longer listening; a cold start restored localhost access. No PR merge or server restart was needed.
+- Replaced shortcuts' cached Codex runtime host with Windows-installed PowerShell 5.1; installed scripts with UTF-8 BOM. Added a launcher with private status/error diagnostics and a visible failure dialog.
+- Verified stop then cold start, actual desktop shortcut completion, HTTP read-only authentication and SELECT of all 32 current people, and the running Chrome window titled H2 Console.
+- Verified a missing-script failure returns exit 1 and writes a sanitized diagnostic rather than reporting success. Browser automation tools could not initialize in this session, so verification used the actual Windows launcher, browser process title and real Console HTTP protocol.
+- PR #15 remains open and unmerged.
+

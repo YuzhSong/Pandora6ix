@@ -7,6 +7,10 @@ The operations console SHALL run against the actual backend H2 file in the backe
 - **WHEN** the user starts the provided local tunnel and opens its localhost URL
 - **THEN** H2 Console is reachable and can query current committed business data, while direct public access remains unavailable.
 
+#### Scenario: Desktop launch after the previous tunnel has stopped
+- **WHEN** the user opens the desktop shortcut with no live tunnel
+- **THEN** the launcher uses the Windows-installed PowerShell host, creates the tunnel and opens the authenticated page; a launch failure remains visible through an error message and a private local diagnostic log rather than silently disappearing.
+
 ### Requirement: Database-enforced read-only business views
 PANDORA_VIEWER SHALL be non-admin and receive SELECT only on admin-owned PANDORA_VIEW business views. Authentication/session/initialization/idempotency records and password hashes SHALL NOT be exposed. Business writes, grants and DDL SHALL be rejected. Real data and original business schema SHALL remain unchanged by setup.
 

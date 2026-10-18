@@ -9,3 +9,8 @@
 - [x] 2.1 Stage exact-version tools and private credentials; consistently back up and enable the console with recoverable systemd configuration.
 - [x] 2.2 Validate application health/login, release and business counts, private bind, browser login, read-only rejection, limited tunnel and restart persistence.
 - [x] 2.3 Open the working local URL, document access/disable steps, run strict validation and submit the review PR without committing secrets.
+
+## 3. Repair desktop launch diagnostics
+
+- [x] 3.1 Use the Windows-installed host for desktop shortcuts and retain private launch diagnostics with visible errors.
+- [x] 3.2 Verify a cold tunnel start, automatic read-only login and the actual desktop target; keep PR #15 unmerged.

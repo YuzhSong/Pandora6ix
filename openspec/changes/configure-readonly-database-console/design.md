@@ -15,6 +15,7 @@ Non-Goals: business UI/API features, public database console, data edits, databa
 - Initialize PANDORA_VIEWER as a non-admin. The admin-owned PANDORA_VIEW schema exposes an explicit allowlist of business tables as views, excluding credentials and sensitive authentication/idempotency tables. APP_USER's password_hash is excluded. SELECT is granted only on the views; startup refreshes view projections after application migrations. This user cannot change underlying business tables or DDL.
 - Before first enablement, stop backend, take a consistent private backup, set a random nonempty SA password, update private backend.env and provision reader credentials. Never pass passwords on process command lines or write them to Git/logs. Keep secrets in root-owned server files and the user's local Pandora directory. A disabled console can still use the stronger application DB password.
 - Create pandora-db-view SSH key account, limited to local forwarding to 127.0.0.1:18082; no shell/PTY/agent/remote forwarding. Pin existing host key. Local PowerShell opens a hidden ssh tunnel with PID tracking and an optional browser; stop terminates only its own verified process.
+- Desktop shortcuts use the system Windows PowerShell executable and a small launcher that records operation status in the existing private local directory. Failures display a message with that log path. Local scripts are installed with a UTF-8 BOM for Windows PowerShell 5.1 compatibility; the desktop entry does not depend on Codex's cached runtime.
 
 ## Risks / Trade-offs
 

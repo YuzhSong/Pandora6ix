@@ -6,6 +6,8 @@
 
 本机桌面“Pandora数据库查看”启动专用 SSH 隧道并自动以只读账号打开浏览器。地址为 `http://127.0.0.1:18082/`，仅在配置了私钥的电脑建立隧道后可用。关闭时用桌面“关闭数据库查看”。隧道不随电脑开机自动启动。
 
+桌面快捷方式使用系统自带的 `%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe`，参数为 `-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "本机私密目录\launch-db-console.ps1" -Action Start`（关闭入口用 `Stop`）。将三个 PowerShell 脚本以 UTF-8 BOM 保存到私密目录，兼容 Windows PowerShell 5.1。启动失败会弹窗提示，私密目录 `launcher.log` 保留操作时间、完成状态和脱敏错误位置；SSH 连接错误另见 `tunnel-error.log`。桌面入口不依赖 Codex 缓存目录中的 PowerShell。
+
 左侧展开 **PANDORA_VIEW**，点击表生成 SELECT，可查看云端实时记录。PUBLIC 原表不可直接查询。
 
 | 视图 | 内容 |
