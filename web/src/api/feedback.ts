@@ -4,6 +4,7 @@ const messages: Record<string, string> = {
   INVALID_CREDENTIALS: '登录未成功，请核对登录信息后重试。已保留填写内容。',
   CURRENT_PASSWORD_INVALID: '当前密码不正确，请重新输入。',
   LAST_ADMIN_REQUIRED: '公司必须保留至少一名启用的系统管理员。',
+  LOGIN_NAME_TAKEN: '该登录名已被公司内其他账号使用，请换一个登录名。',
   VERSION_CONFLICT: '资料已被其他人更新，请关闭编辑窗口、刷新资料后重新编辑。',
   IDEMPOTENCY_CONFLICT: '本次创建的内容已变化，请确认后重新提交。',
   UNAUTHENTICATED: '登录状态已失效，请重新登录。',
