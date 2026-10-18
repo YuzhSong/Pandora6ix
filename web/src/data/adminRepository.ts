@@ -1,4 +1,5 @@
 import { createSeed } from './seed.ts'
+import { organizationDeletionBlocker } from './organizationEditing.ts'
 import { roleLabels } from './types.ts'
 import type { AdminData, AdminRepository, CompanyItemInput, PersonInput, TagInput, UnitInput } from './types.ts'
 
@@ -181,6 +182,14 @@ export function createLocalAdminRepository(storage: StorageAdapter): AdminReposi
       if (old?.kind === 'COMPANY') data.enterprise = { ...data.enterprise, name: unit.name, version: data.enterprise.version + 1 }
       return write(data)
     },
+    async deleteUnit(unitId, expectedVersion) {
+      const data = readForWrite()
+      checkVersion(data.units.find(unit => unit.id === unitId), expectedVersion)
+      const blocker = organizationDeletionBlocker(data, unitId)
+      if (blocker) throw new Error(blocker)
+      data.units = data.units.filter(unit => unit.id !== unitId)
+      return write(data)
+    },
     async savePerson(input: PersonInput, personId, expectedVersion) {
       const data = readForWrite()
       const old = data.people.find(item => item.id === personId)
@@ -190,6 +199,7 @@ export function createLocalAdminRepository(storage: StorageAdapter): AdminReposi
       data.people = old ? data.people.map(item => item.id === personId ? person : item) : [...data.people, person]
       return write(data)
     },
+    async resetPersonPassword() { throw new Error('本地演示资料不包含登录密码，请连接真实后端后操作。') },
     async saveRoles(personId, roles, expectedVersion) {
       const data = readForWrite()
       const old = data.people.find(person => person.id === personId)

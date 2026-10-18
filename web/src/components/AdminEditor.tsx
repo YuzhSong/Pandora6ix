@@ -14,6 +14,7 @@ import { profilePendingMessage, supportsPersonnelProfile } from '../data/personn
 import { ValidatedForm } from './ValidatedForm.tsx'
 import { businessRank, reportingError, supervisorCandidates, supervisorHint } from '../data/supervisors.ts'
 import { RoleBadge } from './RoleBadge.tsx'
+import type { CreatedAccountReceipt } from '../data/accountHandoff.ts'
 
 export type EditRequest =
   | { kind: 'enterprise'; item: Enterprise }
@@ -24,7 +25,7 @@ export type EditRequest =
 
 
 export function AdminEditor({ request, data, onClose, onSaved }: {
-  request: EditRequest; data: AdminData; onClose: () => void; onSaved: (data: AdminData) => void
+  request: EditRequest; data: AdminData; onClose: () => void; onSaved: (data: AdminData, account?: CreatedAccountReceipt) => void
 }) {
   const dialog = useRef<HTMLDialogElement>(null)
   const [initial] = useState(() => createEditorDraft(request, data))
@@ -80,7 +81,9 @@ export function AdminEditor({ request, data, onClose, onSaved }: {
       }
       else if (request.kind === 'roles') next = await adminRepository.savePerson({ displayName: draft.name, loginName: draft.loginName, jobTitle: draft.jobTitle, orgUnitId: draft.orgUnitId, supervisorId: draft.supervisorId || null, roles: draft.roles }, request.item.id, request.item.version)
       else next = await adminRepository.savePerson({ displayName: draft.name, loginName: draft.loginName, jobTitle: draft.jobTitle, orgUnitId: draft.orgUnitId, supervisorId: draft.supervisorId || null, roles: draft.roles, ...(profileSupported ? { gender: draft.gender || null, idNumber: draft.idNumber.trim().toUpperCase() || null, phoneNumber: draft.phoneNumber.trim() || null } : {}) }, request.item?.id, request.item?.version, initialPassword)
-      onSaved(next)
+      const created = request.kind === 'person' && !request.item ? next.people.find(person => person.loginName === draft.loginName && !data.people.some(old => old.id === person.id)) : undefined
+      onSaved(next, created ? { personId: created.id, displayName: created.displayName, loginName: created.loginName, enterpriseDomain: next.enterprise.loginDomain, initialPassword } : undefined)
+      setInitialPassword('')
     } catch (reason) {
       const pendingTypeChange = request.kind === 'unit' && request.item && draft.kind !== request.item.kind && reason instanceof ApiError && reason.code === 'WORKFLOW_POLICY_UNCONFIRMED'
       setError(pendingTypeChange ? `当前服务尚未开放组织类型变更，请后端更新后重试。${reason.requestId ? ` 请求编号：${reason.requestId}` : ''}` : errorMessage(reason))
@@ -101,10 +104,11 @@ export function AdminEditor({ request, data, onClose, onSaved }: {
         {(request.kind === 'person' || request.kind === 'roles') && <>
           {request.kind === 'roles' ? <div className="person-summary"><span className="avatar">{draft.name.slice(0, 1)}</span><div><strong>{draft.name}</strong><span>{draft.loginName} · {draft.jobTitle || '未设置职位'}</span></div></div> : <>
             <div className="field-grid"><label><span className="field-label">姓名 <span className="required" aria-hidden="true">*</span></span><input autoFocus required maxLength={128} value={draft.name} onChange={event => set('name', event.target.value)} placeholder="人员姓名" /></label><label><span className="field-label">登录名 <span className="required" aria-hidden="true">*</span></span><input required maxLength={128} autoComplete="off" spellCheck={false} value={draft.loginName} onChange={event => set('loginName', event.target.value)} placeholder="例如：chen.sining" />{request.item && <small>修改后使用新登录名登录，密码保持不变。</small>}</label></div>
-            {!request.item && <label><span>初始密码 <span className="required">*</span></span><input type="password" required minLength={10} maxLength={72} autoComplete="new-password" value={initialPassword} onChange={event => setInitialPassword(event.target.value)} /><small>新增人员时同步创建登录账号，无需员工注册。初始密码至少 10 个字符，UTF-8 编码后不超过 72 字节。</small></label>}
+            {!request.item && <label><span>初始密码 <span className="required">*</span></span><input type="password" required minLength={10} maxLength={72} autoComplete="new-password" value={initialPassword} onChange={event => setInitialPassword(event.target.value)} /><small>新增人员时同步创建登录账号，无需员工注册。创建成功后可复制账号及本次初始密码交给员工。初始密码至少 10 个字符，UTF-8 编码后不超过 72 字节。</small></label>}
+            {profileSupported && request.item && <p className="panel-note">历史资料可逐项补充；已填写的资料可修改，暂不支持清空。</p>}
             {!profileSupported && <p className="panel-note" role="status">{profilePendingMessage}{request.item ? ' 现有姓名、职位、组织和直属上级仍可修改。' : ' 本次提交不会创建不完整的员工账号。'}</p>}
-            <div className="field-grid"><label><span>性别 <span className="required">*</span></span><Select label="性别" required={!request.item} disabled={!profileSupported && !!request.item} value={draft.gender} onChange={value => set('gender', value as Draft['gender'])} options={[{ value: '', label: '请选择性别' }, { value: 'MALE', label: '男' }, { value: 'FEMALE', label: '女' }]} /></label><label><span>电话号码 <span className="required">*</span></span><input type="tel" required={!request.item} disabled={!profileSupported && !!request.item} maxLength={24} autoComplete="off" value={draft.phoneNumber} onChange={event => set('phoneNumber', event.target.value)} placeholder="手机号或含区号的固定电话" /></label></div>
-            <label><span>身份证号 <span className="required">*</span></span><input required={!request.item} disabled={!profileSupported && !!request.item} minLength={15} maxLength={18} autoComplete="off" spellCheck={false} value={draft.idNumber} onChange={event => set('idNumber', event.target.value.toUpperCase())} placeholder="15 位或 18 位身份证号" /><small>新员工须填写完整资料；历史资料未填写时，可先修改登录名等已有信息。</small></label>
+            <div className="field-grid"><label><span>性别 {(!request.item || !!request.item.gender) && <span className="required">*</span>}</span><Select label="性别" required={!request.item || !!request.item.gender} disabled={!profileSupported && !!request.item} value={draft.gender} onChange={value => set('gender', value as Draft['gender'])} options={[{ value: '', label: '请选择性别' }, { value: 'MALE', label: '男' }, { value: 'FEMALE', label: '女' }]} /></label><label><span>电话号码 {(!request.item || !!request.item.phoneNumber) && <span className="required">*</span>}</span><input type="tel" required={!request.item || !!request.item.phoneNumber} disabled={!profileSupported && !!request.item} maxLength={24} autoComplete="off" value={draft.phoneNumber} onChange={event => set('phoneNumber', event.target.value)} placeholder="手机号或含区号的固定电话" /></label></div>
+            <label><span>身份证号 {(!request.item || !!request.item.idNumber) && <span className="required">*</span>}</span><input required={!request.item || !!request.item.idNumber} disabled={!profileSupported && !!request.item} minLength={15} maxLength={18} autoComplete="off" spellCheck={false} value={draft.idNumber} onChange={event => set('idNumber', event.target.value.toUpperCase())} placeholder="15 位或 18 位身份证号" /></label>
             <label>职位<input maxLength={128} value={draft.jobTitle} onChange={event => set('jobTitle', event.target.value)} placeholder="例如：前端开发工程师" /></label>
             <div className="field-grid"><label>所属组织<Select label="所属组织" value={draft.orgUnitId} onChange={value => set('orgUnitId', value)} options={[{ value: '', label: '未分配组织' }, ...data.units.map(unit => ({ value: unit.id, label: unit.name }))]} /></label>{supervisorField}</div>
             

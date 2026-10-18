@@ -33,6 +33,8 @@ export interface AdminRepository {
   initializeEnterprise(name: string, administratorName: string): Promise<AdminData>
   saveEnterprise(name: string, expectedVersion: number): Promise<AdminData>
   saveUnit(input: UnitInput, id?: string, expectedVersion?: number): Promise<AdminData>
+  deleteUnit(id: string, expectedVersion: number): Promise<AdminData>
+  resetPersonPassword(personId: string, newPassword: string, expectedVersion: number): Promise<AdminData>
   savePerson(input: PersonInput, id?: string, expectedVersion?: number, initialPassword?: string): Promise<AdminData>
   saveRoles(personId: string, roles: Role[], expectedVersion: number): Promise<AdminData>
   saveTag(input: TagInput, id?: string, expectedVersion?: number): Promise<AdminData>

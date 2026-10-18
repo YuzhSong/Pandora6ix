@@ -4,13 +4,17 @@ import { authService } from './api/config.ts'
 import { ApiError } from './api/client.ts'
 import { errorMessage } from './api/feedback.ts'
 import { sessionStore } from './api/session.ts'
-import type { AdminData } from './data/types.ts'
+import type { AdminData, OrgUnit, Person } from './data/types.ts'
+import { DeleteOrganizationDialog } from './components/DeleteOrganizationDialog.tsx'
 import { AdminEditor } from './components/AdminEditor.tsx'
 import type { EditRequest } from './components/AdminEditor.tsx'
 import { OrganizationPage, PeoplePage } from './components/AdminPages.tsx'
 import { Icon } from './components/Icon.tsx'
 import type { IconName } from './components/Icon.tsx'
 import { CompanyItemsPage, AccountPage, SettingsPage } from './components/WorkspacePages.tsx'
+import { BulkPersonnelDialog, ExportAccountsDialog, ResetEmployeePasswordDialog } from './components/CredentialTools.tsx'
+import { AccountCreatedDialog } from './components/AccountInformation.tsx'
+import type { CreatedAccountReceipt } from './data/accountHandoff.ts'
 import { AvatarDialog } from './components/AvatarUpload.tsx'
 import { AuthPage } from './components/AuthPage.tsx'
 import { SystemLogsPage } from './components/SystemLogsPage.tsx'
@@ -48,6 +52,12 @@ export default function App() {
   const [passwordDialog, setPasswordDialog] = useState(false)
   const [itemsPending, setItemsPending] = useState(false)
   const [avatarDialog, setAvatarDialog] = useState(false)
+  const [accountReceipt, setAccountReceipt] = useState<CreatedAccountReceipt | null>(null)
+  const [handoffPasswords, setHandoffPasswords] = useState<Record<string, string>>({})
+  const [credentialTool, setCredentialTool] = useState<'bulk' | 'export' | null>(null)
+  const [resetPerson, setResetPerson] = useState<Person | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<OrgUnit | null>(null)
+  const [selectedOrganizationId, setSelectedOrganizationId] = useState('org-company')
   const [preferences, setPreferences] = useState<DisplayPreferences>(defaultPreferences)
   const [preferenceError, setPreferenceError] = useState('')
 
@@ -56,7 +66,7 @@ export default function App() {
     setSession(authenticated)
     if (!authenticated) {
       loadSerial.current++
-      setData(null); setEditor(null); setPasswordDialog(false); setAvatarDialog(false); setLogoutConfirm(false)
+      setData(null); setHandoffPasswords({}); setCredentialTool(null); setResetPerson(null); setAccountReceipt(null); setDeleteTarget(null); setEditor(null); setPasswordDialog(false); setAvatarDialog(false); setLogoutConfirm(false)
       setPreferences(defaultPreferences); setToast(''); setError(''); setLoading(false)
       setAuthMessage('登录状态已失效，请重新登录。')
     }
@@ -107,12 +117,12 @@ export default function App() {
   }
   useEffect(() => {
     const onHash = () => {
-      if (editor || passwordDialog || avatarDialog || itemsPending) { if (route() !== active) { location.replace(`#${active}`); setToast('请先保存、取消排序或关闭编辑窗口') }; return }
+      if (editor || passwordDialog || avatarDialog || itemsPending || !!deleteTarget || !!accountReceipt || !!credentialTool || !!resetPerson) { if (route() !== active) { location.replace(`#${active}`); setToast('请先保存、取消排序或关闭编辑窗口') }; return }
       setActive(route())
     }
     window.addEventListener('hashchange', onHash)
     return () => window.removeEventListener('hashchange', onHash)
-  }, [active, editor, passwordDialog, avatarDialog, itemsPending])
+  }, [active, editor, passwordDialog, avatarDialog, itemsPending, deleteTarget, accountReceipt, credentialTool, resetPerson])
   useEffect(() => { if (toast) { const timer = window.setTimeout(() => setToast(''), 4000); return () => window.clearTimeout(timer) } }, [toast])
   async function logout() {
     if (logoutBusy) return
@@ -121,13 +131,13 @@ export default function App() {
     catch (reason) { setLogoutError(errorMessage(reason)) }
     finally { setLogoutBusy(false) }
   }
-  function saved(next: AdminData) {
+  function saved(next: AdminData, account?: CreatedAccountReceipt) {
     const me = next.people.find(person => person.id === next.currentUserId)
     if (!me?.roles.includes('ADMIN') || me.status === 'DISABLED') {
       void authService.logout().catch(() => sessionStore.clear())
       sessionStore.clear(); setAuthMessage('此账号的管理员权限已变更，请使用管理员账号登录。'); return
     }
-    setData(next); setEditor(null); setToast('已保存到服务器')
+    setData(next); setEditor(null); if (account) setHandoffPasswords(current => ({ ...current, [account.personId]: account.initialPassword })); setAccountReceipt(account ?? null); setToast(account ? '' : '已保存到服务器')
   }
   if (!session) return <AuthPage brand={<Brand />} message={authMessage} />
   if (!data) return <main className="company-setup"><Brand /><section className="panel setup-card">{error ? <><h1>暂时无法加载资料</h1><p className="error-message" role="alert">{error}</p><button className="button primary" onClick={() => void load()}>重新加载</button><button className="button secondary" disabled={logoutBusy} onClick={() => void logout()}>退出登录</button>{logoutError && <p role="alert">{logoutError}</p>}</> : <p role="status">正在加载公司资料…</p>}</section></main>
@@ -137,13 +147,18 @@ export default function App() {
     <header className="workspace-header"><div className="workspace-header-row"><Brand /><span className="workspace-enterprise"><Icon name="enterprise" size={16} /><span>{data.enterprise.name}</span></span><div className="workspace-account"><div className="account-link"><button type="button" className="avatar small-avatar avatar-edit-button" aria-label="我的账号" title="我的账号" onClick={() => { location.hash = 'account' }}>{currentName.slice(0, 1)}</button><button className="account-name" aria-label={`${currentName}，我的账号`} onClick={() => { location.hash = 'account' }}>{currentName}</button></div><button className="icon-button settings-button" aria-label="设置" aria-current={active === 'settings' ? 'page' : undefined} onClick={() => { location.hash = 'settings' }}><Icon name="settings" size={20} /></button><button className="icon-button" aria-label="退出登录" onClick={() => { setLogoutError(''); setLogoutConfirm(true) }}><Icon name="logout" size={19} /></button></div></div>
       <nav ref={navigationRef} className="primary-navigation" aria-label="管理端导航">{navigation.map(item => <a key={item.id} href={`#${item.id}`} className={active === item.id ? 'active' : ''} aria-current={active === item.id ? 'page' : undefined}><Icon name={item.icon} size={17} /><span>{item.label}</span></a>)}</nav>
     </header>
-    <div className="main-area"><main className="page-content"><div className="page-heading"><h1>{page.label}</h1><button className="button secondary" onClick={() => void load()} disabled={loading || !!editor || passwordDialog || avatarDialog || itemsPending}><Icon name="refresh" size={16} />刷新数据</button></div>
+    <div className="main-area"><main className="page-content"><div className="page-heading"><h1>{page.label}</h1><button className="button secondary" onClick={() => void load()} disabled={loading || !!editor || passwordDialog || avatarDialog || itemsPending || !!deleteTarget || !!accountReceipt || !!credentialTool || !!resetPerson}><Icon name="refresh" size={16} />刷新数据</button></div>
       {error && <div className="error-message" role="alert">刷新失败：{error} 当前显示上次加载的资料，恢复后才能编辑。</div>}
       <fieldset className="workspace-content" disabled={loading || !!error}>
         {active === 'system-logs' && <SystemLogsPage />}
-        {active === 'people' && <PeoplePage key={data.enterprise.id} data={data} onEdit={setEditor} />}{active === 'organizations' && <OrganizationPage key={data.enterprise.id} data={data} onEdit={setEditor} />}{active === 'company-items' && <CompanyItemsPage key={data.enterprise.id} data={data} onEdit={setEditor} onUpdated={setData} onPendingChange={setItemsPending} />}{active === 'account' && <AccountPage data={data} onChangePassword={() => setPasswordDialog(true)} onChangeAvatar={() => setAvatarDialog(true)} />}{active === 'settings' && <SettingsPage preferences={preferences} error={preferenceError} onChange={changePreferences} />}
+        {active === 'people' && <PeoplePage key={data.enterprise.id} data={data} onEdit={setEditor} passwords={handoffPasswords} onCredentialTool={setCredentialTool} onResetPassword={setResetPerson} />}{active === 'organizations' && <OrganizationPage key={data.enterprise.id} data={data} onEdit={setEditor} selectedId={selectedOrganizationId} onSelect={setSelectedOrganizationId} onDelete={setDeleteTarget} />}{active === 'company-items' && <CompanyItemsPage key={data.enterprise.id} data={data} onEdit={setEditor} onUpdated={setData} onPendingChange={setItemsPending} />}{active === 'account' && <AccountPage data={data} onChangePassword={() => setPasswordDialog(true)} onChangeAvatar={() => setAvatarDialog(true)} />}{active === 'settings' && <SettingsPage preferences={preferences} error={preferenceError} onChange={changePreferences} />}
       </fieldset><footer className="page-footer"><span>Pandora 管理端</span></footer></main></div>
     {editor && <AdminEditor request={editor} data={data} onClose={() => setEditor(null)} onSaved={saved} />}
+    {deleteTarget && <DeleteOrganizationDialog unit={deleteTarget} onClose={() => setDeleteTarget(null)} onDeleted={next => { setData(next); setSelectedOrganizationId(deleteTarget.parentId ?? ''); setDeleteTarget(null); setToast('组织已删除') }} />}
+    {credentialTool === 'bulk' && <BulkPersonnelDialog data={data} onClose={() => setCredentialTool(null)} onCreated={(next, account) => { setData(next); setHandoffPasswords(current => ({ ...current, [account.personId]: account.initialPassword })) }} />}
+    {credentialTool === 'export' && <ExportAccountsDialog data={data} passwords={handoffPasswords} onClose={() => setCredentialTool(null)} />}
+    {resetPerson && <ResetEmployeePasswordDialog person={resetPerson} onClose={() => setResetPerson(null)} onReset={(next, account) => { setResetPerson(null); saved(next, account) }} />}
+    {accountReceipt && <AccountCreatedDialog account={accountReceipt} onClose={() => setAccountReceipt(null)} />}
     {avatarDialog && <AvatarDialog onClose={() => setAvatarDialog(false)} />}
     {passwordDialog && <PasswordDialog onClose={() => setPasswordDialog(false)} onChanged={() => setAuthMessage('密码已修改，请使用新密码登录。')} />}
     {toast && <div className="toast" role="status"><Icon name="check" size={18} />{toast}<button className="icon-button" aria-label="关闭保存提示" onClick={() => setToast('')}><Icon name="close" size={16} /></button></div>}

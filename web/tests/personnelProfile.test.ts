@@ -12,3 +12,12 @@ test('profile requires gender, identity and phone and masks identity in details'
   assert.equal(maskIdentity(profile.idNumber), '000***********000X')
   assert.equal(maskIdentity(null), '未填写')
 })
+
+test('legacy profile patches validate only supplied values while creation still requires all fields', () => {
+  const partial = { gender: null, idNumber: null, phoneNumber: '+86 (010) 12345678' }
+  assert.doesNotThrow(() => validatePersonnelProfile(partial, true))
+  assert.throws(() => validatePersonnelProfile(partial), /性别/)
+  assert.doesNotThrow(() => validatePersonnelProfile({ gender: 'FEMALE', idNumber: null, phoneNumber: null }, true))
+  assert.throws(() => validatePersonnelProfile({ ...partial, phoneNumber: '12-34' }, true), /电话/)
+  assert.throws(() => validatePersonnelProfile({ ...partial, idNumber: '' }, true), /身份证/)
+})
