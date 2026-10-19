@@ -18,6 +18,16 @@ class SessionStore(context: Context) {
     fun save(token: String, ownerId: String) = prefs.edit()
         .putString(KEY_TOKEN, token).putString("owner_id", ownerId).apply()
 
+    /** 登录要素（企业域+登录名）：登录时保存，供改密后用新密码静默重登（profile 接口不下发 loginName） */
+    fun saveCredentials(loginDomain: String, loginName: String) = prefs.edit()
+        .putString("login_domain", loginDomain).putString("login_name", loginName).apply()
+
+    val savedLoginDomain: String?
+        get() = prefs.getString("login_domain", null)
+
+    val savedLoginName: String?
+        get() = prefs.getString("login_name", null)
+
     fun bindOwner(ownerId: String) = prefs.edit().putString("owner_id", ownerId).apply()
 
     fun clear() = prefs.edit().clear().apply()

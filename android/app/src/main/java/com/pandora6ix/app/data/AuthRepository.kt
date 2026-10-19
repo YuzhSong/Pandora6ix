@@ -16,6 +16,8 @@ class AuthRepository(private val api: ApiClient, private val session: SessionSto
         )
         val result = api.post("/auth/login", body, LoginResult.serializer())
         session.save(result.accessToken, result.user.id)
+        // 保存登录要素：改密码后需要用新密码静默重登（profile 接口不下发 loginName，无法事后取回）
+        session.saveCredentials(enterpriseDomain.trim(), loginName.trim())
         return result.user
     }
 
@@ -27,8 +29,18 @@ class AuthRepository(private val api: ApiClient, private val session: SessionSto
             ChangePasswordRequest(currentPassword, newPassword)
         )
         api.postEmpty("/me/password", body)
-        // 服务端已使当前会话失效：清本地会话，界面引导重新登录
-        session.clear()
+        // 成功 204：后端 password() 末尾 logout(actor) 已作废旧会话，调用方需用新密码重新 login()
+    }
+
+    /** 改密成功后用新密码静默重登，建立新会话并返回最新用户；失败（无登录要素/网络）返回 null，由调用方回退到重新登录 */
+    suspend fun reloginWithNewPassword(newPassword: String): UserDto? {
+        val domain = session.savedLoginDomain ?: return null
+        val name = session.savedLoginName ?: return null
+        return try {
+            login(domain, name, newPassword)
+        } catch (e: Exception) {
+            null
+        }
     }
 
     suspend fun logout() {
