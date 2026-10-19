@@ -1,3 +1,5 @@
+import type { CredentialHandoff } from './types.ts'
+
 export interface AccountLogin { loginName: string; enterpriseDomain?: string }
 export interface CreatedAccountReceipt extends AccountLogin { personId: string; displayName: string; initialPassword: string; reason?: 'created' | 'reset' }
 
@@ -11,4 +13,8 @@ export function accountLoginText(account: AccountLogin, initialPassword?: string
 
 export function credentialListText(accounts: CreatedAccountReceipt[]) {
   return accounts.map(account => `姓名：${account.displayName}\n${accountLoginText(account, account.initialPassword)}`).join('\n\n')
+}
+
+export function availableHandoffAccounts(items: CredentialHandoff[]): CreatedAccountReceipt[] {
+  return items.filter(item => item.status === 'AVAILABLE' && item.initialPassword !== undefined).map(item => ({ personId: item.personId, displayName: item.displayName, loginName: item.loginName, enterpriseDomain: item.enterpriseDomain, initialPassword: item.initialPassword! }))
 }

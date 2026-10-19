@@ -15,6 +15,8 @@ export interface Person {
   id: string; displayName: string; loginName: string; jobTitle: string
   orgUnitId: string; supervisorId: string | null; roles: Role[]; version: number
   status?: 'ACTIVE' | 'DISABLED'
+  employmentStatus?: 'IN_SERVICE' | 'DEPARTED'
+  departureDate?: string | null
   gender?: 'MALE' | 'FEMALE' | null
   idNumber?: string | null
   phoneNumber?: string | null
@@ -28,6 +30,11 @@ export type TagInput = Omit<Tag, 'id' | 'version'>
 export type CompanyItemInput = Pick<CompanyImportantItem, 'title' | 'content' | 'displayOrder'>
 
 export interface AdminRepository {
+  replaceManager(personId: string, successorId: string, expectedVersion: number, successorExpectedVersion: number, successorJobTitle: string, formerJobTitle: string): Promise<AdminData>
+  departPerson(personId: string, departureDate: string, expectedVersion: number): Promise<AdminData>
+  changePersonJob(personId: string, input: JobChangeInput, expectedVersion: number): Promise<AdminData>
+  personnelChanges(personId: string): Promise<PersonnelChange[]>
+  credentialHandoffs(userId?: string): Promise<CredentialHandoff[]>
   load(): Promise<AdminData>
   getWorkspace(): Promise<AdminData | null>
   initializeEnterprise(name: string, administratorName: string): Promise<AdminData>
@@ -39,4 +46,13 @@ export interface AdminRepository {
   saveRoles(personId: string, roles: Role[], expectedVersion: number): Promise<AdminData>
   saveTag(input: TagInput, id?: string, expectedVersion?: number): Promise<AdminData>
   saveCompanyItem(input: CompanyItemInput, id?: string, expectedVersion?: number, idempotencyKey?: string): Promise<AdminData>
+}
+
+export interface JobChangeInput { jobTitle: string; orgUnitId: string; supervisorId: string | null; roles: Role[] }
+export interface PersonnelChange { id: string; actorName: string; recordedAt: string; effectiveDate: string; kind: 'DEPARTURE' | 'JOB_CHANGE'; beforeValues: Record<string, unknown>; afterValues: Record<string, unknown> }
+
+export interface CredentialHandoff {
+  personId: string; displayName: string; loginName: string; enterpriseDomain: string
+  status: 'AVAILABLE' | 'CHANGED' | 'EXPIRED' | 'UNAVAILABLE'
+  initialPassword?: string; expiresAt?: string
 }

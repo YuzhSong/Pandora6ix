@@ -1,11 +1,25 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createSeed } from '../src/data/seed.ts'
-import { bulkPersonnelHeaders, bulkPersonnelTemplate, createBulkPersonnel, previewBulkPersonnel } from '../src/data/bulkPersonnel.ts'
+import { bulkPersonnelHeaders, bulkPersonnelTemplate, createBulkPersonnel, previewBulkPersonnel, previewPersonnelTable, importPersonnelTable } from '../src/data/bulkPersonnel.ts'
 import type { AdminData, PersonInput } from '../src/data/types.ts'
 
 const header = bulkPersonnelHeaders.join(',')
 function line(login = 'batch-new', name = '新增员工') { return [name, login, 'initial-password-fixture', '男', '000000200001010001', '00000000001', '开发', '', ''].join(',') }
+
+test('editable table preserves exact password characters, ignores blank rows and maps errors to visible row numbers', () => {
+  const data = createSeed(), blank = Array<string>(9).fill('')
+  const cells = line().split(','); cells[0] = '名字,带"引号"'; cells[2] = '  initial,"password  '
+  const valid = previewPersonnelTable([blank, cells, blank], data)
+  assert.deepEqual(valid.errors, []); assert.equal(valid.rows[0].rowNumber, 2)
+  assert.equal(valid.rows[0].initialPassword, cells[2]); assert.equal(valid.rows[0].input.displayName, cells[0])
+  const duplicate = previewPersonnelTable([blank, cells, blank, cells], data)
+  assert.match(duplicate.errors.join(''), /第 4 行：.*重复/)
+  assert.ok(previewPersonnelTable([blank], data).errors.length)
+  const invalid = [...cells]; invalid[4] = ''
+  assert.match(previewPersonnelTable([blank, invalid], data).errors.join(''), /第 2 行/)
+  assert.ok(previewPersonnelTable(Array.from({ length: 101 }, (_, i) => { const row = [...cells]; row[1] = 'bulk-' + i; return row }), data).errors.length)
+})
 
 test('CSV template, BOM, quoted commas/newlines and escaped quotes prevalidate without exposing passwords in errors', () => {
   const data = createSeed()
@@ -53,4 +67,18 @@ test('stop requests preserve completed accounts; a mismatched successful respons
   let lastStatus = '', received = false
   await createBulkPersonnel(rows, { async savePerson() { return data } }, { stopped: () => false, onRow: (_, status) => { lastStatus = status }, onCreated: () => { received = true } })
   assert.equal(lastStatus, 'failed'); assert.equal(received, false)
+})
+
+
+test('CSV files populate editable rows, preserve passwords and retain invalid fields for correction', () => {
+  const data = createSeed(), department = data.units.find(unit => unit.kind === 'DEPARTMENT')!
+  const row = line().split(','); row[2] = '  exact-password  '; row[3] = 'FEMALE'; row[7] = department.name
+  const imported = importPersonnelTable(header + '\n' + row.join(','), data)
+  assert.equal(imported[0][2], row[2]); assert.equal(imported[0][3], '女'); assert.equal(imported[0][7], department.id)
+  assert.deepEqual(previewPersonnelTable(imported, data).errors, [])
+  row[3] = '未知'; row[4] = ''; row[7] = '不存在的组织'; row[8] = 'missing-manager'
+  const correction = importPersonnelTable(header + '\n' + row.join(','), data)
+  assert.equal(correction[0][3], '未知'); assert.equal(correction[0][4], ''); assert.equal(correction[0][7], row[7]); assert.equal(correction[0][8], row[8])
+  assert.ok(previewPersonnelTable(correction, data).errors.length)
+  for (const invalid of ['bad header', header, header + '\nonly,two', header + '\n' + Array(101).fill(line()).join('\n')]) assert.throws(() => importPersonnelTable(invalid, data))
 })

@@ -13,7 +13,7 @@ export function supervisorCandidates(people: Person[], subjectId: string | undef
   if (rank < 0 || rank === 3) return []
   const byId = new Map(people.map(person => [person.id, person]))
   return people.filter(candidate => {
-    if (candidate.id === subjectId || candidate.status === 'DISABLED' || businessRank(candidate.roles) <= rank) return false
+    if (candidate.id === subjectId || candidate.status === 'DISABLED' || candidate.employmentStatus === 'DEPARTED' || businessRank(candidate.roles) <= rank) return false
     let current: Person | undefined = candidate
     const visited = new Set<string>()
     while (current) {

@@ -199,6 +199,11 @@ export function createLocalAdminRepository(storage: StorageAdapter): AdminReposi
       data.people = old ? data.people.map(item => item.id === personId ? person : item) : [...data.people, person]
       return write(data)
     },
+    async credentialHandoffs() { throw new Error('请连接真实后端。') },
+    async departPerson() { throw new Error('请连接真实后端办理离职。') },
+    async replaceManager() { throw new Error('请连接真实后端更换负责人。') },
+    async changePersonJob() { throw new Error('请连接真实后端调整岗位。') },
+    async personnelChanges() { throw new Error('请连接真实后端查看人员变动。') },
     async resetPersonPassword() { throw new Error('本地演示资料不包含登录密码，请连接真实后端后操作。') },
     async saveRoles(personId, roles, expectedVersion) {
       const data = readForWrite()

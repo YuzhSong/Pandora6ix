@@ -13,10 +13,14 @@ import org.springframework.web.bind.annotation.*;
 public class IdentityController {
     private final IdentityService identity;
     private final DirectoryService directory;
+    private final PersonnelLifecycleService personnel;
+    private final CredentialHandoffService handoffs;
 
-    public IdentityController(IdentityService identity, DirectoryService directory) {
+    public IdentityController(IdentityService identity, DirectoryService directory, CredentialHandoffService handoffs, PersonnelLifecycleService personnel) {
         this.identity = identity;
         this.directory = directory;
+        this.personnel = personnel;
+        this.handoffs = handoffs;
     }
 
     @PostMapping("/auth/login")
@@ -84,6 +88,11 @@ public class IdentityController {
         return ResponseEntity.noContent().build();
     }
 
+    @GetMapping("/admin/credential-handoffs")
+    public ResponseEntity<Object> credentialHandoffs(@RequestParam(required = false) String userId) {
+        return ResponseEntity.ok().header("Cache-Control", "no-store, private").header("Pragma", "no-cache").body(handoffs.read(identity.current(), userId));
+    }
+
     @GetMapping("/admin/users")
     public Object users(
             @RequestParam(required = false) String q,
@@ -101,6 +110,26 @@ public class IdentityController {
     @PatchMapping("/admin/users/{id}")
     public Object userPatch(@PathVariable String id, @Valid @RequestBody Contracts.UserPatch c) {
         return directory.patchUser(identity.current(), id, c);
+    }
+
+    @PostMapping("/admin/users/{id}/departure")
+    public Object departure(@PathVariable String id, @Valid @RequestBody Contracts.UserDeparture c) {
+        return personnel.depart(identity.current(),id,c);
+    }
+
+    @PostMapping("/admin/users/{id}/job-change")
+    public Object jobChange(@PathVariable String id, @Valid @RequestBody Contracts.UserJobChange c) {
+        return personnel.changeJob(identity.current(),id,c);
+    }
+
+    @PostMapping("/admin/users/{id}/manager-replacement")
+    public Object managerReplacement(@PathVariable String id, @Valid @RequestBody Contracts.ManagerReplacement c) {
+        return personnel.replaceManager(identity.current(),id,c);
+    }
+
+    @GetMapping("/admin/users/{id}/personnel-changes")
+    public Object personnelChanges(@PathVariable String id) {
+        return personnel.history(identity.current(),id);
     }
 
     @PostMapping("/admin/users/{id}/password-reset")

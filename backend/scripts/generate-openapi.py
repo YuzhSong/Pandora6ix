@@ -146,7 +146,7 @@ def read_schemas():
         "createdAt": INSTANT, "rootOrgUnitId": ID, "adminUserId": ID})
     org = obj({**versioned, "name": STRING, "kind": {"type": "string", "enum": ["COMPANY", "DEPARTMENT", "TEAM"]}, "parentId": nullable(ID)})
     user = obj({**versioned, "displayName": STRING, "loginName": STRING, "orgUnitId": nullable(ID), "supervisorUserId": nullable(ID),
-        "jobTitle": nullable(STRING), "status": STRING, "roles": array(STRING),
+        "jobTitle": nullable(STRING), "status": STRING, "employmentStatus": {"type": "string", "enum": ["IN_SERVICE", "DEPARTED"]}, "departureDate": nullable(DATE), "roles": array(STRING),
         "gender": nullable({"type": "string", "enum": ["MALE", "FEMALE"]}), "idNumber": nullable(STRING), "phoneNumber": nullable(STRING)},
         ("id", "version", "displayName", "loginName", "roles", "gender", "idNumber", "phoneNumber"))
     profile = obj({**versioned, "displayName": STRING, "name": STRING, "orgUnitId": nullable(ID), "supervisorUserId": nullable(ID),
@@ -171,6 +171,7 @@ def read_schemas():
     schemas = {"Tag": tag, "Assignment": assignment, "ProgressRecord": progress, "CompletionRequestView": completion, "Task": task,
         "WorkEntry": entry, "Journal": journal, "Enterprise": enterprise, "OrgUnit": org, "User": user, "Profile": profile, "CompanyItem": item, "ImportantSelection": selection, "Statistics": stats,
         "JournalDeleted": journalDeleted, "TagDeleted": tagDeleted,
+        "CredentialHandoffPage": obj({"items": array(obj({"personId": ID, "displayName": STRING, "loginName": STRING, "enterpriseDomain": STRING, "status": {"type": "string", "enum": ["AVAILABLE", "CHANGED", "EXPIRED", "UNAVAILABLE"]}, "initialPassword": {"type": "string", "description": "Only present for available temporary credentials."}, "expiresAt": INSTANT}, ("personId", "displayName", "loginName", "enterpriseDomain", "status"))), "nextCursor": {"type": "null"}}, ("items", "nextCursor")),
         "Notification": notification, "UnreadCount": obj({"unreadCount": INTEGER}),
         "TaskReview": review, "ReviewDecisionResult": obj({"review": ref("TaskReview"), "task": ref("Task")}),
         "Recipient": obj({"id": ID, "displayName": STRING, "orgUnitId": nullable(ID), "jobTitle": nullable(STRING), "organizationName": nullable(STRING), "departmentId": nullable(ID), "departmentName": nullable(STRING), "relationship": STRING}),
@@ -183,11 +184,19 @@ def read_schemas():
             "requestId": STRING, "timestamp": INSTANT, "status": INTEGER, "code": STRING, "message": STRING, "path": STRING}, ("error", "requestId"))}
     for name in ("Tag", "Task", "Journal", "WorkEntry", "CompanyItem", "OrgUnit", "User", "Recipient", "TaskReview", "Notification"):
         schemas[name + "Page"] = obj({"items": array(ref(name)), "nextCursor": nullable(STRING), "moreUrl": STRING}, ("items", "nextCursor"))
+    personnel_values = obj({"employmentStatus": STRING, "departureDate": nullable(DATE), "jobTitle": nullable(STRING), "orgUnitId": nullable(ID), "supervisorUserId": nullable(ID), "roles": array(STRING), "status": STRING})
+    schemas["PersonnelChangePage"] = obj({"items": array(obj({"id": ID, "userId": ID, "actorUserId": ID, "actorName": STRING, "kind": {"type": "string", "enum": ["DEPARTURE", "JOB_CHANGE"]}, "effectiveDate": DATE, "recordedAt": INSTANT, "beforeValues": personnel_values, "afterValues": personnel_values}))}, ("items",))
+    schemas["ManagerReplacementResult"] = obj({"items": array(ref("User"))}, ("items",))
     schemas["Dashboard"] = obj({"companyImportantItems": ref("CompanyItemPage"), "companyTasks": ref("TaskPage"), "personalImportantEntries": ref("ImportantSelection"), "workEntries": ref("WorkEntryPage"), "statistics": ref("Statistics")})
     return schemas
 
 
 RESPONSES = {
+    ("POST", "/admin/users/{id}/manager-replacement"): "ManagerReplacementResult",
+    ("POST", "/admin/users/{id}/departure"): "User",
+    ("POST", "/admin/users/{id}/job-change"): "User",
+    ("GET", "/admin/users/{id}/personnel-changes"): "PersonnelChangePage",
+    ("GET", "/admin/credential-handoffs"): "CredentialHandoffPage",
     ("POST", "/auth/login"): "LoginResult", ("GET", "/me"): "Profile", ("POST", "/admin/enterprise-initializations"): "Enterprise",
     ("GET", "/admin/enterprise"): "Enterprise", ("PATCH", "/admin/enterprise"): "Enterprise",
     ("GET", "/admin/org-units"): "OrgUnitPage", ("POST", "/admin/org-units"): "OrgUnit", ("PATCH", "/admin/org-units/{id}"): "OrgUnit",
@@ -255,7 +264,13 @@ def generate():
                 response = RESPONSES[(verb, path)]
                 success["content"] = {"application/json": {"schema": obj({"data": ref(response), "requestId": STRING}, ("data", "requestId"))}}
             operation["responses"][status_code] = success
-            for error in (400, 401, 403, 404, 409, 422, 500):
+            errors = (400, 401, 403, 404, 409, 422, 500)
+            if (verb, path) in {("GET", "/admin/credential-handoffs"), ("POST", "/admin/users"), ("POST", "/admin/users/{id}/password-reset")}:
+                errors += (503,)
+            if (verb, path) == ("GET", "/admin/credential-handoffs"):
+                success["headers"] = {"Cache-Control": {"description": "no-store, private", "schema": STRING}}
+                operation["description"] = "Company ADMIN only. Returns temporary credentials only while available; employee-selected passwords are never returned."
+            for error in errors:
                 operation["responses"][str(error)] = {"description": "Structured error; unavailable private objects use uniform 404.", "content": {"application/json": {"schema": ref("Error")}}}
             document["paths"].setdefault(path, {})[verb.lower()] = operation
             count += 1

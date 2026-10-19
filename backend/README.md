@@ -1,5 +1,7 @@
 # Pandora 后端实施记录
 
+2026-10-19 本地更新：初始密码加密交付与员工改密清除，需配置外部密钥并部署 V5，见 [交付契约](CREDENTIAL_HANDOFF.md)。替代此前页面内存交付方式，未部署云端。
+
 2026-10-18 更新：`backend-syz` 已同步 `dev 4c4b032`。管理员登录名维护变更见 [admin-edit-user-login-name](../openspec/changes/archive/2026-10-18-admin-edit-user-login-name/proposal.md)，包含 Web 配套入口，已通过 PR #19 合入 dev 并部署。
 
 ## 管理员修改现有登录名

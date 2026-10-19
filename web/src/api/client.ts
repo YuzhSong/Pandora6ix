@@ -57,6 +57,7 @@ export function createApiClient({ baseUrl, fetcher = fetch, timeoutMs = 15000, o
           headers,
           body: options.body === undefined ? undefined : JSON.stringify(options.body),
           credentials: 'same-origin',
+          cache: 'no-store',
           signal,
         })
         if (response.status === 204) return undefined as T
