@@ -4,6 +4,7 @@ const messages: Record<string, string> = {
   INVALID_CREDENTIALS: '登录未成功，请核对登录信息后重试。已保留填写内容。',
   CURRENT_PASSWORD_INVALID: '当前密码不正确，请重新输入。',
   LAST_ADMIN_REQUIRED: '公司必须保留至少一名启用的系统管理员。',
+  LOGIN_NAME_TAKEN: '该登录名已被公司内其他账号使用，请换一个登录名。',
   ORG_ROOT_DELETE_FORBIDDEN: '公司根组织不能删除。',
   ORG_HAS_CHILDREN: '该组织仍有下级组织，请先调整或删除下级组织，刷新后再试。',
   ORG_HAS_MEMBERS: '该组织仍有直属人员（包括停用账号），请先转移人员，刷新后再试。',

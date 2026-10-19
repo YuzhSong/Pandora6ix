@@ -96,6 +96,15 @@ try {
   let staff = data.people.find(person => person.loginName === 'staff')!
   data = await repository.savePerson({ ...staff, displayName: '更新人员' }, staff.id, staff.version)
   staff = data.people.find(person => person.id === staff.id)!
+  data = await repository.savePerson({ ...staff, loginName: 'zhang.san' }, staff.id, staff.version)
+  staff = data.people.find(person => person.id === staff.id)!
+  assert.equal(staff.loginName, 'zhang.san')
+  const anonymous = createApiClient({ baseUrl: `${origin}/api/v1` })
+  await assert.rejects(anonymous.request('/auth/login', { method: 'POST', authenticated: false, body: { enterpriseDomain: domain, loginName: 'staff', password: staffPassword } }), (error: unknown) => error instanceof ApiError && error.status === 401)
+  const renamed = await anonymous.request<{ accessToken: string; user: { id: string } }>('/auth/login', { method: 'POST', authenticated: false, body: { enterpriseDomain: domain, loginName: 'zhang.san', password: staffPassword } })
+  assert.equal(renamed.user.id, staff.id)
+  await anonymous.request('/auth/logout', { method: 'POST', authenticated: false, headers: { Authorization: `Bearer ${renamed.accessToken}` } })
+  await assert.rejects(repository.savePerson({ ...staff, loginName: 'admin' }, staff.id, staff.version), (error: unknown) => error instanceof ApiError && error.code === 'LOGIN_NAME_TAKEN')
   data = await repository.saveRoles(staff.id, ['EMPLOYEE', 'DEPARTMENT_MANAGER'], staff.version)
   assert.equal(data.people.find(person => person.id === staff.id)!.idNumber, personnel.idNumber)
   data = await repository.load()
@@ -121,16 +130,16 @@ try {
   data = await repository.deleteUnit(disposableDepartment.id, disposableDepartment.version)
   data = await repository.load()
   assert.ok(!data.units.some(unit => unit.id === disposableDepartment.id))
-  const oldStaffSession = await client.request<{ accessToken: string }>('/auth/login', { method: 'POST', authenticated: false, body: { enterpriseDomain: domain, loginName: 'staff', password: staffPassword } })
   const previousStaff = data.people.find(person => person.id === staff.id)!
+  const oldStaffSession = await client.request<{ accessToken: string }>('/auth/login', { method: 'POST', authenticated: false, body: { enterpriseDomain: domain, loginName: previousStaff.loginName, password: staffPassword } })
   const resetPassword = randomUUID()
   data = await repository.resetPersonPassword(staff.id, resetPassword, previousStaff.version)
   assert.equal(data.people.find(person => person.id === staff.id)!.phoneNumber, personnel.phoneNumber)
   assert.equal(data.people.find(person => person.id === staff.id)!.version, previousStaff.version + 1)
   const oldStaffClient = createApiClient({ baseUrl: `${origin}/api/v1`, getAccessToken: () => oldStaffSession.accessToken })
   await assert.rejects(oldStaffClient.request('/me'), (reason: unknown) => reason instanceof ApiError && reason.status === 401)
-  await assert.rejects(client.request('/auth/login', { method: 'POST', authenticated: false, body: { enterpriseDomain: domain, loginName: 'staff', password: staffPassword } }), (reason: unknown) => reason instanceof ApiError && reason.status === 401)
-  const newStaffSession = await client.request<{ accessToken: string }>('/auth/login', { method: 'POST', authenticated: false, body: { enterpriseDomain: domain, loginName: 'staff', password: resetPassword } })
+  await assert.rejects(client.request('/auth/login', { method: 'POST', authenticated: false, body: { enterpriseDomain: domain, loginName: previousStaff.loginName, password: staffPassword } }), (reason: unknown) => reason instanceof ApiError && reason.status === 401)
+  const newStaffSession = await client.request<{ accessToken: string }>('/auth/login', { method: 'POST', authenticated: false, body: { enterpriseDomain: domain, loginName: previousStaff.loginName, password: resetPassword } })
   await client.request('/auth/logout', { method: 'POST', authenticated: false, headers: { Authorization: `Bearer ${newStaffSession.accessToken}` } })
   const batchPassword = randomUUID()
   const batchPreview = previewBulkPersonnel(bulkPersonnelTemplate() + ['批量甲,batch-one', '批量乙,batch-two'].map(prefix => `${prefix},${batchPassword},女,000000200001010001,00000000001,开发,${department.name},manager`).join('\n'), data)
@@ -151,6 +160,7 @@ try {
   data = (await repository.getWorkspace())!
   assert.equal(data.tags.length, 0); assert.equal(data.enterprise.name, 'Web 联调公司更新')
   assert.equal(data.people.find(person => person.id === staff.id)?.displayName, '更新人员')
+  assert.equal(data.people.find(person => person.id === staff.id)?.loginName, 'zhang.san')
   assert.ok(data.people.find(person => person.id === staff.id)?.roles.includes('DEPARTMENT_MANAGER'))
   assert.equal(data.companyItems[0].title, '修改后的事项')
   assert.equal(data.companyItems[0].publisherUserId, data.currentUserId)

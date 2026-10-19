@@ -256,6 +256,19 @@ public class DirectoryService {
         a.admin();
         lockEnterprise(a);
         var old = db.entity("app_user", a.enterpriseId(), id);
+        if (number(old, "version") != c.expectedVersion()) checkVersion(0);
+        if (c.loginName() != null) {
+            if (c.loginName().isBlank() || !c.loginName().equals(c.loginName().strip()))
+                throw new BusinessException(
+                        422, "VALIDATION_FAILED", "Login name must not be blank or have surrounding whitespace.",
+                        Map.of("fieldErrors", List.of(Map.of(
+                                "field", "loginName", "message", "must not be blank or have surrounding whitespace"))));
+            if (!db.rows(
+                    "SELECT id FROM app_user WHERE enterprise_id=? AND login_name=? AND id<>?",
+                    a.enterpriseId(), c.loginName(), id).isEmpty())
+                throw new BusinessException(
+                        409, "LOGIN_NAME_TAKEN", "This login name is already used in the company.");
+        }
         validatePhone(c.phoneNumber());
         if (!Set.of("ACTIVE", "DISABLED").contains(c.status()))
             throw BusinessException.invalid("Unknown account status.");
@@ -276,8 +289,9 @@ public class DirectoryService {
         checkVersion(
                 db.update(
                         "UPDATE app_user SET"
-                            + " display_name=?,org_unit_id=?,supervisor_user_id=?,job_title=?,status=?,gender=COALESCE(?,gender),id_number=COALESCE(?,id_number),phone_number=COALESCE(?,phone_number),version=version+1"
+                            + " login_name=COALESCE(?,login_name),display_name=?,org_unit_id=?,supervisor_user_id=?,job_title=?,status=?,gender=COALESCE(?,gender),id_number=COALESCE(?,id_number),phone_number=COALESCE(?,phone_number),version=version+1"
                             + " WHERE enterprise_id=? AND id=? AND version=?",
+                        c.loginName(),
                         c.displayName(),
                         c.orgUnitId(),
                         c.supervisorUserId(),

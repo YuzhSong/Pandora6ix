@@ -73,7 +73,8 @@ public final class Contracts {
             @NotEmpty List<@NotBlank String> roles,
             @Pattern(regexp = "MALE|FEMALE") String gender,
             @Pattern(regexp = "[0-9]{15}|[0-9]{17}[0-9X]") String idNumber,
-            @Size(min = 6, max = 24) @Pattern(regexp = "[+]?[0-9 ()-]+") String phoneNumber) {}
+            @Size(min = 6, max = 24) @Pattern(regexp = "[+]?[0-9 ()-]+") String phoneNumber,
+            @Size(min = 1, max = 128) String loginName) {}
 
     public record TagCreate(
             @NotBlank @Size(max = 64) String name,

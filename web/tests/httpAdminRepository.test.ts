@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { ApiError, createApiClient } from '../src/api/client.ts'
 import { createHttpAdminRepository } from '../src/data/httpAdminRepository.ts'
+import { errorMessage } from '../src/api/feedback.ts'
 import type { PersonInput } from '../src/data/types.ts'
 
 const company = { id: 'company', name: '公司', loginDomain: 'team', businessTimezone: 'Asia/Shanghai', version: 0 }
@@ -252,6 +253,72 @@ test('role-only and ordinary edits preserve supported personal fields and status
   assert.equal(submitted.idNumber, personal.idNumber); assert.equal(submitted.status, 'DISABLED')
   await repository.savePerson({ displayName: '新姓名', loginName: 'staff', jobTitle: '', orgUnitId: '', supervisorId: 'admin', roles: ['EMPLOYEE', 'ADMIN'] }, 'employee', 1)
   assert.equal(submitted.phoneNumber, personal.phoneNumber)
+})
+
+test('login rename sends its version and preserves nullable historical profiles after reload', async () => {
+  let staff = { ...employee, gender: null, idNumber: null, phoneNumber: null }
+  let submitted: Record<string, unknown> = {}
+  const repository = createHttpAdminRepository(createApiClient({ baseUrl: '/api/v1', fetcher: async (url, options) => {
+    if (options?.method === 'PATCH') {
+      submitted = JSON.parse(options.body as string)
+      staff = { ...staff, loginName: submitted.loginName as string, version: 1 }
+      return Response.json({ data: staff })
+    }
+    if (String(url).includes('/admin/users')) return Response.json({ data: { items: [{ ...administrator, gender: null, idNumber: null, phoneNumber: null }, staff], nextCursor: null } })
+    return Response.json({ data: reader(String(url)) })
+  } }))
+  const before = (await repository.getWorkspace()).people.find(person => person.id === 'employee')!
+  const saved = await repository.savePerson({ ...before, loginName: 'zhang.san' }, before.id, before.version)
+  assert.equal(submitted.loginName, 'zhang.san'); assert.equal(submitted.expectedVersion, 0)
+  assert.equal(submitted.status, 'DISABLED'); assert.equal(submitted.phoneNumber, null)
+  assert.equal(Object.hasOwn(submitted, 'password'), false)
+  assert.equal(saved.people.find(person => person.id === before.id)?.loginName, 'zhang.san')
+  assert.equal((await repository.load()).people.find(person => person.id === before.id)?.loginName, 'zhang.san')
+})
+
+test('duplicate login-name errors keep the original account snapshot and explain the conflict', async () => {
+  let writes = 0
+  const repository = createHttpAdminRepository(createApiClient({ baseUrl: '/api/v1', fetcher: async (url, options) => {
+    if (options?.method === 'PATCH') {
+      writes++
+      return Response.json({ error: { code: 'LOGIN_NAME_TAKEN', message: 'Already used' } }, { status: 409 })
+    }
+    return Response.json({ data: reader(String(url)) })
+  } }))
+  const before = (await repository.getWorkspace()).people.find(person => person.id === 'employee')!
+  await assert.rejects(repository.savePerson({ ...before, loginName: 'admin' }, before.id, before.version), (reason: unknown) => {
+    assert.ok(reason instanceof ApiError)
+    assert.equal(reason.code, 'LOGIN_NAME_TAKEN')
+    assert.match(errorMessage(reason), /登录名.*其他账号/)
+    return true
+  })
+  assert.equal(writes, 1)
+  assert.equal((await repository.load()).people.find(person => person.id === before.id)?.loginName, 'staff')
+})
+
+test('surrounding whitespace cannot create a login name that the login form cannot submit', async () => {
+  let writes = 0
+  const repository = createHttpAdminRepository(createApiClient({ baseUrl: '/api/v1', fetcher: async (url, options) => {
+    if (options?.method === 'PATCH') writes++
+    return Response.json({ data: reader(String(url)) })
+  } }))
+  const before = (await repository.getWorkspace()).people.find(person => person.id === 'employee')!
+  for (const loginName of [' zhang.san', 'zhang.san ', '\u2003zhang.san']) {
+    await assert.rejects(repository.savePerson({ ...before, loginName }, before.id, before.version), /前后不能有空白/)
+  }
+  assert.equal(writes, 0)
+})
+
+test('an older backend ignoring loginName cannot report a successful rename or trigger a duplicate retry', async () => {
+  let writes = 0
+  const repository = createHttpAdminRepository(createApiClient({ baseUrl: '/api/v1', fetcher: async (url, options) => {
+    if (options?.method === 'PATCH') { writes++; return Response.json({ data: { ...employee, version: 1 } }) }
+    return Response.json({ data: reader(String(url)) })
+  } }))
+  const before = (await repository.getWorkspace()).people.find(person => person.id === 'employee')!
+  await assert.rejects(repository.savePerson({ ...before, loginName: 'zhang.san' }, before.id, before.version), /核实账号/)
+  await assert.rejects(repository.savePerson({ ...before, loginName: 'zhang.san' }, before.id, before.version), /勿重复提交/)
+  assert.equal(writes, 1)
 })
 
 test('missing personal fields in a write response never report success or allow duplicate retry', async () => {

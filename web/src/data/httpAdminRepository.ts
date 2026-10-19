@@ -68,7 +68,7 @@ export function createHttpAdminRepository(client: ReturnType<typeof createApiCli
   }
   const profileBody = (value: Person) => ({ ...(value.gender !== undefined ? { gender: value.gender } : {}), ...(value.idNumber !== undefined ? { idNumber: value.idNumber } : {}), ...(value.phoneNumber !== undefined ? { phoneNumber: value.phoneNumber } : {}) })
   const userBody = (value: Person, expectedVersion: number, roles = value.roles) => ({ expectedVersion, displayName: value.displayName, jobTitle: value.jobTitle, orgUnitId: value.orgUnitId || null, supervisorUserId: value.supervisorId, roles, status: value.status ?? 'ACTIVE', ...profileBody(value) })
-  const verifyPerson = (expected: Pick<Person, 'gender' | 'idNumber' | 'phoneNumber'>) => (value: unknown) => {
+  const verifyPerson = (expected: Partial<Pick<Person, 'gender' | 'idNumber' | 'phoneNumber' | 'loginName'>>) => (value: unknown) => {
     try {
       const result = person(value)
       if (Object.entries(expected).some(([key, field]) => result[key as keyof Person] !== field)) throw invalid()
@@ -115,6 +115,7 @@ export function createHttpAdminRepository(client: ReturnType<typeof createApiCli
     },
     async savePerson(input, id, expectedVersion, initialPassword) {
       checkPersonnelWrite()
+      if (!input.loginName.trim() || input.loginName.length > 128 || input.loginName !== input.loginName.trim()) throw new Error('登录名须为 1–128 个字符，且前后不能有空白。')
       const supported = supportsPersonnelProfile(current().people)
       const oldPerson = current().people.find(value => value.id === id)
       const profile = profileBody({ ...oldPerson, ...input, id: id ?? '', version: expectedVersion ?? 0 })
@@ -125,8 +126,8 @@ export function createHttpAdminRepository(client: ReturnType<typeof createApiCli
       if (id) {
         const old = current().people.find(value => value.id === id)
         if (!old || expectedVersion === undefined) throw invalid()
-        if (old.loginName !== input.loginName) throw new Error('已创建账号的登录名不能修改。')
-        return write(`/admin/users/${encodeURIComponent(id)}`, userBody({ ...old, ...input }, expectedVersion), verifyPerson(profile), (data, value) => { data.people = replace(data.people, value) }, true)
+        const rename = old.loginName !== input.loginName ? { loginName: input.loginName } : {}
+        return write(`/admin/users/${encodeURIComponent(id)}`, { ...userBody({ ...old, ...input }, expectedVersion), ...rename }, verifyPerson({ ...profile, ...rename }), (data, value) => { data.people = replace(data.people, value) }, true)
       }
       validatePassword(initialPassword ?? '')
       const body = { loginName: input.loginName, password: initialPassword, displayName: input.displayName, jobTitle: input.jobTitle, orgUnitId: input.orgUnitId || null, supervisorUserId: input.supervisorId, roles: input.roles, ...profile }
