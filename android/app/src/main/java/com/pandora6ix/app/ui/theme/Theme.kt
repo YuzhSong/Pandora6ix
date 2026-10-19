@@ -37,3 +37,16 @@ fun PandoraTheme(content: @Composable () -> Unit) {
 
 @Composable
 fun Pandora6ixTheme(content: @Composable () -> Unit) = PandoraTheme(content)
+
+/**
+ * 全局开关（Switch）配色：关闭态边圈用中性 Ink 而非主题 outline（珊瑚红），
+ * 避免关闭状态看起来像错误/禁用；开启态沿用主题暖橙。
+ */
+@Composable
+fun pandoraSwitchColors() = androidx.compose.material3.SwitchDefaults.colors(
+    checkedThumbColor = Cream,
+    checkedTrackColor = WarmOrange,
+    uncheckedThumbColor = Cream,
+    uncheckedTrackColor = Ink.copy(alpha = 0.25f),
+    uncheckedBorderColor = Ink.copy(alpha = 0.25f)
+)
