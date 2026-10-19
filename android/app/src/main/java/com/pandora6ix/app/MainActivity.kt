@@ -410,10 +410,15 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
                         reloadTags = { refreshTags() }
                     ) { showTagManage = false }
                     detail != null -> {
-                        val dto = taskDtoById[detail]
-                        DetailScreen(detail!!, dto, serverTags, onBack = { detail = null; progressTaskId = null }, onRecordProgress = dto
+                        // 列表接口的视图会剥除任务说明/进度记录/完成申请（full=false），打开详情时按 ID 拉取完整数据
+                        val detailId = detail!!
+                        LaunchedEffect(detailId, calRetry) {
+                            runCatching { taskRepo.task(detailId) }.getOrNull()?.let { full -> taskDtoById[full.id] = full }
+                        }
+                        val dto = taskDtoById[detailId]
+                        DetailScreen(detailId, dto, serverTags, onBack = { detail = null; progressTaskId = null }, onRecordProgress = dto
                             ?.takeIf { t -> t.authorizedAssignments.any { a -> a.allowedActions.any { it in TASK_ACTIONS } } }
-                            ?.let { { progressTaskId = detail } })
+                            ?.let { { progressTaskId = detailId } })
                         progressTaskId?.let { id -> taskDtoById[id]?.let { t ->
                             ProgressSheet(t, taskRepo, onDismiss = { progressTaskId = null }, onChanged = { calRetry++ })
                         } }
@@ -1553,7 +1558,7 @@ private data class EntryDraft(val entryId: String?, val content: String)
         Text(value, Modifier.weight(1f), fontSize = 14.sp)
     }
 }
-@Composable private fun DetailCard(title: String, body: String, color: Color, onClick: () -> Unit = {}) { Card(Modifier.fillMaxWidth().clickable(onClick = onClick), colors = CardDefaults.cardColors(containerColor = color.copy(alpha = .78f)), shape = RoundedCornerShape(16.dp)) { Column(Modifier.padding(14.dp)) { Text(title, fontWeight = FontWeight.Bold); Text(body, fontSize = 13.sp, color = Ink.copy(alpha = .75f), maxLines = 2, overflow = TextOverflow.Ellipsis) } } }
+@Composable private fun DetailCard(title: String, body: String, color: Color, maxLines: Int = 2, onClick: () -> Unit = {}) { Card(Modifier.fillMaxWidth().clickable(onClick = onClick), colors = CardDefaults.cardColors(containerColor = color.copy(alpha = .78f)), shape = RoundedCornerShape(16.dp)) { Column(Modifier.padding(14.dp)) { Text(title, fontWeight = FontWeight.Bold); Text(body, fontSize = 13.sp, color = Ink.copy(alpha = .75f), maxLines = maxLines, overflow = TextOverflow.Ellipsis) } } }
 @Composable private fun DetailScreen(title: String, dto: TaskDto?, availableTags: List<TagDto>, onBack: () -> Unit, onRecordProgress: (() -> Unit)? = null) {
     val isLog = title.startsWith("日志 · ")
     val logContent = if (isLog) title.substringAfter("§", "") else null
@@ -1561,33 +1566,41 @@ private data class EntryDraft(val entryId: String?, val content: String)
     val item = dto?.toTaskItem()
     androidx.activity.compose.BackHandler(onBack = onBack)
     Column(Modifier.fillMaxSize()) {
-        PageHeader(displayTitle, if (isLog) null else "任务详情", onBack, actions = { onRecordProgress?.let { cb -> TextButton(cb) { Text("记录进度") } } })
-        Column(Modifier.verticalScroll(rememberScrollState()).padding(20.dp)) {
-            if (!isLog) { Text("${displayTitle}详情", fontSize = 24.sp, fontWeight = FontWeight.Bold); Spacer(Modifier.height(12.dp)) }
+        PageHeader(displayTitle, null, onBack, actions = { onRecordProgress?.let { cb -> TextButton(cb) { Text("记录进度") } } })
+        Column(Modifier.verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, top = 6.dp, bottom = 20.dp)) {
+            if (dto != null && dto.tags.isNotEmpty()) {
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    dto.tags.forEach { tag ->
+                        val tagColor = runCatching { Color(android.graphics.Color.parseColor(tag.colorHex)) }.getOrDefault(Ink.copy(alpha = .18f))
+                        Text(if (tag.id == dto.primaryTagId) "${tag.name} · 主" else tag.name, Modifier.clip(RoundedCornerShape(10.dp)).background(tagColor).padding(horizontal = 10.dp, vertical = 4.dp), fontSize = 12.sp, color = Ink)
+                    }
+                }
+                Spacer(Modifier.height(22.dp))
+            }
+            if (!isLog) { Text("详情", fontSize = 24.sp, fontWeight = FontWeight.Bold); Spacer(Modifier.height(12.dp)) }
             if (dto != null && item != null) {
-                Text("任务说明", fontWeight = FontWeight.Bold)
-                Text(dto.description?.takeIf { it.isNotBlank() } ?: "暂无备注", lineHeight = 22.sp)
+                DetailCard("任务说明", dto.description?.takeIf { it.isNotBlank() } ?: "暂无备注", Color(0xFFE2E2E2), maxLines = 8)
                 Spacer(Modifier.height(10.dp))
                 DetailCard("时间节点", "${item.start.year}/${item.start.month}/${item.start.day}—${item.end.year}/${item.end.month}/${item.end.day}\n${taskTimeLabel(item)}", Color(0xFFE2E2E2))
                 Spacer(Modifier.height(10.dp))
                 DetailCard("类型与状态", "${kindLabelOf(dto.kind)} · ${reviewStatusLabel(dto.reviewStatus)}", Color(0xFFE2E2E2))
                 Spacer(Modifier.height(10.dp))
-                DetailCard("重要程度", "★".repeat(dto.priorityLevel.coerceIn(1, 5)), Color(0xFFE2E2E2))
+                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFFE2E2E2).copy(alpha = .78f)), shape = RoundedCornerShape(16.dp)) {
+                    Column(Modifier.padding(14.dp)) {
+                        Text("重要程度", fontWeight = FontWeight.Bold)
+                        val stars = dto.priorityLevel.coerceIn(1, 5)
+                        val meta = priorityMeta(stars)
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("★".repeat(stars) + "☆".repeat(5 - stars), color = meta.first, fontSize = 13.sp)
+                            Text(meta.second, fontSize = 13.sp, color = Ink.copy(alpha = .75f))
+                        }
+                    }
+                }
                 Spacer(Modifier.height(10.dp))
                 Text("执行情况", fontWeight = FontWeight.Bold)
                 if (dto.authorizedAssignments.isEmpty()) Text("暂无可见执行关系", color = Ink.copy(alpha = .6f), lineHeight = 22.sp)
                 dto.authorizedAssignments.forEachIndexed { i, a ->
                     Text("${if (dto.authorizedAssignments.size > 1) "执行关系 ${i + 1} · " else ""}${executionStatusLabel(a.executionStatus)} · 进度 ${a.progressPercent}%", lineHeight = 22.sp)
-                }
-                if (dto.tags.isNotEmpty()) {
-                    Spacer(Modifier.height(10.dp))
-                    Text("标签", fontWeight = FontWeight.Bold)
-                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        dto.tags.forEach { tag ->
-                            val tagColor = runCatching { Color(android.graphics.Color.parseColor(tag.colorHex)) }.getOrDefault(Ink.copy(alpha = .18f))
-                            Text(if (tag.id == dto.primaryTagId) "${tag.name} · 主" else tag.name, Modifier.clip(RoundedCornerShape(10.dp)).background(tagColor).padding(horizontal = 10.dp, vertical = 4.dp), fontSize = 12.sp, color = Ink)
-                        }
-                    }
                 }
             } else if (isLog) {
                 Text(logContent ?: "", color = Ink.copy(alpha = .75f), fontSize = 16.sp, lineHeight = 26.sp)
