@@ -19,6 +19,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -167,6 +168,26 @@ private val appThemes = listOf(
 )
 private val LocalAppTheme = staticCompositionLocalOf { appThemes.first() }
 
+/** 底部导航图标：待审批数 > 0 时在“我的”图标上挂数字角标（99+ 封顶） */
+@Composable
+private fun MeNavIcon(item: NavItem, badgeCount: Int) {
+    if (item.route == Route.ME && badgeCount > 0) {
+        androidx.compose.material3.BadgedBox(badge = { androidx.compose.material3.Badge { Text(if (badgeCount >= 99) "99+" else "$badgeCount") } }) {
+            Icon(item.icon, item.label)
+        }
+    } else {
+        Icon(item.icon, item.label)
+    }
+}
+
+/** 白色圆角卡片边框：主题背景与卡片色（WarmCard）过于接近时（如暖米）加细边框以免融入背景，其余主题返回 null 无边框 */
+@Composable
+private fun cardBorderIfBlended(): BorderStroke? {
+    val bg = LocalAppTheme.current.background
+    return if (kotlin.math.abs(bg.luminance() - WarmCard.luminance()) < 0.02f)
+        BorderStroke(1.dp, Ink.copy(alpha = 0.14f)) else null
+}
+
 @Composable
 fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
     PandoraTheme {
@@ -179,6 +200,8 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
         var showReviews by rememberSaveable { mutableStateOf(false) }
         // 标签管理覆盖层（我的页进入）
         var showTagManage by rememberSaveable { mutableStateOf(false) }
+        // 无权限打开标签管理的提示弹层
+        var showTagDenied by remember { mutableStateOf(false) }
         // 进度记录浮层：从任务详情进入，显示当前任务的执行关系
         var progressTaskId by remember { mutableStateOf<String?>(null) }
         var fontScale by rememberSaveable { mutableStateOf(1f) }
@@ -186,6 +209,8 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
         var themeKey by rememberSaveable { mutableStateOf("warm") }
         var currentUser by remember { mutableStateOf<UserDto?>(null) }
         var authChecked by remember { mutableStateOf(false) }
+        // 标签增改删权限：与服务端一致（仅 FOUNDER/DEPARTMENT_MANAGER）；未来接入 capabilities 后再细分
+        val tagManager = currentUser?.roles?.any { it == "FOUNDER" || it == "DEPARTMENT_MANAGER" } == true
         val theme = appThemes.firstOrNull { it.key == themeKey } ?: appThemes.first()
         // 视图页任务与企业标签目录来自真实接口（登录后按模式/日期加载）
         val taskItems = remember { mutableStateListOf<TaskItem>() }
@@ -228,6 +253,20 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
                     serverTags.clear(); serverTags.addAll(list)
                 }
             }
+        }
+        // 待我审批数量：审批中心入口角标 + 底部导航“我的”红点（仅审批能力用户加载；超过一页按 99+ 显示）
+        var pendingReviewCount by remember { mutableStateOf(0) }
+        fun refreshPendingReviews() {
+            if (currentUser?.capabilities?.reviewTasks != true) { pendingReviewCount = 0; return }
+            appScope.launch {
+                runCatching { taskRepo.reviews("pending", limit = 100) }.getOrNull()?.let { page ->
+                    pendingReviewCount = if (page.nextCursor != null) 99 else page.items.size
+                }
+            }
+        }
+        // 登录后、切换页签、关闭审批中心（可能已批准/驳回）时刷新角标
+        LaunchedEffect(currentUser?.id, current, showReviews) {
+            if (currentUser != null && authChecked) refreshPendingReviews()
         }
         // 登录后加载企业标签目录与本人统计
         var statistics by remember { mutableStateOf<StatisticsDto?>(null) }
@@ -294,7 +333,7 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
                 route = Route.HOME.name; detail = null; homeDetail = null; showSettings = false; showReviews = false
             }
             else -> CompositionLocalProvider(LocalAppTheme provides theme, LocalDensity provides scaledDensity) {
-        Scaffold(containerColor = theme.background, bottomBar = { NavigationBar(containerColor = theme.backgroundDeep) { nav.forEach { item -> NavigationBarItem(selected = current == item.route, onClick = { route = item.route.name; detail = null; homeDetail = null; showSettings = false; showReviews = false; showTagManage = false; progressTaskId = null }, icon = { Icon(item.icon, item.label) }, label = { Text(item.label, fontSize = 11.sp) }, colors = NavigationBarItemDefaults.colors(selectedIconColor = WarmOrange, selectedTextColor = WarmOrange, indicatorColor = theme.backgroundDeep)) } } }) { padding ->
+        Scaffold(containerColor = theme.background, bottomBar = { NavigationBar(containerColor = theme.backgroundDeep) { nav.forEach { item -> NavigationBarItem(selected = current == item.route, onClick = { route = item.route.name; detail = null; homeDetail = null; showSettings = false; showReviews = false; showTagManage = false; progressTaskId = null }, icon = { MeNavIcon(item, pendingReviewCount) }, label = { Text(item.label, fontSize = 11.sp) }, colors = NavigationBarItemDefaults.colors(selectedIconColor = WarmOrange, selectedTextColor = WarmOrange, indicatorColor = theme.backgroundDeep)) } } }) { padding ->
             Surface(Modifier.padding(padding).fillMaxSize(), color = theme.background) {
                 when {
                     homeDetail != null -> HomeItemDetailScreen(dashboardRepo, homeDetail!!) { homeDetail = null }
@@ -302,8 +341,8 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
                     showReviews -> ReviewScreen(taskRepo, serverTags) { showReviews = false }
                     showTagManage -> TagManageScreen(
                         tagRepo,
-                        // TODO(权限)：标签管理权限待定级——未来按角色/等级填充（如 capabilities.createTags 与更细的修改/删除权限）
-                        TagPermissions(),
+                        // 与服务端一致的权限：仅 FOUNDER/DEPARTMENT_MANAGER 可建/改/删；无权限者根本进不了此页
+                        TagPermissions(canCreate = tagManager, canUpdate = tagManager, canDelete = tagManager),
                         reloadTags = { refreshTags() }
                     ) { showTagManage = false }
                     detail != null -> {
@@ -321,10 +360,16 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
                             Route.VIEW -> CalendarScreen(CalendarMode.valueOf(modeName), date, taskItems, canCreatePersonal, canCreateDelegated, serverTags, taskRepo, { modeName = it.name }, { dateKey = "${it.year}-${it.month}-${it.day}" }, { calRetry++ }, { detail = it.id }, taskScope = taskScope, onTaskScopeChange = { taskScope = it }, loading = calLoading, error = calError, onRetry = { calRetry++ })
                             Route.LOGS -> LogsScreen(journalRepo, serverTags.toList(), currentUser?.businessTimezone) { detail = it }
                             Route.AI -> AiMapScreen()
-                            Route.ME -> ProfileScreen(currentUser!!, statistics, notificationsEnabled, showReviewCenter, onOpenTagManage = { showTagManage = true }, onOpenReviews = { showReviews = true }, onOpenSettings = { showSettings = true })
+                            Route.ME -> ProfileScreen(currentUser!!, statistics, notificationsEnabled, showReviewCenter, pendingReviewCount, onOpenTagManage = { if (tagManager) showTagManage = true else showTagDenied = true }, onOpenReviews = { showReviews = true }, onOpenSettings = { showSettings = true })
                         }
                     }
                 }
+        if (showTagDenied) AlertDialog(
+            onDismissRequest = { showTagDenied = false },
+            title = { Text("无权限", fontWeight = FontWeight.Bold) },
+            text = { Text("标签管理仅限创始人或部门负责人使用。") },
+            confirmButton = { TextButton({ showTagDenied = false }) { Text("知道了") } }
+        )
             }
         }
         }
@@ -1248,7 +1293,7 @@ private data class EntryDraft(val entryId: String?, val content: String)
     }
 }
 @Composable private fun AiMapScreen() { Column(Modifier.fillMaxSize().padding(16.dp)) { PageHeader("AI地图"); Spacer(Modifier.height(48.dp)); Icon(Icons.Default.Info, null, Modifier.size(70.dp).align(Alignment.CenterHorizontally), tint = Coral); Text("AI 地图", Modifier.fillMaxWidth().padding(top = 18.dp), textAlign = TextAlign.Center, fontSize = 28.sp, fontWeight = FontWeight.Bold); Text("功能规划中", Modifier.fillMaxWidth().padding(top = 8.dp), textAlign = TextAlign.Center, color = Ink.copy(alpha = .6f)) } }
-@Composable private fun ProfileScreen(user: UserDto, statistics: StatisticsDto?, notificationsEnabled: Boolean, showReviewCenter: Boolean, onOpenTagManage: () -> Unit, onOpenReviews: () -> Unit, onOpenSettings: () -> Unit) {
+@Composable private fun ProfileScreen(user: UserDto, statistics: StatisticsDto?, notificationsEnabled: Boolean, showReviewCenter: Boolean, pendingReviewCount: Int, onOpenTagManage: () -> Unit, onOpenReviews: () -> Unit, onOpenSettings: () -> Unit) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("profile_avatar_" + SessionStore(context).ownerId, Context.MODE_PRIVATE) }
     var avatarType by remember { mutableStateOf(prefs.getString("avatarType", "color") ?: "color") }
@@ -1307,9 +1352,9 @@ private data class EntryDraft(val entryId: String?, val content: String)
     }
     val displayName = user.displayName.ifBlank { user.name }.ifBlank { "未命名" }
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-        PageHeader("我的", "个人资料")
+        PageHeader("我的")
         Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = CreamDeep), shape = RoundedCornerShape(20.dp)) {
+            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = WarmCard), shape = RoundedCornerShape(20.dp), border = cardBorderIfBlended()) {
                 Row(Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.size(64.dp).clickable { showAvatarMenu = true }) {
                         AvatarView(avatarType, avatarColorIndex, avatarPath, displayName, 64.dp)
@@ -1318,9 +1363,8 @@ private data class EntryDraft(val entryId: String?, val content: String)
                         }
                     }
                     Column(Modifier.padding(start = 16.dp)) {
-                        Text(displayName, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                        Text(displayName, fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Ink)
                         Text(user.jobTitle ?: "未设置职位", color = Ink.copy(alpha = .7f))
-                        Text("登录名 ${user.loginName}", fontSize = 12.sp, color = Ink.copy(alpha = .6f))
                     }
                 }
             }
@@ -1378,7 +1422,7 @@ private data class EntryDraft(val entryId: String?, val content: String)
                 confirmButton = { TextButton({ showGallery = false }) { Text("关闭") } }
             )
             statistics?.let { st ->
-                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = WarmCard), shape = RoundedCornerShape(20.dp)) {
+                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = WarmCard), shape = RoundedCornerShape(20.dp), border = cardBorderIfBlended()) {
                     Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                         Text("任务统计", fontSize = 18.sp, fontWeight = FontWeight.Bold)
                         ProfileInfoRow("任务总数", "${st.total}")
@@ -1388,7 +1432,7 @@ private data class EntryDraft(val entryId: String?, val content: String)
                     }
                 }
             }
-            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = WarmCard), shape = RoundedCornerShape(20.dp)) {
+            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = WarmCard), shape = RoundedCornerShape(20.dp), border = cardBorderIfBlended()) {
                 Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     Text("组织信息", fontSize = 18.sp, fontWeight = FontWeight.Bold)
                     ProfileInfoRow("所属企业", user.enterprise?.name ?: "未设置")
@@ -1398,7 +1442,6 @@ private data class EntryDraft(val entryId: String?, val content: String)
                     ProfileInfoRow("业务时区", user.businessTimezone ?: "未设置")
                 }
             }
-            SettingsSectionLabel("基础设置")
             SettingsCard {
                 SettingsRow(icon = Icons.Default.Label, title = "标签管理", onClick = onOpenTagManage) {
                     Icon(Icons.Default.ChevronRight, null, Modifier.size(20.dp), tint = Ink.copy(alpha = .4f))
@@ -1406,6 +1449,14 @@ private data class EntryDraft(val entryId: String?, val content: String)
                 DashedDivider(Ink.copy(alpha = .18f))
                 if (showReviewCenter) {
                     SettingsRow(icon = Icons.Default.FactCheck, title = "审批中心", onClick = onOpenReviews) {
+                        if (pendingReviewCount > 0) {
+                            Text(
+                                if (pendingReviewCount >= 99) "99+" else "$pendingReviewCount",
+                                fontSize = 11.sp, color = Color.White, fontWeight = FontWeight.Bold,
+                                modifier = Modifier.clip(CircleShape).background(CoralDark).padding(horizontal = 7.dp, vertical = 2.dp)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                        }
                         Icon(Icons.Default.ChevronRight, null, Modifier.size(20.dp), tint = Ink.copy(alpha = .4f))
                     }
                     DashedDivider(Ink.copy(alpha = .18f))
@@ -1532,12 +1583,7 @@ private fun SettingsScreen(
                         Switch(
                             checked = notificationsEnabled,
                             onCheckedChange = onNotificationsChange,
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = Cream,
-                                checkedTrackColor = WarmOrange,
-                                uncheckedThumbColor = Cream,
-                                uncheckedTrackColor = Ink.copy(alpha = 0.25f)
-                            )
+                            colors = pandoraSwitchColors()
                         )
                     }
                     DashedDivider(Ink.copy(alpha = 0.18f))
@@ -1645,6 +1691,7 @@ private fun SettingsScreen(
                         oldPw.isBlank() -> "请输入当前密码"
                         newPw.length < 10 -> "新密码至少 10 个字符"
                         newPw.toByteArray(Charsets.UTF_8).size > 72 -> "新密码过长（最多 72 字节）"
+                        newPw == oldPw -> "新密码不能与当前密码相同"
                         newPw != confirmPw -> "两次输入的新密码不一致"
                         else -> null
                     }
@@ -1653,9 +1700,16 @@ private fun SettingsScreen(
                         scope.launch {
                             try {
                                 auth.changePassword(oldPw, newPw)
-                                // 成功 204：服务端已使会话失效，回登录页重新认证
-                                showPasswordDialog = false
-                                onLoggedOut()
+                                // 后端 password() 会作废当前会话（末尾 logout(actor)）：
+                                // 用登录时保存的企业域+登录名和新密码静默重登，保持在应用内
+                                if (auth.reloginWithNewPassword(newPw) != null) {
+                                    showPasswordDialog = false
+                                    toast = "密码修改成功"
+                                } else {
+                                    // 静默重登失败（网络异常/缺少登录要素）：密码已修改成功，回登录页重新认证
+                                    showPasswordDialog = false
+                                    onLoggedOut()
+                                }
                             } catch (e: ApiException) {
                                 pwError = e.friendlyMessage()
                             } catch (e: Exception) {
@@ -1770,7 +1824,8 @@ private fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
         Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(containerColor = WarmCard),
-        elevation = CardDefaults.cardElevation(2.dp)
+        elevation = CardDefaults.cardElevation(2.dp),
+        border = cardBorderIfBlended()
     ) {
         Column(content = content)
     }
