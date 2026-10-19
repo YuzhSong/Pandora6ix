@@ -4,6 +4,18 @@ import { createLocalAdminRepository, DATA_KEY, CATALOG_KEY, BINDING_KEY } from '
 import type { StorageAdapter } from '../src/data/adminRepository.ts'
 import { createSeed } from '../src/data/seed.ts'
 
+test('local adapter deletes only empty leaves with current version and persists removal', async () => {
+  const repository = createLocalAdminRepository(memoryStore())
+  let data = await repository.load()
+  const root = data.units.find(unit => unit.kind === 'COMPANY')!
+  await assert.rejects(repository.deleteUnit(root.id, root.version), /根组织/)
+  data = await repository.saveUnit({ name: '待删空部门', kind: 'DEPARTMENT', parentId: root.id })
+  const leaf = data.units.find(unit => unit.name === '待删空部门')!
+  await assert.rejects(repository.deleteUnit(leaf.id, leaf.version - 1))
+  await repository.deleteUnit(leaf.id, leaf.version)
+  assert.ok(!(await repository.load()).units.some(unit => unit.id === leaf.id))
+})
+
 test('legacy migration preserves custom records and persists only on save', async () => {
   const storage = memoryStore()
   const legacy = { ...createSeed(), schemaVersion: 1, companyItems: undefined, currentUserId: undefined }

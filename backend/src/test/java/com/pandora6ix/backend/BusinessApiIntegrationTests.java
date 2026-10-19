@@ -5,6 +5,7 @@ import static com.pandora6ix.backend.repository.BusinessDb.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.pandora6ix.backend.repository.BusinessDb;
+import com.pandora6ix.backend.service.NotificationService;
 
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -27,6 +28,7 @@ class BusinessApiIntegrationTests {
     @Autowired MockMvc mvc;
     @Autowired JsonMapper json;
     @Autowired BusinessDb db;
+    @Autowired NotificationService notifications;
     private static final String PASSWORD = "integration-password-123";
     private String domain,
             enterprise,
@@ -1446,7 +1448,7 @@ class BusinessApiIntegrationTests {
     }
 
     @Test
-    void minuteValidationAndUnconfirmedTimedEndpointsAreDistinct() throws Exception {
+    void timedTasksMayCrossDaysWhileIncreasingEndpointsAreRequired() throws Exception {
         var body = taskBody("PERSONAL", List.of(employee), List.of(), null);
         body.put("timeKind", "TIMED");
         body.put("startTime", "09:15:00");
@@ -1454,11 +1456,33 @@ class BusinessApiIntegrationTests {
         request("POST", "/tasks", employeeToken, body, 422);
         body.put("startTime", "09:15");
         request("POST", "/tasks", employeeToken, body, 201);
+        // 跨天 TIMED 允许：22:30 → 次日 02:15，结束时刻可以早于开始时刻
+        body.put("startTime", "22:30");
+        body.put("endTime", "02:15");
         body.put("endDate", today.plusDays(1).toString());
-        request("POST", "/tasks", employeeToken, body, 409);
-        body.put("endDate", today.toString());
+        request("POST", "/tasks", employeeToken, body, 201);
+        // 同日必须正时长：同刻或不递增按 422 拒绝
+        body.put("startTime", "09:15");
         body.put("endTime", "09:15");
-        request("POST", "/tasks", employeeToken, body, 409);
+        body.put("endDate", today.toString());
+        request("POST", "/tasks", employeeToken, body, 422);
+        body.put("endTime", "08:00");
+        request("POST", "/tasks", employeeToken, body, 422);
+    }
+
+    @Test
+    void allDayTaskMaySpanMultipleDays() throws Exception {
+        var body = taskBody("PERSONAL", List.of(employee), List.of(), null);
+        body.put("endDate", today.plusDays(3).toString());
+        var created = request("POST", "/tasks", employeeToken, body, 201);
+        var stored =
+                db.one(
+                        "SELECT * FROM task WHERE enterprise_id=? AND id=?",
+                        enterprise,
+                        created.get("id"));
+        assertEquals(today.plusDays(3).toString(), str(stored, "end_date"));
+        assertNull(stored.get("start_minute"));
+        assertNull(stored.get("end_minute"));
     }
 
     @Test
@@ -2055,6 +2079,137 @@ class BusinessApiIntegrationTests {
     }
 
     @Test
+    void administratorRenamesLoginWithoutChangingIdentityPasswordProfileOrBusinessRelations() throws Exception {
+        var task = createTask(employeeToken, "PERSONAL", List.of());
+        var journal = journal(employeeToken, today, 1);
+        var before = new LinkedHashMap<>(db.entity("app_user", enterprise, employee));
+        var beforeRoles = db.rows("SELECT * FROM user_role WHERE enterprise_id=? AND user_id=?", enterprise, employee);
+        var taskBefore = db.entity("task", enterprise, str(task, "id"));
+        var journalBefore = db.entity("work_log", enterprise, str(journal, "id"));
+        var patch = personnelPatch(employee, 0, List.of("EMPLOYEE"));
+        patch.put("loginName", "zhang.san");
+        var edited = request("PATCH", "/admin/users/" + employee, adminToken, patch, 200);
+        assertEquals(employee, edited.get("id"));
+        assertEquals("zhang.san", edited.get("loginName"));
+        assertFalse(edited.containsKey("passwordHash"));
+        var after = new LinkedHashMap<>(db.entity("app_user", enterprise, employee));
+        assertEquals(1, number(after, "version"));
+        for (String key : List.of("login_name", "version")) { before.remove(key); after.remove(key); }
+        assertEquals(before, after);
+        assertEquals(beforeRoles, db.rows("SELECT * FROM user_role WHERE enterprise_id=? AND user_id=?", enterprise, employee));
+        assertEquals(taskBefore, db.entity("task", enterprise, str(task, "id")));
+        assertEquals(journalBefore, db.entity("work_log", enterprise, str(journal, "id")));
+        assertEquals(employee, request("GET", "/me", login("zhang.san"), null, 200).get("id"));
+        assertEquals(employee, request("GET", "/me", employeeToken, null, 200).get("id"));
+        request("GET", "/tasks/" + task.get("id"), employeeToken, null, 200);
+        request("GET", "/work-logs/" + journal.get("id"), employeeToken, null, 200);
+        request("POST", "/auth/login", null, fields("enterpriseDomain", domain,
+                "loginName", "employee", "password", PASSWORD), 401);
+        assertEquals(employee, items(request("GET", "/admin/users?q=zhang.san", adminToken, null, 200)).getFirst().get("id"));
+    }
+
+    @Test
+    void omittedNullAndUnchangedLoginNamesPreserveLegacyUpdates() throws Exception {
+        request("PATCH", "/admin/users/" + employee, adminToken,
+                personnelPatch(employee, 0, List.of("EMPLOYEE")), 200);
+        var patch = personnelPatch(employee, 1, List.of("EMPLOYEE", "ADMIN"));
+        patch.put("loginName", null);
+        request("PATCH", "/admin/users/" + employee, adminToken, patch, 200);
+        patch = personnelPatch(employee, 2, List.of("EMPLOYEE"));
+        patch.put("loginName", "employee");
+        request("PATCH", "/admin/users/" + employee, adminToken, patch, 200);
+        assertEquals("employee", db.entity("app_user", enterprise, employee).get("login_name"));
+        assertNotNull(login("employee"));
+        assertEquals("VERSION_CONFLICT", request("PATCH", "/admin/users/" + employee,
+                adminToken, patch, 409).get("code"));
+    }
+
+    @Test
+    void invalidDuplicateAndStaleLoginRenamesLeaveTheWholeAccountUntouched() throws Exception {
+        var before = db.entity("app_user", enterprise, employee);
+        var rolesBefore = db.rows("SELECT * FROM user_role WHERE enterprise_id=? AND user_id=?", enterprise, employee);
+        for (String value : List.of("", "   ", "\t\n", "\u2003", " zhang.san", "zhang.san ", "\u2003zhang.san", "x".repeat(129), "peer")) {
+            var patch = personnelPatch(employee, 0, List.of("EMPLOYEE", "ADMIN"));
+            patch.put("displayName", "Must not save"); patch.put("loginName", value);
+            var error = request("PATCH", "/admin/users/" + employee, adminToken, patch, value.equals("peer") ? 409 : 422);
+            assertEquals(value.equals("peer") ? "LOGIN_NAME_TAKEN" : "VALIDATION_FAILED", error.get("code"));
+            if (!value.equals("peer")) assertTrue(error.get("fieldErrors").toString().contains("loginName"));
+            assertEquals(before, db.entity("app_user", enterprise, employee));
+            assertEquals(rolesBefore, db.rows("SELECT * FROM user_role WHERE enterprise_id=? AND user_id=?", enterprise, employee));
+        }
+        var valid = personnelPatch(employee, 0, List.of("EMPLOYEE")); valid.put("loginName", "x".repeat(128));
+        request("PATCH", "/admin/users/" + employee, adminToken, valid, 200);
+        valid.put("loginName", "peer");
+        assertEquals("VERSION_CONFLICT", request("PATCH", "/admin/users/" + employee, adminToken, valid, 409).get("code"));
+    }
+
+    @Test
+    void loginRenameIsAdministratorOnlyAndEnterpriseScoped() throws Exception {
+        var patch = personnelPatch(employee, 0, List.of("EMPLOYEE")); patch.put("loginName", "local.new");
+        request("PATCH", "/admin/users/" + employee, employeeToken, patch, 403);
+        request("PATCH", "/admin/users/" + employee, managerToken, patch, 403);
+        request("PATCH", "/admin/users/" + employee, null, patch, 401);
+        var other = request("POST", "/admin/enterprise-initializations", null,
+                fields("loginDomain", "rename-" + UUID.randomUUID(), "name", "Other", "businessTimezone", "UTC",
+                        "adminLoginName", "foreign.login", "adminPassword", PASSWORD, "adminDisplayName", "Other admin"),
+                201, "X-Bootstrap-Token", "integration-tests-only-bootstrap");
+        String otherId = str(other, "adminUserId");
+        var otherBefore = db.entity("app_user", str(other, "id"), otherId);
+        request("PATCH", "/admin/users/" + otherId, adminToken, patch, 404);
+        var otherLogin = request("POST", "/auth/login", null, fields("enterpriseDomain", other.get("loginDomain"),
+                "loginName", "foreign.login", "password", PASSWORD), 200);
+        request("PATCH", "/admin/users/" + employee, str(otherLogin, "accessToken"), patch, 404);
+        patch.put("loginName", "foreign.login");
+        request("PATCH", "/admin/users/" + employee, adminToken, patch, 200);
+        assertEquals(otherBefore, db.entity("app_user", str(other, "id"), otherId));
+        assertNotNull(login("foreign.login"));
+    }
+
+    @Test
+    void renamedAdministratorKeepsSessionAndLastAdminProtection() throws Exception {
+        var patch = personnelPatch(admin, 0, List.of("ADMIN")); patch.put("loginName", "guanliyuan");
+        request("PATCH", "/admin/users/" + admin, adminToken, patch, 200);
+        request("GET", "/admin/users", adminToken, null, 200);
+        assertEquals(admin, request("GET", "/me", login("guanliyuan"), null, 200).get("id"));
+        patch = personnelPatch(admin, 1, List.of("EMPLOYEE")); patch.put("loginName", "must.not.save");
+        assertEquals("LAST_ADMIN_REQUIRED", request("PATCH", "/admin/users/" + admin, adminToken, patch, 409).get("code"));
+        assertEquals("guanliyuan", db.entity("app_user", enterprise, admin).get("login_name"));
+    }
+
+    @Test
+    void concurrentRenamesOfOneAccountRejectTheStaleVersion() throws Exception {
+        var first = personnelPatch(employee, 0, List.of("EMPLOYEE")); first.put("loginName", "rename.one");
+        var second = personnelPatch(employee, 0, List.of("EMPLOYEE")); second.put("loginName", "rename.two");
+        var start = new CountDownLatch(1);
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var a = executor.submit(() -> { start.await(); return raw("PATCH", "/admin/users/" + employee, adminToken, first); });
+            var b = executor.submit(() -> { start.await(); return raw("PATCH", "/admin/users/" + employee, adminToken, second); });
+            start.countDown();
+            var results = List.of(a.get(20, TimeUnit.SECONDS), b.get(20, TimeUnit.SECONDS));
+            assertEquals(List.of(200, 409), results.stream().map(Result::status).sorted().toList());
+            assertTrue(results.stream().filter(r -> r.status() == 409).findFirst().orElseThrow().body().contains("VERSION_CONFLICT"));
+        }
+        assertEquals(1, number(db.entity("app_user", enterprise, employee), "version"));
+    }
+
+    @Test
+    void concurrentAccountsClaimingOneLoginNameDoNotPartiallyUpdateTheLoser() throws Exception {
+        var first = personnelPatch(employee, 0, List.of("EMPLOYEE")); first.put("loginName", "shared.login");
+        var second = personnelPatch(peer, 0, List.of("EMPLOYEE")); second.put("loginName", "shared.login");
+        var start = new CountDownLatch(1);
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var a = executor.submit(() -> { start.await(); return raw("PATCH", "/admin/users/" + employee, adminToken, first); });
+            var b = executor.submit(() -> { start.await(); return raw("PATCH", "/admin/users/" + peer, adminToken, second); });
+            start.countDown();
+            var results = List.of(a.get(20, TimeUnit.SECONDS), b.get(20, TimeUnit.SECONDS));
+            assertEquals(List.of(200, 409), results.stream().map(Result::status).sorted().toList());
+            assertTrue(results.stream().filter(r -> r.status() == 409).findFirst().orElseThrow().body().contains("LOGIN_NAME_TAKEN"));
+        }
+        assertEquals(1, db.rows("SELECT id FROM app_user WHERE enterprise_id=? AND login_name='shared.login'", enterprise).size());
+        assertEquals(1, number(db.entity("app_user", enterprise, employee), "version") + number(db.entity("app_user", enterprise, peer), "version"));
+    }
+
+    @Test
     void personnelProfilePersistsLoginAndRoleEditsWithoutBusinessLeakage() throws Exception {
         var created = request("POST", "/admin/users", adminToken, personnelCommand("profile"), 201);
         String id = str(created, "id");
@@ -2132,6 +2287,138 @@ class BusinessApiIntegrationTests {
         request("POST", "/admin/org-units", adminToken,
                 fields("name", "Nested department", "kind", "DEPARTMENT", "parentId", department), 422);
         assertEquals("DEPARTMENT", db.entity("org_unit", enterprise, leaf).get("kind"));
+    }
+
+    @Test
+    void deleteEmptyOrganizationsRequiresCurrentVersionAndPreservesOtherRecords() throws Exception {
+        String emptyDepartment = createOrg("Disposable department", "DEPARTMENT", root);
+        String emptyTeam = createOrg("Disposable team", "TEAM", emptyDepartment);
+        String path = "/admin/org-units/" + emptyTeam;
+        assertEquals("VERSION_CONFLICT", request("DELETE", path, adminToken, fields("expectedVersion", 1), 409).get("code"));
+        request("DELETE", path, adminToken, fields(), 422);
+        request("DELETE", path, adminToken, fields("expectedVersion", -1), 422);
+        request("DELETE", path, adminToken, null, 400);
+        request("DELETE", path, adminToken, fields("expectedVersion", 0), 204);
+        request("DELETE", path, adminToken, fields("expectedVersion", 0), 404);
+        request("DELETE", "/admin/org-units/" + emptyDepartment, adminToken, fields("expectedVersion", 0), 204);
+        assertEquals(3, items(request("GET", "/admin/org-units", adminToken, null, 200)).size());
+        assertEquals(team, db.entity("app_user", enterprise, employee).get("org_unit_id"));
+    }
+
+    @Test
+    void deleteOrganizationRefusesRootChildrenAndAllAssignedAccounts() throws Exception {
+        assertEquals("ORG_ROOT_DELETE_FORBIDDEN", request("DELETE", "/admin/org-units/" + root, adminToken, fields("expectedVersion", 0), 409).get("code"));
+        assertEquals("ORG_HAS_CHILDREN", request("DELETE", "/admin/org-units/" + department, adminToken, fields("expectedVersion", 0), 409).get("code"));
+        assertEquals("ORG_HAS_MEMBERS", request("DELETE", "/admin/org-units/" + team, adminToken, fields("expectedVersion", 0), 409).get("code"));
+        String leaf = createOrg("Disabled account department", "DEPARTMENT", root);
+        String disabled = createUser("disabled-delete", leaf, founder, List.of("EMPLOYEE"));
+        db.update("UPDATE app_user SET status='DISABLED' WHERE id=?", disabled);
+        assertEquals("ORG_HAS_MEMBERS", request("DELETE", "/admin/org-units/" + leaf, adminToken, fields("expectedVersion", 0), 409).get("code"));
+        assertNotNull(db.entity("org_unit", enterprise, leaf));
+    }
+
+    @Test
+    void deleteOrganizationRequiresAdminAndHidesForeignEnterpriseUnits() throws Exception {
+        String leaf = createOrg("Private leaf", "DEPARTMENT", root);
+        String path = "/admin/org-units/" + leaf;
+        request("DELETE", path, null, fields("expectedVersion", 0), 401);
+        request("DELETE", path, employeeToken, fields("expectedVersion", 0), 403);
+        request("DELETE", path, founderToken, fields("expectedVersion", 0), 403);
+        var other = request("POST", "/admin/enterprise-initializations", null,
+                fields("loginDomain", "delete-other-" + UUID.randomUUID(), "name", "Other", "adminLoginName", "admin", "adminPassword", PASSWORD, "adminDisplayName", "Admin"),
+                201, "X-Bootstrap-Token", "integration-tests-only-bootstrap");
+        String otherToken = (String) request("POST", "/auth/login", null,
+                fields("enterpriseDomain", other.get("loginDomain"), "loginName", "admin", "password", PASSWORD), 200).get("accessToken");
+        assertEquals("RESOURCE_NOT_FOUND", request("DELETE", path, otherToken, fields("expectedVersion", 0), 404).get("code"));
+        assertNotNull(db.entity("org_unit", enterprise, leaf));
+    }
+
+    @Test
+    void concurrentOrganizationDeletionAndChildCreationPreserveHierarchy() throws Exception {
+        String leaf = createOrg("Concurrent deletion", "DEPARTMENT", root);
+        var start = new CountDownLatch(1);
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var deletion = executor.submit(() -> { start.await(); return raw("DELETE", "/admin/org-units/" + leaf, adminToken, fields("expectedVersion", 0)); });
+            var creation = executor.submit(() -> { start.await(); return raw("POST", "/admin/org-units", adminToken, fields("name", "Concurrent child", "kind", "TEAM", "parentId", leaf)); });
+            start.countDown();
+            int removed = deletion.get(20, TimeUnit.SECONDS).status();
+            int created = creation.get(20, TimeUnit.SECONDS).status();
+            assertTrue((removed == 204 && created == 404) || (removed == 409 && created == 201), removed + "/" + created);
+            assertEquals(removed == 204, db.rows("SELECT id FROM org_unit WHERE enterprise_id=? AND id=?", enterprise, leaf).isEmpty());
+            assertEquals(removed == 204, db.rows("SELECT id FROM org_unit WHERE enterprise_id=? AND parent_id=?", enterprise, leaf).isEmpty());
+        }
+    }
+
+    @Test
+    void concurrentOrganizationDeletionAndPersonnelTransferPreserveMembership() throws Exception {
+        String leaf = createOrg("Concurrent transfer", "DEPARTMENT", root);
+        var patch = personnelPatch(employee, 0, List.of("EMPLOYEE"));
+        patch.put("orgUnitId", leaf);
+        var start = new CountDownLatch(1);
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var deletion = executor.submit(() -> { start.await(); return raw("DELETE", "/admin/org-units/" + leaf, adminToken, fields("expectedVersion", 0)); });
+            var transfer = executor.submit(() -> { start.await(); return raw("PATCH", "/admin/users/" + employee, adminToken, patch); });
+            start.countDown();
+            int removed = deletion.get(20, TimeUnit.SECONDS).status();
+            int moved = transfer.get(20, TimeUnit.SECONDS).status();
+            assertTrue((removed == 204 && moved == 404) || (removed == 409 && moved == 200), removed + "/" + moved);
+            assertEquals(removed == 204 ? team : leaf, db.entity("app_user", enterprise, employee).get("org_unit_id"));
+        }
+    }
+
+    @Test
+    void adminResetsEmployeePasswordAndRevokesEveryOldSessionWithoutChangingProfile() throws Exception {
+        String secondSession = login("employee");
+        var before = db.entity("app_user", enterprise, employee);
+        var result = request("POST", "/admin/users/" + employee + "/password-reset", adminToken,
+                fields("expectedVersion", 0, "newPassword", "Employee-new-password"), 200);
+        assertEquals(employee, result.get("id"));
+        assertEquals(1, ((Number) result.get("version")).intValue());
+        assertFalse(result.containsKey("passwordHash")); assertFalse(result.containsKey("password")); assertFalse(result.containsKey("newPassword"));
+        var after = db.entity("app_user", enterprise, employee);
+        for (String key : List.of("display_name", "login_name", "org_unit_id", "supervisor_user_id", "job_title", "gender", "id_number", "phone_number", "status"))
+            assertEquals(before.get(key), after.get(key), key);
+        request("GET", "/me", employeeToken, null, 401);
+        request("GET", "/me", secondSession, null, 401);
+        request("GET", "/me", peerToken, null, 200);
+        request("GET", "/me", adminToken, null, 200);
+        request("POST", "/auth/login", null, fields("enterpriseDomain", domain, "loginName", "employee", "password", PASSWORD), 401);
+        request("POST", "/auth/login", null, fields("enterpriseDomain", domain, "loginName", "employee", "password", "Employee-new-password"), 200);
+    }
+
+    @Test
+    void employeePasswordResetEnforcesAuthorityScopeVersionAndPasswordBounds() throws Exception {
+        String path = "/admin/users/" + employee + "/password-reset";
+        var command = fields("expectedVersion", 0, "newPassword", "Employee-new-password");
+        request("POST", path, null, command, 401);
+        request("POST", path, employeeToken, command, 403);
+        request("POST", path, founderToken, command, 403);
+        assertEquals("ADMIN_PASSWORD_RESET_FORBIDDEN", request("POST", "/admin/users/" + admin + "/password-reset", adminToken, command, 403).get("code"));
+        request("POST", path, adminToken, fields("expectedVersion", 9, "newPassword", "Employee-new-password"), 409);
+        request("POST", path, adminToken, fields("newPassword", "Employee-new-password"), 422);
+        request("POST", path, adminToken, fields("expectedVersion", -1, "newPassword", "Employee-new-password"), 422);
+        request("POST", path, adminToken, fields("expectedVersion", 0, "newPassword", "short"), 422);
+        request("POST", path, adminToken, fields("expectedVersion", 0, "newPassword", "密".repeat(25)), 422);
+        request("POST", "/admin/users/" + UUID.randomUUID() + "/password-reset", adminToken, command, 404);
+        var other = request("POST", "/admin/enterprise-initializations", null,
+                fields("loginDomain", "reset-other-" + UUID.randomUUID(), "name", "Other", "adminLoginName", "admin", "adminPassword", PASSWORD, "adminDisplayName", "Admin"),
+                201, "X-Bootstrap-Token", "integration-tests-only-bootstrap");
+        String otherToken = (String) request("POST", "/auth/login", null, fields("enterpriseDomain", other.get("loginDomain"), "loginName", "admin", "password", PASSWORD), 200).get("accessToken");
+        request("POST", path, otherToken, command, 404);
+        assertEquals(0, number(db.entity("app_user", enterprise, employee), "version"));
+        request("GET", "/me", employeeToken, null, 200);
+    }
+
+    @Test
+    void concurrentEmployeePasswordResetsAllowOnlyOneCurrentVersion() throws Exception {
+        var start = new CountDownLatch(1);
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var first = executor.submit(() -> { start.await(); return raw("POST", "/admin/users/" + employee + "/password-reset", adminToken, fields("expectedVersion", 0, "newPassword", "Employee-password-one")); });
+            var second = executor.submit(() -> { start.await(); return raw("POST", "/admin/users/" + employee + "/password-reset", adminToken, fields("expectedVersion", 0, "newPassword", "Employee-password-two")); });
+            start.countDown();
+            assertEquals(List.of(200, 409), List.of(first.get(20, TimeUnit.SECONDS).status(), second.get(20, TimeUnit.SECONDS).status()).stream().sorted().toList());
+        }
+        assertEquals(1, number(db.entity("app_user", enterprise, employee), "version"));
     }
 
     @Test
@@ -2219,6 +2506,130 @@ class BusinessApiIntegrationTests {
         request("PATCH", "/work-logs/"+journal.get("id"), employeeToken, fields("expectedVersion", 0), 409);
         request("DELETE", "/work-logs/"+journal.get("id"), employeeToken, null, 409);
         assertEquals(0, number(db.entity("work_log", enterprise, str(journal, "id")), "version"));
+    }
+
+    @Test
+    void approvedDelegationNotifiesEveryRecipientAndReadingIsIdempotent() throws Exception {
+        var task = createTask(managerToken, "DELEGATED", List.of(employee, peer));
+        reviewDecision(founderToken, task, "APPROVE");
+        for (String token : List.of(employeeToken, peerToken)) {
+            var list = items(request("GET", "/notifications", token, null, 200));
+            assertEquals(1, list.size());
+            assertEquals("NEW_TASK", list.getFirst().get("kind"));
+            assertEquals(str(task, "id"), list.getFirst().get("taskId"));
+            assertEquals(1, unread(token));
+        }
+        String id = str(items(request("GET", "/notifications", employeeToken, null, 200)).getFirst(), "id");
+        request("POST", "/notifications/"+id+"/read", peerToken, null, 404);
+        assertNotNull(request("POST", "/notifications/"+id+"/read", employeeToken, null, 200).get("readAt"));
+        assertEquals(0, unread(employeeToken));
+        request("POST", "/notifications/"+id+"/read", employeeToken, null, 200);
+        assertEquals(0, unread(employeeToken));
+        assertEquals(1, unread(peerToken));
+    }
+
+    @Test
+    void progressAndAcceptanceNotifyCreatorAndRecipientWithoutDuplicates() throws Exception {
+        var task = createTask(managerToken, "DELEGATED", List.of(employee));
+        reviewDecision(founderToken, task, "APPROVE");
+        String taskId = str(task, "id");
+        String assignmentId = assignment(taskId, employee);
+        request("POST", "/task-assignments/"+assignmentId+"/progress-records", employeeToken,
+                fields("expectedVersion", 1, "progressPercent", 50), 201);
+        assertEquals(1, countKind(managerToken, "STATUS"));
+        request("POST", "/task-assignments/"+assignmentId+"/progress-records", employeeToken,
+                fields("expectedVersion", 2, "progressPercent", 50), 201);
+        assertEquals(1, countKind(managerToken, "STATUS"));
+        var submitted = request("POST", "/task-assignments/"+assignmentId+"/completion-requests", employeeToken,
+                fields("expectedVersion", 3, "note", "done"), 201);
+        assertEquals(2, countKind(managerToken, "STATUS"));
+        var completion = (Map<String, Object>) submitted.get("request");
+        request("POST", "/task-completion-requests/"+str(completion, "id")+"/decision", managerToken,
+                fields("expectedVersion", 0, "decision", "ACCEPT"), 200);
+        assertEquals(3, countKind(employeeToken, "STATUS"));
+        assertEquals(3, countKind(managerToken, "STATUS"));
+    }
+
+    @Test
+    void deadlineScanNotifiesPendingWorkOnlyAndNeverRepeats() throws Exception {
+        ZoneId zone = ZoneId.of("Asia/Shanghai");
+        LocalTime now = LocalTime.now(zone);
+        LocalDate end = LocalDate.now(zone);
+        int endMinute = 23 * 60 + 59;
+        // 深夜运行时把截止时刻放到次日凌晨，保证仍落在未来 24 小时窗口内
+        if (now.isAfter(LocalTime.of(22, 0))) {
+            end = end.plusDays(1);
+            endMinute = 30;
+        }
+        var delegated = createTask(managerToken, "DELEGATED", List.of(employee));
+        reviewDecision(founderToken, delegated, "APPROVE");
+        dueAt(str(delegated, "id"), end, endMinute);
+        // Approval is a visibility boundary: pending and rejected tasks must stay private.
+        var pending = createTask(managerToken, "DELEGATED", List.of(peer));
+        dueAt(str(pending, "id"), end, endMinute);
+        var rejected = createTask(managerToken, "DELEGATED", List.of(peer));
+        reviewDecision(founderToken, rejected, "REJECT");
+        dueAt(str(rejected, "id"), end, endMinute);
+        var personal = createTask(employeeToken, "PERSONAL", List.of());
+        reviewDecision(leadToken, personal, "APPROVE");
+        dueAt(str(personal, "id"), end, endMinute);
+        request("POST", "/tasks/"+str(personal, "id")+"/complete", employeeToken,
+                fields("expectedAssignmentVersion", 1), 200);
+        assertTrue(notifications.scanDeadlines() >= 1);
+        assertEquals(1, countKind(employeeToken, "DEADLINE"));
+        assertEquals(0, unread(peerToken));
+        assertNotNull(items(request("GET", "/notifications?limit=100", employeeToken, null, 200)).stream()
+                .filter(n -> "DEADLINE".equals(n.get("kind"))).findFirst().get().get("dueAt"));
+        // 已完成的任务不产生截止提醒（US29），重复扫描也不重复生成
+        notifications.scanDeadlines();
+        assertEquals(1, countKind(employeeToken, "DEADLINE"));
+    }
+
+    @Test
+    void returningToEarlierProgressIsANewEventAndPersonalStatusIsNotDuplicated() throws Exception {
+        var task = createTask(employeeToken, "PERSONAL", List.of());
+        reviewDecision(leadToken, task, "APPROVE");
+        String assignmentId = assignment(str(task, "id"), employee);
+        int version = 1;
+        for (int progress : List.of(50, 75, 50, 50)) {
+            request("POST", "/task-assignments/"+assignmentId+"/progress-records", employeeToken,
+                    fields("expectedVersion", version++, "progressPercent", progress), 201);
+        }
+        assertEquals(3, countKind(employeeToken, "STATUS"));
+        assertEquals(0, countKind(peerToken, "STATUS"));
+    }
+
+    @Test
+    void concurrentDuplicateNotificationsKeepOneRecordWithoutFailingCallers() throws Exception {
+        var task = createTask(employeeToken, "PERSONAL", List.of());
+        var start = new CountDownLatch(1);
+        try (var pool = Executors.newFixedThreadPool(8)) {
+            var results = new ArrayList<Future<?>>();
+            for (int i = 0; i < 8; i++) results.add(pool.submit(() -> {
+                start.await();
+                notifications.emit(enterprise, employee, "STATUS", str(task, "id"), null,
+                        "Concurrent", "Same event", "concurrent-test", null);
+                return null;
+            }));
+            start.countDown();
+            for (var result : results) result.get(15, TimeUnit.SECONDS);
+        }
+        assertEquals(1, countKind(employeeToken, "STATUS"));
+    }
+
+    private void dueAt(String taskId, LocalDate end, int endMinute) {
+        db.update("UPDATE task SET start_date=?,end_date=?,time_kind='TIMED',start_minute=0,end_minute=?"
+                + " WHERE enterprise_id=? AND id=?", end, end, endMinute, enterprise, taskId);
+    }
+
+    private long unread(String token) throws Exception {
+        return number(request("GET", "/notifications/unread-count", token, null, 200), "unreadCount");
+    }
+
+    private long countKind(String token, String kind) throws Exception {
+        return items(request("GET", "/notifications?limit=100", token, null, 200)).stream()
+                .filter(n -> kind.equals(n.get("kind")))
+                .count();
     }
 
 }

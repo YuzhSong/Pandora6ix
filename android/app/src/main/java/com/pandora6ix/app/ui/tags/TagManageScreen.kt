@@ -36,6 +36,8 @@ import com.pandora6ix.app.data.TagPermissions
 import com.pandora6ix.app.data.TagRepository
 import com.pandora6ix.app.ui.calendar.tagHexColor
 import com.pandora6ix.app.ui.theme.CreamDeep
+import com.pandora6ix.app.ui.theme.ThemeButton
+import com.pandora6ix.app.ui.theme.OnThemeButton
 import com.pandora6ix.app.ui.theme.Ink
 import com.pandora6ix.app.ui.theme.WarmCard
 import com.pandora6ix.app.ui.theme.WarmOrange
@@ -116,7 +118,7 @@ fun TagManageScreen(tagRepo: TagRepository, permissions: TagPermissions, reloadT
                         }
                     }
                     if (permissions.canCreate) Box(Modifier.fillMaxWidth().padding(16.dp)) {
-                        Button({ editing = null; showEditor = true; actionError = null }, Modifier.fillMaxWidth().height(48.dp), colors = ButtonDefaults.buttonColors(containerColor = Ink), shape = RoundedCornerShape(14.dp)) {
+                        Button({ editing = null; showEditor = true; actionError = null }, Modifier.fillMaxWidth().height(48.dp), colors = ButtonDefaults.buttonColors(containerColor = ThemeButton, contentColor = OnThemeButton), shape = RoundedCornerShape(14.dp)) {
                             Icon(Icons.Default.Add, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("新建标签")
                         }
                     }
@@ -229,7 +231,7 @@ private fun TagEditDialog(initialName: String, initialColorHex: String, busy: Bo
                     Button(
                         { onSave(name.trim(), tagHexToHex6(TagColorPalette[colorIndex])) },
                         Modifier.weight(1f), enabled = !busy && name.isNotBlank(),
-                        colors = ButtonDefaults.buttonColors(containerColor = Ink), shape = RoundedCornerShape(12.dp)
+                        colors = ButtonDefaults.buttonColors(containerColor = ThemeButton, contentColor = OnThemeButton), shape = RoundedCornerShape(12.dp)
                     ) { if (busy) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = Color.White) else Text(if (initialName.isBlank()) "创建" else "保存") }
                 }
             }

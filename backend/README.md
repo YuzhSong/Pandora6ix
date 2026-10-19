@@ -1,5 +1,33 @@
 # Pandora 后端实施记录
 
+2026-10-18 更新：`backend-syz` 已同步 `dev 4c4b032`。管理员登录名维护变更见 [admin-edit-user-login-name](../openspec/changes/archive/2026-10-18-admin-edit-user-login-name/proposal.md)，包含 Web 配套入口，已通过 PR #19 合入 dev 并部署。
+
+## 管理员修改现有登录名
+
+沿用 `PATCH /api/v1/admin/users/{id}`，在原有完整人员修改命令中增加可选 `loginName`：
+
+```json
+{
+  "expectedVersion": 0,
+  "loginName": "zhang.san",
+  "displayName": "张三",
+  "orgUnitId": null,
+  "supervisorUserId": null,
+  "jobTitle": "员工",
+  "status": "ACTIVE",
+  "roles": ["EMPLOYEE"]
+}
+```
+
+示例仅说明结构；实际提交须保留该人员当前的组织、上级、状态、角色及版本。`loginName` 省略或传 null 时保留原值，非空白、1–128 字符且前后不能有空白，同公司内不能重复；大小写遵循现有登录精确匹配语义，不自动转拼音或改成小写。接口使用原账号 ID，不修改密码哈希及任务/日报关系。新登录名配原密码登录，旧名不再登录，既有 ID 会话继续有效。
+
+仅本公司 ADMIN 有权操作；未登录 401、无管理员权限 403、其他公司对象 404、重名 `409 LOGIN_NAME_TAKEN`、过期版本 `409 VERSION_CONFLICT`、非法名称 `422 VALIDATION_FAILED`（含 loginName 字段错误）。所有失败均回滚整笔修改。最后一个有效管理员等原有保护继续生效。
+
+Web 已同时开放编辑输入，只在名称变化时发送该字段，并核对返回值；旧后端忽略字段时不会显示改名成功。历史人员尚未补齐的资料可保持为空，新增人员或实际修改资料仍需通过原校验。本变更不执行云端员工批量改名。
+2026-10-18 本地新增：管理员重置员工密码（保留人员及业务关联、撤销员工旧会话），见 [密码重置契约](EMPLOYEE_PASSWORD_RESET.md)；一次性员工拼音账号维护脚本见 [运维执行说明](scripts/EMPLOYEE_ACCOUNT_MAINTENANCE.md)。两者均未在本轮部署或执行云端凭据修改。
+
+2026-10-18 本地新增：空部门/团队删除接口与 Web 确认流程，权限、版本和依赖校验见 [组织删除契约](ORG_DELETION.md)。需部署本次后端后生效；无数据库迁移。
+
 2026-10-17 更新：Web #12 / Android #13 已审核合入 dev 并部署，backend-syz 已同步 a493dfe 后补齐组织转换、人员资料持久化、管理员权限与公司日期日报规则。新提交待非作者审查后进入 dev；字段、日期规则、test 等级 1 与上线边界详见 [联调交接](CLIENT_HANDOFF_20261017.md)。系统操作日志存储方案仍待甲方确认。
 
 2026-10-15 更新：`backend-syz` 已合入 `dev ec288d4`。用户确认开放直属上级审批，新增审核列表、详情和决定，打通真实任务闭环；Android 所需十模块契约与对接示例见 [ANDROID_API_V0.2.md](ANDROID_API_V0.2.md)。变更 [complete-android-backend-workflows](../openspec/changes/archive/2026-10-15-complete-android-backend-workflows/proposal.md) 已随云端部署批次同步 dev 并归档，部署入口见 [云端部署](../deploy/README.md)。下面 2026-10-13 段落记录原始实施基线。
@@ -104,7 +132,7 @@ DB0.2 的 MySQL 8.4 是候选。当前驱动、DDL、迁移和验证针对 H2，
 | Q-01 最高级/无上级审核 | 明确 `WORKFLOW_POLICY_UNCONFIRMED`，不免审/自审 |
 | Q-02 获批编辑、驳回重提 | 未开放重提；获批/驳回内容编辑拒绝 |
 | Q-03 草稿长期同步 | 没有草稿表/同步端点，已发布存储不混入草稿 |
-| Q-04 跨日/同刻 TIMED 端点 | 仅开放有明确正时长的同日分钟任务；其他返回政策未确认；企业时区须显式配置 |
+| Q-04 跨日/同刻 TIMED 端点 | 用户 2026-10-18 已确认**允许跨天**：TIMED 时间区间为 `startDate+startTime` → `endDate+endTime`，跨天时结束时刻可早于开始时刻；仅同日时要求结束晚于开始（同刻/不递增按 422 `VALIDATION_FAILED` 拒绝），ALL_DAY 跨多天由日期区间表达。企业时区仍须显式配置 |
 | Q-05 重要程度高低方向 | 保存/回传 1～5，不推断优先级方向 |
 | Q-06 选中条目到期/编辑/移除联动 | 不删除/补位；读取当前引用内容与 eligibility，已有过期选择可以保持，新过期候选不能加入；移除接口未定义 |
 | Q-07 父子关联、整体完成、团队统计分母 | 不开放父子关系；P1 完成率/分布/团队统计仍未实施 |
