@@ -140,8 +140,8 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
     var timePickTarget by rememberSaveable { mutableStateOf<String?>(null) }
     var datePickTarget by rememberSaveable { mutableStateOf<String?>(null) }
     // 进入弹层时的状态快照：退出时仅在实际改动（相对进入时）才提示保存，草稿恢复的未修改内容不算改动
-    val initialState = remember { listOf(title, note, startKey, endKey, allDay, startMinute, endMinute, priority, tags, selectedRecipientIds) }
-    val dirty = listOf(title, note, startKey, endKey, allDay, startMinute, endMinute, priority, tags, selectedRecipientIds) != initialState
+    val initialState = remember { listOf(kind, title, note, startKey, endKey, allDay, startMinute, endMinute, priority, tags, selectedRecipientIds) }
+    val dirty = listOf(kind, title, note, startKey, endKey, allDay, startMinute, endMinute, priority, tags, selectedRecipientIds) != initialState
     val latestDirty by rememberUpdatedState(dirty)
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true, confirmValueChange = { value ->
         if (value == SheetValue.Hidden && latestDirty) { confirmExit = true; false } else true
@@ -158,7 +158,6 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
     fun submit() {
         error = when {
             title.isBlank() -> "请填写任务名称"
-            tags.isEmpty() -> "请至少选择一个标签（首个为主标签）"
             kind == "DELEGATED" && selectedRecipientIds.isEmpty() -> "请至少选择一位接收人"
             !validTaskInterval(startKey.date(), endKey.date(), if (allDay) null else startMinute, if (allDay) null else endMinute) -> "结束日期和时间必须晚于开始时间"
             // 截止时间不能早于公司业务时区的当前时刻（服务端也按业务时区判定）

@@ -215,7 +215,7 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
         var currentUser by remember { mutableStateOf<UserDto?>(null) }
         var authChecked by remember { mutableStateOf(false) }
         // 标签增改删权限：与服务端一致（仅 FOUNDER/DEPARTMENT_MANAGER）；未来接入 capabilities 后再细分
-        val tagManager = currentUser?.roles?.any { it == "FOUNDER" || it == "DEPARTMENT_MANAGER" } == true
+        val tagManager = currentUser?.capabilities?.createTags == true
         val theme = appThemes.firstOrNull { it.key == themeKey } ?: appThemes.first()
         // 视图页任务与企业标签目录来自真实接口（登录后按模式/日期加载）
         val taskItems = remember { mutableStateListOf<TaskItem>() }
@@ -275,18 +275,21 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
             }
         }
         // 待我审批数量：审批中心入口角标 + 底部导航“我的”红点（仅审批能力用户加载；超过一页按 99+ 显示）
-        var pendingReviewCount by remember { mutableStateOf(0) }
-        fun refreshPendingReviews() {
-            if (currentUser?.capabilities?.reviewTasks != true) { pendingReviewCount = 0; return }
-            appScope.launch {
-                runCatching { taskRepo.reviews("pending", limit = 100) }.getOrNull()?.let { page ->
+        var pendingReviewCount by remember(currentUser?.id, currentUser?.capabilities?.reviewTasks) { mutableStateOf(0) }
+        // 登录后、切换页签、关闭审批中心（可能已批准/驳回）时刷新角标
+        LaunchedEffect(currentUser?.id, authChecked, currentUser?.capabilities?.reviewTasks, current, showReviews) {
+            pendingReviewCount = 0
+            if (currentUser != null && authChecked && currentUser?.capabilities?.reviewTasks == true) {
+                try {
+                    val page = taskRepo.reviews("pending", limit = 100)
+                    coroutineContext.ensureActive()
                     pendingReviewCount = if (page.nextCursor != null) 99 else page.items.size
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    pendingReviewCount = 0
                 }
             }
-        }
-        // 登录后、切换页签、关闭审批中心（可能已批准/驳回）时刷新角标
-        LaunchedEffect(currentUser?.id, current, showReviews) {
-            if (currentUser != null && authChecked) refreshPendingReviews()
         }
         // 登录后加载企业标签目录与本人统计
         var statistics by remember { mutableStateOf<StatisticsDto?>(null) }
@@ -412,8 +415,14 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
                     detail != null -> {
                         // 列表接口的视图会剥除任务说明/进度记录/完成申请（full=false），打开详情时按 ID 拉取完整数据
                         val detailId = detail!!
-                        LaunchedEffect(detailId, calRetry) {
-                            runCatching { taskRepo.task(detailId) }.getOrNull()?.let { full -> taskDtoById[full.id] = full }
+                        LaunchedEffect(detailId, currentUser?.id, calRetry) {
+                            try {
+                                val full = taskRepo.task(detailId)
+                                coroutineContext.ensureActive()
+                                taskDtoById[full.id] = full
+                            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                                throw cancelled
+                            } catch (_: Exception) { /* Existing detail remains available for retry. */ }
                         }
                         val dto = taskDtoById[detailId]
                         DetailScreen(detailId, dto, serverTags, onBack = { detail = null; progressTaskId = null }, onRecordProgress = dto
@@ -1909,10 +1918,9 @@ private fun SettingsScreen(
                         changing = true
                         scope.launch {
                             try {
-                                auth.changePassword(oldPw, newPw)
                                 // 后端 password() 会作废当前会话（末尾 logout(actor)）：
                                 // 用登录时保存的企业域+登录名和新密码静默重登，保持在应用内
-                                if (auth.reloginWithNewPassword(newPw) != null) {
+                                if (auth.changePassword(oldPw, newPw) != null) {
                                     showPasswordDialog = false
                                     toast = "密码修改成功"
                                 } else {
