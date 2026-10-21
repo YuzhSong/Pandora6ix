@@ -346,3 +346,83 @@ test('organization kind is submitted; backend policy rejection leaves the origin
   assert.equal(submitted.kind, 'TEAM'); assert.equal(submitted.expectedVersion, 0)
   assert.equal((await repository.load()).units.find(unit => unit.id === 'leaf')?.kind, 'DEPARTMENT')
 })
+
+
+test('handoff reads are fresh, separate from directory snapshots and validate every availability state', async () => {
+  let state = 'AVAILABLE', reads = 0
+  const repository = createHttpAdminRepository(createApiClient({ baseUrl: '/api/v1', fetcher: async (url, options) => {
+    assert.equal(options?.cache, 'no-store')
+    if (String(url).includes('/admin/credential-handoffs')) {
+      reads++
+      return Response.json({ data: { items: [{ personId: 'employee', displayName: '员工', loginName: 'renamed', enterpriseDomain: 'team', status: state, ...(state === 'AVAILABLE' ? { initialPassword: 'new-temporary-password', expiresAt: '2099-01-01T00:00:00Z' } : {}) }], nextCursor: null } })
+    }
+    return Response.json({ data: reader(String(url)) })
+  } }))
+  const data = await repository.load()
+  assert.ok(!JSON.stringify(data).includes('new-temporary-password'))
+  assert.equal((await repository.credentialHandoffs('employee'))[0].initialPassword, 'new-temporary-password')
+  state = 'CHANGED'
+  const changed = (await repository.credentialHandoffs('employee'))[0]
+  assert.equal(changed.status, 'CHANGED'); assert.equal(changed.initialPassword, undefined)
+  assert.equal(reads, 2)
+})
+
+test('handoff rejects leaked password fields, missing passwords and mismatched IDs', async () => {
+  for (const item of [
+    { personId: 'employee', status: 'CHANGED', initialPassword: 'must-not-leak' },
+    { personId: 'employee', status: 'AVAILABLE', expiresAt: '2099-01-01T00:00:00Z' },
+    { personId: 'other', status: 'UNAVAILABLE' },
+  ]) {
+    const repository = createHttpAdminRepository(createApiClient({ baseUrl: '/api/v1', fetcher: async () => Response.json({ data: { items: [{ displayName: '员工', loginName: 'staff', enterpriseDomain: 'team', ...item }], nextCursor: null } }) }))
+    await assert.rejects(repository.credentialHandoffs('employee'), (error: unknown) => error instanceof ApiError && error.code === 'INVALID_RESPONSE')
+  }
+})
+
+test('logout during a handoff read discards the returned password', async () => {
+  let finish!: (response: Response) => void
+  const repository = createHttpAdminRepository(createApiClient({ baseUrl: '/api/v1', fetcher: () => new Promise<Response>(resolve => { finish = resolve }) }))
+  const pending = repository.credentialHandoffs()
+  repository.clear()
+  finish(Response.json({ data: { items: [], nextCursor: null } }))
+  await assert.rejects(pending, (error: unknown) => error instanceof ApiError && error.code === 'REQUEST_CANCELLED')
+})
+
+
+test('personnel lifecycle uses scoped versioned endpoints and preserves separate employment state', async () => {
+  const writes: { url: string; body: Record<string, unknown> }[] = []
+  const repository = createHttpAdminRepository(createApiClient({ baseUrl: '/api/v1', fetcher: async (url, options) => {
+    const path = String(url)
+    if (options?.method === 'POST') {
+      const body = JSON.parse(String(options.body)); writes.push({ url: path, body })
+      return Response.json({ data: { ...employee, employmentStatus: path.endsWith('/departure') ? 'DEPARTED' : 'IN_SERVICE', departureDate: path.endsWith('/departure') ? '2026-10-19' : null, status: path.endsWith('/departure') ? 'DISABLED' : 'ACTIVE', version: writes.length } })
+    }
+    if (path.endsWith('/personnel-changes')) return Response.json({ data: { items: [{ id: 'change', kind: 'DEPARTURE', actorName: '管理员', effectiveDate: '2026-10-19', recordedAt: '2026-10-19T00:00:00Z', beforeValues: { employmentStatus: 'IN_SERVICE' }, afterValues: { employmentStatus: 'DEPARTED' } }] } })
+    return Response.json({ data: reader(path) })
+  } }))
+  await repository.getWorkspace()
+  await repository.changePersonJob('employee', { jobTitle: '负责人', orgUnitId: 'team', supervisorId: null, roles: ['TEAM_LEAD'] }, 0)
+  assert.deepEqual(writes[0].body, { expectedVersion: 0, jobTitle: '负责人', orgUnitId: 'team', supervisorUserId: null, roles: ['TEAM_LEAD'] })
+  const departed = await repository.departPerson('employee', '2026-10-19', 1)
+  assert.equal(departed.people.find(p => p.id === 'employee')?.employmentStatus, 'DEPARTED')
+  assert.deepEqual(writes[1].body, { departureDate: '2026-10-19', expectedVersion: 1 })
+  assert.equal((await repository.personnelChanges('employee'))[0].kind, 'DEPARTURE')
+})
+
+
+test('manager replacement submits both versions once and updates all returned personnel together', async () => {
+  let body: Record<string, unknown> | undefined
+  const next = { ...employee, id: 'next', displayName: '接任人', loginName: 'next', status: 'ACTIVE' }
+  const repository = createHttpAdminRepository(createApiClient({ baseUrl: '/api/v1', fetcher: async (url, options) => {
+    if (options?.method === 'POST') {
+      body = JSON.parse(String(options.body))
+      return Response.json({ data: { items: [{ ...employee, supervisorUserId: 'next', version: 1 }, { ...next, roles: ['TEAM_LEAD'], version: 2 }] } })
+    }
+    const value = String(url).includes('/admin/users') ? { items: [administrator, employee, next], nextCursor: null } : reader(String(url))
+    return Response.json({ data: value })
+  } }))
+  await repository.getWorkspace()
+  const result = await repository.replaceManager('employee', 'next', 0, 1, '团队负责人', '员工')
+  assert.deepEqual(body, { expectedVersion: 0, successorUserId: 'next', successorExpectedVersion: 1, successorJobTitle: '团队负责人', formerJobTitle: '员工' })
+  assert.equal(result.people.find(p => p.id === 'employee')?.supervisorId, 'next')
+  assert.deepEqual(result.people.find(p => p.id === 'next')?.roles, ['TEAM_LEAD'])
+})

@@ -3,8 +3,8 @@ import type { KeyboardEvent } from 'react'
 import { Icon } from './Icon.tsx'
 
 interface Option { value: string; label: string; depth?: number; accessibleLabel?: string; symbol?: string }
-export function Select({ label, value, options, onChange, disabled = false, required = false, className = '' }: {
-  label: string; value: string; options: Option[]; onChange: (value: string) => void; disabled?: boolean; required?: boolean; className?: string
+export function Select({ label, value, options, onChange, disabled = false, required = false, className = '', popupMinWidth = 0 }: {
+  label: string; value: string; options: Option[]; onChange: (value: string) => void; disabled?: boolean; required?: boolean; className?: string; popupMinWidth?: number
 }) {
   const id = useId()
   const anchor = useRef<HTMLButtonElement>(null)
@@ -29,7 +29,7 @@ export function Select({ label, value, options, onChange, disabled = false, requ
     const bounds = anchor.current!.getBoundingClientRect(), element = popup.current!
     const below = innerHeight - bounds.bottom - 16, above = bounds.top - 16
     const upward = below < Math.min(220, options.length * 42 + 12) && above > below
-    const width = Math.min(hierarchical ? Math.max(340, bounds.width) : bounds.width, innerWidth - 16)
+    const width = Math.min(Math.max(popupMinWidth, hierarchical ? Math.max(340, bounds.width) : bounds.width), innerWidth - 16)
     element.style.width = `${width}px`
     element.style.left = `${Math.max(8, Math.min(bounds.left, innerWidth - width - 8))}px`
     element.style.maxHeight = `${Math.max(80, Math.min(300, upward ? above : below))}px`

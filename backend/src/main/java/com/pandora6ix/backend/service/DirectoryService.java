@@ -17,10 +17,14 @@ public class DirectoryService {
             Set.of("ADMIN", "FOUNDER", "DEPARTMENT_MANAGER", "TEAM_LEAD", "EMPLOYEE");
     private final BusinessDb db;
     private final IdentityService identity;
+    private final CredentialHandoffService handoffs;
+    private final PersonnelResponsibilityPolicy responsibility;
 
-    public DirectoryService(BusinessDb db, IdentityService identity) {
+    public DirectoryService(BusinessDb db, IdentityService identity, CredentialHandoffService handoffs, PersonnelResponsibilityPolicy responsibility) {
         this.db = db;
         this.identity = identity;
+        this.handoffs = handoffs;
+        this.responsibility = responsibility;
     }
 
     public Map<String, Object> enterprise(IdentityService.Actor a) {
@@ -174,7 +178,8 @@ public class DirectoryService {
                 row -> user(a, str(row, "id")));
     }
 
-    private Map<String, Object> user(IdentityService.Actor a, String id) {
+    public Map<String, Object> user(IdentityService.Actor a, String id) {
+        a.admin();
         var row = db.entity("app_user", a.enterpriseId(), id);
         var result = view(row);
         result.put("gender", row.get("gender"));
@@ -247,6 +252,7 @@ public class DirectoryService {
                 c.supervisorUserId(),
                 c.jobTitle(), c.gender(), c.idNumber(), c.phoneNumber());
         roles(a, id, c.roles());
+        if (!c.roles().contains("ADMIN")) handoffs.capture(a.enterpriseId(), id, c.password(), str(db.entity("app_user", a.enterpriseId(), id), "password_hash"));
         return user(a, id);
     }
 
@@ -256,6 +262,8 @@ public class DirectoryService {
         a.admin();
         lockEnterprise(a);
         var old = db.entity("app_user", a.enterpriseId(), id);
+        if ("DEPARTED".equals(old.get("employment_status")))
+            throw new BusinessException(409,"EMPLOYEE_DEPARTED","Employee has departed.");
         if (number(old, "version") != c.expectedVersion()) checkVersion(0);
         if (c.loginName() != null) {
             if (c.loginName().isBlank() || !c.loginName().equals(c.loginName().strip()))
@@ -272,6 +280,7 @@ public class DirectoryService {
         validatePhone(c.phoneNumber());
         if (!Set.of("ACTIVE", "DISABLED").contains(c.status()))
             throw BusinessException.invalid("Unknown account status.");
+        responsibility.assertRelease(a,old,c.orgUnitId(),c.roles(),c.status());
         userRefs(a, id, c.orgUnitId(), c.supervisorUserId(), c.roles());
         if (identity.actor(id, a.enterpriseId(), str(old, "org_unit_id"), null).has("ADMIN")
                 && (!c.roles().contains("ADMIN") || !c.status().equals("ACTIVE"))) {
@@ -302,6 +311,7 @@ public class DirectoryService {
                         id,
                         c.expectedVersion()));
         roles(a, id, c.roles());
+        if (c.roles().contains("ADMIN") || "DISABLED".equals(c.status())) handoffs.forget(a.enterpriseId(), id);
         if ("DISABLED".equals(c.status()))
             db.update(
                     "UPDATE auth_session SET revoked=TRUE WHERE enterprise_id=? AND user_id=?",
@@ -315,6 +325,8 @@ public class DirectoryService {
         a.admin();
         lockEnterprise(a);
         var old = db.lock("app_user", a.enterpriseId(), id);
+        if ("DEPARTED".equals(old.get("employment_status")))
+            throw new BusinessException(409,"EMPLOYEE_DEPARTED","Employee has departed.");
         if (identity.actor(id, a.enterpriseId(), str(old, "org_unit_id"), null).has("ADMIN"))
             throw new BusinessException(403, "ADMIN_PASSWORD_RESET_FORBIDDEN", "Use the administrator's own password-change flow.");
         if (number(old, "version") != c.expectedVersion()) checkVersion(0);
@@ -322,6 +334,7 @@ public class DirectoryService {
         checkVersion(db.update("UPDATE app_user SET password_hash=?,version=version+1 WHERE enterprise_id=? AND id=? AND version=?",
                 hash, a.enterpriseId(), id, c.expectedVersion()));
         db.update("UPDATE auth_session SET revoked=TRUE WHERE enterprise_id=? AND user_id=?", a.enterpriseId(), id);
+        handoffs.capture(a.enterpriseId(), id, c.newPassword(), hash);
         return user(a, id);
     }
 

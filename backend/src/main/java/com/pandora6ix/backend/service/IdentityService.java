@@ -23,6 +23,7 @@ public class IdentityService
         implements com.pandora6ix.backend.application.identity.IdentityUseCases {
     public static final String ACTOR_ATTRIBUTE = IdentityService.class.getName() + ".actor";
     private final BusinessDb db;
+    private final CredentialHandoffService handoffs;
     private final String bootstrap;
     private final tools.jackson.databind.json.JsonMapper json;
     private final BCryptPasswordEncoder passwords = new BCryptPasswordEncoder(12);
@@ -60,9 +61,11 @@ public class IdentityService
 
     public IdentityService(
             BusinessDb db,
+            CredentialHandoffService handoffs,
             tools.jackson.databind.json.JsonMapper json,
             @Value("${pandora.bootstrap-token:${PANDORA_BOOTSTRAP_TOKEN:}}") String bootstrap) {
         this.db = db;
+        this.handoffs = handoffs;
         this.bootstrap = bootstrap;
         this.json = json;
     }
@@ -226,6 +229,7 @@ public class IdentityService
 
     @Transactional
     public void password(Actor actor, Contracts.Password command) {
+        db.one("SELECT id FROM enterprise WHERE id=? FOR UPDATE", actor.enterpriseId());
         var user = db.lock("app_user", actor.enterpriseId(), actor.id());
         if (!passwords.matches(command.currentPassword(), str(user, "password_hash")))
             throw new BusinessException(
@@ -236,6 +240,7 @@ public class IdentityService
                 encode(command.newPassword()),
                 actor.enterpriseId(),
                 actor.id());
+        handoffs.changed(actor.enterpriseId(), actor.id());
         logout(actor);
     }
 

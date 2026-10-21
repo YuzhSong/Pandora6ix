@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync, spawn } from 'node:child_process'
-import { randomUUID } from 'node:crypto'
+import { randomUUID, randomBytes } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
 import { createServer as createNetServer } from 'node:net'
@@ -25,27 +25,38 @@ const port = (probe.address() as AddressInfo).port
 await new Promise<void>(resolve => probe.close(() => resolve()))
 const runtime = path.resolve('.integration/runs', randomUUID())
 await mkdir(runtime, { recursive: true })
-const bootstrap = randomUUID(), password = randomUUID(), domain = `web-${randomUUID()}`
+const bootstrap = randomUUID(), password = randomUUID()
+const domain = process.argv.includes('--preview') ? 'pandora-local' : `web-${randomUUID()}`
+// Readable fixture password only for the disposable local preview.
+const previewPassword = process.argv.includes('--preview') ? '1234567890' : undefined
 const java = process.env.JAVA_HOME ? path.join(process.env.JAVA_HOME, 'bin/java.exe') : 'java'
-const backend = spawn(java, ['-jar', jar, `--server.port=${port}`, '--server.address=127.0.0.1'], {
-  cwd: runtime, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
-  env: { ...process.env, PANDORA_DB_URL: 'jdbc:h2:file:./pandora;DB_CLOSE_ON_EXIT=FALSE;WRITE_DELAY=0', PANDORA_DB_USER: 'sa', PANDORA_DB_PASSWORD: '', PANDORA_BOOTSTRAP_TOKEN: bootstrap },
-})
+const handoffKey = randomBytes(32).toString('base64')
 let spawnError: Error | undefined
-backend.on('error', error => { spawnError = error })
-// Drain JVM logs without printing credentials, responses, or internal diagnostics.
-backend.stdout.on('data', () => undefined); backend.stderr.on('data', () => undefined)
+function startBackend() {
+  const child = spawn(java, ['-jar', jar, `--server.port=${port}`, '--server.address=127.0.0.1'], {
+    cwd: runtime, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
+    env: { ...process.env, PANDORA_DB_URL: 'jdbc:h2:file:./pandora;DB_CLOSE_ON_EXIT=FALSE;WRITE_DELAY=0', PANDORA_DB_USER: 'sa', PANDORA_DB_PASSWORD: '', PANDORA_HANDOFF_KEY: handoffKey, PANDORA_BOOTSTRAP_TOKEN: bootstrap },
+  })
+  child.on('error', error => { spawnError = error })
+  // Drain JVM logs without printing credentials, responses, or internal diagnostics.
+  child.stdout.on('data', () => undefined); child.stderr.on('data', () => undefined)
+  return child
+}
+let backend = startBackend()
 let vite: Awaited<ReturnType<typeof createViteServer>> | undefined
 try {
-  let healthy = false
-  for (let attempt = 0; attempt < 120; attempt++) {
-    if (spawnError) throw spawnError
-    if (backend.exitCode !== null) throw new Error('后端测试进程提前退出。')
-    try { healthy = ((await (await fetch(`http://127.0.0.1:${port}/health`)).json()) as { status?: unknown }).status === 'UP' } catch { /* Startup retry. */ }
-    if (healthy) break
-    await new Promise(resolve => setTimeout(resolve, 250))
+  async function ready() {
+    let healthy = false
+    for (let attempt = 0; attempt < 480; attempt++) {
+      if (spawnError) throw spawnError
+      if (backend.exitCode !== null) throw new Error('后端测试进程提前退出。')
+      try { healthy = ((await (await fetch(`http://127.0.0.1:${port}/health`)).json()) as { status?: unknown }).status === 'UP' } catch { /* Startup retry. */ }
+      if (healthy) break
+      await new Promise(resolve => setTimeout(resolve, 250))
+    }
+    assert.ok(healthy, '真实后端应启动成功')
   }
-  assert.ok(healthy, '真实后端应启动成功')
+  await ready()
   vite = await createViteServer({ configFile: false, logLevel: 'silent', server: { host: '127.0.0.1', port: 0, proxy: createBackendProxy(`http://127.0.0.1:${port}`) } })
   await vite.listen()
   const origin = `http://127.0.0.1:${(vite.httpServer!.address() as AddressInfo).port}`
@@ -76,14 +87,22 @@ try {
   const department = data.units.find(unit => unit.name === '研发部')!
   data = await repository.saveUnit({ name: 'Web 团队', kind: 'TEAM', parentId: department.id })
   const personnel = { gender: 'MALE' as const, idNumber: '11010119900101001X', phoneNumber: '13800000000' }
-  await client.request('/admin/users', { method: 'POST', body: { displayName: '测试负责人', loginName: 'manager', jobTitle: '负责人', orgUnitId: data.units[0].id, supervisorUserId: null, roles: ['FOUNDER'], password: randomUUID(), ...personnel } })
+  await client.request('/admin/users', { method: 'POST', body: { displayName: '测试负责人', loginName: 'manager', jobTitle: '负责人', orgUnitId: data.units[0].id, supervisorUserId: null, roles: ['FOUNDER'], password: previewPassword ?? randomUUID(), ...personnel } })
   data = await repository.load()
   const manager = data.people.find(person => person.loginName === 'manager')!
-  const staffPassword = randomUUID()
+  const staffPassword = previewPassword ?? randomUUID()
   data = await repository.savePerson({ displayName: '测试人员', loginName: 'staff', jobTitle: '前端', orgUnitId: department.id, supervisorId: manager.id, roles: ['EMPLOYEE'], ...personnel }, undefined, undefined, staffPassword)
   data = await repository.load()
   assert.equal(data.people.find(person => person.loginName === 'staff')?.gender, personnel.gender)
   assert.equal(data.people.find(person => person.loginName === 'staff')?.idNumber, personnel.idNumber)
+  const handoffStaff = data.people.find(person => person.loginName === 'staff')!
+  assert.equal((await repository.credentialHandoffs(handoffStaff.id))[0].initialPassword, staffPassword)
+  const exitedForRestart = new Promise<void>(resolve => backend.once('exit', () => resolve()))
+  backend.kill(); await exitedForRestart
+  spawnError = undefined; backend = startBackend(); await ready()
+  const reloadedRepository = createHttpAdminRepository(client)
+  await reloadedRepository.load()
+  assert.equal((await reloadedRepository.credentialHandoffs(handoffStaff.id))[0].initialPassword, staffPassword, '初始密码在后端重启和页面重新加载后仍可导出')
   const employeeSession = await client.request<{ accessToken: string; user: { roles: string[] } }>('/auth/login', { method: 'POST', authenticated: false, body: { enterpriseDomain: domain, loginName: 'staff', password: staffPassword } })
   assert.ok(employeeSession.user.roles.includes('EMPLOYEE'), '新增人员的账号应可真实登录')
   const employeeClient = createApiClient({ baseUrl: `${origin}/api/v1`, getAccessToken: () => employeeSession.accessToken })
@@ -140,17 +159,51 @@ try {
   await assert.rejects(oldStaffClient.request('/me'), (reason: unknown) => reason instanceof ApiError && reason.status === 401)
   await assert.rejects(client.request('/auth/login', { method: 'POST', authenticated: false, body: { enterpriseDomain: domain, loginName: previousStaff.loginName, password: staffPassword } }), (reason: unknown) => reason instanceof ApiError && reason.status === 401)
   const newStaffSession = await client.request<{ accessToken: string }>('/auth/login', { method: 'POST', authenticated: false, body: { enterpriseDomain: domain, loginName: previousStaff.loginName, password: resetPassword } })
-  await client.request('/auth/logout', { method: 'POST', authenticated: false, headers: { Authorization: `Bearer ${newStaffSession.accessToken}` } })
-  const batchPassword = randomUUID()
+  assert.equal((await repository.credentialHandoffs(staff.id))[0].initialPassword, resetPassword)
+  const changedClient = createApiClient({ baseUrl: `${origin}/api/v1`, getAccessToken: () => newStaffSession.accessToken })
+  const selfPassword = randomUUID()
+  await changedClient.request('/me/password', { method: 'POST', body: { currentPassword: resetPassword, newPassword: selfPassword } })
+  const changedHandoff = (await repository.credentialHandoffs(staff.id))[0]
+  assert.equal(changedHandoff.status, 'CHANGED'); assert.equal(changedHandoff.initialPassword, undefined)
+  await assert.rejects(changedClient.request('/me'), (reason: unknown) => reason instanceof ApiError && reason.status === 401)
+  const batchPassword = previewPassword ?? randomUUID()
   const batchPreview = previewBulkPersonnel(bulkPersonnelTemplate() + ['批量甲,batch-one', '批量乙,batch-two'].map(prefix => `${prefix},${batchPassword},女,000000200001010001,00000000001,开发,${department.name},manager`).join('\n'), data)
   assert.deepEqual(batchPreview.errors, [])
   let batchCreated = 0
   await createBulkPersonnel(batchPreview.rows, repository, { stopped: () => false, onRow: (_, status, message) => { assert.notEqual(status, 'failed', message) }, onCreated: (next, account) => { data = next; batchCreated++; assert.equal(account.initialPassword, batchPassword) } })
   assert.equal(batchCreated, 2)
+  const deliveredBatch = (await repository.credentialHandoffs()).find(account => account.loginName === 'batch-one')!
+  assert.equal(deliveredBatch.initialPassword, batchPassword)
+  const deliveredLogin = await client.request<{ accessToken: string; user: { id: string } }>('/auth/login', { method: 'POST', authenticated: false, body: { enterpriseDomain: domain, loginName: deliveredBatch.loginName, password: deliveredBatch.initialPassword } })
+  assert.equal(deliveredLogin.user.id, deliveredBatch.personId, '导出的初始密码原文必须能让对应员工真实登录')
+  await client.request('/auth/logout', { method: 'POST', authenticated: false, headers: { Authorization: `Bearer ${deliveredLogin.accessToken}` } })
   data = await repository.load()
   assert.ok(data.people.some(person => person.loginName === 'batch-one'))
   assert.ok(data.people.some(person => person.loginName === 'batch-two'))
   await assert.rejects(repository.saveTag({ name: '不可管理', colorHex: '#112233' }), /不提供标签管理/)
+  const promotionTarget = data.people.find(person => person.loginName === 'batch-one')!
+  const targetTeam = data.units.find(unit => unit.kind === 'TEAM')!
+  data = await repository.changePersonJob(promotionTarget.id, { jobTitle: '团队负责人', orgUnitId: targetTeam.id, supervisorId: staff.id, roles: ['TEAM_LEAD'] }, promotionTarget.version)
+  const promoted = data.people.find(person => person.id === promotionTarget.id)!
+  assert.equal(promoted.loginName, 'batch-one'); assert.equal(promoted.idNumber, promotionTarget.idNumber)
+  assert.deepEqual(promoted.roles, ['TEAM_LEAD'])
+  assert.equal((await repository.personnelChanges(promoted.id))[0].kind, 'JOB_CHANGE')
+  const departureTarget = data.people.find(person => person.loginName === 'batch-two')!
+  const departureDate = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' })
+  data = await repository.departPerson(departureTarget.id, departureDate, departureTarget.version)
+  const departed = data.people.find(person => person.id === departureTarget.id)!
+  assert.equal(departed.employmentStatus, 'DEPARTED'); assert.equal(departed.status, 'DISABLED')
+  assert.ok(!(await repository.credentialHandoffs()).some(account => account.personId === departed.id && account.initialPassword))
+  assert.equal((await repository.personnelChanges(departed.id))[0].kind, 'DEPARTURE')
+  const successorPassword = previewPassword ?? randomUUID()
+  data = await repository.savePerson({ displayName: '接任员工', loginName: 'new-manager', jobTitle: '员工', orgUnitId: department.id, supervisorId: staff.id, roles: ['EMPLOYEE'], ...personnel }, undefined, undefined, successorPassword)
+  const successor = data.people.find(person => person.loginName === 'new-manager')!
+  const formerManager = data.people.find(person => person.id === staff.id)!
+  data = await repository.replaceManager(formerManager.id, successor.id, formerManager.version, successor.version, '部门负责人', '员工')
+  assert.deepEqual(data.people.find(p => p.id === formerManager.id)!.roles, ['EMPLOYEE'])
+  assert.ok(data.people.find(p => p.id === successor.id)!.roles.includes('DEPARTMENT_MANAGER'))
+  assert.equal(data.people.find(p => p.id === promotionTarget.id)!.supervisorId, successor.id)
+  assert.equal(data.people.find(p => p.id === formerManager.id)!.supervisorId, successor.id)
   const itemKey = randomUUID(), command = { title: '真实联调事项', content: '<script>纯文本正文</script>', displayOrder: 1 }
   data = await repository.saveCompanyItem(command, undefined, undefined, itemKey)
   data = await repository.saveCompanyItem(command, undefined, undefined, itemKey)
@@ -161,7 +214,7 @@ try {
   assert.equal(data.tags.length, 0); assert.equal(data.enterprise.name, 'Web 联调公司更新')
   assert.equal(data.people.find(person => person.id === staff.id)?.displayName, '更新人员')
   assert.equal(data.people.find(person => person.id === staff.id)?.loginName, 'zhang.san')
-  assert.ok(data.people.find(person => person.id === staff.id)?.roles.includes('DEPARTMENT_MANAGER'))
+  assert.ok(data.people.find(person => person.id === successor.id)?.roles.includes('DEPARTMENT_MANAGER'))
   assert.equal(data.companyItems[0].title, '修改后的事项')
   assert.equal(data.companyItems[0].publisherUserId, data.currentUserId)
   await assert.rejects(auth.changePassword('wrong-current-password', randomUUID()), (error: unknown) => error instanceof ApiError && error.status >= 400)

@@ -30,3 +30,9 @@ test('role changes cannot retain a junior supervisor or invalidate direct report
   assert.match(reportingError(people, 'staff', ['TEAM_LEAD'], 'lead'), /层级/)
   assert.match(reportingError(people, 'founder', ['FOUNDER'], 'manager'), /层级/)
 })
+
+
+test('departed people are excluded from supervisor choices even with a legacy active flag', () => {
+  const departed = { ...person('departed', ['FOUNDER']), employmentStatus: 'DEPARTED' as const }
+  assert.deepEqual(supervisorCandidates([departed, person('safe', ['FOUNDER'])], undefined, ['EMPLOYEE']).map(p => p.id), ['safe'])
+})

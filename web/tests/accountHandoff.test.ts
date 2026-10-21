@@ -20,3 +20,12 @@ test('explicit handoff includes initial password exactly; legacy accounts omit u
   assert.equal(accountLoginText({ loginName: '员工一', enterpriseDomain: 'company-domain' }, password), `公司登录标识：company-domain\n登录账号：员工一\n初始密码：${password}`)
   assert.equal(accountLoginText({ loginName: 'legacy' }), '登录账号：legacy')
 })
+
+
+test('only currently available server credentials enter the delivery list', async () => {
+  const { availableHandoffAccounts } = await import('../src/data/accountHandoff.ts')
+  const base = { personId: 'person', displayName: '员工', loginName: 'renamed', enterpriseDomain: 'team', initialPassword: 'temporary' }
+  const result = availableHandoffAccounts([{ ...base, status: 'AVAILABLE' }, { ...base, personId: 'changed', status: 'CHANGED' }, { ...base, personId: 'expired', status: 'EXPIRED' }, { ...base, personId: 'legacy', status: 'UNAVAILABLE' }])
+  assert.equal(result.length, 1)
+  assert.equal(result[0].loginName, 'renamed')
+})

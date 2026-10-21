@@ -53,7 +53,6 @@ export default function App() {
   const [itemsPending, setItemsPending] = useState(false)
   const [avatarDialog, setAvatarDialog] = useState(false)
   const [accountReceipt, setAccountReceipt] = useState<CreatedAccountReceipt | null>(null)
-  const [handoffPasswords, setHandoffPasswords] = useState<Record<string, string>>({})
   const [credentialTool, setCredentialTool] = useState<'bulk' | 'export' | null>(null)
   const [resetPerson, setResetPerson] = useState<Person | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<OrgUnit | null>(null)
@@ -66,7 +65,7 @@ export default function App() {
     setSession(authenticated)
     if (!authenticated) {
       loadSerial.current++
-      setData(null); setHandoffPasswords({}); setCredentialTool(null); setResetPerson(null); setAccountReceipt(null); setDeleteTarget(null); setEditor(null); setPasswordDialog(false); setAvatarDialog(false); setLogoutConfirm(false)
+      setData(null); setCredentialTool(null); setResetPerson(null); setAccountReceipt(null); setDeleteTarget(null); setEditor(null); setPasswordDialog(false); setAvatarDialog(false); setLogoutConfirm(false)
       setPreferences(defaultPreferences); setToast(''); setError(''); setLoading(false)
       setAuthMessage('登录状态已失效，请重新登录。')
     }
@@ -137,7 +136,7 @@ export default function App() {
       void authService.logout().catch(() => sessionStore.clear())
       sessionStore.clear(); setAuthMessage('此账号的管理员权限已变更，请使用管理员账号登录。'); return
     }
-    setData(next); setEditor(null); if (account) setHandoffPasswords(current => ({ ...current, [account.personId]: account.initialPassword })); setAccountReceipt(account ?? null); setToast(account ? '' : '已保存到服务器')
+    setData(next); setEditor(null); setAccountReceipt(account ?? null); setToast(account ? '' : '已保存到服务器')
   }
   if (!session) return <AuthPage brand={<Brand />} message={authMessage} />
   if (!data) return <main className="company-setup"><Brand /><section className="panel setup-card">{error ? <><h1>暂时无法加载资料</h1><p className="error-message" role="alert">{error}</p><button className="button primary" onClick={() => void load()}>重新加载</button><button className="button secondary" disabled={logoutBusy} onClick={() => void logout()}>退出登录</button>{logoutError && <p role="alert">{logoutError}</p>}</> : <p role="status">正在加载公司资料…</p>}</section></main>
@@ -150,13 +149,13 @@ export default function App() {
     <div className="main-area"><main className="page-content"><div className="page-heading"><h1>{page.label}</h1><button className="button secondary" onClick={() => void load()} disabled={loading || !!editor || passwordDialog || avatarDialog || itemsPending || !!deleteTarget || !!accountReceipt || !!credentialTool || !!resetPerson}><Icon name="refresh" size={16} />刷新数据</button></div>
       {error && <div className="error-message" role="alert">刷新失败：{error} 当前显示上次加载的资料，恢复后才能编辑。</div>}
       <fieldset className="workspace-content" disabled={loading || !!error}>
-        {active === 'system-logs' && <SystemLogsPage />}
-        {active === 'people' && <PeoplePage key={data.enterprise.id} data={data} onEdit={setEditor} passwords={handoffPasswords} onCredentialTool={setCredentialTool} onResetPassword={setResetPerson} />}{active === 'organizations' && <OrganizationPage key={data.enterprise.id} data={data} onEdit={setEditor} selectedId={selectedOrganizationId} onSelect={setSelectedOrganizationId} onDelete={setDeleteTarget} />}{active === 'company-items' && <CompanyItemsPage key={data.enterprise.id} data={data} onEdit={setEditor} onUpdated={setData} onPendingChange={setItemsPending} />}{active === 'account' && <AccountPage data={data} onChangePassword={() => setPasswordDialog(true)} onChangeAvatar={() => setAvatarDialog(true)} />}{active === 'settings' && <SettingsPage preferences={preferences} error={preferenceError} onChange={changePreferences} />}
+        {active === 'system-logs' && <SystemLogsPage key={`${data.enterprise.id}:${data.currentUserId}`} refreshKey={data} />}
+        {active === 'people' && <PeoplePage key={data.enterprise.id} onUpdated={setData} data={data} onEdit={setEditor} onCredentialTool={setCredentialTool} onResetPassword={setResetPerson} />}{active === 'organizations' && <OrganizationPage key={data.enterprise.id} data={data} onEdit={setEditor} selectedId={selectedOrganizationId} onSelect={setSelectedOrganizationId} onDelete={setDeleteTarget} />}{active === 'company-items' && <CompanyItemsPage key={data.enterprise.id} data={data} onEdit={setEditor} onUpdated={setData} onPendingChange={setItemsPending} />}{active === 'account' && <AccountPage data={data} onChangePassword={() => setPasswordDialog(true)} onChangeAvatar={() => setAvatarDialog(true)} />}{active === 'settings' && <SettingsPage preferences={preferences} error={preferenceError} onChange={changePreferences} />}
       </fieldset><footer className="page-footer"><span>Pandora 管理端</span></footer></main></div>
     {editor && <AdminEditor request={editor} data={data} onClose={() => setEditor(null)} onSaved={saved} />}
     {deleteTarget && <DeleteOrganizationDialog unit={deleteTarget} onClose={() => setDeleteTarget(null)} onDeleted={next => { setData(next); setSelectedOrganizationId(deleteTarget.parentId ?? ''); setDeleteTarget(null); setToast('组织已删除') }} />}
-    {credentialTool === 'bulk' && <BulkPersonnelDialog data={data} onClose={() => setCredentialTool(null)} onCreated={(next, account) => { setData(next); setHandoffPasswords(current => ({ ...current, [account.personId]: account.initialPassword })) }} />}
-    {credentialTool === 'export' && <ExportAccountsDialog data={data} passwords={handoffPasswords} onClose={() => setCredentialTool(null)} />}
+    {credentialTool === 'bulk' && <BulkPersonnelDialog data={data} onClose={() => setCredentialTool(null)} onCreated={next => { setData(next) }} />}
+    {credentialTool === 'export' && <ExportAccountsDialog onClose={() => setCredentialTool(null)} />}
     {resetPerson && <ResetEmployeePasswordDialog person={resetPerson} onClose={() => setResetPerson(null)} onReset={(next, account) => { setResetPerson(null); saved(next, account) }} />}
     {accountReceipt && <AccountCreatedDialog account={accountReceipt} onClose={() => setAccountReceipt(null)} />}
     {avatarDialog && <AvatarDialog onClose={() => setAvatarDialog(false)} />}

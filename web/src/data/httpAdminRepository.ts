@@ -2,7 +2,7 @@ import { ApiError } from '../api/client.ts'
 import type { createApiClient } from '../api/client.ts'
 import { requireAdmin, validatePassword } from '../api/auth.ts'
 import { roleLabels } from './types.ts'
-import type { AdminData, AdminRepository, CompanyImportantItem, Enterprise, OrgUnit, Person, Role, UnitKind } from './types.ts'
+import type { AdminData, AdminRepository, CompanyImportantItem, CredentialHandoff, Enterprise, OrgUnit, Person, Role, UnitKind } from './types.ts'
 import { profilePendingMessage, supportsPersonnelProfile, validatePersonnelProfile } from './personnelProfile.ts'
 import { organizationDeletionBlocker, validateOrganizationEdit } from './organizationEditing.ts'
 
@@ -23,6 +23,13 @@ function person(value: unknown): Person {
   const row = object(value), status = text(row, 'status')
   if (!['ACTIVE', 'DISABLED'].includes(status) || !Array.isArray(row.roles) || !row.roles.length || row.roles.some(role => typeof role !== 'string' || !Object.hasOwn(roleLabels, role))) throw invalid()
   const profile: Pick<Person, 'gender' | 'idNumber' | 'phoneNumber'> = {}
+    const employment: Pick<Person, 'employmentStatus' | 'departureDate'> = {}
+    if (Object.hasOwn(row, 'employmentStatus')) {
+      if (!['IN_SERVICE', 'DEPARTED'].includes(text(row, 'employmentStatus'))) throw invalid()
+      employment.employmentStatus = row.employmentStatus as Person['employmentStatus']
+      employment.departureDate = nullable(row, 'departureDate')
+      if (employment.employmentStatus === 'DEPARTED' && (status !== 'DISABLED' || !/^\d{4}-\d{2}-\d{2}$/.test(employment.departureDate ?? ''))) throw invalid()
+    }
   if (Object.hasOwn(row, 'gender')) {
     const gender = nullable(row, 'gender')
     if (gender !== null && gender !== 'MALE' && gender !== 'FEMALE') throw invalid()
@@ -30,9 +37,20 @@ function person(value: unknown): Person {
   }
   if (Object.hasOwn(row, 'idNumber')) profile.idNumber = nullable(row, 'idNumber')
   if (Object.hasOwn(row, 'phoneNumber')) profile.phoneNumber = nullable(row, 'phoneNumber')
-  return { id: text(row, 'id'), displayName: text(row, 'displayName'), loginName: text(row, 'loginName'), jobTitle: nullable(row, 'jobTitle') ?? '', orgUnitId: nullable(row, 'orgUnitId') ?? '', supervisorId: nullable(row, 'supervisorUserId'), roles: [...row.roles] as Role[], status: status as Person['status'], version: version(row), ...profile }
+    return { id: text(row, 'id'), displayName: text(row, 'displayName'), loginName: text(row, 'loginName'), jobTitle: nullable(row, 'jobTitle') ?? '', orgUnitId: nullable(row, 'orgUnitId') ?? '', supervisorId: nullable(row, 'supervisorUserId'), roles: [...row.roles] as Role[], status: status as Person['status'], version: version(row), ...profile, ...employment }
 }
 function item(value: unknown): CompanyImportantItem { const row = object(value); return { id: text(row, 'id'), title: text(row, 'title'), content: text(row, 'content'), displayOrder: integer(row, 'displayOrder'), publisherUserId: text(row, 'publisherUserId'), version: version(row) } }
+
+function handoff(value: unknown): CredentialHandoff {
+  const row = object(value), status = text(row, 'status')
+  if (!['AVAILABLE', 'CHANGED', 'EXPIRED', 'UNAVAILABLE'].includes(status)) throw invalid()
+  const result: CredentialHandoff = { personId: text(row, 'personId'), displayName: text(row, 'displayName'), loginName: text(row, 'loginName'), enterpriseDomain: text(row, 'enterpriseDomain'), status: status as CredentialHandoff['status'] }
+  if (status === 'AVAILABLE') {
+    result.initialPassword = text(row, 'initialPassword'); result.expiresAt = text(row, 'expiresAt')
+    if (!result.initialPassword || !Number.isFinite(Date.parse(result.expiresAt))) throw invalid()
+  } else if (Object.hasOwn(row, 'initialPassword') || Object.hasOwn(row, 'expiresAt')) throw invalid()
+  return result
+}
 
 export function createHttpAdminRepository(client: ReturnType<typeof createApiClient>): AdminRepository & { clear(): void } {
   let snapshot: AdminData | null = null
@@ -80,6 +98,52 @@ export function createHttpAdminRepository(client: ReturnType<typeof createApiCli
   }
   const checkPersonnelWrite = () => { if (uncertainPersonnelWrite) throw new Error('上次人员保存结果尚未确认，请先关闭窗口并刷新资料，勿重复提交。') }
   return {
+    async replaceManager(personId, successorId, expectedVersion, successorExpectedVersion, successorJobTitle, formerJobTitle) {
+      checkPersonnelWrite()
+      return write(`/admin/users/${encodeURIComponent(personId)}/manager-replacement`, { expectedVersion, successorUserId: successorId, successorExpectedVersion, successorJobTitle, formerJobTitle }, value => {
+        const page = object(value)
+        if (!Array.isArray(page.items)) throw invalid()
+        const items = page.items.map(person)
+        if (!items.some(p => p.id === personId) || !items.some(p => p.id === successorId) || new Set(items.map(p => p.id)).size !== items.length) throw invalid()
+        return items
+      }, (data, items) => { for (const item of items) data.people = replace(data.people, item) }, false)
+    },
+    async departPerson(personId, departureDate, expectedVersion) {
+      checkPersonnelWrite()
+      return write(`/admin/users/${encodeURIComponent(personId)}/departure`, { departureDate, expectedVersion }, value => {
+        const result = person(value)
+        if (result.id !== personId || result.employmentStatus !== 'DEPARTED' || result.status !== 'DISABLED' || result.departureDate !== departureDate) throw invalid()
+        return result
+      }, (data, value) => { data.people = replace(data.people, value) }, false)
+    },
+    async changePersonJob(personId, input, expectedVersion) {
+      checkPersonnelWrite()
+      return write(`/admin/users/${encodeURIComponent(personId)}/job-change`, { expectedVersion, jobTitle: input.jobTitle, roles: input.roles, orgUnitId: input.orgUnitId || null, supervisorUserId: input.supervisorId }, value => {
+        const result = person(value)
+        if (result.id !== personId || result.employmentStatus === 'DEPARTED') throw invalid()
+        return result
+      }, (data, value) => { data.people = replace(data.people, value) }, false)
+    },
+    async personnelChanges(personId) {
+      const token = generation
+      const page = object(await client.request(`/admin/users/${encodeURIComponent(personId)}/personnel-changes`))
+      if (token !== generation) throw invalid()
+      if (!Array.isArray(page.items)) throw invalid()
+      return page.items.map(value => {
+        const row = object(value), kind = text(row, 'kind')
+        if (kind !== 'DEPARTURE' && kind !== 'JOB_CHANGE') throw invalid()
+        return { id: text(row, 'id'), kind, actorName: text(row, 'actorName'), recordedAt: text(row, 'recordedAt'), effectiveDate: text(row, 'effectiveDate'), beforeValues: object(row.beforeValues), afterValues: object(row.afterValues) }
+      })
+    },
+    async credentialHandoffs(userId) {
+      const before = generation
+      const page = object(await client.request('/admin/credential-handoffs' + (userId ? `?userId=${encodeURIComponent(userId)}` : '')))
+      if (generation !== before) throw cancelled()
+      if (!Array.isArray(page.items) || page.nextCursor !== null) throw invalid()
+      const values = page.items.map(handoff)
+      if (new Set(values.map(value => value.personId)).size !== values.length || (userId && (values.length !== 1 || values[0].personId !== userId))) throw invalid()
+      return values
+    },
     clear() { generation++; loadSerial++; snapshot = null; uncertainPersonnelWrite = false },
     async getWorkspace() {
       const before = generation, serial = ++loadSerial

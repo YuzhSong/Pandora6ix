@@ -51,6 +51,17 @@ public final class Contracts {
             @NotNull @Min(0) Long expectedVersion,
             @NotBlank @Size(min = 10, max = 72) String newPassword) {}
 
+    public record UserDeparture(@NotNull @Min(0) Long expectedVersion, @NotNull LocalDate departureDate) {}
+
+    public record ManagerReplacement(@NotNull @Min(0) Long expectedVersion,
+            @NotBlank String successorUserId, @NotNull @Min(0) Long successorExpectedVersion,
+            @NotBlank @Size(max=128) String successorJobTitle, @NotBlank @Size(max=128) String formerJobTitle) {}
+
+    public record UserJobChange(
+            @NotNull @Min(0) Long expectedVersion,
+            @Size(max = 128) String jobTitle, String orgUnitId, String supervisorUserId,
+            @NotEmpty List<@NotBlank String> roles) {}
+
     public record UserCreate(
             @NotBlank @Size(max = 128) String loginName,
             @NotBlank @Size(min = 10, max = 72) String password,

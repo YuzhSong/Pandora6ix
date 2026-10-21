@@ -73,6 +73,35 @@ export function previewBulkPersonnel(text: string, data: AdminData): BulkPersonn
 
 export function bulkPersonnelTemplate() { return bulkPersonnelHeaders.join(',') + '\r\n' }
 
+export function importPersonnelTable(text: string, data: AdminData): string[][] {
+  if (text.length > 1_000_000) throw new Error('文件过大，请每批最多 100 人。')
+  const [header, ...rows] = csvRows(text)
+  if (!header || header.map(value => value.trim()).join(',') !== bulkPersonnelHeaders.join(',')) throw new Error('表头不匹配，请使用 CSV 模板。')
+  if (!rows.length || rows.length > 100) throw new Error('每批需要 1～100 位人员。')
+  const organizations = organizationFilterOptions(data.units)
+  return rows.map((row, index) => {
+    if (row.length !== 9) throw new Error(`第 ${index + 2} 行：列数不匹配。`)
+    const cells = [...row]
+    if (cells[3].trim().toUpperCase() === 'MALE') cells[3] = '男'
+    else if (cells[3].trim().toUpperCase() === 'FEMALE') cells[3] = '女'
+    else cells[3] = cells[3].trim()
+    const matches = organizations.filter(option => [option.value, option.accessibleLabel, option.label].includes(cells[7].trim()))
+    cells[7] = matches.length === 1 ? matches[0].value : cells[7].trim()
+    cells[8] = cells[8].trim()
+    return cells
+  })
+}
+
+export function previewPersonnelTable(cells: string[][], data: AdminData): BulkPersonnelPreview {
+  const populated = cells.map((row, index) => ({ row, index })).filter(({ row }) => row.some(value => value.trim()))
+  const csv = [bulkPersonnelHeaders, ...populated.map(({ row }) => row)].map(row => row.map(value => '"' + value.replaceAll('"', '""') + '"').join(',')).join('\r\n')
+  const result = previewBulkPersonnel(csv, data)
+  return {
+    rows: result.rows.map(row => ({ ...row, rowNumber: (populated[row.rowNumber - 2]?.index ?? 0) + 1 })),
+    errors: result.errors.map(error => error.replace(/^第 (\d+) 行：/, (_, row: string) => `第 ${(populated[Number(row) - 2]?.index ?? 0) + 1} 行：`)),
+  }
+}
+
 export async function createBulkPersonnel(rows: BulkPersonnelRow[], repository: Pick<AdminRepository, 'savePerson'>, callbacks: {
   stopped: () => boolean
   onRow: (index: number, status: 'creating' | 'success' | 'failed', message?: string) => void

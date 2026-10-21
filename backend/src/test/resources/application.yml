@@ -8,3 +8,6 @@ spring:
       fail-on-unknown-properties: true
 pandora:
   bootstrap-token: integration-tests-only-bootstrap
+
+  # Public fixture key for isolated test databases only.
+  handoff-key: AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=

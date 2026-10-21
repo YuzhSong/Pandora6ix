@@ -14,6 +14,7 @@
     "dev:backend": "powershell -NoProfile -File scripts/devBackend.ps1"
   },
   "dependencies": {
+    "exceljs": "^4.4.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },
@@ -25,5 +26,10 @@
     "oxlint": "^1.81.0",
     "typescript": "~6.0.2",
     "vite": "^8.3.0"
+  },
+  "overrides": {
+    "exceljs": {
+      "uuid": "^11.1.1"
+    }
   }
 }

@@ -29,6 +29,7 @@ class BusinessApiIntegrationTests {
     @Autowired JsonMapper json;
     @Autowired BusinessDb db;
     @Autowired NotificationService notifications;
+    @Autowired com.pandora6ix.backend.service.CredentialHandoffService credentialHandoffs;
     private static final String PASSWORD = "integration-password-123";
     private String domain,
             enterprise,
@@ -141,6 +142,94 @@ class BusinessApiIntegrationTests {
                                         PASSWORD),
                                 200)
                         .get("accessToken");
+    }
+
+    @Test
+    void managerReplacementTransfersPeopleAtomicallyAndPreservesCredentials() throws Exception {
+        String oldHash=str(db.entity("app_user",enterprise,manager),"password_hash"), nextHash=str(db.entity("app_user",enterprise,peer),"password_hash");
+        var command=fields("expectedVersion",0,"successorUserId",peer,"successorExpectedVersion",1,"successorJobTitle","Department manager","formerJobTitle","Staff");
+        request("POST","/admin/users/"+manager+"/manager-replacement",adminToken,command,409);
+        assertEquals(manager,str(db.entity("app_user",enterprise,lead),"supervisor_user_id"));
+        assertEquals(0,db.rows("SELECT id FROM personnel_change WHERE enterprise_id=?",enterprise).size());
+        command.put("successorExpectedVersion",0);
+        request("POST","/admin/users/"+manager+"/manager-replacement",employeeToken,command,403);
+        var result=request("POST","/admin/users/"+manager+"/manager-replacement",adminToken,command,200);
+        assertEquals(3,items(result).size());
+        assertEquals(peer,user(manager).get("supervisorUserId")); assertEquals(List.of("EMPLOYEE"),user(manager).get("roles"));
+        assertTrue(((List<?>)user(peer).get("roles")).contains("DEPARTMENT_MANAGER")); assertEquals(department,user(peer).get("orgUnitId"));
+        assertEquals(founder,user(peer).get("supervisorUserId")); assertEquals(peer,user(lead).get("supervisorUserId"));
+        assertEquals(lead,user(employee).get("supervisorUserId"));
+        assertEquals(oldHash,str(db.entity("app_user",enterprise,manager),"password_hash"));
+        assertEquals(nextHash,str(db.entity("app_user",enterprise,peer),"password_hash"));
+        request("GET","/me",managerToken,null,401); request("GET","/me",peerToken,null,401); request("GET","/me",leadToken,null,401);
+        assertEquals(3,db.rows("SELECT id FROM personnel_change WHERE enterprise_id=?",enterprise).size());
+        request("POST","/admin/users/"+manager+"/departure",adminToken,fields("expectedVersion",1,"departureDate",today.toString()),200);
+        assertEquals("DEPARTED",user(manager).get("employmentStatus"));
+    }
+
+    @Test
+    void managerVacancyIsBlockedEvenWithoutDirectReports() throws Exception {
+        db.update("UPDATE app_user SET supervisor_user_id=NULL WHERE enterprise_id=? AND supervisor_user_id=?",enterprise,founder);
+        var result=request("POST","/admin/users/"+founder+"/departure",adminToken,fields("expectedVersion",0,"departureDate",today.toString()),409);
+        assertTrue(json.writeValueAsString(result).contains("MANAGER_SUCCESSOR_REQUIRED"));
+        db.update("UPDATE app_user SET supervisor_user_id=NULL WHERE enterprise_id=? AND supervisor_user_id=?",enterprise,manager);
+        request("POST","/admin/users/"+manager+"/departure",adminToken,fields("expectedVersion",0,"departureDate",today.toString()),409);
+        request("PATCH","/admin/users/"+manager,adminToken,fields("expectedVersion",0,"displayName","manager","orgUnitId",department,"supervisorUserId",null,"jobTitle","Manager","status","DISABLED","roles",List.of("DEPARTMENT_MANAGER")),409);
+        request("POST","/admin/users/"+manager+"/job-change",adminToken,fields("expectedVersion",0,"jobTitle","Staff","orgUnitId",department,"supervisorUserId",null,"roles",List.of("EMPLOYEE")),409);
+        assertEquals("ACTIVE",user(manager).get("status"));
+        assertEquals(0,db.rows("SELECT id FROM personnel_change WHERE enterprise_id=?",enterprise).size());
+    }
+
+    @Test
+    void departureSeparatesEmploymentAndRevokesCredentialsWithoutDeletingHistory() throws Exception {
+        var before=user(employee);
+        String hash=str(db.entity("app_user",enterprise,employee),"password_hash");
+        request("POST","/admin/users/"+employee+"/departure",employeeToken,fields("expectedVersion",0,"departureDate",today.toString()),403);
+        request("POST","/admin/users/"+employee+"/departure",adminToken,fields("expectedVersion",1,"departureDate",today.toString()),409);
+        request("POST","/admin/users/"+employee+"/departure",adminToken,fields("expectedVersion",0,"departureDate",today.plusDays(1).toString()),422);
+        var departed=request("POST","/admin/users/"+employee+"/departure",adminToken,fields("expectedVersion",0,"departureDate",today.toString()),200);
+        assertEquals("DEPARTED",departed.get("employmentStatus")); assertEquals("DISABLED",departed.get("status"));
+        assertEquals(today.toString(),departed.get("departureDate")); assertEquals(before.get("idNumber"),departed.get("idNumber"));
+        assertEquals(hash,str(db.entity("app_user",enterprise,employee),"password_hash"));
+        request("GET","/me",employeeToken,null,401);
+        request("POST","/auth/login",null,fields("enterpriseDomain",domain,"loginName","employee","password",PASSWORD),401);
+        assertTrue(db.rows("SELECT * FROM credential_handoff WHERE enterprise_id=? AND user_id=?",enterprise,employee).isEmpty());
+        request("POST","/admin/users/"+employee+"/password-reset",adminToken,fields("expectedVersion",1,"newPassword",PASSWORD),409);
+        request("PATCH","/admin/users/"+employee,adminToken,fields("expectedVersion",1,"displayName","employee","orgUnitId",team,"supervisorUserId",lead,"jobTitle","Developer","status","ACTIVE","roles",List.of("EMPLOYEE")),409);
+        request("POST","/admin/users/"+employee+"/job-change",adminToken,fields("expectedVersion",1,"jobTitle","Lead","orgUnitId",team,"supervisorUserId",manager,"roles",List.of("TEAM_LEAD")),409);
+        var changes=request("GET","/admin/users/"+employee+"/personnel-changes",adminToken,null,200);
+        String serialized=json.writeValueAsString(changes);
+        assertTrue(serialized.contains("DEPARTURE")); assertFalse(serialized.contains("password")); assertFalse(serialized.contains("idNumber"));
+        request("GET","/admin/users/"+employee+"/personnel-changes",peerToken,null,403);
+        String other=UUID.randomUUID().toString();
+        request("POST","/admin/users/"+other+"/departure",adminToken,fields("expectedVersion",0,"departureDate",today.toString()),404);
+        request("GET","/admin/users/"+other+"/personnel-changes",adminToken,null,404);
+        String foreignEnterprise=UUID.randomUUID().toString(), foreignUser=UUID.randomUUID().toString();
+        db.update("INSERT INTO enterprise(id,login_domain,name) VALUES(?,?,?)",foreignEnterprise,"foreign-"+foreignEnterprise,"Other company");
+        db.update("INSERT INTO app_user(id,enterprise_id,login_name,password_hash,display_name) VALUES(?,?,?,?,?)",foreignUser,foreignEnterprise,"foreign",hash,"Other employee");
+        request("GET","/admin/users/"+foreignUser+"/personnel-changes",adminToken,null,404);
+        request("POST","/admin/users/"+foreignUser+"/departure",adminToken,fields("expectedVersion",0,"departureDate",today.toString()),404);
+        request("POST","/admin/users/"+foreignUser+"/job-change",adminToken,fields("expectedVersion",0,"jobTitle","changed","roles",List.of("EMPLOYEE")),404);
+        assertEquals("IN_SERVICE",db.entity("app_user",foreignEnterprise,foreignUser).get("employment_status"));
+    }
+
+    @Test
+    void jobChangeKeepsAccountAndProfileAndValidatesReporting() throws Exception {
+        var before=user(employee);
+        String hash=str(db.entity("app_user",enterprise,employee),"password_hash");
+        request("POST","/admin/users/"+employee+"/job-change",adminToken,fields("expectedVersion",0,"jobTitle","Lead","orgUnitId",team,"supervisorUserId",lead,"roles",List.of("TEAM_LEAD")),422);
+        var changed=request("POST","/admin/users/"+employee+"/job-change",adminToken,fields("expectedVersion",0,"jobTitle","Team manager","orgUnitId",team,"supervisorUserId",manager,"roles",List.of("TEAM_LEAD")),200);
+        assertEquals(before.get("loginName"),changed.get("loginName")); assertEquals(before.get("idNumber"),changed.get("idNumber"));
+        assertEquals(before.get("phoneNumber"),changed.get("phoneNumber")); assertEquals("IN_SERVICE",changed.get("employmentStatus"));
+        assertEquals(hash,str(db.entity("app_user",enterprise,employee),"password_hash"));
+        request("GET","/me",employeeToken,null,401);
+        assertNotNull(login("employee"));
+        var history=request("GET","/admin/users/"+employee+"/personnel-changes",adminToken,null,200);
+        assertTrue(json.writeValueAsString(history).contains("JOB_CHANGE"));
+        request("POST","/admin/users/"+lead+"/job-change",adminToken,fields("expectedVersion",0,"jobTitle","Member","orgUnitId",team,"supervisorUserId",manager,"roles",List.of("EMPLOYEE")),409);
+        request("POST","/admin/users/"+lead+"/departure",adminToken,fields("expectedVersion",0,"departureDate",today.toString()),409);
+        request("POST","/admin/users/"+admin+"/departure",adminToken,fields("expectedVersion",0,"departureDate",today.toString()),409);
+        assertEquals(0,db.rows("SELECT * FROM personnel_change WHERE enterprise_id=? AND user_id=?",enterprise,lead).size());
     }
 
     private String session(String user) {
@@ -2630,6 +2719,113 @@ class BusinessApiIntegrationTests {
         return items(request("GET", "/notifications?limit=100", token, null, 200)).stream()
                 .filter(n -> kind.equals(n.get("kind")))
                 .count();
+    }
+
+    private Map<String, Object> user(String id) throws Exception {
+        return items(request("GET", "/admin/users?limit=100", adminToken, null, 200)).stream().filter(value -> id.equals(value.get("id"))).findFirst().orElseThrow();
+    }
+
+    private Map<String, Object> handoff(String id) throws Exception {
+        return items(request("GET", "/admin/credential-handoffs?userId=" + id, adminToken, null, 200)).getFirst();
+    }
+
+    @Test
+    void initialCredentialHandoffSurvivesNewAdminSessionAndUsesCurrentLogin() throws Exception {
+        var first = handoff(employee);
+        assertEquals("AVAILABLE", first.get("status"));
+        assertEquals(PASSWORD, first.get("initialPassword"));
+        assertNotNull(first.get("expiresAt"));
+        var encrypted = db.one("SELECT * FROM credential_handoff WHERE enterprise_id=? AND user_id=?", enterprise, employee);
+        assertFalse(str(encrypted, "encrypted_password").contains(PASSWORD));
+        assertNotEquals(encrypted.get("encrypted_password"), db.one("SELECT encrypted_password FROM credential_handoff WHERE enterprise_id=? AND user_id=?", enterprise, peer).get("encrypted_password"));
+        var person = user(employee);
+        assertFalse(person.containsKey("initialPassword"));
+        assertFalse(person.containsKey("encryptedPassword"));
+        db.update("UPDATE app_user SET login_name='renamed-employee' WHERE enterprise_id=? AND id=?", enterprise, employee);
+        String newAdmin = login("admin");
+        var again = items(request("GET", "/admin/credential-handoffs", newAdmin, null, 200));
+        var found = again.stream().filter(value -> employee.equals(value.get("personId"))).findFirst().orElseThrow();
+        assertEquals("renamed-employee", found.get("loginName"));
+        assertEquals(PASSWORD, found.get("initialPassword"));
+        assertTrue(again.stream().noneMatch(value -> admin.equals(value.get("personId"))));
+        var response = mvc.perform(MockMvcRequestBuilders.get("/api/v1/admin/credential-handoffs").header("Authorization", "Bearer " + adminToken)).andReturn().getResponse();
+        assertTrue(response.getHeader("Cache-Control").contains("no-store"));
+    }
+
+    @Test
+    void employeeChangeErasesHandoffEvenWhenPasswordTextIsUnchanged() throws Exception {
+        String second = session(employee);
+        request("POST", "/me/password", employeeToken, fields("currentPassword", PASSWORD, "newPassword", PASSWORD), 204);
+        assertEquals("CHANGED", handoff(employee).get("status"));
+        assertFalse(handoff(employee).containsKey("initialPassword"));
+        var stored = db.one("SELECT * FROM credential_handoff WHERE enterprise_id=? AND user_id=?", enterprise, employee);
+        assertNull(stored.get("encrypted_password"));
+        assertNull(stored.get("hash_fingerprint"));
+        request("GET", "/me", employeeToken, null, 401);
+        request("GET", "/me", second, null, 200);
+        assertEquals(PASSWORD, handoff(peer).get("initialPassword"));
+    }
+
+    @Test
+    void resetReplacesDeliverablePasswordAndExpiryErasesIt() throws Exception {
+        request("POST", "/admin/users/" + employee + "/password-reset", adminToken,
+                fields("expectedVersion", number(user(employee), "version"), "newPassword", "replacement-delivery-password"), 200);
+        assertEquals("replacement-delivery-password", handoff(employee).get("initialPassword"));
+        db.update("UPDATE credential_handoff SET expires_at=? WHERE enterprise_id=? AND user_id=?", OffsetDateTime.now(ZoneOffset.UTC).minusMinutes(1), enterprise, employee);
+        assertEquals("EXPIRED", handoff(employee).get("status"));
+        assertFalse(handoff(employee).containsKey("initialPassword"));
+        assertNull(db.one("SELECT encrypted_password FROM credential_handoff WHERE enterprise_id=? AND user_id=?", enterprise, employee).get("encrypted_password"));
+    }
+
+    @Test
+    void handoffRejectsUnauthorizedForeignAdminAndTamperedCiphertext() throws Exception {
+        request("GET", "/admin/credential-handoffs", null, null, 401);
+        request("GET", "/admin/credential-handoffs", employeeToken, null, 403);
+        request("GET", "/admin/credential-handoffs?userId=" + admin, adminToken, null, 403);
+        request("GET", "/admin/credential-handoffs?userId=" + UUID.randomUUID(), adminToken, null, 404);
+        var foreign = request("POST", "/admin/enterprise-initializations", null,
+                fields("loginDomain", "handoff-foreign-" + UUID.randomUUID(), "name", "Foreign", "adminLoginName", "foreign-admin", "adminPassword", PASSWORD, "adminDisplayName", "Foreign"), 201,
+                "X-Bootstrap-Token", "integration-tests-only-bootstrap");
+        request("GET", "/admin/credential-handoffs?userId=" + foreign.get("adminUserId"), adminToken, null, 404);
+        String cipher = str(db.one("SELECT encrypted_password FROM credential_handoff WHERE enterprise_id=? AND user_id=?", enterprise, peer), "encrypted_password");
+        db.update("UPDATE credential_handoff SET encrypted_password=? WHERE enterprise_id=? AND user_id=?", cipher, enterprise, employee);
+        assertEquals("HANDOFF_UNAVAILABLE", request("GET", "/admin/credential-handoffs?userId=" + employee, adminToken, null, 503).get("code"));
+        assertEquals(PASSWORD, handoff(peer).get("initialPassword"));
+    }
+
+    @Test
+    void legacyDisabledAndExternallyChangedAccountsNeverExportGuessedCredentials() throws Exception {
+        db.update("DELETE FROM credential_handoff WHERE enterprise_id=? AND user_id=?", enterprise, employee);
+        assertEquals("UNAVAILABLE", handoff(employee).get("status"));
+        db.update("UPDATE app_user SET password_hash='external-update' WHERE enterprise_id=? AND id=?", enterprise, peer);
+        assertEquals("CHANGED", handoff(peer).get("status"));
+        assertFalse(handoff(peer).containsKey("initialPassword"));
+        db.update("UPDATE app_user SET status='DISABLED' WHERE enterprise_id=? AND id=?", enterprise, lead);
+        assertEquals("UNAVAILABLE", handoff(lead).get("status"));
+        assertFalse(handoff(lead).containsKey("initialPassword"));
+    }
+
+    @Test
+    void concurrentExportCannotRestoreSecretsAfterEmployeeChange() throws Exception {
+        try (var pool = Executors.newFixedThreadPool(2)) {
+            var start = new CountDownLatch(1);
+            var export = pool.submit(() -> { start.await(); return handoff(employee); });
+            var change = pool.submit(() -> { start.await(); return request("POST", "/me/password", employeeToken, fields("currentPassword", PASSWORD, "newPassword", "self-selected-secret-123"), 204); });
+            start.countDown(); export.get(20, TimeUnit.SECONDS); change.get(20, TimeUnit.SECONDS);
+        }
+        assertEquals("CHANGED", handoff(employee).get("status"));
+        assertFalse(handoff(employee).containsKey("initialPassword"));
+    }
+
+    @Test
+    void scheduledCleanupErasesExpiredAndExternallyChangedSecrets() throws Exception {
+        db.update("UPDATE credential_handoff SET expires_at=? WHERE enterprise_id=? AND user_id=?", OffsetDateTime.now(ZoneOffset.UTC).minusMinutes(1), enterprise, employee);
+        db.update("UPDATE app_user SET password_hash='external-update' WHERE enterprise_id=? AND id=?", enterprise, peer);
+        credentialHandoffs.expire();
+        assertEquals("EXPIRED", handoff(employee).get("status"));
+        assertEquals("CHANGED", handoff(peer).get("status"));
+        assertNull(db.one("SELECT encrypted_password FROM credential_handoff WHERE enterprise_id=? AND user_id=?", enterprise, employee).get("encrypted_password"));
+        assertNull(db.one("SELECT encrypted_password FROM credential_handoff WHERE enterprise_id=? AND user_id=?", enterprise, peer).get("encrypted_password"));
     }
 
 }
