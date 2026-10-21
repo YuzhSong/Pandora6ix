@@ -107,7 +107,7 @@ object ApiContract {
  * - 带 token 的请求收到 401：清理会话、回调 onSessionExpired、抛 SessionExpiredException
  *   （登录等未携带 token 的请求 401 按普通业务错误处理，如密码错误）
  */
-class ApiClient(private val session: SessionStore) {
+class ApiClient(private val session: SessionStore, private val baseUrl: String = BuildConfig.API_BASE_URL) {
 
     val json: Json = Json {
         ignoreUnknownKeys = true
@@ -157,7 +157,7 @@ class ApiClient(private val session: SessionStore) {
     ): T = withContext(Dispatchers.IO) {
         val tokenAtRequest = session.token
         val builder = Request.Builder()
-            .url(BuildConfig.API_BASE_URL + path)
+            .url(baseUrl + path)
             .method(method, (body ?: if (method in setOf("POST", "PUT", "PATCH")) "" else null)
                 ?.toRequestBody("application/json".toMediaType()))
         tokenAtRequest?.let { builder.header("Authorization", "Bearer $it") }
@@ -168,8 +168,11 @@ class ApiClient(private val session: SessionStore) {
             val text = resp.body?.string().orEmpty()
             when {
                 resp.code == 401 && tokenAtRequest != null -> {
-                    session.clear()
-                    onSessionExpired?.invoke()
+                    // A revoked token may still have in-flight reads while password login is renewed.
+                    // Fail those reads without tearing down the renewal or another account's session.
+                    if (session.expireIfCurrent(tokenAtRequest, ignoreRenewal = path == "/me/password")) {
+                        onSessionExpired?.invoke()
+                    }
                     throw SessionExpiredException()
                 }
                 resp.isSuccessful -> {
