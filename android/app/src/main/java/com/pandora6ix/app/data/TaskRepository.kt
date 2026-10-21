@@ -42,6 +42,14 @@ data class RecipientPageDto(
     val moreUrl: String? = null
 )
 
+/** 审批记录中的人员：id + 展示名 + 职位（展示名可能为空，客户端回退显示 ID 后四位） */
+@Serializable
+data class ReviewActorDto(
+    val id: String = "",
+    val displayName: String? = null,
+    val jobTitle: String? = null
+)
+
 /** 审批记录：submittedSnapshot 为提交时不可变内容（字段与 TaskCreateDto 对应，旧快照可能含历史字段） */
 @Serializable
 data class TaskReviewDto(
@@ -51,6 +59,16 @@ data class TaskReviewDto(
     val taskId: String = "",
     val reviewerUserId: String = "",
     val submittedByUserId: String = "",
+    /** 请求人（提交人）展示名 */
+    val submittedByName: String? = null,
+    /** 请求人职位 */
+    val submittedByJobTitle: String? = null,
+    /** 审批人展示名 */
+    val reviewerName: String? = null,
+    /** 审批人职位 */
+    val reviewerJobTitle: String? = null,
+    /** 执行人（任务当前执行关系） */
+    val recipients: List<ReviewActorDto> = emptyList(),
     val taskVersion: Long = 0,
     val currentTaskVersion: Long = 0,
     val attemptNo: Long = 0,

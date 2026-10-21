@@ -32,6 +32,8 @@ public class BusinessResponses implements ResponseBodyAdvice<Object> {
             ServerHttpRequest request,
             ServerHttpResponse response) {
         if (body == null) return null;
+        // 二进制响应（如用户头像）不套统一信封，原样输出字节流
+        if (body instanceof byte[]) return body;
         var servlet = ((ServletServerHttpRequest) request).getServletRequest();
         response.getHeaders().setCacheControl("no-store");
         return fields(

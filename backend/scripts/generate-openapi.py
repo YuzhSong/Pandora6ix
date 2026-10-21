@@ -161,13 +161,18 @@ def read_schemas():
     notification = obj({"id": ID, "kind": {"type": "string", "enum": ["NEW_TASK", "DEADLINE", "STATUS"]},
         "taskId": ID, "assignmentId": nullable(ID), "title": STRING, "body": STRING, "dedupeKey": STRING,
         "dueAt": nullable(INSTANT), "createdAt": INSTANT, "readAt": nullable(INSTANT)})
+    reviewActor = obj({"id": ID, "displayName": nullable(STRING), "jobTitle": nullable(STRING)}, ("id", "displayName"))
     review = obj({**versioned, "reviewId": ID, "taskId": ID, "reviewerUserId": ID, "submittedByUserId": ID,
         "taskVersion": INTEGER, "currentTaskVersion": INTEGER, "attemptNo": INTEGER, "submittedAt": INSTANT,
         "submittedSnapshot": {"type": "object", "additionalProperties": True},
         "decision": {"type": "string", "enum": ["PENDING", "APPROVED", "REJECTED"]},
         "reviewStatus": {"type": "string", "enum": ["PENDING", "APPROVED", "REJECTED"]},
         "decidedByUserId": nullable(ID), "decisionNote": nullable(STRING), "decidedAt": nullable(INSTANT),
-        "isCurrent": BOOLEAN, "allowedActions": array({"type": "string", "enum": ["APPROVE", "REJECT"]})})
+        "isCurrent": BOOLEAN, "allowedActions": array({"type": "string", "enum": ["APPROVE", "REJECT"]}),
+        # 展示名与职位：审批详情要显示"谁申请、谁执行"，只有 userId 无法呈现
+        "submittedByName": nullable(STRING), "submittedByJobTitle": nullable(STRING),
+        "reviewerName": nullable(STRING), "reviewerJobTitle": nullable(STRING),
+        "recipients": array(reviewActor)})
     schemas = {"Tag": tag, "Assignment": assignment, "ProgressRecord": progress, "CompletionRequestView": completion, "Task": task,
         "WorkEntry": entry, "Journal": journal, "Enterprise": enterprise, "OrgUnit": org, "User": user, "Profile": profile, "CompanyItem": item, "ImportantSelection": selection, "Statistics": stats,
         "JournalDeleted": journalDeleted, "TagDeleted": tagDeleted,
@@ -216,6 +221,9 @@ RESPONSES = {
     ("POST", "/notifications/{id}/read"): "Notification",
 }
 
+# 二进制响应（不套 {data, requestId} 信封）
+BINARY_RESPONSES = {("GET", "/users/{id}/avatar")}
+
 
 def generate():
     document = {"openapi": "3.1.0", "info": {"title": "Pandora6ix confirmed backend APIs", "version": "0.2.0",
@@ -231,7 +239,8 @@ def generate():
         for method in re.finditer(r'@(Get|Post|Patch|Put|Delete)Mapping\("([^"]+)"\)\s*(?:@ResponseStatus\(([^)]+)\)\s*)?public\s+\S+\s+(\w+)\((.*?)\)\s*\{', source, re.S):
             verb, path, status, name, params = method.groups()
             verb = verb.upper()
-            no_body = (verb, path) in (("POST", "/auth/logout"), ("POST", "/me/password"), ("DELETE", "/admin/org-units/{id}"))
+            no_body = (verb, path) in (("POST", "/auth/logout"), ("POST", "/me/password"),
+                                       ("DELETE", "/admin/org-units/{id}"), ("PUT", "/users/{id}/avatar"))
             status_code = "204" if no_body else "201" if status and "CREATED" in status else "200"
             operation = {"operationId": file.stem + "_" + name, "tags": [file.stem.replace("Controller", "")], "parameters": [], "responses": {}}
             if path == "/auth/login":
@@ -260,7 +269,11 @@ def generate():
                     operation["parameters"].append({"name": override[1] if override else field_name, "in": "header" if header else "query",
                         "required": re.search(r"required\s*=\s*false", parameter) is None and default is None, "schema": schema})
             success = {"description": "Successful command/read; 201 task submission remains PENDING."}
-            if not no_body:
+            if (verb, path) in BINARY_RESPONSES:
+                # 头像等二进制响应直接输出字节流，不套统一信封
+                success["content"] = {mime: {"schema": {"type": "string", "format": "binary"}}
+                                      for mime in ("image/jpeg", "image/png", "image/webp")}
+            elif not no_body:
                 response = RESPONSES[(verb, path)]
                 success["content"] = {"application/json": {"schema": obj({"data": ref(response), "requestId": STRING}, ("data", "requestId"))}}
             operation["responses"][status_code] = success
@@ -274,8 +287,10 @@ def generate():
                 operation["responses"][str(error)] = {"description": "Structured error; unavailable private objects use uniform 404.", "content": {"application/json": {"schema": ref("Error")}}}
             document["paths"].setdefault(path, {})[verb.lower()] = operation
             count += 1
-    if count != len(RESPONSES) + 3:
-        raise RuntimeError(f"Controller parser omitted routes: {count} vs {len(RESPONSES) + 3}")
+    # 4 = 无响应体的命令数（退出/改密/删除组织/设置头像）
+    expected = len(RESPONSES) + len(BINARY_RESPONSES) + 4
+    if count != expected:
+        raise RuntimeError(f"Controller parser omitted routes: {count} vs {expected}")
     # Resolve every local schema reference before exporting; JSON syntax alone is insufficient.
     stack = [document]
     while stack:

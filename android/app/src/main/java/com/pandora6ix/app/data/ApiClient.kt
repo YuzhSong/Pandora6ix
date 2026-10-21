@@ -148,6 +148,28 @@ class ApiClient(private val session: SessionStore, private val baseUrl: String =
         call("POST", path, body, null, Unit.serializer())
     }
 
+    /**
+     * 二进制读取（用户头像）：不套 {data, requestId} 信封。
+     * 404 表示未设置头像，返回 null；401 按会话失效处理。
+     */
+    suspend fun getBytes(path: String): ByteArray? = withContext(Dispatchers.IO) {
+        val tokenAtRequest = session.token
+        val builder = Request.Builder().url(baseUrl + path)
+        tokenAtRequest?.let { builder.header("Authorization", "Bearer $it") }
+        http.newCall(builder.build()).execute().use { resp ->
+            if (session.token != tokenAtRequest) throw SessionExpiredException()
+            when {
+                resp.code == 404 -> null
+                resp.code == 401 && tokenAtRequest != null -> {
+                    if (session.expireIfCurrent(tokenAtRequest)) onSessionExpired?.invoke()
+                    throw SessionExpiredException()
+                }
+                !resp.isSuccessful -> throw ApiException(resp.code, null, "请求失败（HTTP ${resp.code}）")
+                else -> resp.body?.bytes()
+            }
+        }
+    }
+
     private suspend fun <T> call(
         method: String,
         path: String,

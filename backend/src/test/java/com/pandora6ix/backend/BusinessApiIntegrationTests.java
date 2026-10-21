@@ -258,6 +258,18 @@ class BusinessApiIntegrationTests {
                 : (Map<String, Object>) parsed.get("error");
     }
 
+    /** 二进制响应（头像）：用 base64 承载字节，避免 String 转换破坏内容 */
+    private Result rawBytes(String method, String path, String token) throws Exception {
+        MockHttpServletRequestBuilder builder =
+                MockMvcRequestBuilders.request(
+                        org.springframework.http.HttpMethod.valueOf(method), "/api/v1" + path);
+        if (token != null) builder.header("Authorization", "Bearer " + token);
+        var response = mvc.perform(builder).andReturn().getResponse();
+        return new Result(
+                response.getStatus(),
+                Base64.getEncoder().encodeToString(response.getContentAsByteArray()));
+    }
+
     private record Result(int status, String body) {}
 
     private Result raw(String method, String path, String token, Object body, String... headers)
@@ -1557,6 +1569,59 @@ class BusinessApiIntegrationTests {
         request("POST", "/tasks", employeeToken, body, 422);
         body.put("endTime", "08:00");
         request("POST", "/tasks", employeeToken, body, 422);
+    }
+
+    @Test
+    void reviewDetailExposesRequestorAndRecipientNames() throws Exception {
+        var created = createTask(employeeToken, "PERSONAL", List.of(employee));
+        String task = (String) created.get("id");
+        var pending = items(request("GET", "/task-reviews?scope=pending", leadToken, null, 200));
+        var row = pending.stream().filter(r -> task.equals(str(r, "taskId"))).findFirst().orElseThrow();
+        var detail = request("GET", "/task-reviews/" + row.get("id"), leadToken, null, 200);
+        // 请求人 / 审批人展示名：displayName 与登录名同名（createUser 用 login 作 displayName）
+        assertEquals("employee", str(detail, "submittedByName"));
+        assertEquals("lead", str(detail, "reviewerName"));
+        var recipients = (List<Map<String, Object>>) detail.get("recipients");
+        assertEquals(1, recipients.size());
+        assertEquals(employee, str(recipients.getFirst(), "id"));
+        assertEquals("employee", str(recipients.getFirst(), "displayName"));
+    }
+
+    @Test
+    void reviewDetailExecutorsCarryNamesAndFollowSubmittedSnapshot() throws Exception {
+        // 派发给两人的申请：执行人逐个返回，且带真实姓名与职位
+        var delegated = createTask(leadToken, "DELEGATED", List.of(employee, peer));
+        var detail = request("GET", "/task-reviews/" + delegated.get("reviewId"), managerToken, null, 200);
+        assertEquals(2, ((List<?>) detail.get("recipients")).size());
+        assertEquals(Set.of("employee", "peer"), recipientNames(detail));
+        assertTrue(((List<Map<String, Object>>) detail.get("recipients")).stream()
+                .allMatch(r -> str(r, "jobTitle") != null));
+        // 快照不可变：任务当前执行关系变化后，旧审批仍显示提交当时申请的执行人
+        db.update("DELETE FROM task_assignment WHERE enterprise_id=? AND task_id=?", enterprise, str(delegated, "id"));
+        assertEquals(
+                Set.of("employee", "peer"),
+                recipientNames(request("GET", "/task-reviews/" + delegated.get("reviewId"), managerToken, null, 200)));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Set<String> recipientNames(Map<String, Object> detail) {
+        return ((List<Map<String, Object>>) detail.get("recipients"))
+                .stream().map(r -> str(r, "displayName")).collect(java.util.stream.Collectors.toSet());
+    }
+
+    @Test
+    void avatarUploadsAndServesRealImageBytes() throws Exception {
+        String payload = "iVBORw0KGgo=";
+        String dataUrl = "data:image/png;base64," + payload;
+        request("PUT", "/users/" + employee + "/avatar", employeeToken, fields("dataUrl", dataUrl), 204);
+        var stored = rawBytes("GET", "/users/" + employee + "/avatar", employeeToken);
+        assertEquals(200, stored.status());
+        assertArrayEquals(Base64.getDecoder().decode(payload), Base64.getDecoder().decode(stored.body()));
+        // 未设置头像返回 404，客户端回退到姓名首字而不是占位假图
+        assertEquals(404, rawBytes("GET", "/users/" + manager + "/avatar", employeeToken).status());
+        // 他人头像可读取（审批详情要显示请求人/执行人真实头像），但不能代改
+        request("PUT", "/users/" + manager + "/avatar", employeeToken, fields("dataUrl", dataUrl), 403);
+        request("PUT", "/users/" + employee + "/avatar", employeeToken, fields("dataUrl", "https://x/a.png"), 422);
     }
 
     @Test
