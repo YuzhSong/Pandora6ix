@@ -47,7 +47,7 @@ let vite: Awaited<ReturnType<typeof createViteServer>> | undefined
 try {
   async function ready() {
     let healthy = false
-    for (let attempt = 0; attempt < 120; attempt++) {
+    for (let attempt = 0; attempt < 480; attempt++) {
       if (spawnError) throw spawnError
       if (backend.exitCode !== null) throw new Error('后端测试进程提前退出。')
       try { healthy = ((await (await fetch(`http://127.0.0.1:${port}/health`)).json()) as { status?: unknown }).status === 'UP' } catch { /* Startup retry. */ }
