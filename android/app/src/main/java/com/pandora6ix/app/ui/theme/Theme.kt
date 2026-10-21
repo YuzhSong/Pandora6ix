@@ -17,6 +17,15 @@ val MintDeep = Color(0xFF4C7A5C)
 val Lilac = Color(0xFFE7DDF4)
 val Sky = Color(0xFFDCECF2)
 
+/** 任务重要程度的统一视觉元数据：颜色与文案（1-2 低 / 3 普通 / 4 重要 / 5 紧急） */
+@Composable
+fun priorityMeta(level: Int): Pair<Color, String> = when (level.coerceIn(1, 5)) {
+    1, 2 -> Ink.copy(alpha = 0.4f) to "低"
+    3 -> WarmOrange to "普通"
+    4 -> Coral to "重要"
+    else -> CoralDark to "紧急"
+}
+
 /**
  * 应用主题：背景、卡片、描边、强调色与按钮底色成套切换。
  * 卡片/描边与背景同一色系但深浅不同，保证层次可见又不跳色。
@@ -120,3 +129,16 @@ fun PandoraTheme(content: @Composable () -> Unit) {
 
 @Composable
 fun Pandora6ixTheme(content: @Composable () -> Unit) = PandoraTheme(content)
+
+/**
+ * 全局开关（Switch）配色：关闭态边圈用中性 Ink 而非主题 outline（珊瑚红），
+ * 避免关闭状态看起来像错误/禁用；开启态沿用主题暖橙。
+ */
+@Composable
+fun pandoraSwitchColors() = androidx.compose.material3.SwitchDefaults.colors(
+    checkedThumbColor = Cream,
+    checkedTrackColor = WarmOrange,
+    uncheckedThumbColor = Cream,
+    uncheckedTrackColor = Ink.copy(alpha = 0.25f),
+    uncheckedBorderColor = Ink.copy(alpha = 0.25f)
+)

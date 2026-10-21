@@ -37,9 +37,12 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pandora6ix.app.mock.*
@@ -274,11 +277,25 @@ fun CalendarScreen(
             Box(Modifier.offset(x = cellWidth * segment.first).width(cellWidth * (segment.last - segment.first + 1)).fillMaxHeight().padding(horizontal = 1.dp).clip(RoundedCornerShape(3.dp)).background(taskColor(segment.task))
                 .semantics { role = Role.Button; onClick("查看${segment.task.title}") { onSelect(segment.task, dates[segment.first]); true } }
                 .pointerInput(segment.task.id, dates) { detectTapGestures { position -> val day = (position.x / (size.width.toFloat() / (segment.last - segment.first + 1))).toInt().coerceIn(0, segment.last - segment.first); onSelect(segment.task, dates[segment.first + day]) } }, contentAlignment = Alignment.CenterStart) {
-                Text(segment.task.title, Modifier.padding(horizontal = 3.dp), fontSize = if (compact) 11.sp else 12.sp, lineHeight = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Ink)
+                // 重要及以上的任务在标题前加着色等级前缀，扫视即可分辨轻重缓急
+                Text(priorityTitledText(segment.task.title, segment.task.priorityLevel), Modifier.padding(horizontal = 3.dp), fontSize = if (compact) 11.sp else 12.sp, lineHeight = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Ink)
             }
         }
     }
 }
+
+/** 任务标题：重要(4)及以上在前面加着色的等级文字前缀（“重要 · ”/“紧急 · ”），其余原样 */
+@Composable
+private fun priorityTitledText(title: String, priorityLevel: Int) =
+    if (priorityLevel.coerceIn(1, 5) >= 4) {
+        val (color, label) = priorityMeta(priorityLevel)
+        buildAnnotatedString {
+            withStyle(SpanStyle(color = color, fontWeight = FontWeight.Bold)) { append("$label · ") }
+            append(title)
+        }
+    } else {
+        buildAnnotatedString { append(title) }
+    }
 
 // 任务颜色：优先服务端 displayColor（主标签颜色），无则用主标签目录 colorHex，最后回退既有色板
 private fun taskColor(task: TaskItem): Color =
@@ -324,7 +341,7 @@ private fun Modifier.calendarGuides(): Modifier = drawBehind {
                     assigned.forEach { (task, range, lane) ->
                         Box(Modifier.offset(x = dayWidth * index + eventWidth * lane, y = hourHeight * (range.first / 60f)).width(eventWidth).height(hourHeight * ((range.last - range.first + 1) / 60f)).padding(1.dp).clip(RoundedCornerShape(4.dp)).background(taskColor(task)).clickable { onSelect(task, date) }) {
                             Column(Modifier.padding(horizontal = 4.dp, vertical = 2.dp)) {
-                                Text(task.title, fontSize = if (dayMode) 13.sp else 11.sp, lineHeight = if (dayMode) 16.sp else 13.sp, maxLines = if (dayMode) 2 else 3, overflow = TextOverflow.Ellipsis)
+                                Text(priorityTitledText(task.title, task.priorityLevel), fontSize = if (dayMode) 13.sp else 11.sp, lineHeight = if (dayMode) 16.sp else 13.sp, maxLines = if (dayMode) 2 else 3, overflow = TextOverflow.Ellipsis)
                                 if (dayMode && range.last - range.first >= 30) Text("${minuteLabel(range.first)}—${minuteLabel(range.last + 1)}", fontSize = 11.sp, color = Ink.copy(alpha = .7f))
                             }
                         }

@@ -139,7 +139,9 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
     // 时间/日期选择浮层目标：start | end | null
     var timePickTarget by rememberSaveable { mutableStateOf<String?>(null) }
     var datePickTarget by rememberSaveable { mutableStateOf<String?>(null) }
-    val dirty = title.isNotBlank() || note.isNotBlank() || selectedRecipientIds.isNotEmpty() || tags.isNotEmpty() || !allDay || priority != 3 || startKey != initialDate.key() || endKey != initialDate.key()
+    // 进入弹层时的状态快照：退出时仅在实际改动（相对进入时）才提示保存，草稿恢复的未修改内容不算改动
+    val initialState = remember { listOf(kind, title, note, startKey, endKey, allDay, startMinute, endMinute, priority, tags, selectedRecipientIds) }
+    val dirty = listOf(kind, title, note, startKey, endKey, allDay, startMinute, endMinute, priority, tags, selectedRecipientIds) != initialState
     val latestDirty by rememberUpdatedState(dirty)
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true, confirmValueChange = { value ->
         if (value == SheetValue.Hidden && latestDirty) { confirmExit = true; false } else true
@@ -210,7 +212,7 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
                 }
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text("全天任务", Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
-                    Switch(allDay, { allDay = it; error = null }, colors = SwitchDefaults.colors(checkedTrackColor = Ink))
+                    Switch(allDay, { allDay = it; error = null }, colors = com.pandora6ix.app.ui.theme.pandoraSwitchColors())
                 }
                 Text("开始与结束", Modifier.fillMaxWidth(), fontWeight = FontWeight.SemiBold)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -223,7 +225,7 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
                 }
                 Text("重要程度 · $priority 星", fontWeight = FontWeight.SemiBold)
                 Row { (1..5).forEach { level -> IconButton({ priority = level }, Modifier.size(40.dp)) { Icon(if (level <= priority) Icons.Default.Star else Icons.Default.StarBorder, "$level 星", tint = Ink) } } }
-                Text("标签 · 可多选，先选的为主标签", fontWeight = FontWeight.SemiBold)
+                Text("标签 · 必选，可多选，先选的为主标签", fontWeight = FontWeight.SemiBold)
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     tags.forEachIndexed { i, name ->
                         val tagColor = availableTags.firstOrNull { it.name == name }?.let { tagHexColor(it.colorHex) } ?: Ink
