@@ -524,7 +524,9 @@ class BusinessApiIntegrationTests {
     @Test
     void reviewRejectionRetainsAuditButNeverActivatesRecipients() throws Exception {
         var task = createTask(leadToken, "DELEGATED", List.of(employee, peer));
+        assertEquals(1, request("GET", "/task-reviews/pending-count", managerToken, null, 200).get("count"));
         var result = reviewDecision(managerToken, task, "REJECT");
+        assertEquals(0, request("GET", "/task-reviews/pending-count", managerToken, null, 200).get("count"));
         assertEquals("REJECTED", ((Map<?, ?>) result.get("review")).get("decision"));
         var creatorView = request("GET", "/tasks/" + task.get("id"), leadToken, null, 200);
         assertEquals("REJECTED", creatorView.get("reviewStatus"));
@@ -549,6 +551,7 @@ class BusinessApiIntegrationTests {
     @Test
     void reviewSnapshotsStayImmutableAndSupersededAttemptsCannotDecide() throws Exception {
         var task = createTask(employeeToken, "PERSONAL", List.of());
+        assertEquals(1, request("GET", "/task-reviews/pending-count", leadToken, null, 200).get("count"));
         String original = str(task, "reviewId");
         var patch = taskBody("PERSONAL", List.of(), List.of(), null);
         patch.remove("kind");
@@ -570,6 +573,7 @@ class BusinessApiIntegrationTests {
         assertFalse(((Map<?, ?>) current.get("submittedSnapshot")).containsKey("allowedActions"));
         var queue = items(request("GET", "/task-reviews", leadToken, null, 200));
         assertEquals(List.of(latest), queue.stream().map(x -> x.get("id")).toList());
+        assertEquals(queue.size(), request("GET", "/task-reviews/pending-count", leadToken, null, 200).get("count"));
         request(
                 "POST",
                 "/task-reviews/" + original + "/decision",
@@ -577,6 +581,7 @@ class BusinessApiIntegrationTests {
                 fields("expectedVersion", 0, "decision", "APPROVE"),
                 409);
         reviewDecision(leadToken, edited, "APPROVE");
+        assertEquals(0, request("GET", "/task-reviews/pending-count", leadToken, null, 200).get("count"));
         assertEquals(
                 latest,
                 request("GET", "/tasks/" + task.get("id"), employeeToken, null, 200)
@@ -608,6 +613,8 @@ class BusinessApiIntegrationTests {
                 fields("expectedVersion", 0, "decision", "APPROVE"),
                 404);
         request("GET", "/task-reviews", employeeToken, null, 403);
+        request("GET", "/task-reviews/pending-count", employeeToken, null, 403);
+        request("GET", "/task-reviews/pending-count", adminToken, null, 403);
         request("GET", "/task-reviews?scope=invalid", leadToken, null, 422);
         request("POST", path + "/decision", leadToken, fields("decision", "APPROVE"), 422);
         request(
