@@ -31,6 +31,11 @@ public class TaskReviewController {
         return reviews.list(identity.current(), scope, cursor, limit);
     }
 
+    @GetMapping("/task-reviews/pending-count")
+    public Object pendingCount() {
+        return reviews.pendingCount(identity.current());
+    }
+
     @GetMapping("/task-reviews/{id}")
     public Object detail(@PathVariable String id) {
         return reviews.detail(identity.current(), id);
