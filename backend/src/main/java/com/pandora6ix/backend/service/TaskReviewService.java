@@ -212,6 +212,20 @@ public class TaskReviewService {
                 row -> reviewView(a, row, users));
     }
 
+    public Map<String, Object> pendingCount(IdentityService.Actor a) {
+        a.manager();
+        var result = db.one(
+                "SELECT COUNT(*) AS review_count FROM task_review r JOIN task t"
+                        + " ON t.enterprise_id=r.enterprise_id AND t.id=r.task_id"
+                        + " WHERE r.enterprise_id=? AND r.reviewer_user_id=?"
+                        + " AND r.decision='PENDING' AND t.review_status='PENDING'"
+                        + " AND r.task_version=t.version"
+                        + " AND r.attempt_no=(SELECT MAX(x.attempt_no) FROM task_review x"
+                        + " WHERE x.enterprise_id=r.enterprise_id AND x.task_id=r.task_id)",
+                a.enterpriseId(), a.id());
+        return fields("count", number(result, "review_count"));
+    }
+
     public Map<String, Object> detail(IdentityService.Actor a, String id) {
         var review = db.entity("task_review", a.enterpriseId(), id);
         authorize(a, review);
