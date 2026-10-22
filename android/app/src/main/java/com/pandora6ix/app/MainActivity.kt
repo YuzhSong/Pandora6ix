@@ -69,8 +69,10 @@ import com.pandora6ix.app.ui.review.ReviewScreen
 import com.pandora6ix.app.ui.task.ProgressSheet
 import com.pandora6ix.app.ui.tags.TagManageScreen
 import com.pandora6ix.app.ui.theme.*
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.UUID
 
@@ -265,6 +267,7 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
         val journalRepo = remember { JournalRepository(api) }
         val selectionRepo = remember { SelectionRepository(api) }
         val taskRepo = remember { TaskRepository(api) }
+        val userRepo = remember { UserRepository(api) }
         val tagRepo = remember { TagRepository(api) }
         val appScope = rememberCoroutineScope()
         fun refreshTags() {
@@ -405,7 +408,7 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
                         onLoggedOut = { currentUser = null },
                         onClose = { showSettings = false }
                     )
-                    showReviews -> ReviewScreen(taskRepo, serverTags, currentUser?.businessTimezone) { showReviews = false }
+                    showReviews -> ReviewScreen(taskRepo, serverTags, currentUser?.businessTimezone, userRepo) { showReviews = false }
                     showTagManage -> TagManageScreen(
                         tagRepo,
                         // 与服务端一致的权限：仅 FOUNDER/DEPARTMENT_MANAGER 可建/改/删；无权限者根本进不了此页
@@ -438,7 +441,7 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
                             Route.VIEW -> CalendarScreen(CalendarMode.valueOf(modeName), date, taskItems, canCreatePersonal, canCreateDelegated, serverTags, taskRepo, { modeName = it.name }, { dateKey = "${it.year}-${it.month}-${it.day}" }, { calRetry++ }, { detail = it.id }, taskScope = taskScope, onTaskScopeChange = { taskScope = it }, businessTimezone = currentUser?.businessTimezone, loading = calLoading, error = calError, onRetry = { calRetry++ })
                             Route.LOGS -> LogsScreen(journalRepo, serverTags.toList(), currentUser?.businessTimezone) { detail = it }
                             Route.AI -> AiMapScreen()
-                            Route.ME -> ProfileScreen(currentUser!!, statistics, notifyMaster, showReviewCenter, pendingReviewCount, onOpenTagManage = { if (tagManager) showTagManage = true else showTagDenied = true }, onOpenReviews = { showReviews = true }, onOpenSettings = { showSettings = true })
+                            Route.ME -> ProfileScreen(currentUser!!, statistics, notifyMaster, showReviewCenter, pendingReviewCount, userRepo, onOpenTagManage = { if (tagManager) showTagManage = true else showTagDenied = true }, onOpenReviews = { showReviews = true }, onOpenSettings = { showSettings = true })
                         }
                     }
                 }
@@ -1378,8 +1381,9 @@ private data class EntryDraft(val entryId: String?, val content: String)
     }
 }
 @Composable private fun AiMapScreen() { Column(Modifier.fillMaxSize().padding(16.dp)) { PageHeader("AI地图"); Spacer(Modifier.height(48.dp)); Icon(Icons.Default.Info, null, Modifier.size(70.dp).align(Alignment.CenterHorizontally), tint = Coral); Text("AI 地图", Modifier.fillMaxWidth().padding(top = 18.dp), textAlign = TextAlign.Center, fontSize = 28.sp, fontWeight = FontWeight.Bold); Text("功能规划中", Modifier.fillMaxWidth().padding(top = 8.dp), textAlign = TextAlign.Center, color = Ink.copy(alpha = .6f)) } }
-@Composable private fun ProfileScreen(user: UserDto, statistics: StatisticsDto?, notificationsEnabled: Boolean, showReviewCenter: Boolean, pendingReviewCount: Int, onOpenTagManage: () -> Unit, onOpenReviews: () -> Unit, onOpenSettings: () -> Unit) {
+@Composable private fun ProfileScreen(user: UserDto, statistics: StatisticsDto?, notificationsEnabled: Boolean, showReviewCenter: Boolean, pendingReviewCount: Int, userRepo: UserRepository, onOpenTagManage: () -> Unit, onOpenReviews: () -> Unit, onOpenSettings: () -> Unit) {
     val context = LocalContext.current
+    val avatarScope = rememberCoroutineScope()
     val prefs = remember { context.getSharedPreferences("profile_avatar_" + SessionStore(context).ownerId, Context.MODE_PRIVATE) }
     var avatarType by remember { mutableStateOf(prefs.getString("avatarType", "color") ?: "color") }
     var avatarColorIndex by remember { mutableStateOf(prefs.getInt("avatarColor", 0)) }
@@ -1390,6 +1394,18 @@ private data class EntryDraft(val entryId: String?, val content: String)
         avatarType = type; avatarColorIndex = colorIndex; avatarPath = path
         prefs.edit().putString("avatarType", type).putInt("avatarColor", colorIndex).putString("avatarPath", path).apply()
     }
+    fun uploadAvatarFile(uri: Uri?) {
+        if (uri == null) return
+        avatarScope.launch {
+            val bitmap = withContext(Dispatchers.IO) { decodeUriThumbnail(context, uri, 256) }
+            if (bitmap == null) {
+                Toast.makeText(context, "头像上传失败，请重试", Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            runCatching { userRepo.uploadAvatar(user.id, bitmap) }
+                .onFailure { Toast.makeText(context, "头像上传失败，本地已生效", Toast.LENGTH_SHORT).show() }
+        }
+    }
     fun importImage(uri: Uri?) {
         if (uri == null) return
         runCatching {
@@ -1397,6 +1413,8 @@ private data class EntryDraft(val entryId: String?, val content: String)
             val dest = File(dir, "picked_${System.currentTimeMillis()}.jpg")
             context.contentResolver.openInputStream(uri)!!.use { input -> dest.outputStream().use { output -> input.copyTo(output) } }
             saveAvatar("photo", path = dest.absolutePath)
+            // 同步到服务端：审批详情里的请求人/审批人/执行人才能显示真实头像
+            uploadAvatarFile(uri)
         }.onFailure { Toast.makeText(context, "导入失败，请重试", Toast.LENGTH_SHORT).show() }
     }
     // 相册浏览：授权后自建媒体库网格（系统按授权范围自动过滤——限制访问=仅所选照片，全部=整个相册）

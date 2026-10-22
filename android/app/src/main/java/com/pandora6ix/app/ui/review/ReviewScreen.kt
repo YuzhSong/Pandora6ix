@@ -1,10 +1,15 @@
 package com.pandora6ix.app.ui.review
 
+import android.graphics.Bitmap
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -12,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -46,24 +52,33 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pandora6ix.app.data.ApiException
 import com.pandora6ix.app.data.SessionExpiredException
+import com.pandora6ix.app.data.ReviewActorDto
+import com.pandora6ix.app.data.UserRepository
 import com.pandora6ix.app.data.businessDateTimeLabel
 import com.pandora6ix.app.data.TagDto
 import com.pandora6ix.app.data.TaskRepository
 import com.pandora6ix.app.data.TaskReviewDto
 import com.pandora6ix.app.ui.calendar.tagHexColor
+import com.pandora6ix.app.ui.theme.CoralDark
 import com.pandora6ix.app.ui.theme.CreamDeep
 import com.pandora6ix.app.ui.theme.Ink
 import com.pandora6ix.app.ui.theme.Mint
 import com.pandora6ix.app.ui.theme.MintDeep
 import com.pandora6ix.app.ui.theme.Peach
 import com.pandora6ix.app.ui.theme.WarmCard
+import com.pandora6ix.app.ui.theme.WarmDashboard
 import com.pandora6ix.app.ui.theme.WarmOrange
+import com.pandora6ix.app.ui.theme.priorityMeta
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.intOrNull
@@ -80,7 +95,7 @@ import java.util.UUID
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ReviewScreen(taskRepo: TaskRepository, availableTags: List<TagDto>, businessTimezone: String? = null, onBack: () -> Unit) {
+fun ReviewScreen(taskRepo: TaskRepository, availableTags: List<TagDto>, businessTimezone: String? = null, userRepo: UserRepository? = null, onBack: () -> Unit) {
     var scope by rememberSaveable { mutableStateOf("pending") }
     var items by remember { mutableStateOf<List<TaskReviewDto>>(emptyList()) }
     var nextCursor by remember { mutableStateOf<String?>(null) }
@@ -110,11 +125,12 @@ fun ReviewScreen(taskRepo: TaskRepository, availableTags: List<TagDto>, business
     LaunchedEffect(scope, loadRetry) { load(append = false) }
 
     selected?.let { review ->
-        ReviewDetail(review, taskRepo, availableTags, businessTimezone, onBack = { selected = null }, onChanged = { load(append = false) })
+        ReviewDetail(review, taskRepo, availableTags, businessTimezone, userRepo, onBack = { selected = null }, onChanged = { load(append = false) })
         return
     }
 
-    Column(Modifier.fillMaxSize()) {
+    // 背景与设置页一致（主题 dashboard 色），避免同一主题下不同页面底色深浅不一
+    Column(Modifier.fillMaxSize().background(WarmDashboard)) {
         TopAppBar(
             title = { Column { Text("审批中心", fontWeight = FontWeight.Bold); Text("任务申请与审批结果", fontSize = 12.sp, color = Ink.copy(alpha = .6f)) } },
             navigationIcon = { IconButton(onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") } },
@@ -176,8 +192,7 @@ private fun ReviewCard(review: TaskReviewDto, businessTimezone: String?, onOpen:
                 DecisionBadge(review.decision)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(kindLabel(snapshot.kind), fontSize = 12.sp, color = Ink.copy(alpha = .6f))
-                Text("第 ${review.attemptNo} 次提交", fontSize = 12.sp, color = Ink.copy(alpha = .6f))
+                Text("${kindLabel(snapshot.kind)} · 请求人 ${personName(review.submittedByName, review.submittedByUserId)}", fontSize = 12.sp, color = Ink.copy(alpha = .6f))
                 review.submittedAt?.let { Text(timeLabel(it, businessTimezone), fontSize = 12.sp, color = Ink.copy(alpha = .6f)) }
             }
             if (review.decision != "PENDING" && review.decisionNote?.isNotBlank() == true) {
@@ -188,9 +203,9 @@ private fun ReviewCard(review: TaskReviewDto, businessTimezone: String?, onOpen:
 }
 
 /** 详情：快照字段 + 审批操作。409 后重读最新 review；成功后回调刷新队列 */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-private fun ReviewDetail(review: TaskReviewDto, taskRepo: TaskRepository, availableTags: List<TagDto>, businessTimezone: String?, onBack: () -> Unit, onChanged: () -> Unit) {
+private fun ReviewDetail(review: TaskReviewDto, taskRepo: TaskRepository, availableTags: List<TagDto>, businessTimezone: String?, userRepo: UserRepository?, onBack: () -> Unit, onChanged: () -> Unit) {
     var current by remember { mutableStateOf(review) }
     var comment by rememberSaveable { mutableStateOf("") }
     var submitting by remember { mutableStateOf(false) }
@@ -236,39 +251,87 @@ private fun ReviewDetail(review: TaskReviewDto, taskRepo: TaskRepository, availa
     }
 
     androidx.activity.compose.BackHandler(onBack = onBack)
-    Column(Modifier.fillMaxSize()) {
+    // 背景与设置页一致（主题 dashboard 色）
+    Column(Modifier.fillMaxSize().background(WarmDashboard)) {
         TopAppBar(
             title = { Column { Text("审批详情", fontWeight = FontWeight.Bold); Text("第 ${current.attemptNo} 次提交 · ${timeLabel(current.submittedAt, businessTimezone)}", fontSize = 12.sp, color = Ink.copy(alpha = .6f)) } },
             navigationIcon = { IconButton(onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") } },
             colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
         )
-        LazyColumn(Modifier.fillMaxSize().weight(1f), contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        val tagNames = snapshot.tagIds.mapNotNull { id -> availableTags.firstOrNull { it.id == id } }
+        val executors = executorActors(current, snapshot)
+        LazyColumn(Modifier.fillMaxSize().weight(1f), contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            // 概览：标题 + 决策 + 类型/重要程度 + 说明
             item {
-                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = WarmCard), shape = RoundedCornerShape(16.dp)) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(snapshot.title.ifBlank { "未命名任务" }, Modifier.weight(1f), fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                            DecisionBadge(current.decision)
+                SectionCard("任务信息") {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(snapshot.title.ifBlank { "未命名任务" }, Modifier.weight(1f), fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                        DecisionBadge(current.decision)
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        MetaChip(kindLabel(snapshot.kind))
+                        val level = (snapshot.priorityLevel ?: 3).coerceIn(1, 5)
+                        val (starColor, starText) = priorityMeta(level)
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("★".repeat(level) + "☆".repeat(5 - level), color = starColor, fontSize = 13.sp)
+                            Text(starText, fontSize = 13.sp, color = Ink.copy(alpha = .75f))
                         }
-                        InfoRow("类型", kindLabel(snapshot.kind))
-                        snapshot.description?.takeIf { it.isNotBlank() }?.let { InfoRow("说明", it) }
-                        InfoRow("重要程度", "${snapshot.priorityLevel ?: 3} 星")
-                        InfoRow("日期", dateRangeLabel(snapshot.startDate, snapshot.endDate))
-                        if (snapshot.timeKind == "TIMED") InfoRow("时间", "${shortTime(snapshot.startTime)} – ${shortTime(snapshot.endTime)}")
-                        InfoRow("执行人", recipientLabel(snapshot))
-                        val tagNames = snapshot.tagIds.mapNotNull { id -> availableTags.firstOrNull { it.id == id } }
-                        if (tagNames.isNotEmpty()) {
-                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text("标签", fontSize = 13.sp, color = Ink.copy(alpha = .6f))
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    tagNames.forEach { tag ->
-                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                            Box(Modifier.size(10.dp).clip(CircleShape).background(tagHexColor(tag.colorHex)))
-                                            Text("${tag.name}${if (tag.id == snapshot.primaryTagId) " · 主" else ""}", fontSize = 13.sp)
-                                        }
-                                    }
-                                }
-                            }
+                    }
+                    snapshot.description?.takeIf { it.isNotBlank() }?.let {
+                        Text(it, fontSize = 14.sp, lineHeight = 21.sp, color = Ink.copy(alpha = .85f))
+                    }
+                }
+            }
+            // 时间：全天/指定时间、跨天日期范围
+            item {
+                SectionCard("时间安排") {
+                    InfoRow("日期", dateRangeLabel(snapshot.startDate, snapshot.endDate))
+                    InfoRow(
+                        "时间",
+                        if (snapshot.timeKind == "TIMED") "${shortTime(snapshot.startTime)} – ${shortTime(snapshot.endTime)}" else "全天"
+                    )
+                }
+            }
+            // 人员：请求人 / 审批人 / 执行人（真实姓名 + 职位 + 头像）
+            item {
+                SectionCard("人员") {
+                    PersonRow(
+                        "请求人",
+                        personName(current.submittedByName, current.submittedByUserId),
+                        current.submittedByJobTitle,
+                        current.submittedByUserId,
+                        userRepo,
+                        "第 ${current.attemptNo} 次提交 · ${timeLabel(current.submittedAt, businessTimezone)}"
+                    )
+                    PersonRow(
+                        "审批人",
+                        personName(current.reviewerName, current.reviewerUserId),
+                        current.reviewerJobTitle,
+                        current.reviewerUserId,
+                        userRepo,
+                        null
+                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("执行人", fontSize = 13.sp, color = Ink.copy(alpha = .6f))
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            executors.forEach { PersonChip(it, userRepo) }
+                        }
+                    }
+                }
+            }
+            if (tagNames.isNotEmpty()) item {
+                SectionCard("标签") {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        tagNames.forEach { tag ->
+                            // 标签用服务端 colorHex 自己的颜色（与任务详情、日志一致），不跟随主题色
+                            Text(
+                                "${tag.name}${if (tag.id == snapshot.primaryTagId) " · 主" else ""}",
+                                Modifier.clip(RoundedCornerShape(10.dp))
+                                    .background(tagHexColor(tag.colorHex))
+                                    .padding(horizontal = 10.dp, vertical = 4.dp),
+                                fontSize = 12.sp,
+                                color = Ink
+                            )
                         }
                     }
                 }
@@ -280,12 +343,14 @@ private fun ReviewDetail(review: TaskReviewDto, taskRepo: TaskRepository, availa
                 Text("该申请当前不可操作（权限或人员范围已变化），请由创建者修改后重新提交。", fontSize = 12.sp, color = Ink.copy(alpha = .55f))
             }
             if (current.decision != "PENDING") item {
-                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = if (current.decision == "APPROVED") Mint else Peach), shape = RoundedCornerShape(16.dp)) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(if (current.decision == "APPROVED") "已批准" else "已驳回", fontWeight = FontWeight.Bold)
-                        current.decisionNote?.takeIf { it.isNotBlank() }?.let { Text("批注：$it", fontSize = 13.sp, color = Ink.copy(alpha = .75f)) }
-                        current.decidedAt?.let { Text("决定时间 ${timeLabel(it, businessTimezone)}", fontSize = 12.sp, color = Ink.copy(alpha = .6f)) }
+                SectionCard("审批结果") {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(if (current.decision == "APPROVED") "已批准" else "已驳回", Modifier.weight(1f), fontWeight = FontWeight.Bold, color = if (current.decision == "APPROVED") MintDeep else CoralDark)
+                        DecisionBadge(current.decision)
                     }
+                    InfoRow("审批人", personName(current.reviewerName, current.reviewerUserId))
+                    current.decisionNote?.takeIf { it.isNotBlank() }?.let { InfoRow("批注", it) }
+                    current.decidedAt?.let { InfoRow("决定时间", timeLabel(it, businessTimezone)) }
                 }
             }
             if (canDecide) item {
@@ -340,11 +405,87 @@ private fun ReviewDetail(review: TaskReviewDto, taskRepo: TaskRepository, availa
     }
 }
 
+/** 详情分区：小标题 + 主题卡片，卡片内统一间距 */
+@Composable
+private fun SectionCard(title: String, content: @Composable ColumnScope.() -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(title, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Ink.copy(alpha = .5f))
+        Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = WarmCard), shape = RoundedCornerShape(16.dp)) {
+            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp), content = content)
+        }
+    }
+}
+
 @Composable
 private fun InfoRow(label: String, value: String) {
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(label, Modifier.padding(top = 1.dp), fontSize = 13.sp, color = Ink.copy(alpha = .6f))
+        Text(label, Modifier.width(64.dp), fontSize = 13.sp, color = Ink.copy(alpha = .6f))
         Text(value, Modifier.weight(1f), fontSize = 14.sp, lineHeight = 20.sp)
+    }
+}
+
+/** 文字小标签：类型等次要信息 */
+@Composable
+private fun MetaChip(text: String) {
+    Box(Modifier.clip(RoundedCornerShape(10.dp)).background(CreamDeep).padding(horizontal = 10.dp, vertical = 4.dp)) {
+        Text(text, fontSize = 12.sp, color = Ink.copy(alpha = .8f))
+    }
+}
+
+/** 真实头像：优先服务端头像，未设置或加载失败回退姓名首字（不是占位假数据） */
+@Composable
+private fun RemoteAvatar(userId: String, name: String, size: Dp, fontSize: TextUnit, userRepo: UserRepository?) {
+    var photo by remember(userId) { mutableStateOf<Bitmap?>(null) }
+    if (userRepo != null && userId.isNotBlank()) {
+        LaunchedEffect(userId) {
+            photo = runCatching { userRepo.avatar(userId) }.getOrNull()
+        }
+    }
+    Box(Modifier.size(size).clip(CircleShape).background(WarmOrange.copy(alpha = .18f)), contentAlignment = Alignment.Center) {
+        if (photo != null) Image(photo!!.asImageBitmap(), "$name 的头像", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        else Text(name.take(1), fontSize = fontSize, fontWeight = FontWeight.Bold, color = WarmOrange)
+    }
+}
+
+/** 人员行：头像 + 角色 + 姓名 + 职位 + 补充信息 */
+@Composable
+private fun PersonRow(label: String, name: String, jobTitle: String?, userId: String, userRepo: UserRepository?, sub: String?) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        RemoteAvatar(userId, name, 38.dp, 16.sp, userRepo)
+        Column(Modifier.weight(1f)) {
+            Text(label, fontSize = 12.sp, color = Ink.copy(alpha = .55f))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(name, fontSize = 14.sp, fontWeight = FontWeight.Medium, lineHeight = 19.sp)
+                jobTitle?.takeIf { it.isNotBlank() }?.let {
+                    Text(
+                        it,
+                        Modifier.clip(RoundedCornerShape(8.dp)).background(CreamDeep).padding(horizontal = 6.dp, vertical = 2.dp),
+                        fontSize = 11.sp,
+                        color = Ink.copy(alpha = .65f)
+                    )
+                }
+            }
+            if (!sub.isNullOrBlank()) Text(sub, fontSize = 12.sp, color = Ink.copy(alpha = .5f))
+        }
+    }
+}
+
+/** 执行人胶囊：头像 + 姓名 + 职位，可多行排列 */
+@Composable
+private fun PersonChip(actor: ReviewActorDto, userRepo: UserRepository?) {
+    val name = personName(actor.displayName, actor.id)
+    Row(
+        Modifier.clip(RoundedCornerShape(14.dp)).background(CreamDeep).padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        RemoteAvatar(actor.id, name, 26.dp, 12.sp, userRepo)
+        Column {
+            Text(name, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+            actor.jobTitle?.takeIf { it.isNotBlank() }?.let {
+                Text(it, fontSize = 11.sp, color = Ink.copy(alpha = .55f))
+            }
+        }
     }
 }
 
@@ -399,9 +540,23 @@ private data class SnapshotInfo(
 
 private fun kindLabel(kind: String?) = if (kind == "DELEGATED") "派发任务" else "个人任务"
 
-private fun recipientLabel(snapshot: SnapshotInfo): String =
-    if (snapshot.kind == "DELEGATED" && snapshot.recipientIds.isNotEmpty()) "接收人 ${snapshot.recipientIds.size} 人"
-    else "本人执行"
+/** 姓名缺失（旧数据/已停用账号）时回退显示 ID 后四位 */
+private fun personName(name: String?, id: String): String =
+    name?.takeIf { it.isNotBlank() } ?: "成员 ${id.takeLast(4)}"
+
+/** 执行人：优先用后端返回的执行关系（真实姓名 + 职位），缺省时回退到快照的统计口径 */
+private fun executorActors(review: TaskReviewDto, snapshot: SnapshotInfo): List<ReviewActorDto> {
+    val actors = review.recipients.filter { it.id.isNotBlank() || !it.displayName.isNullOrBlank() }
+    if (actors.isNotEmpty()) return actors
+    return listOf(
+        ReviewActorDto(
+            id = "",
+            displayName =
+                if (snapshot.kind == "DELEGATED" && snapshot.recipientIds.isNotEmpty()) "接收人 ${snapshot.recipientIds.size} 人"
+                else "本人执行"
+        )
+    )
+}
 
 private fun dateRangeLabel(start: String?, end: String?): String {
     val s = start?.takeIf { it.isNotBlank() } ?: return "未设置"

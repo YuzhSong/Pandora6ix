@@ -105,15 +105,76 @@ public class TaskReviewService {
         return assignments.stream().allMatch(x -> managed.contains(str(x, "recipient_user_id")));
     }
 
+    /** 本企业 userId → 人员档案（展示名 + 职位）：一次查全量，避免逐条审批再查用户表 */
+    private Map<String, Map<String, Object>> userIndex(IdentityService.Actor a) {
+        Map<String, Map<String, Object>> users = new HashMap<>();
+        for (var row :
+                db.rows(
+                        "SELECT id,display_name,job_title FROM app_user WHERE enterprise_id=?",
+                        a.enterpriseId()))
+            users.put(str(row, "id"), row);
+        return users;
+    }
+
+    private static String text(Map<String, Object> row, String column) {
+        return row == null ? null : str(row, column);
+    }
+
+    /** 快照里申请的执行人 ID：审批详情展示的是不可变快照，执行人必须取自提交当时 */
+    private static List<String> snapshotRecipientIds(Map<String, Object> snapshot) {
+        var ids = snapshot == null ? null : snapshot.get("recipientIds");
+        if (!(ids instanceof List<?> list)) return List.of();
+        return list.stream().filter(String.class::isInstance).map(String.class::cast).toList();
+    }
+
+    /**
+     * 执行人（展示名 + 职位）：取自本条申请提交的快照，快照缺失（历史数据）时回退任务当前执行关系。
+     * 不用当前执行关系代替快照：任务被改派后，旧审批详情显示当时的执行人才与快照内容一致。
+     */
+    private List<Map<String, Object>> recipients(
+            IdentityService.Actor a, String taskId, Map<String, Map<String, Object>> users, Map<String, Object> snapshot) {
+        List<String> ids = snapshotRecipientIds(snapshot);
+        if (ids.isEmpty())
+            ids =
+                    db.rows(
+                                    "SELECT recipient_user_id FROM task_assignment WHERE"
+                                            + " enterprise_id=? AND task_id=?",
+                                    a.enterpriseId(),
+                                    taskId)
+                            .stream()
+                            .map(row -> str(row, "recipient_user_id"))
+                            .toList();
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (String id : ids) {
+            var u = users.get(id);
+            out.add(
+                    fields(
+                            "id", id,
+                            "displayName", text(u, "display_name"),
+                            "jobTitle", text(u, "job_title")));
+        }
+        return out;
+    }
+
     @SuppressWarnings("unchecked")
-    private Map<String, Object> reviewView(IdentityService.Actor a, Map<String, Object> review) {
+    private Map<String, Object> reviewView(
+            IdentityService.Actor a, Map<String, Object> review, Map<String, Map<String, Object>> users) {
         var task = db.entity("task", a.enterpriseId(), str(review, "task_id"));
         var v = view(review);
         v.put("reviewId", v.get("id"));
-        v.put("submittedSnapshot", json.readValue(str(review, "submitted_snapshot"), Map.class));
+        var snapshot = (Map<String, Object>) json.readValue(str(review, "submitted_snapshot"), Map.class);
+        v.put("submittedSnapshot", snapshot);
         v.put("currentTaskVersion", task.get("version"));
         v.put("reviewStatus", task.get("review_status"));
         v.put("isCurrent", current(review));
+        // 审批详情要显示"谁申请的、谁执行"，只有 ID 无法呈现，故附带展示名与职位
+        var submitter = users.get(str(review, "submitted_by_user_id"));
+        var reviewer = users.get(str(review, "reviewer_user_id"));
+        v.put("submittedByName", text(submitter, "display_name"));
+        v.put("submittedByJobTitle", text(submitter, "job_title"));
+        v.put("reviewerName", text(reviewer, "display_name"));
+        v.put("reviewerJobTitle", text(reviewer, "job_title"));
+        v.put("recipients", recipients(a, str(review, "task_id"), users, snapshot));
         boolean actionable =
                 pending(review, task)
                         && a.id().equals(review.get("reviewer_user_id"))
@@ -125,6 +186,7 @@ public class TaskReviewService {
     public Map<String, Object> list(
             IdentityService.Actor a, String requestedScope, String cursor, int limit) {
         a.business();
+        var users = userIndex(a);
         if (!Set.of("pending", "created").contains(requestedScope))
             throw BusinessException.invalid("Review scope must be pending or created.");
         String query =
@@ -147,13 +209,13 @@ public class TaskReviewService {
                 a.enterpriseId() + ":" + a.id() + ":reviews:" + requestedScope,
                 List.of("submitted_at", "id"),
                 true,
-                row -> reviewView(a, row));
+                row -> reviewView(a, row, users));
     }
 
     public Map<String, Object> detail(IdentityService.Actor a, String id) {
         var review = db.entity("task_review", a.enterpriseId(), id);
         authorize(a, review);
-        return reviewView(a, review);
+        return reviewView(a, review, userIndex(a));
     }
 
     @Transactional

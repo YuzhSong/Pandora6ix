@@ -87,6 +87,12 @@ public final class Contracts {
             @Size(min = 6, max = 24) @Pattern(regexp = "[+]?[0-9 ()-]+") String phoneNumber,
             @Size(min = 1, max = 128) String loginName) {}
 
+    /**
+     * 用户头像：客户端压缩后的图片 data URL（如 data:image/jpeg;base64,...），
+     * 上限 768_000 字符（约 560KB 图片），服务端只校验类型与体积
+     */
+    public record UserAvatar(@NotBlank @Size(max = 768_000) String dataUrl) {}
+
     public record TagCreate(
             @NotBlank @Size(max = 64) String name,
             @NotBlank @Pattern(regexp = "#[0-9A-Fa-f]{6}") String colorHex) {}

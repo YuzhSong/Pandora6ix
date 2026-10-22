@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.*;
+import java.util.Base64;
 
 @Service
 public class DirectoryService {
@@ -176,6 +177,44 @@ public class DirectoryService {
                 List.of("display_name", "id"),
                 false,
                 row -> user(a, str(row, "id")));
+    }
+
+    /**
+     * 设置头像：本人或管理员。客户端已压缩为 data URL，服务端只校验类型与可解码性。
+     * 不引入文件存储/外链，避免头像与其他业务数据分处两地。
+     */
+    @Transactional
+    public void saveAvatar(IdentityService.Actor a, String id, Contracts.UserAvatar c) {
+        if (!a.id().equals(id)) a.admin();
+        String url = c.dataUrl() == null ? "" : c.dataUrl().strip();
+        int comma = url.indexOf(',');
+        if (!url.startsWith("data:image/") || comma <= 0 || !url.substring(0, comma).endsWith(";base64"))
+            throw BusinessException.invalid("Avatar must be a base64 image data URL.");
+        String mime = url.substring("data:".length(), url.indexOf(';'));
+        if (!Set.of("image/jpeg", "image/png", "image/webp").contains(mime))
+            throw BusinessException.invalid("Avatar must be JPEG, PNG or WEBP.");
+        try {
+            Base64.getDecoder().decode(url.substring(comma + 1));
+        } catch (IllegalArgumentException e) {
+            throw BusinessException.invalid("Avatar is not valid base64 image data.");
+        }
+        db.update(
+                "UPDATE app_user SET avatar_image=? WHERE enterprise_id=? AND id=?",
+                url,
+                a.enterpriseId(),
+                id);
+    }
+
+    /** 读取头像：未设置或已清空返回 null；否则返回 {mime, bytes} 供控制器直接输出 */
+    public Map<String, Object> avatar(IdentityService.Actor a, String id) {
+        var row = db.entity("app_user", a.enterpriseId(), id);
+        String url = str(row, "avatar_image");
+        if (url == null || !url.startsWith("data:image/")) return null;
+        return fields(
+                "mime",
+                url.substring("data:".length(), url.indexOf(';')),
+                "bytes",
+                Base64.getDecoder().decode(url.substring(url.indexOf(',') + 1)));
     }
 
     public Map<String, Object> user(IdentityService.Actor a, String id) {
