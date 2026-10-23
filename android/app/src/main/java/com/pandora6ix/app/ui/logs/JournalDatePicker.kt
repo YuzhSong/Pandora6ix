@@ -27,6 +27,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -105,6 +106,13 @@ fun JournalDatePickerDialog(
             }
         }
     }
+    // 真正有日志的月份：滚轮只列这些年/月（只有 10 月有日志 → 月列只有 10）
+    val journaledMonths = remember(months, loggedDates) {
+        months.filter { m ->
+            val prefix = "%04d-%02d".format(m.year, m.month)
+            loggedDates.any { it.startsWith(prefix) }
+        }
+    }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     var panelOpen by remember { mutableStateOf(false) }
@@ -134,7 +142,8 @@ fun JournalDatePickerDialog(
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.clip(RoundedCornerShape(8.dp))
-                            .clickable { panelOpen = !panelOpen }
+                            // 没有任何有日志的月份时不展开（滚轮无内容可滑）
+                            .clickable(enabled = journaledMonths.isNotEmpty()) { panelOpen = !panelOpen }
                             .padding(horizontal = 8.dp, vertical = 6.dp)
                     )
                     Spacer(Modifier.weight(1f))
@@ -142,10 +151,9 @@ fun JournalDatePickerDialog(
                     IconButton(onDismiss) { Icon(Icons.Default.Close, "关闭") }
                 }
                 if (panelOpen) {
-                    // 与视图页左上角一致的滚轮选择（仅年、月两列）
+                    // 与视图页左上角一致的滚轮选择（仅年、月两列），且只列有日志的年月
                     YearMonthWheelPanel(
-                        yearFrom = earliest.year,
-                        yearTo = todayDate.year,
+                        journaled = journaledMonths,
                         year = focused.year,
                         month = focused.month,
                         onCancel = { panelOpen = false },
@@ -178,20 +186,21 @@ fun JournalDatePickerDialog(
 
 /**
  * 年份 + 月份两列滚轮（复用视图页 `WheelColumn`）：上下滑动即选中，确定后跳转。
- * 年份范围限定为有日志的最早年份到今年，避免滑到没有任何日志的年份。
+ * 两列都只列**真正有日志**的年月：只有一个月有日志时月列就只有一项，年份同理。
  */
 @Composable
 private fun YearMonthWheelPanel(
-    yearFrom: Int,
-    yearTo: Int,
+    journaled: List<DemoDate>,
     year: Int,
     month: Int,
     onCancel: () -> Unit,
     onConfirm: (Int, Int) -> Unit
 ) {
-    val years = remember(yearFrom, yearTo) { (yearFrom..yearTo).toList() }
-    var pickedYear by remember(year) { mutableStateOf(year.coerceIn(yearFrom, yearTo)) }
-    var pickedMonth by remember(month) { mutableStateOf(month.coerceIn(1, 12)) }
+    val years = remember(journaled) { journaled.map { it.year }.distinct() }
+    if (years.isEmpty()) return
+    var pickedYear by remember(year) { mutableStateOf(year.takeIf { it in years } ?: years.first()) }
+    val months = remember(journaled, pickedYear) { journaled.filter { it.year == pickedYear }.map { it.month } }
+    var pickedMonth by remember(pickedYear, month) { mutableStateOf(month.takeIf { it in months } ?: months.first()) }
     Column(
         Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)
             .clip(RoundedCornerShape(16.dp)).background(WarmCard).padding(vertical = 8.dp),
@@ -202,13 +211,20 @@ private fun YearMonthWheelPanel(
                 Text("年", fontSize = 13.sp, color = EmptyDay)
                 WheelColumn(
                     years.map { it.toString() },
-                    (pickedYear - years.first()).coerceIn(0, years.lastIndex),
+                    years.indexOf(pickedYear).coerceAtLeast(0),
                     { pickedYear = years[it] }
                 )
             }
             Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text("月", fontSize = 13.sp, color = EmptyDay)
-                WheelColumn((1..12).map { "%02d".format(it) }, pickedMonth - 1, { pickedMonth = it + 1 })
+                // 月列随所选年份变化：以年份为 key 重建滚轮，只列该年有日志的月份
+                key(pickedYear) {
+                    WheelColumn(
+                        months.map { "%02d".format(it) },
+                        months.indexOf(pickedMonth).coerceAtLeast(0),
+                        { pickedMonth = months[it] }
+                    )
+                }
             }
         }
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.End) {
