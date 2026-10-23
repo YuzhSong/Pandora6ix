@@ -394,6 +394,20 @@ class BusinessApiIntegrationTests {
                 "id");
     }
 
+    @Test
+    void founderTaskCreationBypassesSupervisorApproval() throws Exception {
+        var personal = createTask(founderToken, "PERSONAL", List.of());
+        assertNull(personal.get("reviewId"));
+        assertEquals("APPROVED", db.entity("task", enterprise, str(personal, "taskId")).get("review_status"));
+        assertEquals("ACTIVE", db.rows("SELECT * FROM task_assignment WHERE enterprise_id=? AND task_id=?", enterprise, str(personal, "taskId")).getFirst().get("execution_status"));
+        assertEquals(0, db.rows("SELECT * FROM task_review WHERE enterprise_id=? AND task_id=?", enterprise, str(personal, "taskId")).size());
+
+        var delegated = createTask(founderToken, "DELEGATED", List.of(employee));
+        assertNull(delegated.get("reviewId"));
+        assertEquals("APPROVED", db.entity("task", enterprise, str(delegated, "taskId")).get("review_status"));
+        assertEquals("ACTIVE", db.rows("SELECT * FROM task_assignment WHERE enterprise_id=? AND task_id=?", enterprise, str(delegated, "taskId")).getFirst().get("execution_status"));
+    }
+
     private Map<String, Object> reviewDecision(
             String token, Map<String, Object> task, String decision) throws Exception {
         return request(
@@ -1471,12 +1485,13 @@ class BusinessApiIntegrationTests {
                 409);
         assertTrue(items(request("GET", "/task-reviews", managerToken, null, 200)).isEmpty());
         request("GET", "/inbox", employeeToken, null, 404);
-        request(
+        var founderTask = request(
                 "POST",
                 "/tasks",
                 founderToken,
                 taskBody("PERSONAL", List.of(founder), List.of(), null),
-                409);
+                201);
+        assertEquals("APPROVED", founderTask.get("reviewStatus"));
         request(
                 "POST",
                 "/tasks",
