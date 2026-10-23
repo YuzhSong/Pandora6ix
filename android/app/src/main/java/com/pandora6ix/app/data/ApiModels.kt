@@ -33,6 +33,8 @@ data class UserDto(
     val businessTimezone: String? = null,
     val department: String? = null,
     val supervisorUserId: String? = null,
+    /** 直属上级展示名（/me 附带）；未配置或上级不存在时为 null */
+    val supervisorName: String? = null,
     val orgUnitId: String? = null,
     val organization: OrgUnitDto? = null,
     val enterprise: EnterpriseDto? = null,

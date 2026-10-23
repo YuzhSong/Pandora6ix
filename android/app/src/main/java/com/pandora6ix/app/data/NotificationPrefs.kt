@@ -17,9 +17,9 @@ class NotificationPrefs(context: Context, val ownerId: String?) {
 
     private val prefs = context.getSharedPreferences("notify_" + (ownerId ?: "anon"), Context.MODE_PRIVATE)
 
-    /** 总控，关闭则全部静默；默认关闭，由用户在设置中主动开启（开启时才申请通知权限） */
+    /** 总控，关闭则全部静默；默认开启（用户仍可在设置中关闭；关闭时不申请通知权限） */
     var master: Boolean
-        get() = prefs.getBoolean("master", false)
+        get() = prefs.getBoolean("master", true)
         set(value) = prefs.edit().putBoolean("master", value).apply()
 
     /** 新任务提醒：你被派发了新任务 / 个人任务批准 */
@@ -34,7 +34,7 @@ class NotificationPrefs(context: Context, val ownerId: String?) {
 
     /** 任务状态变化：他人更新了你参与任务的进度 / 验收 */
     var statusChange: Boolean
-        get() = prefs.getBoolean("status_change", false)
+        get() = prefs.getBoolean("status_change", true)
         set(value) = prefs.edit().putBoolean("status_change", value).apply()
 
     /** 截止提前量（分钟，可精确到分钟）；默认 24 小时 = 1440 分钟 */
