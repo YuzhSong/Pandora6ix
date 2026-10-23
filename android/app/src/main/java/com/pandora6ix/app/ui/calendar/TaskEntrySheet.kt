@@ -52,6 +52,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 private fun DemoDate.key() = "$year-$month-$day"
+
+/** 星级文字含义：1 很低 · 2 一般 · 3 普通 · 4 重要 · 5 紧急 */
+private fun priorityLabel(level: Int): String = listOf("很低", "一般", "普通", "重要", "紧急")[(level - 1).coerceIn(0, 4)]
 private fun String.date() = split("-").map(String::toInt).let { DemoDate(it[0], it[1], it[2]) }
 
 /** 服务端标签颜色（#RRGGBB）→ Compose Color；非法值回退墨色 */
@@ -222,8 +225,8 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
                 IconButton(requestClose) { Icon(Icons.Default.Close, "关闭任务填写") }
             }
             Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(title, { title = it; error = null }, Modifier.fillMaxWidth(), label = { Text("任务名称") }, placeholder = { Text("我计划做…") }, singleLine = true, colors = fieldColors)
-                OutlinedTextField(note, { note = it }, Modifier.fillMaxWidth().heightIn(min = 112.dp), label = { Text("备注 / 简介") }, colors = fieldColors, minLines = 3)
+                OutlinedTextField(title, { title = it; error = null }, Modifier.fillMaxWidth(), label = { Text("任务名称（必填）") }, placeholder = { Text("我计划做…") }, singleLine = true, colors = fieldColors)
+                OutlinedTextField(note, { note = it }, Modifier.fillMaxWidth().heightIn(min = 112.dp), label = { Text("备注 / 简介（选填）") }, colors = fieldColors, minLines = 3)
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text("全天任务", Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
                     Switch(allDay, { allDay = it; error = null }, colors = com.pandora6ix.app.ui.theme.pandoraSwitchColors())
@@ -237,9 +240,10 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
                     OutlinedButton({ pickTime("start") }, Modifier.weight(1f), colors = buttonColors, border = buttonBorder) { Text("开始 ${minuteLabel(startMinute)}") }
                     OutlinedButton({ pickTime("end") }, Modifier.weight(1f), colors = buttonColors, border = buttonBorder) { Text("结束 ${minuteLabel(endMinute)}") }
                 }
-                Text("重要程度 · $priority 星", fontWeight = FontWeight.SemiBold)
+                // 星级文字含义：与审批规则一致——星级越高越优先处理
+                Text("重要程度 · $priority 星 · ${priorityLabel(priority)}", fontWeight = FontWeight.SemiBold)
                 Row { (1..5).forEach { level -> IconButton({ priority = level }, Modifier.size(40.dp)) { Icon(if (level <= priority) Icons.Default.Star else Icons.Default.StarBorder, "$level 星", tint = Ink) } } }
-                Text("标签 · 必选，可多选，先选的为主标签", fontWeight = FontWeight.SemiBold)
+                Text("标签 · 可选，可多选；主标签决定任务颜色，未选标签的任务在视图中以中性色展示", fontWeight = FontWeight.SemiBold)
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     tags.forEachIndexed { i, name ->
                         val tagColor = availableTags.firstOrNull { it.name == name }?.let { tagHexColor(it.colorHex) } ?: Ink
@@ -307,8 +311,10 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
                 }
                 }
             }
+            // 标签已改为可选：无可用标签不再阻断提交
             error?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp) }
-            Button(onClick = { submit() }, Modifier.fillMaxWidth().padding(vertical = 12.dp), enabled = !submitting, colors = ButtonDefaults.buttonColors(containerColor = ThemeButton, contentColor = OnThemeButton)) { Text(if (submitting) "提交中…" else "提交任务") }
+            Button(onClick = { submit() }, Modifier.fillMaxWidth().padding(vertical = 12.dp), enabled = !submitting, colors = ButtonDefaults.buttonColors(containerColor = ThemeButton, contentColor = OnThemeButton)) { Text(if (submitting) "提交中…" else "提交审批") }
+            Text("提交后进入直属上级审批，批准前任务不会出现在日历中", Modifier.fillMaxWidth(), fontSize = 11.sp, color = Ink.copy(alpha = .55f))
         }
     }
     if (confirmExit) AlertDialog(onDismissRequest = { confirmExit = false; sheetScope.launch { sheetState.show() } }, title = { Text("放弃未保存的任务？") }, text = { Text("关闭后，本次填写的内容会清空。") }, confirmButton = { TextButton({ confirmExit = false; AppCache.deleteDraft(context, "task_draft.json"); onDismiss() }) { Text("放弃") } }, dismissButton = { TextButton({ confirmExit = false; sheetScope.launch { sheetState.show() } }) { Text("继续填写") } })
@@ -339,21 +345,26 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
         title = { Text("选择标签") },
         text = {
             Column {
-                Text("可多选；先选的为主标签，决定任务在视图中的颜色。再次点击已选标签可取消。", fontSize = 12.sp, color = Ink.copy(alpha = .6f))
+                Text("可多选；点“设为主”可随时更换主标签（决定任务在视图中的颜色）。再次点击已选标签可取消。", fontSize = 12.sp, color = Ink.copy(alpha = .6f))
                 Spacer(Modifier.height(6.dp))
                 Column(Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())) {
                     availableTags.forEach { tag ->
                         val selected = tag.name in tags
                         val isPrimary = selected && tags.first() == tag.name
                         Row(
-                            Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { tags = if (selected) tags - tag.name else tags + tag.name }.padding(horizontal = 4.dp, vertical = 9.dp),
+                            // 选中行整行高亮，勾选状态一目了然
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(if (selected) CreamDeep else Color.Transparent).clickable { tags = if (selected) tags - tag.name else tags + tag.name }.padding(horizontal = 4.dp, vertical = 6.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Box(Modifier.size(14.dp).clip(CircleShape).background(tagHexColor(tag.colorHex)))
                             Spacer(Modifier.width(10.dp))
                             Text(tag.name, Modifier.weight(1f), fontSize = 15.sp)
                             if (selected) {
-                                Text(if (isPrimary) "主标签" else "次标签", fontSize = 12.sp, color = Ink.copy(alpha = .6f))
+                                if (isPrimary) {
+                                    Text("主标签", fontSize = 12.sp, color = Ink.copy(alpha = .6f))
+                                } else {
+                                    TextButton({ tags = listOf(tag.name) + (tags - tag.name) }, contentPadding = PaddingValues(horizontal = 8.dp)) { Text("设为主", fontSize = 12.sp, color = WarmOrange) }
+                                }
                                 Spacer(Modifier.width(6.dp))
                                 Icon(Icons.Default.Check, "已选", Modifier.size(18.dp), tint = Ink)
                             }
