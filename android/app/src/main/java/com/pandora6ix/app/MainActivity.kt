@@ -347,6 +347,8 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
         // 视图页：按当前模式与日期加载真实任务；日/周/月走 /calendar，年视图按 /tasks 全年区间查询
         var calLoading by remember { mutableStateOf(false) }
         var calError by remember { mutableStateOf<String?>(null) }
+        // 非阻断提示（如权限自动切换），重载后仍保留，用户手动操作后清除
+        var calNotice by remember { mutableStateOf<String?>(null) }
         var calRetry by remember { mutableStateOf(0) }
         // 年视图任务范围：mine=我的任务 / managed=我管理的 / created=我创建的
         var taskScope by rememberSaveable { mutableStateOf("mine") }
@@ -363,11 +365,19 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
                 }
                 taskItems.clear(); taskItems.addAll(loaded.map { it.toTaskItem() })
                 taskDtoById.clear(); taskDtoById.putAll(loaded.associateBy { it.id })
+                calNotice = null
             } catch (e: SessionExpiredException) {
                 // 401 已由全局回调处理
             } catch (e: Exception) {
                 // 加载失败显示空视图与重试入口，不保留过期内容
-                calError = (e as? ApiException)?.friendlyMessage() ?: "加载失败，请重试"
+                val api = e as? ApiException
+                // 无权限查看当前范围（如"我管理的"）：给出具体提示并切回"我的任务"，重试无意义
+                if (api?.httpStatus == 403 && taskScope == "managed") {
+                    calNotice = "当前账号没有查看「我管理的」任务的权限，已切回「我的任务」"
+                    taskScope = "mine"
+                } else {
+                    calError = api?.friendlyMessage() ?: "加载失败，请重试"
+                }
                 taskItems.clear(); taskDtoById.clear()
             } finally {
                 calLoading = false
@@ -453,7 +463,7 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
                     else -> AnimatedContent(current, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "page") { target ->
                         when (target) {
                             Route.HOME -> HomeScreen(dashboardRepo, selectionRepo, onOpenHome = { homeDetail = it })
-                            Route.VIEW -> CalendarScreen(CalendarMode.valueOf(modeName), date, taskItems, canCreatePersonal, canCreateDelegated, serverTags, taskRepo, { modeName = it.name }, { dateKey = "${it.year}-${it.month}-${it.day}" }, { calRetry++ }, { detail = it.id }, taskScope = taskScope, onTaskScopeChange = { taskScope = it }, businessTimezone = currentUser?.businessTimezone, loading = calLoading, error = calError, onRetry = { calRetry++ })
+                            Route.VIEW -> CalendarScreen(CalendarMode.valueOf(modeName), date, taskItems, canCreatePersonal, canCreateDelegated, serverTags, taskRepo, { modeName = it.name }, { dateKey = "${it.year}-${it.month}-${it.day}" }, { calRetry++ }, { detail = it.id }, taskScope = taskScope, onTaskScopeChange = { taskScope = it; calNotice = null }, currentUser = currentUser, canReviewTasks = canReviewTasks, businessTimezone = currentUser?.businessTimezone, loading = calLoading, error = calError, onRetry = { calRetry++ }, notice = calNotice)
                             Route.LOGS -> LogsScreen(journalRepo, serverTags.toList(), currentUser?.businessTimezone) { journalDetailId = it }
                             Route.AI -> AiMapScreen()
                             Route.ME -> ProfileScreen(currentUser!!, statistics, notifyMaster, showReviewCenter, pendingReviewCount, tagManager, userRepo, onOpenTagManage = { showTagManage = true }, onOpenReviews = { showReviews = true }, onOpenSettings = { showSettings = true })
@@ -1820,10 +1830,13 @@ private fun JournalDetailScreen(repo: JournalRepository, journalId: String, busi
             Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = WarmCard), shape = RoundedCornerShape(20.dp), border = cardBorderIfBlended()) {
                 Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     Text("组织信息", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                    ProfileInfoRow("所属企业", user.enterprise?.name ?: "未设置")
+                    ProfileInfoRow("所属企业", user.enterprise?.name ?: "未分配")
                     DashedDivider(HairLine)
-                    ProfileInfoRow("所属部门", user.department ?: user.organization?.name ?: "未设置")
-                    ProfileInfoRow("当前角色", user.roles.joinToString("、").ifBlank { "未设置" })
+                    ProfileInfoRow("所属部门", user.department ?: user.organization?.name ?: "未分配")
+                    DashedDivider(HairLine)
+                    // 角色显示中文；未分配直属上级时明确说明（数据来源 /me.supervisorUserId）
+                    ProfileInfoRow("当前角色", user.roles.joinToString("、") { roleLabel(it) }.ifBlank { "未分配" })
+                    ProfileInfoRow("直属上级", user.supervisorName?.takeIf { it.isNotBlank() } ?: "未配置（请联系管理员设置）")
                 }
             }
             SettingsCard {
@@ -1864,6 +1877,15 @@ private fun JournalDetailScreen(repo: JournalRepository, journalId: String, busi
         Text(label, Modifier.width(72.dp), color = Ink.copy(alpha = .6f), fontSize = 14.sp)
         Text(value, Modifier.weight(1f), fontSize = 14.sp)
     }
+}
+
+/** 角色枚举中文化：与后端角色枚举对应，未知枚举原样展示 */
+private fun roleLabel(role: String): String = when (role.uppercase()) {
+    "EMPLOYEE" -> "员工"
+    "DEPARTMENT_MANAGER" -> "部门主管"
+    "FOUNDER" -> "创始人"
+    "ADMIN" -> "管理员"
+    else -> role
 }
 @Composable private fun DetailCard(title: String, body: String, color: Color, maxLines: Int = 2, onClick: () -> Unit = {}) { Card(Modifier.fillMaxWidth().clickable(onClick = onClick), colors = CardDefaults.cardColors(containerColor = color.copy(alpha = .78f)), shape = RoundedCornerShape(16.dp)) { Column(Modifier.padding(14.dp)) { Text(title, fontWeight = FontWeight.Bold); Text(body, fontSize = 13.sp, color = Ink.copy(alpha = .75f), maxLines = maxLines, overflow = TextOverflow.Ellipsis) } } }
 @Composable private fun DetailScreen(title: String, dto: TaskDto?, availableTags: List<TagDto>, onBack: () -> Unit, onRecordProgress: (() -> Unit)? = null) {

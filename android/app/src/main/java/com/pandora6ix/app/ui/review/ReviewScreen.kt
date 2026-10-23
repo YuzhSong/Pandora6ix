@@ -102,6 +102,8 @@ fun ReviewScreen(taskRepo: TaskRepository, availableTags: List<TagDto>, business
     var nextCursor by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(true) }
     var loadError by remember { mutableStateOf<String?>(null) }
+    // 403 无权限：重试无意义，改为引导查看自己提交的申请
+    var loadDenied by remember { mutableStateOf(false) }
     var loadRetry by remember { mutableStateOf(0) }
     var selected by remember { mutableStateOf<TaskReviewDto?>(null) }
     val uiScope = rememberCoroutineScope()
@@ -116,7 +118,13 @@ fun ReviewScreen(taskRepo: TaskRepository, availableTags: List<TagDto>, business
             } catch (e: SessionExpiredException) {
                 // 401 已由全局回调处理
             } catch (e: Exception) {
-                loadError = (e as? ApiException)?.friendlyMessage() ?: "加载失败，请重试"
+                val api = e as? ApiException
+                loadDenied = api?.httpStatus == 403
+                loadError = when {
+                    loadDenied -> "当前账号没有审批权限，无需处理审批，可查看自己提交的申请"
+                    api != null -> api.friendlyMessage()
+                    else -> "加载失败，请重试"
+                }
                 if (!append) items = emptyList()
             } finally {
                 loading = false
@@ -147,7 +155,8 @@ fun ReviewScreen(taskRepo: TaskRepository, availableTags: List<TagDto>, business
                 loadError != null -> Column(Modifier.align(Alignment.Center).padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(loadError!!, color = Ink.copy(alpha = .7f), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                     Spacer(Modifier.height(12.dp))
-                    OutlinedButton({ loadRetry++ }) { Text("重试") }
+                    if (loadDenied) OutlinedButton({ scope = "created" }) { Text("查看我提交的") }
+                    else OutlinedButton({ loadRetry++ }) { Text("重试") }
                 }
                 items.isEmpty() -> Text(
                     if (scope == "pending") "暂无待审批的申请" else "暂无提交的申请",
