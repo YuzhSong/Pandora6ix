@@ -208,6 +208,18 @@ public class IdentityService
                         ? null
                         : view(db.entity("org_unit", actor.enterpriseId(), actor.orgUnitId())));
         user.put("department", department(actor));
+        // 直属上级展示名：供客户端"我的"页展示真实上级；未配置或上级已被删除时为 null
+        var supervisorId = user.get("supervisorUserId");
+        user.put(
+                "supervisorName",
+                supervisorId == null || supervisorId.toString().isBlank()
+                        ? null
+                        : db.optional(
+                                        "SELECT display_name FROM app_user WHERE enterprise_id=? AND id=?",
+                                        actor.enterpriseId(),
+                                        supervisorId.toString())
+                                .map(row -> str(row, "display_name"))
+                                .orElse(null));
         return user;
     }
 
