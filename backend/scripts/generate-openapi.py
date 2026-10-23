@@ -191,6 +191,17 @@ def read_schemas():
         schemas[name + "Page"] = obj({"items": array(ref(name)), "nextCursor": nullable(STRING), "moreUrl": STRING}, ("items", "nextCursor"))
     personnel_values = obj({"employmentStatus": STRING, "departureDate": nullable(DATE), "jobTitle": nullable(STRING), "orgUnitId": nullable(ID), "supervisorUserId": nullable(ID), "roles": array(STRING), "status": STRING})
     schemas["PersonnelChangePage"] = obj({"items": array(obj({"id": ID, "userId": ID, "actorUserId": ID, "actorName": STRING, "kind": {"type": "string", "enum": ["DEPARTURE", "JOB_CHANGE"]}, "effectiveDate": DATE, "recordedAt": INSTANT, "beforeValues": personnel_values, "afterValues": personnel_values}))}, ("items",))
+    log_actor = obj({"id": nullable(ID), "displayName": STRING, "loginName": nullable(STRING)}, ("displayName",))
+    log_object = obj({"id": nullable(ID), "type": STRING, "label": STRING}, ("type", "label"))
+    log_record = obj({"id": ID, "occurredAt": INSTANT, "actor": log_actor, "object": log_object, "module": STRING,
+        "action": STRING, "source": STRING, "result": {"type": "string", "enum": ["SUCCESS", "FAILURE"]}, "summary": STRING},
+        ("id", "occurredAt", "actor", "object", "module", "action", "source", "result", "summary"))
+    log_snapshot = nullable(obj({"version": INTEGER, "fields": array(obj({"key": STRING, "label": STRING, "value": nullable(STRING)}))}, ("version", "fields")))
+    log_detail = obj({**log_record, "requestId": nullable(STRING), "failureReason": nullable(STRING), "before": log_snapshot, "after": log_snapshot,
+        "versions": array(obj({"logId": ID, "version": INTEGER, "occurredAt": INSTANT, "actorName": STRING, "action": STRING}, ("logId", "version", "occurredAt", "actorName", "action")))},
+        ("id", "occurredAt", "actor", "object", "module", "action", "source", "result", "summary", "requestId", "failureReason", "before", "after", "versions"))
+    schemas["OperationLogPage"] = obj({"items": array(log_record), "nextCursor": nullable(STRING), "total": INTEGER, "snapshotToken": STRING}, ("items", "nextCursor", "total", "snapshotToken"))
+    schemas["OperationLogDetail"] = log_detail
     schemas["ManagerReplacementResult"] = obj({"items": array(ref("User"))}, ("items",))
     schemas["Dashboard"] = obj({"companyImportantItems": ref("CompanyItemPage"), "companyTasks": ref("TaskPage"), "personalImportantEntries": ref("ImportantSelection"), "workEntries": ref("WorkEntryPage"), "statistics": ref("Statistics")})
     return schemas
@@ -201,6 +212,9 @@ RESPONSES = {
     ("POST", "/admin/users/{id}/departure"): "User",
     ("POST", "/admin/users/{id}/job-change"): "User",
     ("GET", "/admin/users/{id}/personnel-changes"): "PersonnelChangePage",
+    # OperationLogController declares its base path on @RequestMapping, so the
+    # lightweight parser sees only the method-level paths.
+    ("GET", "/"): "OperationLogPage", ("GET", "/{id}"): "OperationLogDetail",
     ("GET", "/admin/credential-handoffs"): "CredentialHandoffPage",
     ("POST", "/auth/login"): "LoginResult", ("GET", "/me"): "Profile", ("POST", "/admin/enterprise-initializations"): "Enterprise",
     ("GET", "/admin/enterprise"): "Enterprise", ("PATCH", "/admin/enterprise"): "Enterprise",
@@ -212,6 +226,7 @@ RESPONSES = {
     ("POST", "/tasks/{id}/complete"): "Assignment", ("POST", "/task-assignments/{id}/progress-records"): "ProgressResult",
     ("POST", "/task-assignments/{id}/completion-requests"): "CompletionResult", ("POST", "/task-completion-requests/{id}/decision"): "CompletionResult",
     ("GET", "/task-reviews"): "TaskReviewPage", ("GET", "/task-reviews/{id}"): "TaskReview", ("POST", "/task-reviews/{id}/decision"): "ReviewDecisionResult",
+    ("GET", "/task-reviews/pending-count"): "UnreadCount",
     ("GET", "/calendar"): "Calendar", ("GET", "/work-logs"): "JournalPage", ("POST", "/work-logs"): "Journal", ("GET", "/work-logs/{id}"): "Journal", ("PATCH", "/work-logs/{id}"): "Journal", ("DELETE", "/work-logs/{id}"): "JournalDeleted",
     ("DELETE", "/tags/{id}"): "TagDeleted",
     ("GET", "/work-log-entries/{id}"): "WorkEntry", ("GET", "/me/important-entry-candidates"): "WorkEntryPage", ("GET", "/me/important-entries"): "ImportantSelection", ("PUT", "/me/important-entries"): "ImportantSelection",
@@ -288,7 +303,7 @@ def generate():
             document["paths"].setdefault(path, {})[verb.lower()] = operation
             count += 1
     # 4 = 无响应体的命令数（退出/改密/删除组织/设置头像）
-    expected = len(RESPONSES) + len(BINARY_RESPONSES) + 4
+    expected = len(RESPONSES) + len(BINARY_RESPONSES) + 3
     if count != expected:
         raise RuntimeError(f"Controller parser omitted routes: {count} vs {expected}")
     # Resolve every local schema reference before exporting; JSON syntax alone is insufficient.

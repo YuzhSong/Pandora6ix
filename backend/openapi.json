@@ -4765,6 +4765,118 @@
         }
       }
     },
+    "/{id}": {
+      "get": {
+        "operationId": "OperationLogController_detail",
+        "tags": [
+          "OperationLog"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful command/read; 201 task submission remains PENDING.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/OperationLogDetail"
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/tags": {
       "get": {
         "operationId": "TaskController_tags",
@@ -6605,6 +6717,109 @@
                   "properties": {
                     "data": {
                       "$ref": "#/components/schemas/TaskReviewPage"
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/task-reviews/pending-count": {
+      "get": {
+        "operationId": "TaskReviewController_pendingCount",
+        "tags": [
+          "TaskReview"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Successful command/read; 201 task submission remains PENDING.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/UnreadCount"
                     },
                     "requestId": {
                       "type": "string"
@@ -10130,6 +10345,399 @@
         },
         "required": [
           "items"
+        ]
+      },
+      "OperationLogPage": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "occurredAt": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "actor": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "displayName": {
+                      "type": "string"
+                    },
+                    "loginName": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "displayName"
+                  ]
+                },
+                "object": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "type": {
+                      "type": "string"
+                    },
+                    "label": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "label"
+                  ]
+                },
+                "module": {
+                  "type": "string"
+                },
+                "action": {
+                  "type": "string"
+                },
+                "source": {
+                  "type": "string"
+                },
+                "result": {
+                  "type": "string",
+                  "enum": [
+                    "SUCCESS",
+                    "FAILURE"
+                  ]
+                },
+                "summary": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "occurredAt",
+                "actor",
+                "object",
+                "module",
+                "action",
+                "source",
+                "result",
+                "summary"
+              ]
+            }
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "snapshotToken": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor",
+          "total",
+          "snapshotToken"
+        ]
+      },
+      "OperationLogDetail": {
+        "type": "object",
+        "properties": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "occurredAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "actor": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "displayName": {
+                  "type": "string"
+                },
+                "loginName": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "displayName"
+              ]
+            },
+            "object": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "label"
+              ]
+            },
+            "module": {
+              "type": "string"
+            },
+            "action": {
+              "type": "string"
+            },
+            "source": {
+              "type": "string"
+            },
+            "result": {
+              "type": "string",
+              "enum": [
+                "SUCCESS",
+                "FAILURE"
+              ]
+            },
+            "summary": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "occurredAt",
+            "actor",
+            "object",
+            "module",
+            "action",
+            "source",
+            "result",
+            "summary"
+          ],
+          "requestId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "failureReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "before": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "version": {
+                    "type": "integer",
+                    "format": "int64"
+                  },
+                  "fields": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "key": {
+                          "type": "string"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "value": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                },
+                "required": [
+                  "version",
+                  "fields"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "after": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "version": {
+                    "type": "integer",
+                    "format": "int64"
+                  },
+                  "fields": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "key": {
+                          "type": "string"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "value": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                },
+                "required": [
+                  "version",
+                  "fields"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "versions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "logId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "version": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "occurredAt": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "actorName": {
+                  "type": "string"
+                },
+                "action": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "logId",
+                "version",
+                "occurredAt",
+                "actorName",
+                "action"
+              ]
+            }
+          }
+        },
+        "required": [
+          "id",
+          "occurredAt",
+          "actor",
+          "object",
+          "module",
+          "action",
+          "source",
+          "result",
+          "summary",
+          "requestId",
+          "failureReason",
+          "before",
+          "after",
+          "versions"
         ]
       },
       "ManagerReplacementResult": {
