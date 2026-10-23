@@ -54,3 +54,10 @@ data class JournalPageDto(
     val nextCursor: String? = null,
     val moreUrl: String? = null
 )
+
+/** GET /work-logs/dates：有日志的日期（全部历史）+ 公司业务今天 */
+@Serializable
+data class JournalDatesDto(
+    val items: List<String> = emptyList(),
+    val businessToday: String? = null
+)

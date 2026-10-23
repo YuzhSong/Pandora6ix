@@ -108,10 +108,42 @@ public class JournalService implements com.pandora6ix.backend.application.journa
         result.put("tags", linked);
         result.put("tagIds", linked.stream().map(t -> t.get("id")).toList());
         result.put("businessToday", identity.today(a).toString());
-        result.put("allowedActions", a.id().equals(journal.get("author_user_id"))
-                && ((java.sql.Date) journal.get("work_date")).toLocalDate().equals(identity.today(a))
+        result.put("allowedActions", a.id().equals(journal.get("author_user_id")) && createdToday(a, journal)
                 ? List.of("EDIT", "DELETE") : List.of());
         return result;
+    }
+
+    /**
+     * 创建当天可编辑：以 published_at（创建时间）的业务日期判断，而不是 work_date。
+     * 这样当天补交的往期日志在当天内仍可修改，跨天后转为只读。
+     */
+    private boolean createdToday(IdentityService.Actor a, Map<String, Object> row) {
+        var zone = identity.zone(a);
+        var today = identity.today(a);
+        Object value = row.get("published_at");
+        if (value instanceof java.time.OffsetDateTime odt)
+            return odt.atZoneSameInstant(zone).toLocalDate().equals(today);
+        if (value instanceof java.time.Instant instant)
+            return instant.atZone(zone).toLocalDate().equals(today);
+        return false;
+    }
+
+    /**
+     * 有日志的日期（本人、全部历史）：日期选择器要按「有日志 / 无日志 / 今天」着色，
+     * 且月份必须连续展示，因此不受列表接口 367 天窗口限制，只返回日期本身。
+     */
+    public Map<String, Object> dates(IdentityService.Actor a) {
+        a.business();
+        var items =
+                db.rows(
+                                "SELECT DISTINCT work_date FROM work_log WHERE enterprise_id=? AND"
+                                        + " author_user_id=? ORDER BY work_date",
+                                a.enterpriseId(),
+                                a.id())
+                        .stream()
+                        .map(row -> str(row, "work_date"))
+                        .toList();
+        return fields("items", items, "businessToday", identity.today(a).toString());
     }
 
     public Map<String, Object> detail(IdentityService.Actor a, String id) {
@@ -198,13 +230,13 @@ public class JournalService implements com.pandora6ix.backend.application.journa
                 order);
     }
 
-    /** Company business date is authoritative: backfilled journals are immutable immediately. */
+    /** 创建时间为准：当天创建（含当天补交的往期日志）当天可改可删，跨天即只读。 */
     private void checkEditWindow(IdentityService.Actor a, Map<String, Object> row) {
-        if (!((java.sql.Date) row.get("work_date")).toLocalDate().equals(identity.today(a)))
+        if (!createdToday(a, row))
             throw new BusinessException(
                     409,
                     "JOURNAL_EDIT_WINDOW_EXPIRED",
-                    "Only journals for today's business date can be edited or deleted.",
+                    "Only journals created today can be edited or deleted.",
                     Map.of());
     }
 
