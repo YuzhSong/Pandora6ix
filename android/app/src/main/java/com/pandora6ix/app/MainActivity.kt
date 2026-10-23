@@ -1020,9 +1020,19 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
                 // 左下：排序 / 取消；右下：保存 / 完成
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     if (sorting) {
-                        TextButton({ cancelSorting() }) { Text("取消", color = Ink.copy(alpha = .65f)) }
+                        TextButton(
+                            { cancelSorting() },
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, accent)
+                        ) { Text("取消", color = Ink.copy(alpha = .65f)) }
                     } else {
-                        TextButton({ showSortHint = true }, enabled = selected.size > 1) {
+                        TextButton(
+                            { showSortHint = true },
+                            enabled = selected.size > 1,
+                            shape = RoundedCornerShape(12.dp),
+                            // 描边让它看起来像按钮，而不是一段可点的文字
+                            border = BorderStroke(1.dp, accent.copy(alpha = if (selected.size > 1) .9f else .3f))
+                        ) {
                             Text("排序", color = if (selected.size > 1) Ink else Ink.copy(alpha = .35f))
                         }
                     }
@@ -1305,8 +1315,11 @@ private data class EntryDraft(val entryId: String?, val content: String)
     }
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-            // 紧凑标题：TopAppBar 的默认高度占位太多，这里只保留一行标题
-            Text("日志", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp, bottom = 2.dp))
+            // 标题行与视图页「周视图」同高（44dp 行、20sp 加粗），下方保留原来的间距
+            Row(Modifier.fillMaxWidth().height(44.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("日志", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            }
+            Spacer(Modifier.height(10.dp))
             LazyColumn(Modifier.fillMaxWidth().weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 16.dp)) {
                 // 主操作与视图页「回到今年」同为实心主题按钮
                 item { Button({ openEditor(todayIso()) }, Modifier.fillMaxWidth(), enabled = !publishing, colors = ButtonDefaults.buttonColors(containerColor = ThemeButton, contentColor = OnThemeButton), shape = RoundedCornerShape(14.dp)) { Icon(Icons.Default.Add, null); Spacer(Modifier.width(6.dp)); Text(if (todayJournal != null) "补充今日工作" else "记录今日工作") } }
@@ -1486,16 +1499,20 @@ private data class EntryDraft(val entryId: String?, val content: String)
 /** 业务日期（YYYY-MM-DD）→ 展示文案 */
 private fun isoLabel(iso: String): String = parseIsoDate(iso)?.shortLabel() ?: iso
 
-/** 标签胶囊：底色为服务端 colorHex 的真实颜色 */
+/** 标签胶囊：底色为服务端 colorHex 的真实颜色；换行铺满，保证全部标签都看得见 */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun TagChips(tags: List<TagDto>, primaryTagId: String?) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    FlowRow(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
         tags.forEach { t ->
             Text(
                 if (t.id == primaryTagId) "${t.name} · 主" else t.name,
                 fontSize = 11.sp,
                 color = Ink,
-                maxLines = 1,
                 modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(tagHexColor(t.colorHex)).padding(horizontal = 7.dp, vertical = 3.dp)
             )
         }
@@ -1535,7 +1552,7 @@ private fun JournalCard(
             Spacer(Modifier.height(8.dp))
             journal.entries.sortedBy { it.displayOrder }.forEachIndexed { i, entry ->
                 Text(
-                    "${i + 1}. ${entry.content}",
+                    entry.content,
                     fontSize = 13.sp,
                     color = Ink.copy(alpha = .8f),
                     lineHeight = 20.sp,
@@ -1545,9 +1562,14 @@ private fun JournalCard(
                 if (i < journal.entries.lastIndex) Spacer(Modifier.height(4.dp))
             }
             if (editable) {
-                Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.End) {
-                    TextButton(onEdit, enabled = enabled, contentPadding = PaddingValues(horizontal = 10.dp)) { Text("编辑", color = Ink) }
-                    TextButton(onDelete, enabled = enabled, contentPadding = PaddingValues(horizontal = 10.dp)) { Text("删除", color = CoralDark) }
+                // 编辑/删除居中放在工作内容下方
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 6.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(onEdit, enabled = enabled, contentPadding = PaddingValues(horizontal = 14.dp)) { Text("编辑", color = Ink) }
+                    TextButton(onDelete, enabled = enabled, contentPadding = PaddingValues(horizontal = 14.dp)) { Text("删除", color = CoralDark) }
                 }
             }
         }
@@ -1592,7 +1614,11 @@ private fun JournalDetailScreen(repo: JournalRepository, journalId: String, busi
     }
     val j = journal
     Column(Modifier.fillMaxSize().background(LocalAppTheme.current.dashboard)) {
-        PageHeader("日志详情", onBack = onBack)
+        // 抬头与视图页「周视图」同高（44dp 行、20sp 加粗）
+        Row(Modifier.fillMaxWidth().height(44.dp).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onBack, Modifier.size(40.dp)) { Icon(Icons.Default.ArrowBack, "返回") }
+            Text("日志详情", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        }
         when {
             loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = WarmOrange, strokeWidth = 3.dp)
@@ -1624,11 +1650,7 @@ private fun JournalDetailScreen(repo: JournalRepository, journalId: String, busi
                 JournalSection("完成的工作") {
                     val entries = j.entries.sortedBy { it.displayOrder }
                     entries.forEachIndexed { i, entry ->
-                        Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
-                            Text("${i + 1}.", fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                            Spacer(Modifier.width(8.dp))
-                            Text(entry.content, fontSize = 14.sp, lineHeight = 22.sp, modifier = Modifier.weight(1f))
-                        }
+                        Text(entry.content, fontSize = 14.sp, lineHeight = 22.sp)
                         if (i < entries.lastIndex) Spacer(Modifier.height(6.dp))
                     }
                 }
