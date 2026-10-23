@@ -95,8 +95,9 @@ import java.util.UUID
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ReviewScreen(taskRepo: TaskRepository, availableTags: List<TagDto>, businessTimezone: String? = null, userRepo: UserRepository? = null, onBack: () -> Unit) {
-    var scope by rememberSaveable { mutableStateOf("pending") }
+fun ReviewScreen(taskRepo: TaskRepository, availableTags: List<TagDto>, businessTimezone: String? = null, userRepo: UserRepository? = null, canReview: Boolean = true, onBack: () -> Unit) {
+    // 无审批权限时直接隐藏"待我审批"入口，仅展示自己提交的申请
+    var scope by rememberSaveable { mutableStateOf(if (canReview) "pending" else "created") }
     var items by remember { mutableStateOf<List<TaskReviewDto>>(emptyList()) }
     var nextCursor by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(true) }
@@ -137,7 +138,7 @@ fun ReviewScreen(taskRepo: TaskRepository, availableTags: List<TagDto>, business
             colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
         )
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            QueueTab("待我审批", scope == "pending", Modifier.weight(1f)) { scope = "pending" }
+            if (canReview) QueueTab("待我审批", scope == "pending", Modifier.weight(1f)) { scope = "pending" }
             QueueTab("我提交的", scope == "created", Modifier.weight(1f)) { scope = "created" }
         }
         Box(Modifier.fillMaxSize()) {

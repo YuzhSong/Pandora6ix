@@ -143,7 +143,9 @@ class MainActivity : ComponentActivity() {
 private enum class Route { HOME, VIEW, LOGS, AI, ME }
 
 /** 任务操作面板覆盖的动作集合（进度/自完成/申请验收/验收决定），用于详情页入口判定 */
-private val TASK_ACTIONS = setOf("UPDATE_PROGRESS", "COMPLETE_PERSONAL", "REQUEST_COMPLETION", "DECIDE_COMPLETION")
+// 详情页"记录进度"入口的动作集：仅实际执行人可见；
+// 发起人的验收决策（DECIDE_COMPLETION）不触发该入口，避免发起人在视图页看到与己无关的"进度记录"
+private val PROGRESS_ENTRY_ACTIONS = setOf("UPDATE_PROGRESS", "COMPLETE_PERSONAL", "REQUEST_COMPLETION")
 private data class NavItem(val route: Route, val label: String, val icon: ImageVector)
 /** emptyText：该面板为空时的提示（四个面板语义不同，分别给出「暂无任务」「暂无日志」等） */
 private data class HomePanelDef(val title: String, val items: List<String>, val emptyText: String)
@@ -212,10 +214,8 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
         var journalDetailId by remember { mutableStateOf<String?>(null) }
         var showSettings by rememberSaveable { mutableStateOf(false) }
         var showReviews by rememberSaveable { mutableStateOf(false) }
-        // 标签管理覆盖层（我的页进入）
+        // 标签管理覆盖层（我的页进入，入口仅对有权限角色显示）
         var showTagManage by rememberSaveable { mutableStateOf(false) }
-        // 无权限打开标签管理的提示弹层
-        var showTagDenied by remember { mutableStateOf(false) }
         // 进度记录浮层：从任务详情进入，显示当前任务的执行关系
         var progressTaskId by remember { mutableStateOf<String?>(null) }
         var fontScale by rememberSaveable { mutableStateOf(1f) }
@@ -423,7 +423,7 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
                         onLoggedOut = { currentUser = null },
                         onClose = { showSettings = false }
                     )
-                    showReviews -> ReviewScreen(taskRepo, serverTags, currentUser?.businessTimezone, userRepo) { showReviews = false }
+                    showReviews -> ReviewScreen(taskRepo, serverTags, currentUser?.businessTimezone, userRepo, canReview = canReviewTasks) { showReviews = false }
                     showTagManage -> TagManageScreen(
                         tagRepo,
                         // 与服务端一致的权限：仅 FOUNDER/DEPARTMENT_MANAGER 可建/改/删；无权限者根本进不了此页
@@ -444,7 +444,7 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
                         }
                         val dto = taskDtoById[detailId]
                         DetailScreen(detailId, dto, serverTags, onBack = { detail = null; progressTaskId = null }, onRecordProgress = dto
-                            ?.takeIf { t -> t.authorizedAssignments.any { a -> a.allowedActions.any { it in TASK_ACTIONS } } }
+                            ?.takeIf { t -> t.authorizedAssignments.any { a -> a.allowedActions.any { it in PROGRESS_ENTRY_ACTIONS } } }
                             ?.let { { progressTaskId = detailId } })
                         progressTaskId?.let { id -> taskDtoById[id]?.let { t ->
                             ProgressSheet(t, taskRepo, onDismiss = { progressTaskId = null }, onChanged = { calRetry++ })
@@ -456,16 +456,10 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
                             Route.VIEW -> CalendarScreen(CalendarMode.valueOf(modeName), date, taskItems, canCreatePersonal, canCreateDelegated, serverTags, taskRepo, { modeName = it.name }, { dateKey = "${it.year}-${it.month}-${it.day}" }, { calRetry++ }, { detail = it.id }, taskScope = taskScope, onTaskScopeChange = { taskScope = it }, businessTimezone = currentUser?.businessTimezone, loading = calLoading, error = calError, onRetry = { calRetry++ })
                             Route.LOGS -> LogsScreen(journalRepo, serverTags.toList(), currentUser?.businessTimezone) { journalDetailId = it }
                             Route.AI -> AiMapScreen()
-                            Route.ME -> ProfileScreen(currentUser!!, statistics, notifyMaster, showReviewCenter, pendingReviewCount, userRepo, onOpenTagManage = { if (tagManager) showTagManage = true else showTagDenied = true }, onOpenReviews = { showReviews = true }, onOpenSettings = { showSettings = true })
+                            Route.ME -> ProfileScreen(currentUser!!, statistics, notifyMaster, showReviewCenter, pendingReviewCount, tagManager, userRepo, onOpenTagManage = { showTagManage = true }, onOpenReviews = { showReviews = true }, onOpenSettings = { showSettings = true })
                         }
                     }
                 }
-        if (showTagDenied) AlertDialog(
-            onDismissRequest = { showTagDenied = false },
-            title = { Text("无权限", fontWeight = FontWeight.Bold) },
-            text = { Text("标签管理仅限创始人或部门负责人使用。") },
-            confirmButton = { TextButton({ showTagDenied = false }) { Text("知道了") } }
-        )
                 // 提醒弹窗：逐条展示，关闭后显示下一条
                 reminderQueue.firstOrNull()?.let { event ->
                     ReminderDialog(event) { if (reminderQueue.isNotEmpty()) reminderQueue.removeAt(0) }
@@ -1669,7 +1663,7 @@ private fun JournalDetailScreen(repo: JournalRepository, journalId: String, busi
     }
 }
 @Composable private fun AiMapScreen() { Column(Modifier.fillMaxSize().padding(16.dp)) { PageHeader("AI地图"); Spacer(Modifier.height(48.dp)); Icon(Icons.Default.Info, null, Modifier.size(70.dp).align(Alignment.CenterHorizontally), tint = Coral); Text("AI 地图", Modifier.fillMaxWidth().padding(top = 18.dp), textAlign = TextAlign.Center, fontSize = 28.sp, fontWeight = FontWeight.Bold); Text("功能规划中", Modifier.fillMaxWidth().padding(top = 8.dp), textAlign = TextAlign.Center, color = Ink.copy(alpha = .6f)) } }
-@Composable private fun ProfileScreen(user: UserDto, statistics: StatisticsDto?, notificationsEnabled: Boolean, showReviewCenter: Boolean, pendingReviewCount: Int, userRepo: UserRepository, onOpenTagManage: () -> Unit, onOpenReviews: () -> Unit, onOpenSettings: () -> Unit) {
+@Composable private fun ProfileScreen(user: UserDto, statistics: StatisticsDto?, notificationsEnabled: Boolean, showReviewCenter: Boolean, pendingReviewCount: Int, canManageTags: Boolean, userRepo: UserRepository, onOpenTagManage: () -> Unit, onOpenReviews: () -> Unit, onOpenSettings: () -> Unit) {
     val context = LocalContext.current
     val avatarScope = rememberCoroutineScope()
     val prefs = remember { context.getSharedPreferences("profile_avatar_" + SessionStore(context).ownerId, Context.MODE_PRIVATE) }
@@ -1830,14 +1824,16 @@ private fun JournalDetailScreen(repo: JournalRepository, journalId: String, busi
                     DashedDivider(HairLine)
                     ProfileInfoRow("所属部门", user.department ?: user.organization?.name ?: "未设置")
                     ProfileInfoRow("当前角色", user.roles.joinToString("、").ifBlank { "未设置" })
-                    ProfileInfoRow("业务时区", user.businessTimezone ?: "未设置")
                 }
             }
             SettingsCard {
-                SettingsRow(icon = Icons.Default.Label, title = "标签管理", onClick = onOpenTagManage) {
-                    Icon(Icons.Default.ChevronRight, null, Modifier.size(20.dp), tint = Ink.copy(alpha = .4f))
+                // 仅 FOUNDER/DEPARTMENT_MANAGER 可见标签管理入口
+                if (canManageTags) {
+                    SettingsRow(icon = Icons.Default.Label, title = "标签管理", onClick = onOpenTagManage) {
+                        Icon(Icons.Default.ChevronRight, null, Modifier.size(20.dp), tint = Ink.copy(alpha = .4f))
+                    }
+                    DashedDivider(HairLine)
                 }
-                DashedDivider(HairLine)
                 if (showReviewCenter) {
                     SettingsRow(icon = Icons.Default.FactCheck, title = "审批中心", onClick = onOpenReviews) {
                         if (pendingReviewCount > 0) {
@@ -1854,10 +1850,6 @@ private fun JournalDetailScreen(repo: JournalRepository, journalId: String, busi
                 }
                 SettingsRow(icon = Icons.Default.Tune, title = "全部设置", onClick = onOpenSettings) {
                     Icon(Icons.Default.ChevronRight, null, Modifier.size(20.dp), tint = Ink.copy(alpha = .4f))
-                }
-                DashedDivider(HairLine)
-                SettingsRow(icon = Icons.Default.Notifications, title = "消息通知", onClick = onOpenSettings) {
-                    Text(if (notificationsEnabled) "已开启" else "已关闭", color = Ink.copy(alpha = .55f), fontSize = 13.sp)
                 }
             }
             Text("关于 Pandora", fontSize = 18.sp, fontWeight = FontWeight.Bold)
