@@ -410,11 +410,12 @@ private fun DayNumberRow(month: DemoDate, week: List<DemoDate>, inMonth: List<Bo
     }
 }
 
-// 任务颜色：优先服务端 displayColor（主标签颜色），无则用主标签目录 colorHex，最后回退既有色板
+// 任务颜色：优先服务端 displayColor（主标签颜色），其次主标签目录 colorHex；
+// 无标签的任务使用中性灰（不同于任何标签色），标签已改为可选
 private fun taskColor(task: TaskItem): Color =
     task.displayColorHex?.let { hex -> runCatching { Color(android.graphics.Color.parseColor(hex)) }.getOrNull() }
         ?: task.tags.firstOrNull()?.let { tag -> tag.colorHex.takeIf { it.isNotBlank() }?.let { hex -> runCatching { Color(android.graphics.Color.parseColor(hex)) }.getOrNull() } }
-        ?: listOf(Peach, Sky, Mint, Lilac)[task.priorityLevel.mod(4)]
+        ?: Ink.copy(alpha = 0.12f)
 private fun Modifier.calendarGuides(): Modifier = drawBehind {
     val effect = PathEffect.dashPathEffect(floatArrayOf(3.dp.toPx(), 4.dp.toPx()))
     for (i in 1..6) drawLine(Ink.copy(alpha = .06f), Offset(size.width * i / 7, 0f), Offset(size.width * i / 7, size.height), pathEffect = effect)
