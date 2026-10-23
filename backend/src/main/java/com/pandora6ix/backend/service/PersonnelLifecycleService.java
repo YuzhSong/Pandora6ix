@@ -16,8 +16,9 @@ public class PersonnelLifecycleService {
     private final DirectoryService directory;
     private final IdentityService identity;
     private final JsonMapper json;
-    public PersonnelLifecycleService(BusinessDb db, DirectoryService directory, IdentityService identity, JsonMapper json) {
-        this.db=db; this.directory=directory; this.identity=identity; this.json=json;
+    private final OperationLogService operationLogs;
+    public PersonnelLifecycleService(BusinessDb db, DirectoryService directory, IdentityService identity, JsonMapper json, OperationLogService operationLogs) {
+        this.db=db; this.directory=directory; this.identity=identity; this.json=json; this.operationLogs=operationLogs;
     }
     private Map<String,Object> lock(IdentityService.Actor a, String id, long version) {
         a.admin();
@@ -55,6 +56,7 @@ public class PersonnelLifecycleService {
         var updated=directory.patchUser(a,id,new Contracts.UserPatch(c.expectedVersion(),str(old,"display_name"),str(old,"org_unit_id"),null,str(old,"job_title"),"DISABLED",roles(a,old),null,null,null,null));
         db.update("UPDATE app_user SET employment_status='DEPARTED',departure_date=? WHERE enterprise_id=? AND id=?",c.departureDate(),a.enterpriseId(),id);
         record(a,id,"DEPARTURE",c.departureDate(),before);
+        operationLogs.record(a,id,"USER","PERSONNEL","DEPARTURE","WEB","办理离职",before,snapshot(a,db.entity("app_user",a.enterpriseId(),id)));
         updated.put("employmentStatus","DEPARTED"); updated.put("departureDate",c.departureDate().toString());
         return updated;
     }
@@ -67,6 +69,7 @@ public class PersonnelLifecycleService {
         var updated=directory.patchUser(a,id,new Contracts.UserPatch(c.expectedVersion(),str(old,"display_name"),c.orgUnitId(),c.supervisorUserId(),c.jobTitle(),str(old,"status"),c.roles(),null,null,null,null));
         db.update("UPDATE auth_session SET revoked=TRUE WHERE enterprise_id=? AND user_id=?",a.enterpriseId(),id);
         record(a,id,"JOB_CHANGE",today(a),before);
+        operationLogs.record(a,id,"USER","PERSONNEL","JOB_CHANGE","WEB","调整员工职位",before,snapshot(a,db.entity("app_user",a.enterpriseId(),id)));
         return updated;
     }
     private int rank(Collection<String> r) {
@@ -117,6 +120,7 @@ public class PersonnelLifecycleService {
                 db.update("UPDATE app_user SET supervisor_user_id=?,version=version+1 WHERE enterprise_id=? AND id=?",c.successorUserId(),a.enterpriseId(),userId);
             db.update("UPDATE auth_session SET revoked=TRUE WHERE enterprise_id=? AND user_id=?",a.enterpriseId(),userId);
             record(a,userId,"JOB_CHANGE",today(a),affected.get(userId));
+            operationLogs.record(a,userId,"USER","PERSONNEL","MANAGER_REPLACEMENT","WEB","更换负责人",affected.get(userId),snapshot(a,db.entity("app_user",a.enterpriseId(),userId)));
         }
         return fields("items",affected.keySet().stream().map(userId->directory.user(a,userId)).toList());
     }

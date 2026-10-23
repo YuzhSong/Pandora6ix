@@ -20,12 +20,14 @@ public class DirectoryService {
     private final IdentityService identity;
     private final CredentialHandoffService handoffs;
     private final PersonnelResponsibilityPolicy responsibility;
+    private final OperationLogService operationLogs;
 
-    public DirectoryService(BusinessDb db, IdentityService identity, CredentialHandoffService handoffs, PersonnelResponsibilityPolicy responsibility) {
+    public DirectoryService(BusinessDb db, IdentityService identity, CredentialHandoffService handoffs, PersonnelResponsibilityPolicy responsibility, OperationLogService operationLogs) {
         this.db = db;
         this.identity = identity;
         this.handoffs = handoffs;
         this.responsibility = responsibility;
+        this.operationLogs = operationLogs;
     }
 
     public Map<String, Object> enterprise(IdentityService.Actor a) {
@@ -292,7 +294,9 @@ public class DirectoryService {
                 c.jobTitle(), c.gender(), c.idNumber(), c.phoneNumber());
         roles(a, id, c.roles());
         if (!c.roles().contains("ADMIN")) handoffs.capture(a.enterpriseId(), id, c.password(), str(db.entity("app_user", a.enterpriseId(), id), "password_hash"));
-        return user(a, id);
+        var result = user(a, id);
+        operationLogs.record(a,id,"USER","ACCOUNT","CREATE","WEB","创建账号",null,fields("displayName",result.get("displayName"),"loginName",result.get("loginName"),"jobTitle",result.get("jobTitle"),"roles",result.get("roles"),"status",result.get("status")));
+        return result;
     }
 
     @Transactional
@@ -303,6 +307,7 @@ public class DirectoryService {
         var old = db.entity("app_user", a.enterpriseId(), id);
         if ("DEPARTED".equals(old.get("employment_status")))
             throw new BusinessException(409,"EMPLOYEE_DEPARTED","Employee has departed.");
+        var before = fields("displayName",old.get("display_name"),"loginName",old.get("login_name"),"jobTitle",old.get("job_title"),"orgUnitId",old.get("org_unit_id"),"supervisorUserId",old.get("supervisor_user_id"),"status",old.get("status"),"roles",identity.actor(id,a.enterpriseId(),str(old,"org_unit_id"),null).roles());
         if (number(old, "version") != c.expectedVersion()) checkVersion(0);
         if (c.loginName() != null) {
             if (c.loginName().isBlank() || !c.loginName().equals(c.loginName().strip()))
@@ -356,7 +361,9 @@ public class DirectoryService {
                     "UPDATE auth_session SET revoked=TRUE WHERE enterprise_id=? AND user_id=?",
                     a.enterpriseId(),
                     id);
-        return user(a, id);
+        var result = user(a, id);
+        operationLogs.record(a,id,"USER","ACCOUNT","UPDATE","WEB","修改账号",before,fields("displayName",result.get("displayName"),"loginName",result.get("loginName"),"jobTitle",result.get("jobTitle"),"orgUnitId",result.get("orgUnitId"),"supervisorUserId",result.get("supervisorUserId"),"status",result.get("status"),"roles",result.get("roles")));
+        return result;
     }
 
     @Transactional
@@ -374,7 +381,9 @@ public class DirectoryService {
                 hash, a.enterpriseId(), id, c.expectedVersion()));
         db.update("UPDATE auth_session SET revoked=TRUE WHERE enterprise_id=? AND user_id=?", a.enterpriseId(), id);
         handoffs.capture(a.enterpriseId(), id, c.newPassword(), hash);
-        return user(a, id);
+        var result = user(a, id);
+        operationLogs.record(a,id,"USER","ACCOUNT","PASSWORD_RESET","WEB","重置账号密码",null,null);
+        return result;
     }
 
     private void validatePhone(String phone) {
