@@ -68,6 +68,7 @@ import com.pandora6ix.app.ui.calendar.*
 import com.pandora6ix.app.ui.review.ReviewScreen
 import com.pandora6ix.app.ui.task.ProgressSheet
 import com.pandora6ix.app.ui.tags.TagManageScreen
+import com.pandora6ix.app.ui.logs.JournalDatePickerDialog
 import com.pandora6ix.app.ui.theme.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -160,8 +161,8 @@ private data class HomeDetail(
     val id: String? = null
 )
 
-/** 提醒轮询间隔（后台无消息服务，按固定间隔比对本人任务快照） */
-private const val REMINDER_POLL_MILLIS = 15L * 60L * 1000L
+/** 提醒轮询间隔（App 前台；无后台调度，退到后台或进程被杀后不再比对） */
+private const val REMINDER_POLL_MILLIS = 60L * 1000L
 /** 截止时间提前量预设值（分钟）：1 / 2 / 6 / 12 / 24 小时 */
 private val REMINDER_LEAD_OPTIONS = listOf(60, 120, 360, 720, 1440)
 
@@ -245,8 +246,10 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
         var notifyStatus by remember(currentUser?.id) { mutableStateOf(notifyPrefs.statusChange) }
         var notifyLeadMinutes by remember(currentUser?.id) { mutableIntStateOf(notifyPrefs.leadMinutes) }
         val reminderQueue = remember(currentUser?.id, notifyMaster) { mutableStateListOf<ReminderEvent>() }
-        // Android 13+ 需运行时申请通知权限；开启提醒时按需询问，被拒也不影响页内弹窗
-        val notifyPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+        // Android 13+ 需运行时申请通知权限；提醒默认开启，首次登录后询问一次，被拒也不影响页内弹窗
+        val notifyPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+            notifyPrefs.permissionRequested = true
+        }
         fun requestNotifyPermission() {
             if (NotificationHelper.canPostNotifications(appContext)) return
             if (NotificationHelper.needsRuntimePermission()) notifyPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
@@ -307,6 +310,12 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
                 serverTags.clear(); serverTags.addAll(list)
             }
             runCatching { calendarRepo.statistics() }.getOrNull()?.let { statistics = it }
+        }
+        // 提醒默认开启：首次登录后申请一次系统通知权限（Android 13+），被拒只失去系统通知，页内弹窗照常
+        LaunchedEffect(currentUser?.id, notifyMaster) {
+            if (currentUser == null || !notifyMaster || notifyPrefs.permissionRequested) return@LaunchedEffect
+            notifyPrefs.permissionRequested = true
+            requestNotifyPermission()
         }
         // 提醒轮询：登录后按固定间隔比对本人任务快照，产出弹窗（+ 有权限时发系统通知）
         LaunchedEffect(currentUser?.id, notifyMaster, notifyNewTask, notifyDeadline, notifyStatus, notifyLeadMinutes) {
@@ -839,7 +848,6 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
                     Spacer(Modifier.width(10.dp))
                     Column(Modifier.weight(1f)) {
                         Text("编辑 · 个人十大重要事项", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                        Text("共 ${selected.size}/10 · 候选打钩加入 · 保存后导图更新", color = Ink.copy(alpha = .6f), fontSize = 12.sp)
                     }
                     Button({ save() }, enabled = !saving, colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = Ink), shape = RoundedCornerShape(12.dp)) { Text(if (saving) "保存中…" else "保存", fontWeight = FontWeight.Bold) }
                 }
@@ -855,9 +863,8 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
                         Button({ retry++ }, colors = ButtonDefaults.buttonColors(containerColor = ThemeButton, contentColor = OnThemeButton), shape = RoundedCornerShape(12.dp)) { Text("重试") }
                     }
                     else -> Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())) {
-                        if (selected.isEmpty()) {
-                            Text("暂无正式事项；可在下方候选中勾选，也可保存空选择（视为主动清空）。", color = Ink.copy(alpha = .55f), fontSize = 13.sp, modifier = Modifier.padding(vertical = 12.dp))
-                        }
+                        Text("正式事项", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        Spacer(Modifier.height(4.dp))
                         selected.forEachIndexed { i, item ->
                             Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Box(Modifier.size(26.dp).clip(CircleShape).background(accent.copy(alpha = .3f)), contentAlignment = Alignment.Center) {
@@ -866,7 +873,6 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
                                 Spacer(Modifier.width(8.dp))
                                 Column(Modifier.weight(1f)) {
                                     Text(item.content, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                                    Text(parseIsoDate(item.workDate)?.shortLabel() ?: item.workDate, fontSize = 11.sp, color = Ink.copy(alpha = .5f))
                                 }
                                 IconButton({ toggle(item) }, Modifier.size(34.dp)) {
                                     Icon(Icons.Default.Close, "移出", Modifier.size(18.dp), tint = CoralDark)
@@ -878,16 +884,8 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
                         Spacer(Modifier.height(14.dp))
                         DashedDivider(accent)
                         Spacer(Modifier.height(10.dp))
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            Text("候选事项", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                            Spacer(Modifier.width(8.dp))
-                            Text("来自最近十个自然日日报", color = Ink.copy(alpha = .55f), fontSize = 12.sp, modifier = Modifier.weight(1f))
-                            Text("${candidates.size} 条", color = Ink.copy(alpha = .5f), fontSize = 12.sp)
-                        }
+                        Text("候选事项", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                         Spacer(Modifier.height(4.dp))
-                        if (candidates.isEmpty()) {
-                            Text("最近十个自然日没有可勾选的日报条目。", color = Ink.copy(alpha = .55f), fontSize = 13.sp, modifier = Modifier.padding(vertical = 12.dp))
-                        }
                         candidates.forEach { entry ->
                             val id = entry.entryId.ifBlank { entry.id }
                             val isSelected = id in selectedIds
@@ -914,12 +912,7 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
                                     overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier.weight(1f)
                                 )
-                                Spacer(Modifier.width(8.dp))
-                                Text(parseIsoDate(entry.workDate)?.shortLabel() ?: entry.workDate, fontSize = 12.sp, color = Ink.copy(alpha = .5f))
                             }
-                        }
-                        if (selected.size >= 10 && candidates.isNotEmpty()) {
-                            Text("已达 10 条上限，移出正式事项后可继续勾选。", Modifier.fillMaxWidth().padding(top = 6.dp), textAlign = TextAlign.Center, color = Ink.copy(alpha = .55f), fontSize = 12.sp)
                         }
                     }
                 }
@@ -1002,7 +995,10 @@ private data class EntryDraft(val entryId: String?, val content: String)
 @Composable private fun LogsScreen(repo: JournalRepository, availableTags: List<TagDto>, businessTimezone: String?, onOpen: (String) -> Unit) {
     var expandedLogs by rememberSaveable { mutableStateOf(false) }
     var filterOpen by rememberSaveable { mutableStateOf(false) }
-    var historyFilter by rememberSaveable { mutableStateOf("全部日期") }
+    // null = 全部日期；否则为具体业务日期（iso），避免用展示文案做筛选键
+    var historyFilter by rememberSaveable { mutableStateOf<String?>(null) }
+    // 日期选择器着色用：全部有日志的日期
+    var loggedDates by remember { mutableStateOf<Set<String>>(emptySet()) }
     var journals by remember { mutableStateOf<List<JournalDto>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var loadError by remember { mutableStateOf<String?>(null) }
@@ -1049,6 +1045,8 @@ private data class EntryDraft(val entryId: String?, val content: String)
                 val from = "%04d-%02d-%02d".format(start.year, start.month, start.day)
                 val to = "%04d-%02d-%02d".format(t.year, t.month, t.day)
                 journals = repo.journals(from = from, to = to).items.sortedByDescending { it.workDate }
+                // 日期选择器需要全部历史日期（列表只取最近 31 天）
+                runCatching { repo.dates().items.toSet() }.getOrNull()?.let { loggedDates = it }
             } catch (e: SessionExpiredException) {
                 // 401 已由全局回调处理
             } catch (e: Exception) {
@@ -1059,16 +1057,25 @@ private data class EntryDraft(val entryId: String?, val content: String)
         }
     }
     LaunchedEffect(loadRetry) { loadJournals() }
+    // 日历可选 31 天以外的历史日期：列表里没有该日期时按日期单独取一次
+    LaunchedEffect(historyFilter) {
+        val key = historyFilter ?: return@LaunchedEffect
+        if (journals.any { it.workDate == key }) return@LaunchedEffect
+        runCatching { repo.journals(date = key).items }.getOrNull()?.let { extra ->
+            if (extra.isNotEmpty()) journals = (journals + extra).distinctBy { it.id }
+        }
+    }
     val todayJournal = journals.firstOrNull { it.workDate == todayIso() }
     fun dateLabel(iso: String): String = parseIsoDate(iso)?.shortLabel() ?: iso
     val flatEntries = journals.flatMap { j -> j.entries.sortedBy { it.displayOrder }.map { j.workDate to it } }
-    val filteredEntries = if (historyFilter == "全部日期") flatEntries else flatEntries.filter { dateLabel(it.first) == historyFilter }
-    val filterOptions = listOf("全部日期") + journals.map { dateLabel(it.workDate) }.distinct()
+    val filteredEntries = historyFilter?.let { key -> flatEntries.filter { it.first == key } } ?: flatEntries
     fun openEditor(dateKey: String) {
         if (businessTimezone.isNullOrBlank()) { publishError = "请管理员先配置公司业务时区"; return }
         val draft = savedJournalDraft?.takeIf { it.dateKey == dateKey && it.dateKey in threeDays().map(::isoOf) && (it.dateKey == todayIso() || journals.none { j -> j.workDate == it.dateKey }) }
         editorDateKey = draft?.dateKey ?: dateKey
-        if (editorDateKey != todayIso() && journals.any { it.workDate == editorDateKey }) { publishError = "补交日志提交后不能再次编辑"; return }
+        // 编辑窗口按创建时间（allowedActions 由后端按 published_at 判定），而不是 work_date
+        val existing = journals.firstOrNull { it.workDate == editorDateKey }
+        if (existing != null && "EDIT" !in existing.allowedActions) { publishError = "该日志不是当天创建，已不能修改"; return }
         editingJournal = journals.firstOrNull { it.workDate == editorDateKey }
         entryDrafts = draft?.entries?.map { EntryDraft(it.entryId, it.content) }
             ?: editingJournal?.entries?.sortedBy { it.displayOrder }?.map { EntryDraft(it.entryId, it.content) }
@@ -1080,7 +1087,8 @@ private data class EntryDraft(val entryId: String?, val content: String)
     }
     fun switchEditorDate(dateKey: String) {
         if (dateKey == editorDateKey) return
-        if (dateKey != todayIso() && journals.any { it.workDate == dateKey }) { publishError = "该日期已提交，不能再次编辑"; return }
+        val existing = journals.firstOrNull { it.workDate == dateKey }
+        if (existing != null && "EDIT" !in existing.allowedActions) { publishError = "该日期日志不是当天创建，已不能修改"; return }
         editorDateKey = dateKey
         editingJournal = journals.firstOrNull { it.workDate == dateKey }
         entryDrafts = editingJournal?.entries?.sortedBy { it.displayOrder }?.map { EntryDraft(it.entryId, it.content) } ?: listOf(EntryDraft(null, ""))
@@ -1091,7 +1099,7 @@ private data class EntryDraft(val entryId: String?, val content: String)
         if (entryDrafts.any { it.content.isNotBlank() }) confirmExit = true else writing = false
     }
     fun publish() {
-        if (editorDateKey !in threeDays().map(::isoOf) || (editorDateKey != todayIso() && editingJournal != null)) { publishError = "只能编辑今日的日志；昨天和前天仅可补交一次"; return }
+        if (editorDateKey !in threeDays().map(::isoOf) || (editingJournal != null && "EDIT" !in editingJournal!!.allowedActions)) { publishError = "只能补交昨天和前天的日志；日志仅在创建当天可修改"; return }
         val valid = entryDrafts.filter { it.content.isNotBlank() }
         // 从草稿列表移除的既有条目 = 删除（PATCH deleteEntryIds）；不在原条目上追加新条目代替删改
         val deleteIds = editingJournal?.entries
@@ -1182,9 +1190,9 @@ private data class EntryDraft(val entryId: String?, val content: String)
                     // 最近三日：今日可改删，昨天和前天补交后只读
                     val recent = journals.filter { it.workDate in threeDays().map { d -> isoOf(d) } }
                     if (recent.isNotEmpty()) Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("今天可修改或删除 · 昨天和前天仅可补交一次", fontSize = 13.sp, color = Ink.copy(alpha = .55f))
+                        Text("当天创建的日志当天可修改或删除 · 昨天和前天仅可补交一次", fontSize = 13.sp, color = Ink.copy(alpha = .55f))
                         recent.forEach { j ->
-                            val editable = j.workDate == todayIso() && "EDIT" in j.allowedActions
+                            val editable = "EDIT" in j.allowedActions
                             Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = WarmCard), shape = RoundedCornerShape(14.dp)) {
                                 Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                                     Column(Modifier.weight(1f)) {
@@ -1207,13 +1215,9 @@ private data class EntryDraft(val entryId: String?, val content: String)
                 }
                 item {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                        Box {
-                            Button({ filterOpen = true }, contentPadding = PaddingValues(horizontal = 12.dp), colors = ButtonDefaults.buttonColors(containerColor = CreamDeep, contentColor = Ink), shape = RoundedCornerShape(12.dp)) { Text(historyFilter); Icon(Icons.Default.ArrowDropDown, null) }
-                            DropdownMenu(filterOpen, { filterOpen = false }, containerColor = CreamDeep) {
-                                Column(Modifier.heightIn(max = 300.dp).verticalScroll(rememberScrollState())) {
-                                    filterOptions.forEach { option -> DropdownMenuItem({ Text(option) }, { historyFilter = option; filterOpen = false; expandedLogs = false }) }
-                                }
-                            }
+                        Button({ filterOpen = true }, contentPadding = PaddingValues(horizontal = 12.dp), colors = ButtonDefaults.buttonColors(containerColor = CreamDeep, contentColor = Ink), shape = RoundedCornerShape(12.dp)) {
+                            Text(historyFilter?.let { dateLabel(it) } ?: "全部日期")
+                            Icon(Icons.Default.ArrowDropDown, null)
                         }
                     }
                 }
@@ -1241,14 +1245,21 @@ private data class EntryDraft(val entryId: String?, val content: String)
                 if (!loading && journals.isEmpty() && loadError == null) item { Text("最近 30 天暂无日志，点击上方按钮记录今日工作。", color = Ink.copy(alpha = .6f)) }
             }
         }
+        if (filterOpen) JournalDatePickerDialog(
+            loggedDates = loggedDates,
+            today = todayIso(),
+            selected = historyFilter,
+            onSelect = { picked -> historyFilter = picked; filterOpen = false; expandedLogs = false },
+            onDismiss = { filterOpen = false }
+        )
         if (writing) Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .38f)).clickable { closeEditor() })
         if (writing) {
             androidx.activity.compose.BackHandler { closeEditor() }
             val imeVisible = WindowInsets.isImeVisible
-            Card(Modifier.align(Alignment.Center).imePadding().fillMaxWidth(.9f).fillMaxHeight(if (imeVisible) .92f else .8f).border(2.dp, CreamDeep, RoundedCornerShape(24.dp)).clickable { }, shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = WarmCard)) {
+            Card(Modifier.align(Alignment.Center).imePadding().fillMaxWidth(.9f).fillMaxHeight(if (imeVisible) .92f else .9f).border(2.dp, CreamDeep, RoundedCornerShape(24.dp)).clickable { }, shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = WarmCard)) {
                 Column(Modifier.fillMaxSize().padding(20.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) { Text(if (editingJournal != null) "编辑日志" else "记录日志", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f)); IconButton({ closeEditor() }) { Icon(Icons.Default.Close, "关闭") } }
-                    Text(if (editorDateKey == todayIso()) "今天的日志可在公司时区今日内修改或删除" else "补交日志仅可提交一次，提交后不能修改或删除", fontSize = 12.sp, color = Ink.copy(alpha = .6f))
+                    Text("日志在创建当天内可修改或删除（按公司业务时区）", fontSize = 12.sp, color = Ink.copy(alpha = .6f))
                     if (imeVisible) {
                         Text(parseIsoDate(editorDateKey)?.shortLabelWithWeekday() ?: "", Modifier.padding(top = 2.dp, bottom = 8.dp), color = Ink.copy(alpha = .6f), fontSize = 13.sp)
                     } else {
@@ -1267,7 +1278,7 @@ private data class EntryDraft(val entryId: String?, val content: String)
                                 )
                             }
                         }
-                        val editorEditable = editingJournal == null || (editingJournal?.workDate == todayIso() && "EDIT" in editingJournal!!.allowedActions)
+                        val editorEditable = editingJournal == null || "EDIT" in editingJournal!!.allowedActions
                         if (!editorEditable) Text("补交日志已提交，不能再次修改。今日的日志可在今日内修改。", fontSize = 12.sp, color = Ink.copy(alpha = .55f))
                         Text("· 标签（可多选，先选的为主）", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp, bottom = 6.dp))
                         if (tags.isNotEmpty()) FlowRow(Modifier.fillMaxWidth().padding(vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -1277,8 +1288,9 @@ private data class EntryDraft(val entryId: String?, val content: String)
                             }
                         }
                         OutlinedButton({ showTagPicker = true }, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp), border = BorderStroke(1.dp, HairLine), colors = ButtonDefaults.outlinedButtonColors(contentColor = Ink)) { Icon(Icons.Default.Add, "选择标签", Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("选择标签", fontSize = 13.sp) }
-                        Text("· 完成的工作", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp, bottom = 6.dp))
                     }
+                    // 「完成的工作」标题放在键盘分支之外：输入时也保留，避免这一节看起来"消失/显示不全"
+                    Text("· 完成的工作", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = if (imeVisible) 4.dp else 12.dp, bottom = 6.dp))
                     Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         entryDrafts.forEachIndexed { i, draft ->
                             Row(verticalAlignment = Alignment.Top) {
@@ -1286,7 +1298,6 @@ private data class EntryDraft(val entryId: String?, val content: String)
                                 if (editingJournal == null && entryDrafts.size > 1) IconButton({ entryDrafts = entryDrafts.filterIndexed { idx, _ -> idx != i } }, Modifier.size(40.dp)) { Icon(Icons.Default.Close, "删除此条", Modifier.size(16.dp)) }
                             }
                         }
-                        if (editingJournal == null) TextButton({ entryDrafts = entryDrafts + EntryDraft(null, "") }, enabled = !publishing) { Icon(Icons.Default.Add, null, Modifier.size(14.dp)); Spacer(Modifier.width(4.dp)); Text("添加一条", color = WarmOrange, fontWeight = FontWeight.Bold) }
                     }
                     publishError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)) }
                     Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -1294,7 +1305,7 @@ private data class EntryDraft(val entryId: String?, val content: String)
                         Button(
                             { publish() },
                             Modifier.weight(1f),
-                            enabled = !publishing && (entryDrafts.any { it.content.isNotBlank() } || (editingJournal?.entries?.any { e -> entryDrafts.none { it.entryId == e.entryId } } == true)) && (editingJournal == null || (editingJournal?.workDate == todayIso() && "EDIT" in editingJournal!!.allowedActions)),
+                            enabled = !publishing && (entryDrafts.any { it.content.isNotBlank() } || (editingJournal?.entries?.any { e -> entryDrafts.none { it.entryId == e.entryId } } == true)) && (editingJournal == null || "EDIT" in editingJournal!!.allowedActions),
                             colors = ButtonDefaults.buttonColors(containerColor = ThemeButton, contentColor = OnThemeButton),
                             shape = RoundedCornerShape(14.dp)
                         ) { Text(if (publishing) "发布中…" else "发布") }
