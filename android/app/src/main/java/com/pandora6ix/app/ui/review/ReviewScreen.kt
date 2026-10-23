@@ -15,6 +15,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -24,6 +27,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -36,6 +40,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -51,9 +56,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -205,6 +213,13 @@ private fun ReviewCard(review: TaskReviewDto, businessTimezone: String?, onOpen:
                 Text("${kindLabel(snapshot.kind)} · 请求人 ${personName(review.submittedByName, review.submittedByUserId)}", fontSize = 12.sp, color = Ink.copy(alpha = .6f))
                 review.submittedAt?.let { Text(timeLabel(it, businessTimezone), fontSize = 12.sp, color = Ink.copy(alpha = .6f)) }
             }
+            // 已有结果时直接展示审批人与结果时间，不用进详情才知道
+            if (review.decision != "PENDING") {
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("审批人 ${personName(review.reviewerName, review.reviewerUserId)}", fontSize = 12.sp, color = Ink.copy(alpha = .6f))
+                    review.decidedAt?.let { Text(timeLabel(it, businessTimezone), fontSize = 12.sp, color = Ink.copy(alpha = .6f)) }
+                }
+            }
             if (review.decision != "PENDING" && review.decisionNote?.isNotBlank() == true) {
                 Text("批注：${review.decisionNote}", fontSize = 12.sp, color = Ink.copy(alpha = .6f), maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
@@ -218,6 +233,8 @@ private fun ReviewCard(review: TaskReviewDto, businessTimezone: String?, onOpen:
 private fun ReviewDetail(review: TaskReviewDto, taskRepo: TaskRepository, availableTags: List<TagDto>, businessTimezone: String?, userRepo: UserRepository?, onBack: () -> Unit, onChanged: () -> Unit) {
     var current by remember { mutableStateOf(review) }
     var comment by rememberSaveable { mutableStateOf("") }
+    // 批注输入条展开状态：点击批注入口后在键盘上方显示输入条（微信样式）
+    var commentOpen by rememberSaveable { mutableStateOf(false) }
     var submitting by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var idempotencyKey by remember { mutableStateOf(UUID.randomUUID().toString()) }
@@ -264,7 +281,7 @@ private fun ReviewDetail(review: TaskReviewDto, taskRepo: TaskRepository, availa
     // 背景与设置页一致（主题 dashboard 色）
     Column(Modifier.fillMaxSize().background(WarmDashboard)) {
         TopAppBar(
-            title = { Column { Text("审批详情", fontWeight = FontWeight.Bold); Text("第 ${current.attemptNo} 次提交 · ${timeLabel(current.submittedAt, businessTimezone)}", fontSize = 12.sp, color = Ink.copy(alpha = .6f)) } },
+            title = { Text("审批详情", fontWeight = FontWeight.Bold) },
             navigationIcon = { IconButton(onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") } },
             colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
         )
@@ -279,7 +296,6 @@ private fun ReviewDetail(review: TaskReviewDto, taskRepo: TaskRepository, availa
                         DecisionBadge(current.decision)
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        MetaChip(kindLabel(snapshot.kind))
                         val level = (snapshot.priorityLevel ?: 3).coerceIn(1, 5)
                         val (starColor, starText) = priorityMeta(level)
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -311,7 +327,7 @@ private fun ReviewDetail(review: TaskReviewDto, taskRepo: TaskRepository, availa
                         current.submittedByJobTitle,
                         current.submittedByUserId,
                         userRepo,
-                        "第 ${current.attemptNo} 次提交 · ${timeLabel(current.submittedAt, businessTimezone)}"
+                        "提交时间：${timeLabel(current.submittedAt, businessTimezone)}"
                     )
                     PersonRow(
                         "审批人",
@@ -322,7 +338,7 @@ private fun ReviewDetail(review: TaskReviewDto, taskRepo: TaskRepository, availa
                         null
                     )
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("执行人", fontSize = 13.sp, color = Ink.copy(alpha = .6f))
+                        Text("执行人", fontSize = 13.sp, color = Ink)
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             executors.forEach { PersonChip(it, userRepo) }
                         }
@@ -365,14 +381,20 @@ private fun ReviewDetail(review: TaskReviewDto, taskRepo: TaskRepository, availa
             }
             if (canDecide) item {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OutlinedTextField(
-                        value = comment,
-                        onValueChange = { comment = it },
-                        Modifier.fillMaxWidth(),
-                        label = { Text("批注（驳回时建议填写）") },
-                        minLines = 2,
-                        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Ink.copy(alpha = .7f), unfocusedBorderColor = Ink.copy(alpha = .3f), focusedLabelColor = Ink, cursorColor = Ink)
-                    )
+                    // 批注入口：点击后在屏幕底部、键盘上方展开输入条（微信打字框样式）
+                    Row(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(CreamDeep).clickable { commentOpen = true }.padding(horizontal = 12.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            if (comment.isBlank()) "写批注（驳回时建议填写）" else "批注：$comment",
+                            Modifier.weight(1f), fontSize = 13.sp,
+                            color = if (comment.isBlank()) Ink.copy(alpha = .5f) else Ink,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Icon(Icons.Default.Edit, "编辑批注", Modifier.size(16.dp), tint = Ink.copy(alpha = .5f))
+                    }
                     if (error != null) Text(error!!, color = com.pandora6ix.app.ui.theme.CoralDark, fontSize = 13.sp)
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Button(
@@ -388,6 +410,27 @@ private fun ReviewDetail(review: TaskReviewDto, taskRepo: TaskRepository, availa
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = com.pandora6ix.app.ui.theme.CoralDark)
                         ) { Text("驳回") }
                     }
+                }
+            }
+        }
+        // 底部批注输入条：固定在键盘上方（adjustResize 已避让），最多 5 行、超出内部滚动，可完整查看已输入内容
+        if (canDecide && commentOpen) {
+            val keyboard = LocalSoftwareKeyboardController.current
+            val commentFocus = remember { FocusRequester() }
+            LaunchedEffect(commentOpen) { if (commentOpen) commentFocus.requestFocus() }
+            Surface(color = WarmCard, shadowElevation = 8.dp) {
+                // targetSdk 35 强制 edge-to-edge，adjustResize 不生效：必须用 imePadding 把输入条顶到键盘上方
+                Row(Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = comment,
+                        onValueChange = { comment = it },
+                        Modifier.weight(1f).focusRequester(commentFocus).heightIn(min = 44.dp, max = 168.dp),
+                        placeholder = { Text("输入批注（驳回时建议填写）") },
+                        minLines = 1,
+                        maxLines = 5,
+                        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Ink.copy(alpha = .7f), unfocusedBorderColor = Ink.copy(alpha = .3f), focusedLabelColor = Ink, cursorColor = Ink)
+                    )
+                    TextButton({ keyboard?.hide(); commentOpen = false }, Modifier.padding(bottom = 6.dp)) { Text("完成", color = Ink, fontWeight = FontWeight.Bold) }
                 }
             }
         }
@@ -457,43 +500,44 @@ private fun RemoteAvatar(userId: String, name: String, size: Dp, fontSize: TextU
     }
 }
 
-/** 人员行：头像 + 角色 + 姓名 + 职位 + 补充信息 */
+/** 人员行：角色标签（左对齐、与“执行人”同线）+ 头像 + 姓名 + 职位胶囊 + 补充信息 */
 @Composable
 private fun PersonRow(label: String, name: String, jobTitle: String?, userId: String, userRepo: UserRepository?, sub: String?) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        RemoteAvatar(userId, name, 38.dp, 16.sp, userRepo)
-        Column(Modifier.weight(1f)) {
-            Text(label, fontSize = 12.sp, color = Ink.copy(alpha = .55f))
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(name, fontSize = 14.sp, fontWeight = FontWeight.Medium, lineHeight = 19.sp)
-                jobTitle?.takeIf { it.isNotBlank() }?.let {
-                    Text(
-                        it,
-                        Modifier.clip(RoundedCornerShape(8.dp)).background(CreamDeep).padding(horizontal = 6.dp, vertical = 2.dp),
-                        fontSize = 11.sp,
-                        color = Ink.copy(alpha = .65f)
-                    )
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(label, fontSize = 13.sp, color = Ink)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            RemoteAvatar(userId, name, 38.dp, 16.sp, userRepo)
+            Column(Modifier.weight(1f)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(name, fontSize = 14.sp, fontWeight = FontWeight.Medium, lineHeight = 19.sp)
+                    jobTitle?.takeIf { it.isNotBlank() }?.let {
+                        Text(
+                            it,
+                            Modifier.clip(RoundedCornerShape(8.dp)).background(CreamDeep).padding(horizontal = 6.dp, vertical = 2.dp),
+                            fontSize = 11.sp,
+                            color = Ink.copy(alpha = .65f)
+                        )
+                    }
                 }
+                if (!sub.isNullOrBlank()) Text(sub, fontSize = 12.sp, color = Ink.copy(alpha = .5f))
             }
-            if (!sub.isNullOrBlank()) Text(sub, fontSize = 12.sp, color = Ink.copy(alpha = .5f))
         }
     }
 }
 
-/** 执行人胶囊：头像 + 姓名 + 职位，可多行排列 */
+/** 执行人：与请求人/审批人同行内格式一致（38dp 头像、14sp 姓名），身份职位用黄色小标签，无背景胶囊 */
 @Composable
 private fun PersonChip(actor: ReviewActorDto, userRepo: UserRepository?) {
     val name = personName(actor.displayName, actor.id)
     Row(
-        Modifier.clip(RoundedCornerShape(14.dp)).background(CreamDeep).padding(horizontal = 10.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        RemoteAvatar(actor.id, name, 26.dp, 12.sp, userRepo)
-        Column {
-            Text(name, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+        RemoteAvatar(actor.id, name, 38.dp, 16.sp, userRepo)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(name, fontSize = 14.sp, fontWeight = FontWeight.Medium, lineHeight = 19.sp)
             actor.jobTitle?.takeIf { it.isNotBlank() }?.let {
-                Text(it, fontSize = 11.sp, color = Ink.copy(alpha = .55f))
+                Text(it, Modifier.clip(RoundedCornerShape(8.dp)).background(CreamDeep).padding(horizontal = 6.dp, vertical = 2.dp), fontSize = 11.sp, color = Ink.copy(alpha = .65f))
             }
         }
     }
