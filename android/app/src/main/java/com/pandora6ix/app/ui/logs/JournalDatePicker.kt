@@ -10,14 +10,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -46,7 +43,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.pandora6ix.app.data.parseIsoDate
 import com.pandora6ix.app.mock.DemoDate
-import com.pandora6ix.app.ui.theme.CreamDeep
+import com.pandora6ix.app.ui.calendar.WheelColumn
 import com.pandora6ix.app.ui.theme.Ink
 import com.pandora6ix.app.ui.theme.WarmCard
 import com.pandora6ix.app.ui.theme.WarmDashboard
@@ -115,11 +112,13 @@ fun JournalDatePickerDialog(
         derivedStateOf { months[listState.firstVisibleItemIndex.coerceIn(0, months.lastIndex)] }
     }
     fun jumpTo(year: Int, month: Int) {
+        // 该年没有所选月份（如当年还没到 12 月）时退到该年第一个月
         val index = months.indexOfFirst { it.year == year && it.month == month }
-        if (index >= 0) {
-            panelOpen = false
-            scope.launch { listState.animateScrollToItem(index) }
-        }
+            .takeIf { it >= 0 }
+            ?: months.indexOfFirst { it.year == year }.takeIf { it >= 0 }
+            ?: return
+        panelOpen = false
+        scope.launch { listState.animateScrollToItem(index) }
     }
 
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
@@ -143,44 +142,15 @@ fun JournalDatePickerDialog(
                     IconButton(onDismiss) { Icon(Icons.Default.Close, "关闭") }
                 }
                 if (panelOpen) {
-                    Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
-                        Row(
-                            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            (earliest.year..todayDate.year).forEach { year ->
-                                val on = year == focused.year
-                                Text(
-                                    "${year}年",
-                                    Modifier.clip(RoundedCornerShape(10.dp))
-                                        .background(if (on) WarmOrange else CreamDeep)
-                                        .clickable { jumpTo(year, focused.month) }
-                                        .padding(horizontal = 10.dp, vertical = 6.dp),
-                                    fontSize = 13.sp,
-                                    fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
-                                    color = Ink
-                                )
-                            }
-                        }
-                        Spacer(Modifier.height(6.dp))
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            (1..12).forEach { month ->
-                                val on = month == focused.month
-                                val enabled = DemoDate(focused.year, month, 1) <= DemoDate(todayDate.year, todayDate.month, 1)
-                                Text(
-                                    "$month 月",
-                                    Modifier.weight(1f).clip(RoundedCornerShape(8.dp))
-                                        .background(if (on) WarmOrange else CreamDeep)
-                                        .clickable(enabled = enabled) { jumpTo(focused.year, month) }
-                                        .padding(vertical = 6.dp),
-                                    fontSize = 11.sp,
-                                    textAlign = TextAlign.Center,
-                                    color = if (enabled) Ink else EmptyDay,
-                                    fontWeight = if (on) FontWeight.Bold else FontWeight.Normal
-                                )
-                            }
-                        }
-                    }
+                    // 与视图页左上角一致的滚轮选择（仅年、月两列）
+                    YearMonthWheelPanel(
+                        yearFrom = earliest.year,
+                        yearTo = todayDate.year,
+                        year = focused.year,
+                        month = focused.month,
+                        onCancel = { panelOpen = false },
+                        onConfirm = { y, m -> jumpTo(y, m) }
+                    )
                 }
                 Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp)) {
                     WEEK_HEADER.split(" ").forEach { w ->
@@ -202,6 +172,49 @@ fun JournalDatePickerDialog(
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * 年份 + 月份两列滚轮（复用视图页 `WheelColumn`）：上下滑动即选中，确定后跳转。
+ * 年份范围限定为有日志的最早年份到今年，避免滑到没有任何日志的年份。
+ */
+@Composable
+private fun YearMonthWheelPanel(
+    yearFrom: Int,
+    yearTo: Int,
+    year: Int,
+    month: Int,
+    onCancel: () -> Unit,
+    onConfirm: (Int, Int) -> Unit
+) {
+    val years = remember(yearFrom, yearTo) { (yearFrom..yearTo).toList() }
+    var pickedYear by remember(year) { mutableStateOf(year.coerceIn(yearFrom, yearTo)) }
+    var pickedMonth by remember(month) { mutableStateOf(month.coerceIn(1, 12)) }
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)
+            .clip(RoundedCornerShape(16.dp)).background(WarmCard).padding(vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1.2f), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("年", fontSize = 13.sp, color = EmptyDay)
+                WheelColumn(
+                    years.map { it.toString() },
+                    (pickedYear - years.first()).coerceIn(0, years.lastIndex),
+                    { pickedYear = years[it] }
+                )
+            }
+            Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("月", fontSize = 13.sp, color = EmptyDay)
+                WheelColumn((1..12).map { "%02d".format(it) }, pickedMonth - 1, { pickedMonth = it + 1 })
+            }
+        }
+        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.End) {
+            TextButton(onCancel) { Text("取消", color = Ink.copy(alpha = .6f)) }
+            Spacer(Modifier.width(8.dp))
+            TextButton({ onConfirm(pickedYear, pickedMonth) }) { Text("确定", color = Ink, fontWeight = FontWeight.Bold) }
         }
     }
 }
