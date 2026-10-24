@@ -272,6 +272,8 @@ public class TaskReviewService {
                         a.enterpriseId(),
                         task.get("id"),
                         review.get("task_version")));
+        notifications.reviewDecided(a.enterpriseId(), id, str(task, "id"),
+                str(review, "submitted_by_user_id"), approve ? "APPROVED" : "REJECTED");
         if (approve) {
             db.update(
                     "UPDATE task_assignment SET"

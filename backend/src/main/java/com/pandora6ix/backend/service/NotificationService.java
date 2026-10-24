@@ -42,6 +42,7 @@ public class NotificationService {
     }
 
     /** 去重写入一条提醒；同一用户同一 dedupeKey 只保留第一条 */
+    @Transactional
     public void emit(
             String enterpriseId,
             String userId,
@@ -52,6 +53,21 @@ public class NotificationService {
             String body,
             String dedupeKey,
             Instant dueAt) {
+        emit(enterpriseId, userId, kind, taskId, assignmentId, title, body, dedupeKey, dueAt, kind);
+    }
+
+    @Transactional
+    private void emit(
+            String enterpriseId,
+            String userId,
+            String kind,
+            String taskId,
+            String assignmentId,
+            String title,
+            String body,
+            String dedupeKey,
+            Instant dueAt,
+            String eventType) {
         if (userId == null || enterpriseId == null) return;
         var existing =
                 db.optional(
@@ -61,15 +77,17 @@ public class NotificationService {
                         userId,
                         dedupeKey);
         if (existing.isPresent()) return;
+        String notificationId = id();
         try {
             db.update(
                 "INSERT INTO"
-                    + " notification(id,enterprise_id,user_id,kind,task_id,assignment_id,title,body,dedupe_key,due_at)"
-                    + " VALUES(?,?,?,?,?,?,?,?,?,?)",
-                id(),
+                    + " notification(id,enterprise_id,user_id,kind,event_type,task_id,assignment_id,title,body,dedupe_key,due_at)"
+                    + " VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                notificationId,
                 enterpriseId,
                 userId,
                 kind,
+                eventType,
                 taskId,
                 assignmentId,
                 title,
@@ -79,7 +97,26 @@ public class NotificationService {
         } catch (DuplicateKeyException ex) {
             // A competing scan may insert after the existence check. Only ignore that event.
             if (count(enterpriseId, dedupeKey, userId) == 0) throw ex;
+            return;
         }
+        for (var device : db.rows("SELECT id FROM push_device WHERE enterprise_id=? AND user_id=? AND active=TRUE",
+                enterpriseId, userId))
+            db.update("INSERT INTO notification_push_delivery(id,enterprise_id,notification_id,push_device_id) VALUES(?,?,?,?)",
+                    id(), enterpriseId, notificationId, str(device, "id"));
+    }
+
+    public void reviewRequested(String enterpriseId, String reviewId, String taskId, String submitterId,
+                                String reviewerId, String taskTitle) {
+        emit(enterpriseId, reviewerId, NEW_TASK, taskId, null, "审批申请",
+                "有一项任务等待你审批。打开应用查看详情。",
+                reviewId + "|REVIEW_REQUEST|" + reviewerId, null, "REVIEW_REQUEST");
+    }
+
+    public void reviewDecided(String enterpriseId, String reviewId, String taskId, String submitterId,
+                              String decision) {
+        String text = "APPROVED".equals(decision) ? "任务审批已通过。打开应用查看详情。" : "任务审批未通过。打开应用查看详情。";
+        emit(enterpriseId, submitterId, STATUS, taskId, null, "审批结果", text,
+                reviewId + "|REVIEW_RESULT|" + submitterId, null, "REVIEW_RESULT");
     }
 
     /** 审批批准并激活执行关系：为每位被激活的接收人生成新任务提醒 */

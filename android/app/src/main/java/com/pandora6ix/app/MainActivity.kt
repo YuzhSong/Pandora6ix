@@ -10,6 +10,8 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.widget.Toast
+import org.json.JSONObject
+import cn.jpush.android.api.JPushInterface
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -73,6 +75,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.receiveAsFlow
 import java.io.File
 import java.util.UUID
 
@@ -128,12 +133,32 @@ private fun decodeUriThumbnail(context: Context, uri: Uri, target: Int = 192) = 
 }.getOrNull()
 
 class MainActivity : ComponentActivity() {
+    private val notificationOpenEvents = Channel<String>(Channel.BUFFERED)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (BuildConfig.JPUSH_APP_KEY.isNotBlank()) {
+            JPushInterface.setDebugMode(BuildConfig.DEBUG)
+            JPushInterface.init(this)
+        }
+        capturePushIntent(intent)
         val session = SessionStore(this)
         val api = ApiClient(session)
         val auth = AuthRepository(api, session)
-        setContent { PandoraApp(session, api, auth) }
+        setContent { PandoraApp(session, api, auth, notificationOpenEvents.receiveAsFlow()) }
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        capturePushIntent(intent)
+    }
+
+    private fun capturePushIntent(intent: android.content.Intent?) {
+        val direct = intent?.getStringExtra("notificationId")
+        val encoded = intent?.getStringExtra("cn.jpush.android.EXTRA")
+        val notificationId = direct ?: runCatching { JSONObject(encoded ?: "{}").optString("notificationId") }.getOrNull()
+        if (!notificationId.isNullOrBlank()) notificationOpenEvents.trySend(notificationId)
     }
 }
 
@@ -197,7 +222,7 @@ private fun cardBorderIfBlended(): BorderStroke? {
 }
 
 @Composable
-fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
+fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository, notificationOpenEvents: Flow<String>) {
     PandoraTheme {
         var route by rememberSaveable { mutableStateOf(Route.HOME.name) }
         var modeName by rememberSaveable { mutableStateOf(CalendarMode.WEEK.name) }
@@ -239,16 +264,27 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
         // 通知提醒：偏好本地持久化（按账号隔离），提醒以页内弹窗为主、系统通知为辅
         val appContext = LocalContext.current
         val notifyPrefs = remember(currentUser?.id) { NotificationPrefs(appContext, currentUser?.id) }
+        val pushDeviceRepo = remember { PushDeviceRepository(appContext, api) }
+        val notificationRepo = remember { NotificationRepository(api) }
         var notifyMaster by remember(currentUser?.id) { mutableStateOf(notifyPrefs.master) }
         var notifyNewTask by remember(currentUser?.id) { mutableStateOf(notifyPrefs.newTask) }
         var notifyDeadline by remember(currentUser?.id) { mutableStateOf(notifyPrefs.deadline) }
         var notifyStatus by remember(currentUser?.id) { mutableStateOf(notifyPrefs.statusChange) }
         var notifyLeadMinutes by remember(currentUser?.id) { mutableIntStateOf(notifyPrefs.leadMinutes) }
+        var notificationPermissionRevision by rememberSaveable { mutableIntStateOf(0) }
         val reminderQueue = remember(currentUser?.id, notifyMaster) { mutableStateListOf<ReminderEvent>() }
         // Android 13+ 需运行时申请通知权限；开启提醒时按需询问，被拒也不影响页内弹窗
-        val notifyPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+        val notifyPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (granted) notificationPermissionRevision++ else {
+                notifyMaster = false
+                notifyPrefs.master = false
+            }
+        }
         fun requestNotifyPermission() {
-            if (NotificationHelper.canPostNotifications(appContext)) return
+            if (NotificationHelper.canPostNotifications(appContext)) {
+                notificationPermissionRevision++
+                return
+            }
             if (NotificationHelper.needsRuntimePermission()) notifyPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
 
@@ -258,6 +294,35 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
             authChecked = true
         }
         // 任意带 token 请求返回 401：清理会话并回登录（切换到主线程更新状态）
+        var openedNotificationId by rememberSaveable { mutableStateOf<String?>(null) }
+        var notificationOpenSequence by rememberSaveable { mutableIntStateOf(0) }
+        LaunchedEffect(notificationOpenEvents) {
+            notificationOpenEvents.collect { id ->
+                openedNotificationId = id
+                notificationOpenSequence++
+                route = Route.HOME.name
+                detail = null
+                homeDetail = null
+            }
+        }
+        LaunchedEffect(currentUser?.id, notifyMaster, notificationPermissionRevision) {
+            if (currentUser == null) return@LaunchedEffect
+            if (!notifyMaster || !NotificationHelper.canPostNotifications(appContext)) {
+                runCatching { pushDeviceRepo.deactivate() }
+                return@LaunchedEffect
+            }
+            if (BuildConfig.JPUSH_APP_KEY.isBlank()) return@LaunchedEffect
+            repeat(30) {
+                val registrationId = runCatching {
+                    withContext(Dispatchers.IO) { JPushInterface.getRegistrationID(appContext) }
+                }.getOrNull()
+                if (!registrationId.isNullOrBlank()) {
+                    runCatching { pushDeviceRepo.register(registrationId) }
+                    return@LaunchedEffect
+                }
+                kotlinx.coroutines.delay(2_000)
+            }
+        }
         DisposableEffect(api) {
             val main = Handler(Looper.getMainLooper())
             api.onSessionExpired = { main.post { currentUser = null; showSettings = false } }
@@ -437,7 +502,7 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
                     }
                     else -> AnimatedContent(current, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "page") { target ->
                         when (target) {
-                            Route.HOME -> HomeScreen(dashboardRepo, selectionRepo, onOpenHome = { homeDetail = it }, onOpenSettings = { showSettings = true })
+                            Route.HOME -> HomeScreen(dashboardRepo, selectionRepo, notificationRepo, openedNotificationId, notificationOpenSequence, onOpenHome = { homeDetail = it }, onOpenSettings = { showSettings = true }, onOpenReviews = { showReviews = true })
                             Route.VIEW -> CalendarScreen(CalendarMode.valueOf(modeName), date, taskItems, canCreatePersonal, canCreateDelegated, serverTags, taskRepo, { modeName = it.name }, { dateKey = "${it.year}-${it.month}-${it.day}" }, { calRetry++ }, { detail = it.id }, taskScope = taskScope, onTaskScopeChange = { taskScope = it }, businessTimezone = currentUser?.businessTimezone, loading = calLoading, error = calError, onRetry = { calRetry++ })
                             Route.LOGS -> LogsScreen(journalRepo, serverTags.toList(), currentUser?.businessTimezone) { detail = it }
                             Route.AI -> AiMapScreen()
@@ -509,9 +574,12 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
     }
 }
 
-@Composable private fun HomeScreen(dashboardRepo: DashboardRepository, selectionRepo: SelectionRepository, onOpenHome: (HomeDetail) -> Unit, onOpenSettings: () -> Unit) {
+@Composable private fun HomeScreen(dashboardRepo: DashboardRepository, selectionRepo: SelectionRepository, notificationRepo: NotificationRepository, openedNotificationId: String?, notificationOpenSequence: Int, onOpenHome: (HomeDetail) -> Unit, onOpenSettings: () -> Unit, onOpenReviews: () -> Unit) {
     var expandedPanel by rememberSaveable { mutableStateOf<String?>(null) }
     var notifications by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(notificationOpenSequence) {
+        if (notificationOpenSequence > 0) notifications = true
+    }
     var editingPersonal by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     var dashboard by remember { mutableStateOf<DashboardDto?>(null) }
@@ -691,7 +759,7 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
       }
       if (notifications) {
           Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .42f)).clickable { notifications = false; expandedPanel = null })
-          NotificationDrawer(onClose = { notifications = false })
+          NotificationDrawer(notificationRepo, openedNotificationId, onClose = { notifications = false }, onOpenReviews = { notifications = false; onOpenReviews() })
       }
     }
 }
@@ -1371,7 +1439,62 @@ private data class EntryDraft(val entryId: String?, val content: String)
     }
 }
 
-@Composable private fun BoxScope.NotificationDrawer(onClose: () -> Unit) {
+@Composable private fun BoxScope.NotificationDrawer(repository: NotificationRepository, requestedId: String?, onClose: () -> Unit, onOpenReviews: () -> Unit) {
+    var records by remember { mutableStateOf<List<NotificationDto>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+    var loadError by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(repository) {
+        try {
+            records = repository.list()
+        } catch (_: Exception) {
+            loadError = "消息加载失败，请稍后重试"
+        } finally {
+            loading = false
+        }
+    }
+    LaunchedEffect(requestedId, records) {
+        val target = records.firstOrNull { it.id == requestedId && it.readAt == null } ?: return@LaunchedEffect
+        if (runCatching { repository.markRead(target.id) }.isSuccess)
+            records = records.map { if (it.id == target.id) it.copy(readAt = "read") else it }
+    }
+    Card(Modifier.align(Alignment.CenterEnd).fillMaxWidth(.75f).fillMaxHeight(), shape = RoundedCornerShape(0.dp), colors = CardDefaults.cardColors(containerColor = WarmCard), elevation = CardDefaults.cardElevation(14.dp)) {
+        Column(Modifier.fillMaxSize().padding(18.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("消息", fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                IconButton(onClose) { Icon(Icons.Default.Close, "关闭") }
+            }
+            when {
+                loading -> Text("正在加载消息…", color = Ink.copy(alpha = .6f), modifier = Modifier.padding(vertical = 16.dp))
+                loadError != null -> Text(loadError!!, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(vertical = 16.dp))
+                records.isEmpty() -> Text("暂无消息", color = Ink.copy(alpha = .6f), modifier = Modifier.padding(vertical = 16.dp))
+                else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    items(records, key = { it.id }) { item ->
+                        Card(colors = CardDefaults.cardColors(containerColor = if (item.id == requestedId) CreamDeep else Cream), shape = RoundedCornerShape(8.dp)) {
+                            Column(Modifier.fillMaxWidth().clickable {
+                                if (item.readAt == null) scope.launch {
+                                    if (runCatching { repository.markRead(item.id) }.isSuccess)
+                                        records = records.map { if (it.id == item.id) it.copy(readAt = "read") else it }
+                                }
+                            }.padding(12.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(item.title, modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
+                                    if (item.readAt == null) Text("未读", color = WarmOrange, fontSize = 12.sp)
+                                }
+                                Spacer(Modifier.height(4.dp))
+                                Text(item.body, color = Ink.copy(alpha = .72f), fontSize = 13.sp)
+                                Text(item.createdAt.replace('T', ' ').take(16), color = Ink.copy(alpha = .48f), fontSize = 11.sp, modifier = Modifier.padding(top = 6.dp))
+                                if (item.title == "审批申请") TextButton(onClick = onOpenReviews, contentPadding = PaddingValues(0.dp)) { Text("查看待审批", color = WarmOrange) }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable private fun BoxScope.PlaceholderNotificationDrawer(onClose: () -> Unit) {
     Card(Modifier.align(Alignment.CenterEnd).fillMaxWidth(.75f).fillMaxHeight(), shape = RoundedCornerShape(0.dp), colors = CardDefaults.cardColors(containerColor = WarmCard), elevation = CardDefaults.cardElevation(14.dp)) {
         Column(Modifier.fillMaxSize().padding(18.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) { Text("消息", fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f)); IconButton(onClose) { Icon(Icons.Default.Close, "关闭") } }

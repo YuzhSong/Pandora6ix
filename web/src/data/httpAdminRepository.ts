@@ -132,7 +132,7 @@ export function createHttpAdminRepository(client: ReturnType<typeof createApiCli
       return page.items.map(value => {
         const row = object(value), kind = text(row, 'kind')
         if (kind !== 'DEPARTURE' && kind !== 'JOB_CHANGE') throw invalid()
-        return { id: text(row, 'id'), kind, actorName: text(row, 'actorName'), recordedAt: text(row, 'recordedAt'), effectiveDate: text(row, 'effectiveDate'), beforeValues: object(row.beforeValues), afterValues: object(row.afterValues) }
+        return { id: text(row, 'id'), kind, actorName: nullable(row, 'actorName'), actorLoginName: nullable(row, 'actorLoginName'), recordedAt: text(row, 'recordedAt'), effectiveDate: text(row, 'effectiveDate'), beforeValues: object(row.beforeValues), afterValues: object(row.afterValues) }
       })
     },
     async credentialHandoffs(userId) {

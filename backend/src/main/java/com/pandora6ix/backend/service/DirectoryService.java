@@ -273,6 +273,16 @@ public class DirectoryService {
                                         role));
     }
 
+    private Map<String,Object> operationSnapshot(IdentityService.Actor a, Map<String,Object> row) {
+        String orgId=str(row,"org_unit_id"), supervisorId=str(row,"supervisor_user_id");
+        String orgName=orgId==null?null:str(db.entity("org_unit",a.enterpriseId(),orgId),"name");
+        String supervisorName=supervisorId==null?null:str(db.entity("app_user",a.enterpriseId(),supervisorId),"display_name");
+        return fields("version",number(row,"version"),"displayName",str(row,"display_name"),"loginName",str(row,"login_name"),
+                "jobTitle",row.get("job_title"),"orgUnitId",orgId,"orgUnitName",orgName,
+                "supervisorUserId",supervisorId,"supervisorName",supervisorName,"status",str(row,"status"),
+                "roles",identity.actor(str(row,"id"),a.enterpriseId(),orgId,null).roles());
+    }
+
     @Transactional
     public Map<String, Object> createUser(IdentityService.Actor a, Contracts.UserCreate c) {
         a.admin();
@@ -295,7 +305,7 @@ public class DirectoryService {
         roles(a, id, c.roles());
         if (!c.roles().contains("ADMIN")) handoffs.capture(a.enterpriseId(), id, c.password(), str(db.entity("app_user", a.enterpriseId(), id), "password_hash"));
         var result = user(a, id);
-        operationLogs.record(a,id,"USER","ACCOUNT","CREATE","WEB","创建账号",null,fields("displayName",result.get("displayName"),"loginName",result.get("loginName"),"jobTitle",result.get("jobTitle"),"roles",result.get("roles"),"status",result.get("status")));
+        operationLogs.record(a,id,"USER","ACCOUNT","CREATE","WEB","创建账号",null,operationSnapshot(a,db.entity("app_user",a.enterpriseId(),id)));
         return result;
     }
 
@@ -307,7 +317,7 @@ public class DirectoryService {
         var old = db.entity("app_user", a.enterpriseId(), id);
         if ("DEPARTED".equals(old.get("employment_status")))
             throw new BusinessException(409,"EMPLOYEE_DEPARTED","Employee has departed.");
-        var before = fields("displayName",old.get("display_name"),"loginName",old.get("login_name"),"jobTitle",old.get("job_title"),"orgUnitId",old.get("org_unit_id"),"supervisorUserId",old.get("supervisor_user_id"),"status",old.get("status"),"roles",identity.actor(id,a.enterpriseId(),str(old,"org_unit_id"),null).roles());
+        var before = operationSnapshot(a,old);
         if (number(old, "version") != c.expectedVersion()) checkVersion(0);
         if (c.loginName() != null) {
             if (c.loginName().isBlank() || !c.loginName().equals(c.loginName().strip()))
@@ -362,7 +372,7 @@ public class DirectoryService {
                     a.enterpriseId(),
                     id);
         var result = user(a, id);
-        operationLogs.record(a,id,"USER","ACCOUNT","UPDATE","WEB","修改账号",before,fields("displayName",result.get("displayName"),"loginName",result.get("loginName"),"jobTitle",result.get("jobTitle"),"orgUnitId",result.get("orgUnitId"),"supervisorUserId",result.get("supervisorUserId"),"status",result.get("status"),"roles",result.get("roles")));
+        operationLogs.record(a,id,"USER","ACCOUNT","UPDATE","WEB","修改账号",before,operationSnapshot(a,db.entity("app_user",a.enterpriseId(),id)));
         return result;
     }
 
@@ -376,13 +386,14 @@ public class DirectoryService {
         if (identity.actor(id, a.enterpriseId(), str(old, "org_unit_id"), null).has("ADMIN"))
             throw new BusinessException(403, "ADMIN_PASSWORD_RESET_FORBIDDEN", "Use the administrator's own password-change flow.");
         if (number(old, "version") != c.expectedVersion()) checkVersion(0);
+        var before=operationSnapshot(a,old);
         String hash = identity.encode(c.newPassword());
         checkVersion(db.update("UPDATE app_user SET password_hash=?,version=version+1 WHERE enterprise_id=? AND id=? AND version=?",
                 hash, a.enterpriseId(), id, c.expectedVersion()));
         db.update("UPDATE auth_session SET revoked=TRUE WHERE enterprise_id=? AND user_id=?", a.enterpriseId(), id);
         handoffs.capture(a.enterpriseId(), id, c.newPassword(), hash);
         var result = user(a, id);
-        operationLogs.record(a,id,"USER","ACCOUNT","PASSWORD_RESET","WEB","重置账号密码",null,null);
+        operationLogs.record(a,id,"USER","ACCOUNT","PASSWORD_RESET","WEB","重置账号密码",before,operationSnapshot(a,db.entity("app_user",a.enterpriseId(),id)));
         return result;
     }
 

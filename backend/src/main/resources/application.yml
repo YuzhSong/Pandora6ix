@@ -13,3 +13,7 @@ management:
     web:
       exposure:
         include: health
+pandora:
+  jpush:
+    app-key: ${PANDORA_JPUSH_APP_KEY:}
+    master-secret: ${PANDORA_JPUSH_MASTER_SECRET:}

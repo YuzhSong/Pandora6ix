@@ -117,6 +117,12 @@ def command_schemas():
                 required.append(field_name)
         schemas[match[1]] = obj(properties, required)
         schemas[match[1]]["additionalProperties"] = False
+    login = schemas.get("Login")
+    if login:
+        login["anyOf"] = [
+            {"required": ["accountIdentifier"]},
+            {"required": ["enterpriseDomain", "loginName"]},
+        ]
     return schemas
 
 
@@ -158,7 +164,7 @@ def read_schemas():
     stats = obj({"total": INTEGER, "completed": INTEGER, "uncompleted": INTEGER, "basis": {"type": "string", "const": "OWN_APPROVED_ASSIGNMENTS"}})
     journalDeleted = obj({"journalId": ID})
     tagDeleted = obj({"tagId": ID})
-    notification = obj({"id": ID, "kind": {"type": "string", "enum": ["NEW_TASK", "DEADLINE", "STATUS"]},
+    notification = obj({"id": ID, "kind": {"type": "string", "enum": ["NEW_TASK", "DEADLINE", "STATUS"]}, "eventType": STRING,
         "taskId": ID, "assignmentId": nullable(ID), "title": STRING, "body": STRING, "dedupeKey": STRING,
         "dueAt": nullable(INSTANT), "createdAt": INSTANT, "readAt": nullable(INSTANT)})
     reviewActor = obj({"id": ID, "displayName": nullable(STRING), "jobTitle": nullable(STRING)}, ("id", "displayName"))
@@ -178,6 +184,7 @@ def read_schemas():
         "JournalDeleted": journalDeleted, "TagDeleted": tagDeleted,
         "CredentialHandoffPage": obj({"items": array(obj({"personId": ID, "displayName": STRING, "loginName": STRING, "enterpriseDomain": STRING, "status": {"type": "string", "enum": ["AVAILABLE", "CHANGED", "EXPIRED", "UNAVAILABLE"]}, "initialPassword": {"type": "string", "description": "Only present for available temporary credentials."}, "expiresAt": INSTANT}, ("personId", "displayName", "loginName", "enterpriseDomain", "status"))), "nextCursor": {"type": "null"}}, ("items", "nextCursor")),
         "Notification": notification, "UnreadCount": obj({"unreadCount": INTEGER}),
+        "PushDeviceRegistrationResult": obj({"installationId": STRING, "active": BOOLEAN}, ("installationId", "active")),
         "TaskReview": review, "ReviewDecisionResult": obj({"review": ref("TaskReview"), "task": ref("Task")}),
         "Recipient": obj({"id": ID, "displayName": STRING, "orgUnitId": nullable(ID), "jobTitle": nullable(STRING), "organizationName": nullable(STRING), "departmentId": nullable(ID), "departmentName": nullable(STRING), "relationship": STRING}),
         "LoginResult": obj({"accessToken": STRING, "tokenType": {"type": "string", "const": "Bearer"}, "expiresAt": INSTANT, "user": ref("Profile")}),
@@ -189,16 +196,16 @@ def read_schemas():
             "requestId": STRING, "timestamp": INSTANT, "status": INTEGER, "code": STRING, "message": STRING, "path": STRING}, ("error", "requestId"))}
     for name in ("Tag", "Task", "Journal", "WorkEntry", "CompanyItem", "OrgUnit", "User", "Recipient", "TaskReview", "Notification"):
         schemas[name + "Page"] = obj({"items": array(ref(name)), "nextCursor": nullable(STRING), "moreUrl": STRING}, ("items", "nextCursor"))
-    personnel_values = obj({"employmentStatus": STRING, "departureDate": nullable(DATE), "jobTitle": nullable(STRING), "orgUnitId": nullable(ID), "supervisorUserId": nullable(ID), "roles": array(STRING), "status": STRING})
-    schemas["PersonnelChangePage"] = obj({"items": array(obj({"id": ID, "userId": ID, "actorUserId": ID, "actorName": STRING, "kind": {"type": "string", "enum": ["DEPARTURE", "JOB_CHANGE"]}, "effectiveDate": DATE, "recordedAt": INSTANT, "beforeValues": personnel_values, "afterValues": personnel_values}))}, ("items",))
-    log_actor = obj({"id": nullable(ID), "displayName": STRING, "loginName": nullable(STRING)}, ("displayName",))
-    log_object = obj({"id": nullable(ID), "type": STRING, "label": STRING}, ("type", "label"))
+    personnel_values = obj({"version": nullable(INTEGER), "displayName": nullable(STRING), "loginName": nullable(STRING), "employmentStatus": nullable(STRING), "departureDate": nullable(DATE), "jobTitle": nullable(STRING), "orgUnitId": nullable(ID), "orgUnitName": nullable(STRING), "supervisorUserId": nullable(ID), "supervisorName": nullable(STRING), "roles": array(STRING), "status": nullable(STRING)})
+    schemas["PersonnelChangePage"] = obj({"items": array(obj({"id": ID, "userId": ID, "actorUserId": ID, "actorName": nullable(STRING), "actorLoginName": nullable(STRING), "kind": {"type": "string", "enum": ["DEPARTURE", "JOB_CHANGE"]}, "effectiveDate": DATE, "recordedAt": INSTANT, "beforeValues": personnel_values, "afterValues": personnel_values}))}, ("items",))
+    log_actor = obj({"id": nullable(ID), "displayName": nullable(STRING), "loginName": nullable(STRING)})
+    log_object = obj({"id": nullable(ID), "type": STRING, "label": nullable(STRING)}, ("type",))
     log_record = obj({"id": ID, "occurredAt": INSTANT, "actor": log_actor, "object": log_object, "module": STRING,
         "action": STRING, "source": STRING, "result": {"type": "string", "enum": ["SUCCESS", "FAILURE"]}, "summary": STRING},
         ("id", "occurredAt", "actor", "object", "module", "action", "source", "result", "summary"))
-    log_snapshot = nullable(obj({"version": INTEGER, "fields": array(obj({"key": STRING, "label": STRING, "value": nullable(STRING)}))}, ("version", "fields")))
+    log_snapshot = nullable(obj({"version": nullable(INTEGER), "fields": array(obj({"key": STRING, "label": STRING, "value": nullable(STRING)}))}, ("version", "fields")))
     log_detail = obj({**log_record, "requestId": nullable(STRING), "failureReason": nullable(STRING), "before": log_snapshot, "after": log_snapshot,
-        "versions": array(obj({"logId": ID, "version": INTEGER, "occurredAt": INSTANT, "actorName": STRING, "action": STRING}, ("logId", "version", "occurredAt", "actorName", "action")))},
+        "versions": array(obj({"logId": ID, "version": nullable(INTEGER), "occurredAt": INSTANT, "actorName": nullable(STRING), "action": STRING}, ("logId", "version", "occurredAt", "action")))},
         ("id", "occurredAt", "actor", "object", "module", "action", "source", "result", "summary", "requestId", "failureReason", "before", "after", "versions"))
     schemas["OperationLogPage"] = obj({"items": array(log_record), "nextCursor": nullable(STRING), "total": INTEGER, "snapshotToken": STRING}, ("items", "nextCursor", "total", "snapshotToken"))
     schemas["OperationLogDetail"] = log_detail
@@ -208,6 +215,8 @@ def read_schemas():
 
 
 RESPONSES = {
+    ("POST", "/push-devices"): "PushDeviceRegistrationResult",
+    ("DELETE", "/push-devices/{installationId}"): "PushDeviceRegistrationResult",
     ("POST", "/admin/users/{id}/manager-replacement"): "ManagerReplacementResult",
     ("POST", "/admin/users/{id}/departure"): "User",
     ("POST", "/admin/users/{id}/job-change"): "User",
