@@ -164,7 +164,7 @@ def read_schemas():
     stats = obj({"total": INTEGER, "completed": INTEGER, "uncompleted": INTEGER, "basis": {"type": "string", "const": "OWN_APPROVED_ASSIGNMENTS"}})
     journalDeleted = obj({"journalId": ID})
     tagDeleted = obj({"tagId": ID})
-    notification = obj({"id": ID, "kind": {"type": "string", "enum": ["NEW_TASK", "DEADLINE", "STATUS"]},
+    notification = obj({"id": ID, "kind": {"type": "string", "enum": ["NEW_TASK", "DEADLINE", "STATUS"]}, "eventType": STRING,
         "taskId": ID, "assignmentId": nullable(ID), "title": STRING, "body": STRING, "dedupeKey": STRING,
         "dueAt": nullable(INSTANT), "createdAt": INSTANT, "readAt": nullable(INSTANT)})
     reviewActor = obj({"id": ID, "displayName": nullable(STRING), "jobTitle": nullable(STRING)}, ("id", "displayName"))
@@ -186,6 +186,7 @@ def read_schemas():
         "Notification": notification, "UnreadCount": obj({"unreadCount": INTEGER}),
         "JournalDates": obj({"items": array(DATE), "businessToday": DATE}, ("items", "businessToday")),
         "TaskReviewPendingCount": obj({"count": INTEGER}, ("count",)),
+        "PushDeviceRegistrationResult": obj({"installationId": STRING, "active": BOOLEAN}, ("installationId", "active")),
         "TaskReview": review, "ReviewDecisionResult": obj({"review": ref("TaskReview"), "task": ref("Task")}),
         "Recipient": obj({"id": ID, "displayName": STRING, "orgUnitId": nullable(ID), "jobTitle": nullable(STRING), "organizationName": nullable(STRING), "departmentId": nullable(ID), "departmentName": nullable(STRING), "relationship": STRING}),
         "LoginResult": obj({"accessToken": STRING, "tokenType": {"type": "string", "const": "Bearer"}, "expiresAt": INSTANT, "user": ref("Profile")}),
@@ -216,6 +217,8 @@ def read_schemas():
 
 
 RESPONSES = {
+    ("POST", "/push-devices"): "PushDeviceRegistrationResult",
+    ("DELETE", "/push-devices/{installationId}"): "PushDeviceRegistrationResult",
     ("POST", "/admin/users/{id}/manager-replacement"): "ManagerReplacementResult",
     ("POST", "/admin/users/{id}/departure"): "User",
     ("POST", "/admin/users/{id}/job-change"): "User",

@@ -253,6 +253,10 @@ public class IdentityService
 
     @Transactional
     public void logout(Actor actor) {
+        db.update("UPDATE push_device SET active=FALSE,updated_at=CURRENT_TIMESTAMP WHERE enterprise_id=? AND user_id=?",
+                actor.enterpriseId(), actor.id());
+        db.update("UPDATE notification_push_delivery SET status='CANCELLED' WHERE push_device_id IN (SELECT id FROM push_device WHERE enterprise_id=? AND user_id=?) AND status IN ('PENDING','SENDING')",
+                actor.enterpriseId(), actor.id());
         db.update("UPDATE auth_session SET revoked=TRUE WHERE token_hash=?", actor.tokenHash());
     }
 

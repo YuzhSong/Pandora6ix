@@ -61,3 +61,10 @@ python3 deploy/package-release.py --sha "$(git rev-parse HEAD)" --run-number 0 -
 ```
 
 Windows 可运行 8 项归档/缓存校验测试，3 项真实软链接/回滚测试只在 Linux 运行。云端和 Actions 均须完整通过 11 项。安装、域名和真实 CI 发布结果见本目录 VALIDATION.md。
+# JPush Android notifications
+
+Create an Android application in the JPush console using the package name `com.pandora6ix.app`. Put its AppKey in the Android build environment as `JPUSH_APP_KEY` or in the local Gradle property `JPUSH_APP_KEY`; the value is public application configuration, but do not commit local property files. Builds without an AppKey remain supported and use in-app notifications only.
+
+Configure the matching JPush AppKey and Master Secret on the backend host as `PANDORA_JPUSH_APP_KEY` and `PANDORA_JPUSH_MASTER_SECRET` in the root-managed backend environment file. Keep the Master Secret out of source control and build artifacts. Restart the backend after changing these values. When either value is missing, notification persistence remains enabled and remote delivery is skipped.
+
+JPush delivery requires a real Android device with network access and notification permission. Emulator delivery is not guaranteed. Android force-stop and vendor battery restrictions may delay or suppress notifications; the persisted in-app notification list remains the source of truth.

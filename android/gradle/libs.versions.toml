@@ -8,6 +8,7 @@ composeBom = "2024.12.01"
 okhttp = "4.12.0"
 kotlinxSerializationJson = "1.7.3"
 kotlinxCoroutines = "1.9.0"
+jpush = "6.2.1"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -24,6 +25,7 @@ androidx-compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinxSerializationJson" }
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "kotlinxCoroutines" }
+jpush = { group = "cn.jiguang.sdk", name = "jpush", version.ref = "jpush" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

@@ -230,6 +230,8 @@ public class TaskService
                     supervisor,
                     a.id(),
                     json.writeValueAsString(snapshot));
+        if (!founder)
+            notifications.reviewRequested(a.enterpriseId(), review, task, a.id(), supervisor, c.title());
         var result = detail(a, task);
         result.put("taskId", task);
         if (!founder) result.put("reviewId", review);
