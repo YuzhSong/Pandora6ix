@@ -1,0 +1,11 @@
+# Validation — 2026-10-18
+
+- Baseline: Web-cy fast-forwarded to origin/dev `4c4b032`; previous Web working changes preserved via stash (backup retained). No rebase or force-push needed for the fast-forward.
+- Backend: `JAVA_HOME=D:/Java`, `mvnw.cmd -q test` passed 63 tests. After adding personnel-transfer concurrency coverage, targeted `BusinessApiIntegrationTests#*OrganizationDeletion*+deleteEmptyOrganizations*+deleteOrganization*` passed 5/5. Covers 204, repeated/foreign 404, employee/founder 403, anonymous 401, body/version validation, stale 409, root/children/active/disabled-member blockers and concurrent creation/transfer.
+- OpenAPI: generator and `--check` pass, 47 operations; DELETE has required OrgDelete JSON command and empty 204 response.
+- Web: `npm test` passes 82/82 including local persistence, disabled-member blockers, encoded identifier/version, 204-only acknowledgement, failure preservation, stale identity and in-flight read protection. Network-dependent proxy tests run outside sandbox after loopback was blocked inside it.
+- `npm run build` passes. `npm run lint` exits 0 with four pre-existing set-state-in-effect warnings: two in App, two in unrelated untracked retired BusinessPages draft. No new warnings.
+- Real integration: packaged the working backend and passed `PANDORA_INTEGRATION_JAR=../backend/target/backend-0.0.1-SNAPSHOT.jar npm run test:integration -- --preview`. Uses random local enterprise, isolated H2 file, loopback Spring and Vite. Deleted disposable team then department and reloaded each; stale version rejected. Existing profile/account, role, kind conversion, company items and auth integration remain passing.
+- Browser: actual React application backed by isolated Spring/H2. Verified root has no delete action, occupied department displays disabled action and reason, empty team opens named confirmation, cancel preserves team, cancel is initially focused. No final delete submitted through the browser. Success/removal/reload verified through real HTTP repository integration; parent selection and duplicate-submit guard reviewed in code.
+- Screenshot: `web/.integration/organization-delete-confirm-20261018.png` (ignored). No cloud organizational data was modified. No deployment, commit or push performed.
+- Strict OpenSpec validation and `git diff --check` pass. No schema changes or audit storage decision.

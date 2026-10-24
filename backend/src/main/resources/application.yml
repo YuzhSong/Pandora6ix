@@ -1,4 +1,11 @@
 spring:
+  datasource:
+    url: ${PANDORA_DB_URL:jdbc:h2:file:./data/pandora;DB_CLOSE_ON_EXIT=FALSE;WRITE_DELAY=0}
+    username: ${PANDORA_DB_USER:sa}
+    password: ${PANDORA_DB_PASSWORD:}
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
   application:
     name: pandora6ix-backend
 management:
@@ -6,3 +13,7 @@ management:
     web:
       exposure:
         include: health
+pandora:
+  jpush:
+    app-key: ${PANDORA_JPUSH_APP_KEY:}
+    master-secret: ${PANDORA_JPUSH_MASTER_SECRET:}

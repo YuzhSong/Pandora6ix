@@ -16,6 +16,7 @@
 # Android local SDK and build state
 android/local.properties
 android/.gradle/
+android/.kotlin/
 *.apk
 *.aab
 
@@ -28,8 +29,10 @@ android/.gradle/
 *.p12
 *.jks
 secrets.properties
+sshkey.md
 
 # OS files and logs
 .DS_Store
 Thumbs.db
 *.log
+.codebuddy/

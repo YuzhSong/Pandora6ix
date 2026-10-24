@@ -1,0 +1,11 @@
+spring:
+  config:
+    activate:
+      on-profile: local
+
+# The common configuration uses a local file database; credentials remain external.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health

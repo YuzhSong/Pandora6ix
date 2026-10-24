@@ -1,0 +1,78 @@
+name: Deploy Pandora dev
+
+on:
+  push:
+    branches: [dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: backend/pom.xml
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Verify release receiver
+        run: python3 -m unittest discover -s deploy/tests -v
+      - name: Verify and package backend
+        working-directory: backend
+        run: |
+          chmod +x mvnw
+          ./mvnw -B -ntp package
+          python3 scripts/generate-openapi.py --check
+      - name: Verify and build Web
+        working-directory: web
+        run: |
+          npm ci
+          npm test
+          npm run lint
+          npm run build
+      - name: Verify packaged runtime
+        run: python3 deploy/check-package.py
+      - name: Package release
+        env:
+          RELEASE_SHA: ${{ github.sha }}
+          RELEASE_NUMBER: ${{ github.run_number }}
+          RELEASE_ATTEMPT: ${{ github.run_attempt }}
+        run: python3 deploy/package-release.py --sha "$RELEASE_SHA" --run-number "$RELEASE_NUMBER" --attempt "$RELEASE_ATTEMPT" --inventory --output "$RUNNER_TEMP/pandora-inventory.json"
+      - name: Deploy verified artifacts
+        env:
+          DEPLOY_HOST: ${{ secrets.PANDORA_DEPLOY_HOST }}
+          DEPLOY_KEY: ${{ secrets.PANDORA_DEPLOY_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.PANDORA_DEPLOY_KNOWN_HOSTS }}
+          RELEASE_SHA: ${{ github.sha }}
+          RELEASE_NUMBER: ${{ github.run_number }}
+          RELEASE_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          install -d -m 700 "$RUNNER_TEMP/pandora-ssh"
+          printf '%s\n' "$DEPLOY_KEY" > "$RUNNER_TEMP/pandora-ssh/key"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$RUNNER_TEMP/pandora-ssh/known_hosts"
+          chmod 600 "$RUNNER_TEMP/pandora-ssh/key" "$RUNNER_TEMP/pandora-ssh/known_hosts"
+          ssh -T -o BatchMode=yes -o ConnectTimeout=20 -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/pandora-ssh/known_hosts" -i "$RUNNER_TEMP/pandora-ssh/key" "pandora-deploy@$DEPLOY_HOST" < "$RUNNER_TEMP/pandora-inventory.json" > "$RUNNER_TEMP/pandora-missing.json"
+          python3 deploy/package-release.py --sha "$RELEASE_SHA" --run-number "$RELEASE_NUMBER" --attempt "$RELEASE_ATTEMPT" --missing-file "$RUNNER_TEMP/pandora-missing.json" --output "$RUNNER_TEMP/pandora.tgz"
+          ssh -T -o BatchMode=yes -o ConnectTimeout=20 -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/pandora-ssh/known_hosts" -i "$RUNNER_TEMP/pandora-ssh/key" "pandora-deploy@$DEPLOY_HOST" < "$RUNNER_TEMP/pandora.tgz"
+          rm -f "$RUNNER_TEMP/pandora-ssh/key"
+      - name: Verify public release
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          curl --fail --silent --show-error --retry 3 https://www.rainycode.cn/backend/health
+          curl --fail --silent --show-error --retry 3 https://www.rainycode.cn/deployment.json > "$RUNNER_TEMP/deployed.json"
+          python3 -c 'import json,os; assert json.load(open(os.environ["RUNNER_TEMP"]+"/deployed.json"))["sha"] == os.environ["EXPECTED_SHA"], "Public release is not this commit"'

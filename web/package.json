@@ -6,10 +6,15 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "lint": "oxlint",
-    "preview": "vite preview"
+    "lint": "oxlint src tests dev scripts vite.config.ts",
+    "preview": "vite preview",
+    "test": "node --test tests/*.test.ts",
+    "check:backend": "node scripts/checkBackend.ts",
+    "test:integration": "node scripts/integrationBackend.ts",
+    "dev:backend": "powershell -NoProfile -File scripts/devBackend.ps1"
   },
   "dependencies": {
+    "exceljs": "^4.4.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },
@@ -21,5 +26,10 @@
     "oxlint": "^1.81.0",
     "typescript": "~6.0.2",
     "vite": "^8.3.0"
+  },
+  "overrides": {
+    "exceljs": {
+      "uuid": "^11.1.1"
+    }
   }
 }
