@@ -1,9 +1,9 @@
 export const roleLabels = {
   ADMIN: '系统管理员',
   FOUNDER: '创始人',
-  DEPARTMENT_MANAGER: '部门负责人',
-  TEAM_LEAD: '团队负责人',
-  EMPLOYEE: '普通员工',
+  DEPARTMENT_MANAGER: '部门老总',
+  TEAM_LEAD: '团队长',
+  EMPLOYEE: '员工',
 } as const
 
 export type Role = keyof typeof roleLabels

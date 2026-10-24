@@ -67,7 +67,7 @@ export function ResetEmployeePasswordDialog({ person, onClose, onReset }: { pers
       onReset(data, { personId: target.id, displayName: target.displayName, loginName: target.loginName, enterpriseDomain: data.enterprise.loginDomain, initialPassword: password, reason: 'reset' })
     } catch (reason) {
       const unavailable = reason instanceof ApiError && (reason.status === 404 || reason.status === 405)
-      setError(unavailable ? '当前服务器尚未提供该员工的密码重置接口，或账号已不存在。请关闭并刷新核对；若账号仍在，请后端部署新接口。' : `${errorMessage(reason)} 请关闭并刷新，确认账号和密码状态后再操作。`)
+      setError(unavailable ? '暂时无法重置密码，请关闭并刷新资料后重试。' : `${errorMessage(reason)} 请关闭并刷新，确认账号和密码状态后再操作。`)
       setRefreshRequired(true)
     } finally { submitting.current = false; setBusy(false) }
   }}><div className="dialog-body"><p>为 {person.displayName}（{person.loginName}）设置新密码。成功后该员工的旧登录会话将失效。</p>{person.status === 'DISABLED' && <p className="panel-note">账号目前停用，重置密码不会启用账号。</p>}<fieldset disabled={busy || refreshRequired}><label>新密码<input type="password" required minLength={10} maxLength={72} autoComplete="new-password" value={password} onChange={event => setPassword(event.target.value)} /></label><label>确认新密码<input type="password" required minLength={10} maxLength={72} autoComplete="new-password" value={confirm} onChange={event => setConfirm(event.target.value)} /></label></fieldset>{error && <p className="error-message" role="alert">{error}</p>}</div><div className="dialog-footer"><button type="button" className="button secondary" disabled={busy} onClick={onClose}>取消</button><button type="submit" className="button primary" disabled={busy || refreshRequired}>{busy ? '正在重置…' : '确认重置'}</button></div></ValidatedForm></Frame>

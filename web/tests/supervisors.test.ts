@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { businessRank, reportingError, supervisorCandidates } from '../src/data/supervisors.ts'
+import { canHaveSupervisor, businessRank, reportingError, supervisorCandidates } from '../src/data/supervisors.ts'
 import type { Person, Role } from '../src/data/types.ts'
 
 function person(id: string, roles: Role[], supervisorId: string | null = null): Person {
@@ -35,4 +35,12 @@ test('role changes cannot retain a junior supervisor or invalidate direct report
 test('departed people are excluded from supervisor choices even with a legacy active flag', () => {
   const departed = { ...person('departed', ['FOUNDER']), employmentStatus: 'DEPARTED' as const }
   assert.deepEqual(supervisorCandidates([departed, person('safe', ['FOUNDER'])], undefined, ['EMPLOYEE']).map(p => p.id), ['safe'])
+})
+
+test('founders and all administrator accounts have no supervisor controls or candidates', () => {
+  for (const roles of [['FOUNDER'], ['ADMIN'], ['ADMIN', 'EMPLOYEE'], ['ADMIN', 'TEAM_LEAD'], ['ADMIN', 'FOUNDER']] as Role[][]) {
+    assert.equal(canHaveSupervisor(roles), false)
+    assert.deepEqual(supervisorCandidates(people, undefined, roles), [])
+  }
+  for (const role of ['DEPARTMENT_MANAGER', 'TEAM_LEAD', 'EMPLOYEE'] as Role[]) assert.equal(canHaveSupervisor([role]), true)
 })

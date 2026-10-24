@@ -245,6 +245,28 @@ class BusinessApiIntegrationTests {
         assertEquals(0,db.rows("SELECT * FROM personnel_change WHERE enterprise_id=? AND user_id=?",enterprise,lead).size());
     }
 
+    @Test
+    void employeeCanTransferAcrossTeamsAndBack() throws Exception {
+        String webTeam=createOrg("Web team", "TEAM", department);
+        String webLead=createUser("web-lead",webTeam,manager,List.of("TEAM_LEAD"));
+        var before=user(employee);
+        String hash=str(db.entity("app_user",enterprise,employee),"password_hash");
+        var changed=request("POST","/admin/users/"+employee+"/job-change",adminToken,
+            fields("expectedVersion",0,"jobTitle","Web开发","orgUnitId",webTeam,
+                "supervisorUserId",webLead,"roles",List.of("EMPLOYEE")),200);
+        assertEquals(webTeam,changed.get("orgUnitId"));
+        assertEquals(webLead,changed.get("supervisorUserId"));
+        assertEquals(before.get("loginName"),changed.get("loginName"));
+        assertEquals(before.get("idNumber"),changed.get("idNumber"));
+        assertEquals(hash,str(db.entity("app_user",enterprise,employee),"password_hash"));
+        request("GET","/me",employeeToken,null,401);
+        var returned=request("POST","/admin/users/"+employee+"/job-change",adminToken,
+            fields("expectedVersion",1,"jobTitle","Android开发","orgUnitId",team,
+                "supervisorUserId",lead,"roles",List.of("EMPLOYEE")),200);
+        assertEquals(team,returned.get("orgUnitId"));
+        assertEquals(2,db.rows("SELECT * FROM personnel_change WHERE enterprise_id=? AND user_id=?",enterprise,employee).size());
+    }
+
     private String session(String user) {
         String token = UUID.randomUUID().toString();
         db.update(
