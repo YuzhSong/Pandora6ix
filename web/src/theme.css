@@ -272,6 +272,10 @@ dialog, dialog .dialog-body, .bulk-entry-table { overscroll-behavior: contain; }
 .personnel-card { padding: 20px; border: 1px solid var(--border); border-radius: 12px; min-width: 0; background: var(--surface); }
 .personnel-identity { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .personnel-identity > div { min-width: 0; }
+.person-name-line { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; min-width: 0; }
+.person-name-line > h3 { margin: 0; }
+.person-name-line > span.person-status-badge { display: inline-flex; align-items: center; flex-shrink: 0; padding: 2px 8px; border: 1px solid #efb1b4; border-radius: 6px; background: #fff0f0; color: #b42332; font-size: calc(12px * var(--font-scale)); font-weight: 600; line-height: 1.5; white-space: nowrap; }
+:root[data-theme='dark'] .person-name-line > span.person-status-badge { color: #ffbdc3; background: #50292f; border-color: #97505b; }
 .personnel-identity small { display: block; margin-top: 5px; font-size: calc(12px * var(--font-scale)); color: var(--muted); overflow-wrap: anywhere; }
 .personnel-card > p { margin: 18px 0 6px; font-size: calc(13px * var(--font-scale)); overflow-wrap: anywhere; }
 .personnel-unit { font-size: calc(12px * var(--font-scale)); color: var(--muted); display: block; margin-bottom: 14px; overflow-wrap: anywhere; }
@@ -445,6 +449,10 @@ body { background: var(--canvas-gradient); background-attachment: fixed; min-hei
 .credential-tools-dialog > form { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .credential-tools-dialog .dialog-head, .credential-tools-dialog .dialog-footer { flex-shrink: 0; }
 .credential-tools-dialog .dialog-body { min-height: 0; overflow-y: auto; }
+dialog.editor-dialog.personnel-history-dialog { width: min(1120px, calc(100vw - 48px)); max-width: calc(100vw - 48px); }
+.personnel-history-dialog[open] { max-height: 90dvh; }
+.personnel-history-dialog .dialog-body { padding: 18px 22px; }
+@media (max-width: 680px) { dialog.editor-dialog.personnel-history-dialog { width: calc(100vw - 16px); max-width: calc(100vw - 16px); } }
 .credential-tools-dialog .dialog-body > fieldset, .credential-tools-dialog .dialog-body fieldset { border: 0; padding: 0; margin: 16px 0; min-width: 0; }
 .credential-tools-dialog fieldset > label { display: flex; flex-direction: column; gap: 8px; margin: 16px 0; font-size: calc(13px * var(--font-scale)); }
 .credential-list-label { display: flex; flex-direction: column; gap: 8px; }
@@ -461,13 +469,13 @@ body { background: var(--canvas-gradient); background-attachment: fixed; min-hei
 .bulk-entry-toolbar { flex-wrap: wrap; }
 .bulk-personnel-dialog:has(.bulk-entry-toolbar) { width: 1240px; max-width: calc(100vw - 48px); }
 .bulk-entry-table { overflow: auto; max-height: 350px; border: 1px solid var(--border); border-radius: 12px; margin-bottom: 16px; }
-.bulk-entry-table table { width: 100%; min-width: 1460px; table-layout: fixed; }
+.bulk-entry-table table { width: 100%; min-width: 1260px; table-layout: fixed; }
 .bulk-entry-table th, .bulk-entry-table td { height: auto; padding: 10px 8px; }
 .bulk-entry-table th { position: sticky; top: 0; z-index: 1; background: var(--surface-soft); white-space: nowrap; }
 .bulk-entry-table th:first-child, .bulk-entry-table td:first-child { width: 42px; text-align: center; }
 .bulk-entry-table th:last-child, .bulk-entry-table td:last-child { width: 64px; }
-.bulk-entry-table th:nth-child(5) { width: 104px; }
-.bulk-entry-table th:nth-child(6), .bulk-entry-table th:nth-child(9), .bulk-entry-table th:nth-child(10) { width: 200px; }
+.bulk-entry-table th:nth-child(4) { width: 104px; }
+.bulk-entry-table th:nth-child(5), .bulk-entry-table th:nth-child(8), .bulk-entry-table th:nth-child(9) { width: 200px; }
 .bulk-entry-table :is(input, select) { width: 100%; min-width: 0; height: 40px; padding: 7px 9px; font-size: 13px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); }
 .bulk-entry-table .select-trigger { height: 40px; padding: 7px 9px; gap: 6px; border-radius: 8px; font-size: 13px; }
 @media (max-width: 680px) { .panel[aria-label='人员与角色'] > .panel-heading { flex-wrap: wrap; gap: 16px; }.personnel-toolbar { justify-content: flex-start; }.credential-tools-dialog .dialog-footer { flex-wrap: wrap; } }
@@ -477,5 +485,18 @@ body { background: var(--canvas-gradient); background-attachment: fixed; min-hei
 .lifecycle-roles { display: flex; flex-wrap: wrap; gap: 12px 18px; margin: 20px 0; }
 .lifecycle-roles label { display: flex; align-items: center; gap: 7px; }
 .lifecycle-roles input { width: auto; }
-.personnel-change { border-bottom: 1px solid var(--border); padding-bottom: 16px; margin-bottom: 20px; }
-.personnel-change > p { color: var(--muted); font-size: 13px; }
+.personnel-timeline { list-style: none; padding: 0 0 0 36px; margin: 0; }
+.personnel-change { position: relative; border-left: 2px solid var(--border); padding: 0 0 24px 24px; }
+.personnel-change:last-child { padding-bottom: 0; border-left-color: transparent; }
+.personnel-event-number { position: absolute; left: -17px; top: 0; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: var(--surface-soft); color: var(--action-text); border: 1px solid var(--border); font-weight: 700; }
+.personnel-change h3 { margin: 0 0 8px; line-height: 32px; }
+.personnel-transfer-summary { margin: 0 0 8px; font-weight: 600; }
+.personnel-transfer-summary span { padding: 0 8px; color: var(--muted); }
+.personnel-event-meta { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
+.personnel-change-table { width: 100%; table-layout: fixed; border-collapse: collapse; }
+.personnel-change-table th, .personnel-change-table td { height: auto; padding: 10px 14px; text-align: left; white-space: normal; overflow-wrap: anywhere; border: 1px solid var(--border); font-size: 14px; }
+.personnel-change-table thead th { background: var(--surface-soft); }
+.personnel-change-table th:first-child { width: 22%; }
+.personnel-change-table tbody th { font-weight: 400; color: var(--muted); }
+.personnel-change-table tbody td:last-child { font-weight: 600; }
+@media (max-width: 680px) { .personnel-timeline { padding-left: 16px; }.personnel-change { padding-left: 20px; }.personnel-change-table th, .personnel-change-table td { padding: 8px; font-size: 13px; } }

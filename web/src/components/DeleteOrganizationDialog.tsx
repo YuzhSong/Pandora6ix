@@ -23,7 +23,7 @@ export function DeleteOrganizationDialog({ unit, onClose, onDeleted }: { unit: O
     catch (reason) {
       const unavailable = reason instanceof ApiError && reason.status === 405
       const unloaded = reason instanceof ApiError && reason.code === 'WORKSPACE_NOT_LOADED'
-      setError(unavailable ? '当前服务器尚未部署组织删除接口，请联系后端更新。' : unloaded ? errorMessage(reason) : `${errorMessage(reason)} 请取消窗口并刷新资料，确认最新状态后再操作。`)
+      setError(unavailable ? '当前暂不支持删除组织。' : unloaded ? errorMessage(reason) : `${errorMessage(reason)} 请取消窗口并刷新资料，确认最新状态后再操作。`)
       setRefreshRequired(true)
     } finally { submitting.current = false; setBusy(false) }
   }

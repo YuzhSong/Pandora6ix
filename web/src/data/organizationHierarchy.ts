@@ -1,4 +1,8 @@
-import type { OrgUnit } from './types.ts'
+import type { OrgUnit, Person } from './types.ts'
+
+export function currentOrganizationMembers(people: Person[], orgUnitId: string): Person[] {
+  return people.filter(person => person.orgUnitId === orgUnitId && person.employmentStatus !== 'DEPARTED')
+}
 
 interface OrganizationNode { unit: OrgUnit; children: OrganizationNode[] }
 

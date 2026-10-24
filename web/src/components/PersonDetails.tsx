@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react'
 import type { AdminData, Person } from '../data/types.ts'
+import { canHaveSupervisor } from '../data/supervisors.ts'
 import { RoleBadge } from './RoleBadge.tsx'
+import { PersonStatusBadge } from './PersonStatusBadge.tsx'
 import { Icon } from './Icon.tsx'
 import { genderLabels } from '../data/personnelProfile.ts'
 import { AccountInformation } from './AccountInformation.tsx'
@@ -29,7 +31,7 @@ export function PersonDetails({ person, data, onClose, onEdit, onResetPassword, 
         <button className="icon-button" aria-label="关闭人员详情" onClick={onClose}><Icon name="close" /></button>
       </div>
       <div className="dialog-body">
-        <div className="account-identity"><span className="avatar">{person.displayName.slice(0, 1)}</span><div><h3>{person.displayName}</h3><span>{person.jobTitle || '未设置职位'}</span></div></div>
+        <div className="account-identity"><span className="avatar">{person.displayName.slice(0, 1)}</span><div><div className="person-name-line"><h3>{person.displayName}</h3><PersonStatusBadge person={person} /></div></div></div>
         <AccountInformation account={{ personId: person.id, loginName: person.loginName, enterpriseDomain: data.enterprise.loginDomain }} allowHandoff={person.employmentStatus !== 'DEPARTED' && !person.roles.includes('ADMIN')} />
         <dl className="info-list profile-details">
           <div><dt>在职状态</dt><dd>{person.employmentStatus === 'DEPARTED' ? '已离职' : '在职'}</dd></div>
@@ -39,7 +41,7 @@ export function PersonDetails({ person, data, onClose, onEdit, onResetPassword, 
           <div><dt>身份证号</dt><dd>{person.idNumber || '未填写'}</dd></div>
           <div><dt>电话号码</dt><dd>{person.phoneNumber || '未填写'}</dd></div>
           <div><dt>所属组织</dt><dd>{parent ? `${parent.name} / ` : ''}{organization?.name}</dd></div>
-          <div><dt>直属上级</dt><dd>{data.people.find(item => item.id === person.supervisorId)?.displayName || '未设置'}</dd></div>
+          {canHaveSupervisor(person.roles) && <div><dt>直属上级</dt><dd>{data.people.find(item => item.id === person.supervisorId)?.displayName || '未设置'}</dd></div>}
           <div><dt>业务角色</dt><dd className="badges">{person.roles.map(role => <RoleBadge key={role} role={role} />)}</dd></div>
           <div><dt>直接下属</dt><dd>{reports.length ? reports.map(item => item.displayName).join('、') : '无'}</dd></div>
         </dl>

@@ -31,7 +31,7 @@ const navigation: { id: string; label: string; icon: IconName }[] = [
   { id: 'system-logs', label: '系统日志', icon: 'journal' },
 ]
 const auxiliaryPages = [{ id: 'account', label: '我的账号' }, { id: 'settings', label: '设置' }]
-function route() { const hash = location.hash.slice(1); return hash === 'enterprise' ? 'organizations' : hash === 'roles' ? 'people' : [...navigation, ...auxiliaryPages].some(item => item.id === hash) ? hash : 'people' }
+function route() { const hash = location.hash.slice(1); return hash === 'enterprise' ? 'organizations' : hash === 'roles' ? 'people' : [...navigation, ...auxiliaryPages].some(item => item.id === hash) ? hash : 'organizations' }
 function Brand() { return <div className="brand"><img className="brand-mark" src="/pandora-logo.png" alt="" width={44} height={44} /><div>Pandora<span>企业工作管理平台</span></div></div> }
 function hasSession() { try { return !!sessionStore.read() } catch { return false } }
 
@@ -63,6 +63,10 @@ export default function App() {
   useEffect(() => sessionStore.subscribe(() => {
     const authenticated = hasSession()
     setSession(authenticated)
+    if (authenticated) {
+      location.replace('#organizations')
+      setActive('organizations')
+    }
     if (!authenticated) {
       loadSerial.current++
       setData(null); setCredentialTool(null); setResetPerson(null); setAccountReceipt(null); setDeleteTarget(null); setEditor(null); setPasswordDialog(false); setAvatarDialog(false); setLogoutConfirm(false)
@@ -149,7 +153,7 @@ export default function App() {
     <div className="main-area"><main className="page-content"><div className="page-heading"><h1>{page.label}</h1><button className="button secondary" onClick={() => void load()} disabled={loading || !!editor || passwordDialog || avatarDialog || itemsPending || !!deleteTarget || !!accountReceipt || !!credentialTool || !!resetPerson}><Icon name="refresh" size={16} />刷新数据</button></div>
       {error && <div className="error-message" role="alert">刷新失败：{error} 当前显示上次加载的资料，恢复后才能编辑。</div>}
       <fieldset className="workspace-content" disabled={loading || !!error}>
-        {active === 'system-logs' && <SystemLogsPage key={`${data.enterprise.id}:${data.currentUserId}`} refreshKey={data} />}
+        {active === 'system-logs' && <SystemLogsPage key={`${data.enterprise.id}:${data.currentUserId}`} refreshKey={data} data={data} />}
         {active === 'people' && <PeoplePage key={data.enterprise.id} onUpdated={setData} data={data} onEdit={setEditor} onCredentialTool={setCredentialTool} onResetPassword={setResetPerson} />}{active === 'organizations' && <OrganizationPage key={data.enterprise.id} data={data} onEdit={setEditor} selectedId={selectedOrganizationId} onSelect={setSelectedOrganizationId} onDelete={setDeleteTarget} />}{active === 'company-items' && <CompanyItemsPage key={data.enterprise.id} data={data} onEdit={setEditor} onUpdated={setData} onPendingChange={setItemsPending} />}{active === 'account' && <AccountPage data={data} onChangePassword={() => setPasswordDialog(true)} onChangeAvatar={() => setAvatarDialog(true)} />}{active === 'settings' && <SettingsPage preferences={preferences} error={preferenceError} onChange={changePreferences} />}
       </fieldset><footer className="page-footer"><span>Pandora 管理端</span></footer></main></div>
     {editor && <AdminEditor request={editor} data={data} onClose={() => setEditor(null)} onSaved={saved} />}

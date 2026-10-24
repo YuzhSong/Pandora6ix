@@ -25,6 +25,5 @@ export function AuthPage({ brand, message }: { brand: ReactNode; message: string
       <label><span>密码 <span className="required">*</span></span><input type="password" required maxLength={72} autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} /></label>
       {message && <p role="status">{message}</p>}{error && <p role="alert" className="error-message">{error}</p>}
       <button className="button primary entry-button" type="submit">{busy ? '正在登录…' : '登录工作台'}<Icon name="arrow" /></button>
-      <p className="panel-note">仅供本公司管理员使用。员工账号由管理员新增人员时统一创建，无需自行注册。</p>
     </fieldset></ValidatedForm></section></div><footer>Pandora · 企业工作管理平台</footer></main>
 }

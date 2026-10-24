@@ -9,7 +9,7 @@ export function AvatarDialog({ onClose }: { onClose: () => void }) {
     return () => opener?.focus()
   }, [])
   return <dialog ref={dialog} className="editor-dialog" aria-labelledby="avatar-title" onCancel={event => { event.preventDefault(); onClose() }}>
-    <div className="dialog-head"><h2 id="avatar-title">修改头像</h2><button className="icon-button" aria-label="关闭头像修改" onClick={onClose}><Icon name="close" /></button></div>
+    <div className="dialog-head"><h2 id="avatar-title">头像预览</h2><button className="icon-button" aria-label="关闭头像修改" onClick={onClose}><Icon name="close" /></button></div>
     <div className="dialog-body"><AvatarUpload /></div>
     <div className="dialog-footer"><button className="button secondary" onClick={onClose}>关闭</button></div>
   </dialog>
@@ -21,7 +21,6 @@ export function AvatarUpload() {
   const [error, setError] = useState('')
   useEffect(() => () => { if (preview) URL.revokeObjectURL(preview) }, [preview])
   return <section className="avatar-upload">
-    <p className="panel-note">选择图片可预览效果。头像保存接口尚未接入，预览不会保存或同步到账号。</p>
     <label>选择头像<input ref={input} type="file" accept="image/png,image/jpeg,image/webp" onChange={event => {
       const file = event.target.files?.[0]
       if (!file) return
@@ -32,6 +31,6 @@ export function AvatarUpload() {
     }} /><small>PNG、JPEG 或 WebP，最大 5 MB。</small></label>
     {preview && <div className="avatar-upload-preview"><img src={preview} alt="新头像预览（尚未保存）" onError={() => { setPreview(''); setError('无法读取该图片，请重新选择。'); if (input.current) input.current.value = '' }} /><button className="text-button" type="button" onClick={() => { setPreview(''); setError(''); if (input.current) input.current.value = '' }}>取消预览</button></div>}
     {error && <p className="error-message" role="alert">{error}</p>}
-    <button type="button" className="button secondary" disabled>保存头像（待接入）</button>
+    <button type="button" className="button secondary" disabled>保存头像（暂不可用）</button>
   </section>
 }
