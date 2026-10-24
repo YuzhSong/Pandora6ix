@@ -238,7 +238,7 @@ class BusinessApiIntegrationTests {
         var detail=request("GET","/admin/operation-logs/"+operation.get("id"),adminToken,null,200);
         assertEquals(0,((Number)((Map<?,?>)detail.get("before")).get("version")).intValue());
         assertEquals(1,((Number)((Map<?,?>)detail.get("after")).get("version")).intValue());
-        assertEquals(2,((List<?>)detail.get("versions")).size());
+        assertEquals(3,((List<?>)detail.get("versions")).size());
         assertEquals(0,((Number)((Map<?,?>)((List<?>)detail.get("versions")).getFirst()).get("version")).intValue());
         String serializedOperation=json.writeValueAsString(detail);
         assertTrue(serializedOperation.contains("Team manager"));
@@ -2746,6 +2746,41 @@ class BusinessApiIntegrationTests {
     }
 
     @Test
+    void pushInstallationsAreAccountBoundAndDeactivatedOnLogout() throws Exception {
+        String installation = UUID.randomUUID().toString();
+        request("POST", "/push-devices", adminToken,
+                fields("installationId", installation, "registrationId", "jpush-registration-1"), 200);
+        request("POST", "/push-devices", adminToken,
+                fields("installationId", installation, "registrationId", "jpush-registration-2"), 200);
+        assertEquals(1, db.rows("SELECT id FROM push_device WHERE installation_id=?", installation).size());
+        assertEquals("jpush-registration-2", str(db.one("SELECT * FROM push_device WHERE installation_id=?", installation), "registration_id"));
+        request("DELETE", "/push-devices/" + installation, peerToken, null, 404);
+        request("POST", "/auth/logout", adminToken, null, 204);
+        assertEquals(false, db.one("SELECT * FROM push_device WHERE installation_id=?", installation).get("active"));
+    }
+
+    @Test
+    void reviewNotificationsCreateTransactionalPushDeliveriesForReviewerAndSubmitter() throws Exception {
+        String reviewerInstallation = UUID.randomUUID().toString();
+        String submitterInstallation = UUID.randomUUID().toString();
+        request("POST", "/push-devices", leadToken,
+                fields("installationId", reviewerInstallation, "registrationId", "reviewer-registration"), 200);
+        request("POST", "/push-devices", employeeToken,
+                fields("installationId", submitterInstallation, "registrationId", "submitter-registration"), 200);
+        var task = createTask(employeeToken, "PERSONAL", List.of());
+        var reviewerNote = items(request("GET", "/notifications?limit=100", leadToken, null, 200)).stream()
+                .filter(note -> "REVIEW_REQUEST".equals(note.get("eventType"))).findFirst().orElseThrow();
+        assertEquals("NEW_TASK", reviewerNote.get("kind"));
+        assertEquals(1, db.rows("SELECT id FROM notification_push_delivery WHERE notification_id=?", reviewerNote.get("id")).size());
+        reviewDecision(leadToken, task, "REJECT");
+        var submitterNote = items(request("GET", "/notifications?limit=100", employeeToken, null, 200)).stream()
+                .filter(note -> "REVIEW_RESULT".equals(note.get("eventType"))).findFirst().orElseThrow();
+        assertEquals("STATUS", submitterNote.get("kind"));
+        assertEquals(1, db.rows("SELECT id FROM notification_push_delivery WHERE notification_id=?", submitterNote.get("id")).size());
+        assertEquals("REJECTED", db.entity("task", enterprise, str(task, "id")).get("review_status"));
+    }
+
+    @Test
     void progressAndAcceptanceNotifyCreatorAndRecipientWithoutDuplicates() throws Exception {
         var task = createTask(managerToken, "DELEGATED", List.of(employee));
         reviewDecision(founderToken, task, "APPROVE");
@@ -2845,7 +2880,7 @@ class BusinessApiIntegrationTests {
 
     private long countKind(String token, String kind) throws Exception {
         return items(request("GET", "/notifications?limit=100", token, null, 200)).stream()
-                .filter(n -> kind.equals(n.get("kind")))
+                .filter(n -> kind.equals(n.get("kind")) && (kind.equals(n.get("eventType")) || n.get("eventType") == null))
                 .count();
     }
 
