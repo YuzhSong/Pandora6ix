@@ -71,7 +71,7 @@ try {
   const initialize = () => client.request('/admin/enterprise-initializations', { method: 'POST', body: initialization, authenticated: false, headers: { 'X-Bootstrap-Token': bootstrap, 'Idempotency-Key': key } })
   const initialized = await initialize()
   assert.deepEqual(await initialize(), initialized, '重复初始化应幂等')
-  await auth.login({ enterpriseDomain: domain, loginName: 'admin', password })
+  await auth.login({ accountIdentifier: `admin@${domain}`, password })
   let data = (await repository.getWorkspace())!
   assert.equal(data.people.length, 1); assert.equal(data.enterprise.version, 0)
   const legacyAdmin = data.people[0]
@@ -110,7 +110,7 @@ try {
   assert.ok(!Object.hasOwn(employeeMe, 'idNumber') && !Object.hasOwn(employeeMe, 'phoneNumber'), '非管理端投影不得泄露证件或电话')
   await assert.rejects(employeeClient.request('/admin/users'), (error: unknown) => error instanceof ApiError && error.status === 403)
   await employeeClient.request('/auth/logout', { method: 'POST' })
-  await assert.rejects(auth.login({ enterpriseDomain: domain, loginName: 'staff', password: staffPassword }), (error: unknown) => error instanceof ApiError && error.status === 403)
+  await assert.rejects(auth.login({ accountIdentifier: `staff@${domain}`, password: staffPassword }), (error: unknown) => error instanceof ApiError && error.status === 403)
   assert.ok(sessions.read(), '拒绝普通员工登录不能清除已有管理员身份')
   let staff = data.people.find(person => person.loginName === 'staff')!
   data = await repository.savePerson({ ...staff, displayName: '更新人员' }, staff.id, staff.version)
@@ -224,7 +224,7 @@ try {
   assert.equal(sessions.read(), null)
   const revoked = createApiClient({ baseUrl: `${origin}/api/v1`, getAccessToken: () => oldToken })
   await assert.rejects(revoked.request('/me'), (error: unknown) => error instanceof ApiError && error.status === 401)
-  await auth.login({ enterpriseDomain: domain, loginName: 'admin', password: newPassword })
+  await auth.login({ accountIdentifier: `admin@${domain}`, password: newPassword })
   await auth.logout(); assert.equal(sessions.read(), null)
   console.log('真实 Spring + H2 + Vite + Web repository 联调通过：人员创建与资料持久化、权限隔离、角色资料保留、组织类型转换及删除、员工密码重置与旧会话撤销、CSV 批量创建、标签关闭、事项幂等与版本、改密及退出。')
   if (process.argv.includes('--preview')) {

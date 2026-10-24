@@ -226,6 +226,9 @@ class BusinessApiIntegrationTests {
         assertNotNull(login("employee"));
         var history=request("GET","/admin/users/"+employee+"/personnel-changes",adminToken,null,200);
         assertTrue(json.writeValueAsString(history).contains("JOB_CHANGE"));
+        var personnelHistory=items(history).getFirst();
+        assertEquals("Team",((Map<?,?>)personnelHistory.get("afterValues")).get("orgUnitName"));
+        assertEquals("Administrator",personnelHistory.get("actorName"));
         var operationPage=request("GET","/admin/operation-logs?module=PERSONNEL&action=JOB_CHANGE",adminToken,null,200);
         assertEquals(1,items(operationPage).size());
         assertEquals(1,operationPage.get("total"));
@@ -233,16 +236,35 @@ class BusinessApiIntegrationTests {
         var operation=items(operationPage).getFirst();
         assertEquals("调整员工职位",operation.get("summary"));
         var detail=request("GET","/admin/operation-logs/"+operation.get("id"),adminToken,null,200);
+        assertEquals(0,((Number)((Map<?,?>)detail.get("before")).get("version")).intValue());
+        assertEquals(1,((Number)((Map<?,?>)detail.get("after")).get("version")).intValue());
+        assertEquals(2,((List<?>)detail.get("versions")).size());
+        assertEquals(0,((Number)((Map<?,?>)((List<?>)detail.get("versions")).getFirst()).get("version")).intValue());
         String serializedOperation=json.writeValueAsString(detail);
         assertTrue(serializedOperation.contains("Team manager"));
         assertFalse(serializedOperation.contains("11010119900101001X"));
         assertFalse(serializedOperation.contains("+86 13800000000"));
+        db.update("UPDATE org_unit SET name='Renamed Team' WHERE enterprise_id=? AND id=?",enterprise,team);
+        var detailAfterRename=request("GET","/admin/operation-logs/"+operation.get("id"),adminToken,null,200);
+        assertTrue(json.writeValueAsString(detailAfterRename).contains("Team"));
+        assertFalse(json.writeValueAsString(detailAfterRename).contains("Renamed Team"));
         request("GET","/admin/operation-logs?module=ACCOUNT&snapshotToken="+operationPage.get("snapshotToken"),adminToken,null,422);
         request("GET","/admin/operation-logs",peerToken,null,403);
         request("POST","/admin/users/"+lead+"/job-change",adminToken,fields("expectedVersion",0,"jobTitle","Member","orgUnitId",team,"supervisorUserId",manager,"roles",List.of("EMPLOYEE")),409);
         request("POST","/admin/users/"+lead+"/departure",adminToken,fields("expectedVersion",0,"departureDate",today.toString()),409);
         request("POST","/admin/users/"+admin+"/departure",adminToken,fields("expectedVersion",0,"departureDate",today.toString()),409);
         assertEquals(0,db.rows("SELECT * FROM personnel_change WHERE enterprise_id=? AND user_id=?",enterprise,lead).size());
+    }
+
+    @Test
+    void accountIdentifierSelectsTenantAndLegacyLoginRemainsSupported() throws Exception {
+        var result = request("POST", "/auth/login", null,
+                fields("accountIdentifier", "admin@" + domain, "password", PASSWORD), 200);
+        assertNotNull(result.get("accessToken"));
+        request("POST", "/auth/login", null,
+                fields("accountIdentifier", "admin@unknown-domain", "password", PASSWORD), 401);
+        request("POST", "/auth/login", null,
+                fields("enterpriseDomain", domain, "loginName", "admin", "password", PASSWORD), 200);
     }
 
     private String session(String user) {
@@ -1230,6 +1252,7 @@ class BusinessApiIntegrationTests {
                                 0),
                         201);
         String otherDomain = (String) other.get("loginDomain");
+        String otherAdmin = (String) other.get("adminUserId");
         String otherToken =
                 (String)
                         request(
@@ -1245,6 +1268,11 @@ class BusinessApiIntegrationTests {
                                                 PASSWORD),
                                         200)
                                 .get("accessToken");
+        var identifierLogin=request("POST","/auth/login",null,fields("accountIdentifier","admin@"+otherDomain,"password",PASSWORD),200);
+        assertEquals(otherAdmin,request("GET","/me",str(identifierLogin,"accessToken"),null,200).get("id"));
+        var localIdentifierLogin=request("POST","/auth/login",null,fields("accountIdentifier","admin@"+domain,"password",PASSWORD),200);
+        assertEquals(admin,request("GET","/me",str(localIdentifierLogin,"accessToken"),null,200).get("id"));
+        request("POST","/auth/login",null,fields("accountIdentifier","admin@wrong-domain","password",PASSWORD),401);
         request("GET", "/company-important-items/" + item.get("id"), otherToken, null, 404);
         var task = createTask(employeeToken, "PERSONAL", List.of());
         request("GET", "/task-reviews/" + task.get("reviewId"), otherToken, null, 404);

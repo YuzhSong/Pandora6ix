@@ -8,12 +8,13 @@ function object(value: unknown): Record<string, unknown> { if (!value || typeof 
 function string(value: unknown): string { if (typeof value !== 'string') throw malformed(); return value }
 function nullable(value: unknown): string | null { return value === null ? null : string(value) }
 function integer(value: unknown): number { if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) throw malformed(); return value }
+function nullableInteger(value: unknown): number | null { return value === null ? null : integer(value) }
 function timestamp(value: unknown): string { const result = string(value); if (!/T.*(?:Z|[+-]\d{2}:\d{2})$/.test(result) || !Number.isFinite(Date.parse(result))) throw malformed(); return result }
 function record(value: unknown): OperationRecord {
   const row = object(value), actor = object(row.actor), target = object(row.object)
   if (row.result !== 'SUCCESS' && row.result !== 'FAILURE') throw malformed()
   const id = string(row.id); if (!id) throw malformed()
-  return { id, occurredAt: timestamp(row.occurredAt), actor: { id: nullable(actor.id), displayName: string(actor.displayName), loginName: nullable(actor.loginName) }, object: { id: nullable(target.id), type: string(target.type), label: string(target.label) }, module: string(row.module), action: string(row.action), source: string(row.source), result: row.result, summary: string(row.summary) }
+  return { id, occurredAt: timestamp(row.occurredAt), actor: { id: nullable(actor.id), displayName: nullable(actor.displayName), loginName: nullable(actor.loginName) }, object: { id: nullable(target.id), type: string(target.type), label: nullable(target.label) }, module: string(row.module), action: string(row.action), source: string(row.source), result: row.result, summary: string(row.summary) }
 }
 function snapshot(value: unknown): OperationSnapshot | null {
   if (value === null) return null
@@ -21,7 +22,7 @@ function snapshot(value: unknown): OperationSnapshot | null {
   if (!Array.isArray(row.fields)) throw malformed()
   const fields = row.fields.map(item => { const field = object(item); return { key: string(field.key), label: string(field.label), value: nullable(field.value) } })
   if (fields.some(field => !field.key || !field.label) || new Set(fields.map(field => field.key)).size !== fields.length) throw malformed()
-  return { version: integer(row.version), fields }
+  return { version: nullableInteger(row.version), fields }
 }
 function query(filters: OperationFilters, cursor?: string, snapshotToken?: string, limit = 20): string {
   if (!dateRangeValid(filters)) throw new Error('结束日期不能早于开始日期。')
@@ -49,7 +50,7 @@ export function createOperationLogReader(client: ReaderClient) {
   async function detail(id: string, signal?: AbortSignal): Promise<OperationDetail> {
     const data = object(await request(`/admin/operation-logs/${encodeURIComponent(id)}`, signal))
     if (!Array.isArray(data.versions)) throw malformed()
-    const versions: OperationVersion[] = data.versions.map(item => { const value = object(item); return { logId: string(value.logId), version: integer(value.version), occurredAt: timestamp(value.occurredAt), actorName: string(value.actorName), action: string(value.action) } })
+    const versions: OperationVersion[] = data.versions.map(item => { const value = object(item); return { logId: string(value.logId), version: nullableInteger(value.version), occurredAt: timestamp(value.occurredAt), actorName: nullable(value.actorName), action: string(value.action) } })
     const base = record(data)
     if (base.id !== id || new Set(versions.map(version => version.logId)).size !== versions.length) throw malformed()
     if (base.result === 'FAILURE' && (data.before !== null || data.after !== null)) throw malformed()

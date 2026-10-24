@@ -49,7 +49,7 @@ export interface AdminRepository {
 }
 
 export interface JobChangeInput { jobTitle: string; orgUnitId: string; supervisorId: string | null; roles: Role[] }
-export interface PersonnelChange { id: string; actorName: string; recordedAt: string; effectiveDate: string; kind: 'DEPARTURE' | 'JOB_CHANGE'; beforeValues: Record<string, unknown>; afterValues: Record<string, unknown> }
+export interface PersonnelChange { id: string; actorName: string | null; actorLoginName: string | null; recordedAt: string; effectiveDate: string; kind: 'DEPARTURE' | 'JOB_CHANGE'; beforeValues: Record<string, unknown>; afterValues: Record<string, unknown> }
 
 export interface CredentialHandoff {
   personId: string; displayName: string; loginName: string; enterpriseDomain: string
