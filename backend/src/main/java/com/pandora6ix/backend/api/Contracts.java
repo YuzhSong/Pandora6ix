@@ -14,8 +14,9 @@ public final class Contracts {
     private Contracts() {}
 
     public record Login(
-            @NotBlank @Size(max = 128) String enterpriseDomain,
-            @NotBlank @Size(max = 128) String loginName,
+            @Size(max = 257) String accountIdentifier,
+            @Size(max = 128) String enterpriseDomain,
+            @Size(max = 128) String loginName,
             @NotBlank @Size(max = 72) String password) {}
 
     public record Password(

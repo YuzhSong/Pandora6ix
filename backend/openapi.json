@@ -7268,17 +7268,38 @@
       "Login": {
         "type": "object",
         "properties": {
+          "accountIdentifier": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 257
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "enterpriseDomain": {
-            "type": "string",
-            "minLength": 1,
-            "pattern": "\\S",
-            "maxLength": 128
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "loginName": {
-            "type": "string",
-            "minLength": 1,
-            "pattern": "\\S",
-            "maxLength": 128
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "password": {
             "type": "string",
@@ -7289,11 +7310,22 @@
           }
         },
         "required": [
-          "enterpriseDomain",
-          "loginName",
           "password"
         ],
-        "additionalProperties": false
+        "additionalProperties": false,
+        "anyOf": [
+          {
+            "required": [
+              "accountIdentifier"
+            ]
+          },
+          {
+            "required": [
+              "enterpriseDomain",
+              "loginName"
+            ]
+          }
+        ]
       },
       "Password": {
         "type": "object",
@@ -10337,7 +10369,24 @@
                   "format": "uuid"
                 },
                 "actorName": {
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "actorLoginName": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
                 "kind": {
                   "type": "string",
@@ -10357,8 +10406,46 @@
                 "beforeValues": {
                   "type": "object",
                   "properties": {
+                    "version": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "format": "int64"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "displayName": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "loginName": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "employmentStatus": {
-                      "type": "string"
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     },
                     "departureDate": {
                       "anyOf": [
@@ -10392,11 +10479,31 @@
                         }
                       ]
                     },
+                    "orgUnitName": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "supervisorUserId": {
                       "anyOf": [
                         {
                           "type": "string",
                           "format": "uuid"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "supervisorName": {
+                      "anyOf": [
+                        {
+                          "type": "string"
                         },
                         {
                           "type": "null"
@@ -10410,15 +10517,60 @@
                       }
                     },
                     "status": {
-                      "type": "string"
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   }
                 },
                 "afterValues": {
                   "type": "object",
                   "properties": {
+                    "version": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "format": "int64"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "displayName": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "loginName": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "employmentStatus": {
-                      "type": "string"
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     },
                     "departureDate": {
                       "anyOf": [
@@ -10452,11 +10604,31 @@
                         }
                       ]
                     },
+                    "orgUnitName": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "supervisorUserId": {
                       "anyOf": [
                         {
                           "type": "string",
                           "format": "uuid"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "supervisorName": {
+                      "anyOf": [
+                        {
+                          "type": "string"
                         },
                         {
                           "type": "null"
@@ -10470,7 +10642,14 @@
                       }
                     },
                     "status": {
-                      "type": "string"
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   }
                 }
@@ -10513,7 +10692,14 @@
                       ]
                     },
                     "displayName": {
-                      "type": "string"
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     },
                     "loginName": {
                       "anyOf": [
@@ -10525,10 +10711,7 @@
                         }
                       ]
                     }
-                  },
-                  "required": [
-                    "displayName"
-                  ]
+                  }
                 },
                 "object": {
                   "type": "object",
@@ -10548,12 +10731,18 @@
                       "type": "string"
                     },
                     "label": {
-                      "type": "string"
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
-                    "type",
-                    "label"
+                    "type"
                   ]
                 },
                 "module": {
@@ -10642,7 +10831,14 @@
                   ]
                 },
                 "displayName": {
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
                 "loginName": {
                   "anyOf": [
@@ -10654,10 +10850,7 @@
                     }
                   ]
                 }
-              },
-              "required": [
-                "displayName"
-              ]
+              }
             },
             "object": {
               "type": "object",
@@ -10677,12 +10870,18 @@
                   "type": "string"
                 },
                 "label": {
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 }
               },
               "required": [
-                "type",
-                "label"
+                "type"
               ]
             },
             "module": {
@@ -10742,8 +10941,15 @@
                 "type": "object",
                 "properties": {
                   "version": {
-                    "type": "integer",
-                    "format": "int64"
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "format": "int64"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   },
                   "fields": {
                     "type": "array",
@@ -10786,8 +10992,15 @@
                 "type": "object",
                 "properties": {
                   "version": {
-                    "type": "integer",
-                    "format": "int64"
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "format": "int64"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   },
                   "fields": {
                     "type": "array",
@@ -10834,15 +11047,29 @@
                   "format": "uuid"
                 },
                 "version": {
-                  "type": "integer",
-                  "format": "int64"
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "format": "int64"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
                 "occurredAt": {
                   "type": "string",
                   "format": "date-time"
                 },
                 "actorName": {
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
                 "action": {
                   "type": "string"
@@ -10852,7 +11079,6 @@
                 "logId",
                 "version",
                 "occurredAt",
-                "actorName",
                 "action"
               ]
             }

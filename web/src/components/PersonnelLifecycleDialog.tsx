@@ -61,7 +61,7 @@ export function PersonnelLifecycleDialog({ person, action, data, onClose, onSave
     if (key === 'status') return value === 'DISABLED' ? '已停用' : '已启用'
     return typeof value === 'string' && value ? value : '—'
   }
-  const fieldLabels: Record<string, string> = { jobTitle: '职位', roles: '角色', orgUnitId: '所属组织', supervisorUserId: '直属上级', employmentStatus: '在职状态', departureDate: '离职日期', status: '账号状态' }
+  const fieldLabels: Record<string, string> = { displayName: '姓名', loginName: '登录账号', jobTitle: '职位', roles: '角色', orgUnitId: '组织 ID', orgUnitName: '所属组织', supervisorUserId: '上级人员 ID', supervisorName: '直属上级', employmentStatus: '在职状态', departureDate: '离职日期', status: '账号状态' }
   const orderedHistory = [...(history ?? [])].sort((a, b) => Date.parse(a.recordedAt) - Date.parse(b.recordedAt))
   let jobChangeNumber = 0
   return <dialog ref={dialog} className={`editor-dialog credential-tools-dialog${action === 'history' ? ' personnel-history-dialog' : ''}`} aria-label={title} onCancel={event => { event.preventDefault(); if (!busy) onClose() }}>
@@ -76,7 +76,7 @@ export function PersonnelLifecycleDialog({ person, action, data, onClose, onSave
           <span className="personnel-event-number">{index + 1}</span>
           <h3>{change.kind === 'DEPARTURE' ? '办理离职' : `第 ${++jobChangeNumber} 次岗位调整`}</h3>
           {change.kind === 'JOB_CHANGE' && change.beforeValues.orgUnitId !== change.afterValues.orgUnitId && <p className="personnel-transfer-summary">{showValue('orgUnitId', change.beforeValues.orgUnitId)} <span aria-label="调至">→</span> {showValue('orgUnitId', change.afterValues.orgUnitId)}</p>}
-          <p className="personnel-event-meta">操作人：{change.actorName} · {new Date(change.recordedAt).toLocaleString('zh-CN')} · 生效日期：{change.effectiveDate}</p>
+          <p className="personnel-event-meta">操作人：{change.actorName ?? '历史操作者（未记录）'} · {new Date(change.recordedAt).toLocaleString('zh-CN')} · 生效日期：{change.effectiveDate}</p>
           <table className="personnel-change-table"><thead><tr><th scope="col">变动项目</th><th scope="col">{change.kind === 'DEPARTURE' ? '离职前' : '调整前'}</th><th scope="col">{change.kind === 'DEPARTURE' ? '离职后' : '调整后'}</th></tr></thead><tbody>{Object.entries(fieldLabels).filter(([key]) => JSON.stringify(change.beforeValues[key]) !== JSON.stringify(change.afterValues[key])).map(([key, label]) => <tr key={key}><th scope="row">{label}</th><td>{showValue(key, change.beforeValues[key])}</td><td>{showValue(key, change.afterValues[key])}</td></tr>)}</tbody></table>
         </li>)}</ol></>}
         {error && <p className="error-message" role="alert">{error}{blocked ? ' 请关闭并刷新资料后核对。' : ''}</p>}
