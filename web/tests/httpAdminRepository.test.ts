@@ -396,7 +396,7 @@ test('personnel lifecycle uses scoped versioned endpoints and preserves separate
       const body = JSON.parse(String(options.body)); writes.push({ url: path, body })
       return Response.json({ data: { ...employee, employmentStatus: path.endsWith('/departure') ? 'DEPARTED' : 'IN_SERVICE', departureDate: path.endsWith('/departure') ? '2026-10-19' : null, status: path.endsWith('/departure') ? 'DISABLED' : 'ACTIVE', version: writes.length } })
     }
-    if (path.endsWith('/personnel-changes')) return Response.json({ data: { items: [{ id: 'change', kind: 'DEPARTURE', actorName: '管理员', effectiveDate: '2026-10-19', recordedAt: '2026-10-19T00:00:00Z', beforeValues: { employmentStatus: 'IN_SERVICE' }, afterValues: { employmentStatus: 'DEPARTED' } }] } })
+    if (path.endsWith('/personnel-changes')) return Response.json({ data: { items: [{ id: 'change', kind: 'DEPARTURE', actorName: '管理员', actorLoginName: 'admin', effectiveDate: '2026-10-19', recordedAt: '2026-10-19T00:00:00Z', beforeValues: { employmentStatus: 'IN_SERVICE' }, afterValues: { employmentStatus: 'DEPARTED' } }] } })
     return Response.json({ data: reader(path) })
   } }))
   await repository.getWorkspace()
