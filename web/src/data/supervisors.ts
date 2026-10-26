@@ -8,9 +8,13 @@ export function businessRank(roles: Role[]): number {
   return roles.includes('EMPLOYEE') ? 0 : -1
 }
 
+export function canHaveSupervisor(roles: Role[]): boolean {
+  return !roles.includes('ADMIN') && !roles.includes('FOUNDER') && businessRank(roles) >= 0
+}
+
 export function supervisorCandidates(people: Person[], subjectId: string | undefined, roles: Role[]): Person[] {
   const rank = businessRank(roles)
-  if (rank < 0 || rank === 3) return []
+  if (!canHaveSupervisor(roles)) return []
   const byId = new Map(people.map(person => [person.id, person]))
   return people.filter(candidate => {
     if (candidate.id === subjectId || candidate.status === 'DISABLED' || candidate.employmentStatus === 'DEPARTED' || businessRank(candidate.roles) <= rank) return false

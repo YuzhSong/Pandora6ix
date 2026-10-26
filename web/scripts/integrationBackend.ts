@@ -166,14 +166,13 @@ try {
   const changedHandoff = (await repository.credentialHandoffs(staff.id))[0]
   assert.equal(changedHandoff.status, 'CHANGED'); assert.equal(changedHandoff.initialPassword, undefined)
   await assert.rejects(changedClient.request('/me'), (reason: unknown) => reason instanceof ApiError && reason.status === 401)
-  const batchPassword = previewPassword ?? randomUUID()
-  const batchPreview = previewBulkPersonnel(bulkPersonnelTemplate() + ['批量甲,batch-one', '批量乙,batch-two'].map(prefix => `${prefix},${batchPassword},女,000000200001010001,00000000001,开发,${department.name},manager`).join('\n'), data)
+  const batchPreview = previewBulkPersonnel(bulkPersonnelTemplate() + ['批量甲,batch-one', '批量乙,batch-two'].map(prefix => `${prefix},女,000000200001010001,00000000001,员工,${department.name},manager`).join('\n'), data)
   assert.deepEqual(batchPreview.errors, [])
   let batchCreated = 0
-  await createBulkPersonnel(batchPreview.rows, repository, { stopped: () => false, onRow: (_, status, message) => { assert.notEqual(status, 'failed', message) }, onCreated: (next, account) => { data = next; batchCreated++; assert.equal(account.initialPassword, batchPassword) } })
+  await createBulkPersonnel(batchPreview.rows, repository, { stopped: () => false, onRow: (_, status, message) => { assert.notEqual(status, 'failed', message) }, onCreated: (next, account) => { data = next; batchCreated++; assert.equal(account.initialPassword, batchPreview.rows.find(row => row.input.loginName === account.loginName)!.initialPassword) } })
   assert.equal(batchCreated, 2)
   const deliveredBatch = (await repository.credentialHandoffs()).find(account => account.loginName === 'batch-one')!
-  assert.equal(deliveredBatch.initialPassword, batchPassword)
+  assert.equal(deliveredBatch.initialPassword, batchPreview.rows[0].initialPassword)
   const deliveredLogin = await client.request<{ accessToken: string; user: { id: string } }>('/auth/login', { method: 'POST', authenticated: false, body: { enterpriseDomain: domain, loginName: deliveredBatch.loginName, password: deliveredBatch.initialPassword } })
   assert.equal(deliveredLogin.user.id, deliveredBatch.personId, '导出的初始密码原文必须能让对应员工真实登录')
   await client.request('/auth/logout', { method: 'POST', authenticated: false, headers: { Authorization: `Bearer ${deliveredLogin.accessToken}` } })
