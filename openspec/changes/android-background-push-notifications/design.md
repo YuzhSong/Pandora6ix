@@ -33,3 +33,11 @@ Additive Flyway migration creates push-device and push-delivery tables and expan
 ## Open Questions
 
 None; JPush is the confirmed provider. Production AppKey and Master Secret are deployment inputs, not design decisions.
+
+## Integration review, 2026-10-27
+
+Retain the notification preference and one-time permission request from PR #28. Registration additionally requires the Android system grant and configured SDK; denial does not erase local reminder preferences. SDK registration callbacks and session-token changes trigger registration refresh; transient failures retry. Notification taps are forwarded explicitly through the custom JPush receiver.
+
+The worker checks active account and installation ownership when selecting, claiming and preparing to send; attempts fence stale workers and stop at five. Same-owner re-registration preserves queued work, while ownership changes cancel it. A provider-accepted request cannot be recalled if account ownership changes during network I/O. Notifications are generic and protected details remain server-authenticated.
+
+The original credential-bearing Word guide was removed from candidate history and replaced with a sanitized Markdown guide. Old credentials require rotation; external-provider and physical-device acceptance remain pending.
