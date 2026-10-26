@@ -19,12 +19,14 @@ public class PushDeviceService {
     @Transactional
     public Object register(IdentityService.Actor actor, Contracts.PushDeviceRegistration command) {
         var existing = db.optional(
-                "SELECT id FROM push_device WHERE installation_id=?",
+                "SELECT * FROM push_device WHERE installation_id=? FOR UPDATE",
                 command.installationId());
         if (existing.isPresent()) {
             String deviceId = str(existing.get(), "id");
-            db.update("UPDATE notification_push_delivery SET status='CANCELLED' WHERE push_device_id=? AND status IN ('PENDING','SENDING')",
-                    deviceId);
+            if (!actor.enterpriseId().equals(str(existing.get(), "enterprise_id"))
+                    || !actor.id().equals(str(existing.get(), "user_id")))
+                db.update("UPDATE notification_push_delivery SET status='CANCELLED' WHERE push_device_id=? AND status IN ('PENDING','SENDING')",
+                        deviceId);
             db.update("UPDATE push_device SET enterprise_id=?,user_id=?,registration_id=?,active=TRUE,updated_at=CURRENT_TIMESTAMP WHERE id=?",
                     actor.enterpriseId(), actor.id(), command.registrationId(), deviceId);
         } else {

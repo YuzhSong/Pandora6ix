@@ -312,7 +312,14 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository, noti
                 homeDetail = null
             }
         }
-        LaunchedEffect(currentUser?.id, notifyMaster, notificationPermissionRevision) {
+        DisposableEffect(appContext) {
+            val receiver = object : android.content.BroadcastReceiver() {
+                override fun onReceive(context: Context, intent: android.content.Intent) { notificationPermissionRevision++ }
+            }
+            ContextCompat.registerReceiver(appContext, receiver, android.content.IntentFilter(PandoraPushReceiver.REGISTRATION_CHANGED), ContextCompat.RECEIVER_NOT_EXPORTED)
+            onDispose { appContext.unregisterReceiver(receiver) }
+        }
+        LaunchedEffect(currentUser?.id, session.token, notifyMaster, notificationPermissionRevision) {
             if (currentUser == null) return@LaunchedEffect
             if (!notifyMaster || !NotificationHelper.canPostNotifications(appContext)) {
                 runCatching { pushDeviceRepo.deactivate() }
@@ -324,8 +331,12 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository, noti
                     withContext(Dispatchers.IO) { JPushInterface.getRegistrationID(appContext) }
                 }.getOrNull()
                 if (!registrationId.isNullOrBlank()) {
-                    runCatching { pushDeviceRepo.register(registrationId) }
-                    return@LaunchedEffect
+                    try {
+                        pushDeviceRepo.register(registrationId)
+                        return@LaunchedEffect
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) { /* Retry a transient registration failure. */ }
                 }
                 kotlinx.coroutines.delay(2_000)
             }
