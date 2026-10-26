@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- 头像：相册（Android 13+ 细分媒体权限，支持"仅所选照片"的部分授权；13 以下用存储权限）与相机 -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
@@ -15,6 +16,14 @@
         android:networkSecurityConfig="@xml/network_security_config"
         android:supportsRtl="true"
         android:theme="@style/Theme.Pandora6ix">
+        <meta-data android:name="JPUSH_APPKEY" android:value="${JPUSH_APP_KEY}" tools:replace="android:value" />
+        <meta-data android:name="JPUSH_CHANNEL" android:value="default" tools:replace="android:value" />
+        <receiver android:name=".PandoraPushReceiver" android:enabled="true" android:exported="false">
+            <intent-filter>
+                <action android:name="cn.jpush.android.intent.RECEIVER_MESSAGE" />
+                <category android:name="${applicationId}" />
+            </intent-filter>
+        </receiver>
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

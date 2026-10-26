@@ -19,6 +19,10 @@ public final class Contracts {
             @Size(max = 128) String loginName,
             @NotBlank @Size(max = 72) String password) {}
 
+    public record PushDeviceRegistration(
+            @NotBlank @Size(max = 36) String installationId,
+            @NotBlank @Size(max = 256) String registrationId) {}
+
     public record Password(
             @NotBlank String currentPassword,
             @NotBlank @Size(min = 10, max = 72) String newPassword) {}
