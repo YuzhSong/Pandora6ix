@@ -29,8 +29,8 @@ test('departure snapshots show Chinese labels, states, dates and current directo
   const result = presentOperationComparison(before, after, data)
   assert.deepEqual(result.find(f => f.key === 'employmentStatus'), { key: 'employmentStatus', label: '在职状态', before: '在职', after: '已离职', changed: true, rawBefore: 'IN_SERVICE', rawAfter: 'DEPARTED' })
   assert.equal(result.find(f => f.key === 'departureDate')?.after, '2026年10月23日')
-  assert.equal(result.find(f => f.key === 'orgUnitId')?.after, '潘多拉科技 → 产品研发部')
-  assert.equal(result.find(f => f.key === 'supervisorUserId')?.after, '潘多拉科技 → 林知远（lin.zhiyuan）')
+  assert.equal(result.find(f => f.key === 'orgUnitId')?.after, '历史组织名称未记录')
+  assert.equal(result.find(f => f.key === 'supervisorUserId')?.after, '历史人员名称未记录')
   assert.equal(result.find(f => f.key === 'roles')?.after, '部门老总、员工')
   assert.equal(before.fields[0].value, 'IN_SERVICE')
 })
@@ -49,12 +49,12 @@ test('unavailable references keep raw changes distinct and never expose filtered
   assert.equal(presentOperationValue('roles', '["FOUNDER"]', data), '创始人')
 })
 
-test('placeholder zero versions are not presented as real history and valid initial zero is retained', () => {
+test('nullable unknown versions differ from valid initial zero', () => {
   const snapshot = { version: 0, fields: [] }
-  assert.equal(hasReportedSnapshotVersions({ before: snapshot, after: snapshot }), false)
+  assert.equal(hasReportedSnapshotVersions({ before: snapshot, after: snapshot }), true)
   assert.equal(hasReportedSnapshotVersions({ before: snapshot, after: { ...snapshot, version: 1 } }), true)
   const detail = { id: 'current', versions: [{ logId: 'current', version: 0 }, { logId: 'older', version: 0 }] } as OperationDetail
-  assert.deepEqual(reportedHistory(detail).map(version => version.logId), ['older'])
+  assert.deepEqual(reportedHistory(detail).map(version => version.logId), ['current', 'older'])
 })
 
 test('positions use historical roles once and organization references include department and team', () => {
