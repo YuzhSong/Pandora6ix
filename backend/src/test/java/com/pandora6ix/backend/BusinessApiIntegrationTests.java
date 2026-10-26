@@ -444,6 +444,10 @@ class BusinessApiIntegrationTests {
     void managerCanParticipateInDelegationWithoutWideningOtherRecipientScopes() throws Exception {
         var task = createTask(managerToken, "DELEGATED", List.of(manager, employee));
         assertEquals("PENDING", task.get("reviewStatus"));
+        var patch = taskBody("DELEGATED", List.of(manager, employee), List.of(), null);
+        patch.remove("kind"); patch.remove("recipientIds"); patch.put("expectedVersion", 0);
+        patch.put("title", "Mixed delegation edited before approval");
+        task = request("PATCH", "/tasks/" + task.get("id"), managerToken, patch, 200);
         var decision = reviewDecision(founderToken, task, "APPROVE");
         assertEquals("APPROVED", ((Map<?, ?>) decision.get("review")).get("decision"));
         var assigned = db.rows("SELECT * FROM task_assignment WHERE enterprise_id=? AND task_id=?", enterprise, task.get("id"));
