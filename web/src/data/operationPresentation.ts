@@ -49,12 +49,6 @@ export function operationOrganizationPath(id: string, data: AdminData): string {
   }
   return names.join(' → ')
 }
-function personPath(id: string, data: AdminData): string {
-  const person = data.people.find(person => person.id === id)
-  if (!person) return '人员已删除或当前不可用'
-  const name = `${person.displayName}（${person.loginName}）`
-  return person.orgUnitId ? `${operationOrganizationPath(person.orgUnitId, data)} → ${name}` : `未分配组织 → ${name}`
-}
 export function presentOperationValue(key: string, value: string | null, data: AdminData): string | null {
   if (value === null || value === '') return value
   if (key === 'jobTitle') {

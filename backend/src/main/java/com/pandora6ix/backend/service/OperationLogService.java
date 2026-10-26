@@ -37,9 +37,9 @@ public class OperationLogService {
     public Map<String,Object> list(IdentityService.Actor actor, String keyword, String module, String action, String source,
                                    String result, OffsetDateTime from, OffsetDateTime to, String cursor, String requestedSnapshot, int limit) {
         actor.admin();
-        String q = "SELECT l.*,u.display_name AS actor_name,u.login_name AS actor_login FROM operation_log l LEFT JOIN app_user u ON u.enterprise_id=l.enterprise_id AND u.id=l.actor_user_id WHERE l.enterprise_id=?";
+        String q = "SELECT l.* FROM operation_log l WHERE l.enterprise_id=?";
         List<Object> args = new ArrayList<>(List.of(actor.enterpriseId()));
-        if (keyword != null && !keyword.isBlank()) { q += " AND (LOWER(l.summary) LIKE LOWER(?) OR LOWER(COALESCE(u.display_name,'')) LIKE LOWER(?) OR LOWER(COALESCE(u.login_name,'')) LIKE LOWER(?))"; String k=Pages.like(keyword.trim()); args.add(k); args.add(k); args.add(k); }
+        if (keyword != null && !keyword.isBlank()) { q += " AND (LOWER(l.summary) LIKE LOWER(?) OR LOWER(COALESCE(l.actor_display_name,'')) LIKE LOWER(?) OR LOWER(COALESCE(l.actor_login_name,'')) LIKE LOWER(?))"; String k=Pages.like(keyword.trim()); args.add(k); args.add(k); args.add(k); }
         if (module != null && !module.isBlank()) { q += " AND l.module=?"; args.add(module); }
         if (action != null && !action.isBlank()) { q += " AND l.action=?"; args.add(action); }
         if (source != null && !source.isBlank()) { q += " AND l.source=?"; args.add(source); }
@@ -67,7 +67,7 @@ public class OperationLogService {
         page.put("snapshotToken", snapshotToken);
         return page;
     }
-    private Map<String,Object> summary(Map<String,Object> row) { Object actorName=row.get("actor_display_name")!=null?row.get("actor_display_name"):row.get("actor_name"); Object actorLogin=row.get("actor_login_name")!=null?row.get("actor_login_name"):row.get("actor_login"); return fields("id",str(row,"id"),"occurredAt",row.get("occurred_at"),"actor",fields("id",row.get("actor_user_id"),"displayName",actorName,"loginName",actorLogin),"object",fields("id",row.get("object_id"),"type",str(row,"object_type"),"label",row.get("object_label")),"module",str(row,"module"),"action",str(row,"action"),"source",str(row,"source"),"result",str(row,"result"),"summary",str(row,"summary")); }
+    private Map<String,Object> summary(Map<String,Object> row) { Object actorName=row.get("actor_display_name"); Object actorLogin=row.get("actor_login_name"); return fields("id",str(row,"id"),"occurredAt",row.get("occurred_at"),"actor",fields("id",row.get("actor_user_id"),"displayName",actorName,"loginName",actorLogin),"object",fields("id",row.get("object_id"),"type",str(row,"object_type"),"label",row.get("object_label")),"module",str(row,"module"),"action",str(row,"action"),"source",str(row,"source"),"result",str(row,"result"),"summary",str(row,"summary")); }
     public Map<String,Object> detail(IdentityService.Actor actor, String id) {
         actor.admin(); var row=db.optional("SELECT * FROM operation_log WHERE enterprise_id=? AND id=?",actor.enterpriseId(),id).orElseThrow(BusinessException::missing);
         var out=summary(row); out.put("requestId",row.get("request_id")); out.put("failureReason",row.get("failure_reason")); out.put("before",snapshot(row.get("before_values"),row.get("before_version"))); out.put("after",snapshot(row.get("after_values"),row.get("after_version")));
