@@ -52,6 +52,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 private fun DemoDate.key() = "$year-$month-$day"
+
+/** 星级文字含义：1 很低 · 2 一般 · 3 普通 · 4 重要 · 5 紧急 */
+private fun priorityLabel(level: Int): String = listOf("很低", "一般", "普通", "重要", "紧急")[(level - 1).coerceIn(0, 4)]
 private fun String.date() = split("-").map(String::toInt).let { DemoDate(it[0], it[1], it[2]) }
 
 /** 服务端标签颜色（#RRGGBB）→ Compose Color；非法值回退墨色 */
@@ -60,7 +63,7 @@ internal fun tagHexColor(hex: String): Color =
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
-fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateDelegated: Boolean, availableTags: List<TagDto>, taskRepo: TaskRepository, businessTimezone: String? = null, onDismiss: () -> Unit, onCreated: (TaskDto) -> Unit) {
+fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateDelegated: Boolean, availableTags: List<TagDto>, taskRepo: TaskRepository, businessTimezone: String? = null, currentUser: UserDto? = null, onDismiss: () -> Unit, onCreated: (TaskDto) -> Unit) {
     val context = LocalContext.current
     val density = LocalDensity.current
     val candidateGap = with(density) { 8.dp.roundToPx() }
@@ -83,11 +86,25 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
     var startMinute by rememberSaveable { mutableIntStateOf(savedDraft?.startMinute ?: nowMinute.coerceAtMost(23 * 60 + 58)) }
     var endMinute by rememberSaveable { mutableIntStateOf(savedDraft?.endMinute ?: (nowMinute + 60).coerceAtMost(23 * 60 + 59)) }
     var priority by rememberSaveable { mutableIntStateOf(savedDraft?.priority ?: 3) }
-    // 任务类型/接收人相关状态不跨弹层打开残留：优先用草稿恢复，其次按能力初始化
-    var kind by remember { mutableStateOf(savedDraft?.kind ?: if (canCreateDelegated) "DELEGATED" else "PERSONAL") }
-    var selectedRecipientIds by remember { mutableStateOf(savedDraft?.recipientIds ?: listOf()) }
+    // 接收人规则：无派发权限的员工锁定为本人（灰色不可改）；有派发权限时可多选（本人 + 管理范围内成员）
+    val canDelegate = canCreateDelegated
+    val selfRecipient = remember(currentUser) {
+        currentUser?.let { u ->
+            RecipientDto(id = u.id, displayName = u.displayName.ifBlank { u.name.ifBlank { u.loginName } }, jobTitle = u.jobTitle, orgUnitId = u.orgUnitId)
+        }
+    }
+    var selectedRecipientIds by remember {
+        mutableStateOf(if (canDelegate) savedDraft?.recipientIds ?: listOf() else listOfNotNull(selfRecipient?.id))
+    }
+    // 任务类型由接收人推导，不再由按钮区分：仅本人且有个人任务能力 → 个人任务，否则派发任务
+    val kind = when {
+        selectedRecipientIds.size == 1 && selectedRecipientIds.first() == selfRecipient?.id && canCreatePersonal -> "PERSONAL"
+        else -> "DELEGATED"
+    }
     var candidates by remember { mutableStateOf<List<RecipientDto>>(emptyList()) }
     val candidateNames = remember { mutableStateMapOf<String, String>() }
+    // 本人姓名来自登录资料（displayName → name → loginName），无需等候选接口加载即可显示真实姓名
+    selfRecipient?.takeIf { it.displayName.isNotBlank() }?.let { candidateNames.putIfAbsent(it.id, it.displayName) }
     var recipientQuery by remember { mutableStateOf("") }
     var candidateOpen by remember { mutableStateOf(false) }
     val candidateGroups = remember(candidates) { recipientOrganizationTree(candidates) }
@@ -106,15 +123,17 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
     }
     // 候选范围由后端授权；组织 ID 决定层级和折叠状态，名称只用于显示。
     LaunchedEffect(candidateOpen, recipientQuery, kind, candidateRetry) {
-        if (kind == "DELEGATED" && candidateOpen) {
+        if (canDelegate && candidateOpen) {
             val keyword = recipientQuery.substringAfter("@").trim()
             candidates = emptyList()
             candidateLoading = true
             candidateError = false
             try {
                 val result = taskRepo.recipientCandidates(keyword.ifBlank { null })
-                candidates = result.items
-                candidateNames.putAll(result.items.associate { it.id to it.displayName })
+                // 候选人固定包含本人（排最前），其余为后端按管理范围授权的成员
+                val merged = if (selfRecipient != null && result.items.none { it.id == selfRecipient.id }) listOf(selfRecipient) + result.items else result.items
+                candidates = merged
+                candidateNames.putAll(merged.associate { it.id to it.displayName })
                 collapsedGroups = if (keyword.isBlank()) {
                     recipientOrganizationTree(result.items).flatMap { it.groupKeys }.toSet()
                 } else emptySet()
@@ -153,12 +172,14 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
     val buttonBorder = BorderStroke(1.dp, HairLine)
     fun pickDate(target: String) { datePickTarget = target }
     fun pickTime(target: String) { timePickTarget = target }
-    fun nameOf(id: String): String = candidateNames[id]?.ifBlank { null } ?: "成员 ${id.takeLast(4)}"
+    fun nameOf(id: String): String = candidateNames[id]?.ifBlank { null }
+        ?: selfRecipient?.takeIf { it.id == id }?.displayName?.ifBlank { null }
+        ?: "成员 ${id.takeLast(4)}"
     /** 提交创建：POST /tasks（非幂等，携带 Idempotency-Key；失败重试复用同一键） */
     fun submit() {
         error = when {
             title.isBlank() -> "请填写任务名称"
-            kind == "DELEGATED" && selectedRecipientIds.isEmpty() -> "请至少选择一位接收人"
+            selectedRecipientIds.isEmpty() -> "请至少选择一位接收人"
             !validTaskInterval(startKey.date(), endKey.date(), if (allDay) null else startMinute, if (allDay) null else endMinute) -> "结束日期和时间必须晚于开始时间"
             // 截止时间不能早于公司业务时区的当前时刻（服务端也按业务时区判定）
             !deadlineNotPast(endKey, if (allDay) null else endMinute, allDay, businessTimezone) ->
@@ -204,12 +225,8 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
                 IconButton(requestClose) { Icon(Icons.Default.Close, "关闭任务填写") }
             }
             Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(title, { title = it; error = null }, Modifier.fillMaxWidth(), label = { Text("任务名称") }, placeholder = { Text("我计划做…") }, singleLine = true, colors = fieldColors)
-                OutlinedTextField(note, { note = it }, Modifier.fillMaxWidth().heightIn(min = 112.dp), label = { Text("备注 / 简介") }, colors = fieldColors, minLines = 3)
-                if (canCreatePersonal && canCreateDelegated) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(selected = kind == "PERSONAL", onClick = { kind = "PERSONAL"; error = null }, label = { Text("个人任务") }, colors = FilterChipDefaults.filterChipColors(selectedContainerColor = CreamDeep, selectedLabelColor = Ink))
-                    FilterChip(selected = kind == "DELEGATED", onClick = { kind = "DELEGATED"; error = null }, label = { Text("派发任务") }, colors = FilterChipDefaults.filterChipColors(selectedContainerColor = CreamDeep, selectedLabelColor = Ink))
-                }
+                OutlinedTextField(title, { title = it; error = null }, Modifier.fillMaxWidth(), label = { Text("任务名称（必填）") }, placeholder = { Text("我计划做…") }, singleLine = true, colors = fieldColors)
+                OutlinedTextField(note, { note = it }, Modifier.fillMaxWidth().heightIn(min = 112.dp), label = { Text("备注 / 简介（选填）") }, colors = fieldColors, minLines = 3)
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text("全天任务", Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
                     Switch(allDay, { allDay = it; error = null }, colors = com.pandora6ix.app.ui.theme.pandoraSwitchColors())
@@ -223,9 +240,10 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
                     OutlinedButton({ pickTime("start") }, Modifier.weight(1f), colors = buttonColors, border = buttonBorder) { Text("开始 ${minuteLabel(startMinute)}") }
                     OutlinedButton({ pickTime("end") }, Modifier.weight(1f), colors = buttonColors, border = buttonBorder) { Text("结束 ${minuteLabel(endMinute)}") }
                 }
-                Text("重要程度 · $priority 星", fontWeight = FontWeight.SemiBold)
+                // 星级文字含义：与审批规则一致——星级越高越优先处理
+                Text("重要程度 · $priority 星 · ${priorityLabel(priority)}", fontWeight = FontWeight.SemiBold)
                 Row { (1..5).forEach { level -> IconButton({ priority = level }, Modifier.size(40.dp)) { Icon(if (level <= priority) Icons.Default.Star else Icons.Default.StarBorder, "$level 星", tint = Ink) } } }
-                Text("标签 · 必选，可多选，先选的为主标签", fontWeight = FontWeight.SemiBold)
+                Text("标签 · 可选，可多选；主标签决定任务颜色，未选标签的任务在视图中以中性色展示", fontWeight = FontWeight.SemiBold)
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     tags.forEachIndexed { i, name ->
                         val tagColor = availableTags.firstOrNull { it.name == name }?.let { tagHexColor(it.colorHex) } ?: Ink
@@ -237,11 +255,18 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
                     }
                     OutlinedButton({ showTagPicker = true }, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp), border = BorderStroke(1.dp, HairLine), colors = ButtonDefaults.outlinedButtonColors(contentColor = Ink)) { Icon(Icons.Default.Add, "选择标签", Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("选择标签", fontSize = 13.sp) }
                 }
-                if (kind == "DELEGATED") {
-                Text("接收人（可多选，输入 @ 检索）", fontWeight = FontWeight.SemiBold)
+                Text(if (canDelegate) "接收人（可多选，输入 @ 检索）" else "接收人", fontWeight = FontWeight.SemiBold)
                 if (selectedRecipientIds.isNotEmpty()) FlowRow(Modifier.fillMaxWidth().padding(vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    selectedRecipientIds.forEach { id -> FilterChip(selected = true, onClick = { selectedRecipientIds = selectedRecipientIds - id; error = null }, label = { Text(nameOf(id), fontSize = 13.sp) }, colors = FilterChipDefaults.filterChipColors(containerColor = Color.Transparent, labelColor = Ink, selectedContainerColor = CreamDeep, selectedLabelColor = Ink)) }
+                    selectedRecipientIds.forEach { id ->
+                        if (canDelegate) {
+                            FilterChip(selected = true, onClick = { selectedRecipientIds = selectedRecipientIds - id; error = null }, label = { Text(nameOf(id), fontSize = 13.sp) }, colors = FilterChipDefaults.filterChipColors(containerColor = Color.Transparent, labelColor = Ink, selectedContainerColor = CreamDeep, selectedLabelColor = Ink))
+                        } else {
+                            // 无派发权限：接收人锁定为本人，浅蓝底黑字展示且不可更改
+                            FilterChip(selected = true, onClick = { }, enabled = false, label = { Text(nameOf(id), fontSize = 13.sp, color = Ink) }, colors = FilterChipDefaults.filterChipColors(disabledContainerColor = Color(0xFFD6EAF8), disabledLabelColor = Ink))
+                        }
+                    }
                 }
+                if (canDelegate) {
                 Box(Modifier.bringIntoViewRequester(queryVisibility).onGloballyPositioned { coordinates ->
                     queryWidth = coordinates.size.width
                     queryTop = coordinates.boundsInWindow().top.toInt()
@@ -286,8 +311,10 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
                 }
                 }
             }
+            // 标签已改为可选：无可用标签不再阻断提交
             error?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp) }
-            Button(onClick = { submit() }, Modifier.fillMaxWidth().padding(vertical = 12.dp), enabled = !submitting, colors = ButtonDefaults.buttonColors(containerColor = ThemeButton, contentColor = OnThemeButton)) { Text(if (submitting) "提交中…" else "提交任务") }
+            Button(onClick = { submit() }, Modifier.fillMaxWidth().padding(vertical = 12.dp), enabled = !submitting, colors = ButtonDefaults.buttonColors(containerColor = ThemeButton, contentColor = OnThemeButton)) { Text(if (submitting) "提交中…" else "提交审批") }
+            Text("提交后进入直属上级审批，批准前任务不会出现在日历中", Modifier.fillMaxWidth(), fontSize = 11.sp, color = Ink.copy(alpha = .55f))
         }
     }
     if (confirmExit) AlertDialog(onDismissRequest = { confirmExit = false; sheetScope.launch { sheetState.show() } }, title = { Text("放弃未保存的任务？") }, text = { Text("关闭后，本次填写的内容会清空。") }, confirmButton = { TextButton({ confirmExit = false; AppCache.deleteDraft(context, "task_draft.json"); onDismiss() }) { Text("放弃") } }, dismissButton = { TextButton({ confirmExit = false; sheetScope.launch { sheetState.show() } }) { Text("继续填写") } })
@@ -318,21 +345,26 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
         title = { Text("选择标签") },
         text = {
             Column {
-                Text("可多选；先选的为主标签，决定任务在视图中的颜色。再次点击已选标签可取消。", fontSize = 12.sp, color = Ink.copy(alpha = .6f))
+                Text("可多选；点“设为主”可随时更换主标签（决定任务在视图中的颜色）。再次点击已选标签可取消。", fontSize = 12.sp, color = Ink.copy(alpha = .6f))
                 Spacer(Modifier.height(6.dp))
                 Column(Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())) {
                     availableTags.forEach { tag ->
                         val selected = tag.name in tags
                         val isPrimary = selected && tags.first() == tag.name
                         Row(
-                            Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { tags = if (selected) tags - tag.name else tags + tag.name }.padding(horizontal = 4.dp, vertical = 9.dp),
+                            // 选中行整行高亮，勾选状态一目了然
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(if (selected) CreamDeep else Color.Transparent).clickable { tags = if (selected) tags - tag.name else tags + tag.name }.padding(horizontal = 4.dp, vertical = 6.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Box(Modifier.size(14.dp).clip(CircleShape).background(tagHexColor(tag.colorHex)))
                             Spacer(Modifier.width(10.dp))
                             Text(tag.name, Modifier.weight(1f), fontSize = 15.sp)
                             if (selected) {
-                                Text(if (isPrimary) "主标签" else "次标签", fontSize = 12.sp, color = Ink.copy(alpha = .6f))
+                                if (isPrimary) {
+                                    Text("主标签", fontSize = 12.sp, color = Ink.copy(alpha = .6f))
+                                } else {
+                                    TextButton({ tags = listOf(tag.name) + (tags - tag.name) }, contentPadding = PaddingValues(horizontal = 8.dp)) { Text("设为主", fontSize = 12.sp, color = WarmOrange) }
+                                }
                                 Spacer(Modifier.width(6.dp))
                                 Icon(Icons.Default.Check, "已选", Modifier.size(18.dp), tint = Ink)
                             }

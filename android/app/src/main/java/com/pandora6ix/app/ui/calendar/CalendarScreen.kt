@@ -26,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
@@ -33,16 +34,16 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pandora6ix.app.mock.*
@@ -64,17 +65,31 @@ fun CalendarScreen(
     onOpen: (TaskItem) -> Unit,
     taskScope: String = "mine",
     onTaskScopeChange: (String) -> Unit = {},
+    currentUser: UserDto? = null,
+    canReviewTasks: Boolean = true,
     businessTimezone: String? = null,
     loading: Boolean = false,
     error: String? = null,
-    onRetry: () -> Unit = {}
+    onRetry: () -> Unit = {},
+    notice: String? = null
 ) {
     var menu by rememberSaveable { mutableStateOf(false) }
     var adding by rememberSaveable { mutableStateOf(false) }
     // 标签筛选：选中的标签任务必须同时全部具备（AND）才在视图中显示
     var filterTags by rememberSaveable { mutableStateOf(listOf<String>()) }
     var showTagFilter by rememberSaveable { mutableStateOf(false) }
+    // 无审批权限时不应停留在"我管理的"（状态恢复等场景），自动切回"我的任务"
+    LaunchedEffect(canReviewTasks, taskScope) {
+        if (!canReviewTasks && taskScope == "managed") onTaskScopeChange("mine")
+    }
     val today = todayDate()
+    // 年/月视图外部跳转信号（日期选择器选定、「回到今年」）：带年月精确定位；消费后置空避免与滚动上报互相干扰
+    var gridJumpTarget by remember { mutableStateOf<DemoDate?>(null) }
+    // 视图模式切换：从周视图切回月视图时，月卷轴回卷到 cursor 所在月
+    val onChangeModeRecenter: (CalendarMode) -> Unit = { target ->
+        if (mode == CalendarMode.WEEK && target == CalendarMode.MONTH) gridJumpTarget = cursor
+        onModeChange(target)
+    }
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
             Row(Modifier.fillMaxWidth().height(44.dp).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -84,7 +99,7 @@ fun CalendarScreen(
                         Icon(Icons.Default.ArrowDropDown, "选择视图")
                     }
                     DropdownMenu(menu, { menu = false }) {
-                        CalendarMode.entries.forEach { option -> DropdownMenuItem({ Text(option.label) }, { menu = false; onModeChange(option) }) }
+                        CalendarMode.entries.forEach { option -> DropdownMenuItem({ Text(option.label) }, { menu = false; onChangeModeRecenter(option) }) }
                     }
                 }
             }
@@ -105,11 +120,11 @@ fun CalendarScreen(
             if (showDatePick) DateWheelDialog(
                 initial = cursor,
                 onDismiss = { showDatePick = false },
-                onConfirm = { d -> showDatePick = false; onCursorChange(d) }
+                onConfirm = { d -> showDatePick = false; gridJumpTarget = d; onCursorChange(d) }
             )
-            // 年视图任务范围：GET /tasks?scope=mine|managed|created（服务端校验可见范围）
+            // 年视图任务范围：GET /tasks?scope=mine|managed|created（服务端校验可见范围）；"我管理的"仅对有审批能力的用户显示
             if (mode == CalendarMode.YEAR) Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf("mine" to "我的任务", "managed" to "我管理的", "created" to "我创建的").forEach { (value, label) ->
+                (listOf("mine" to "我的任务") + (if (canReviewTasks) listOf("managed" to "我管理的") else emptyList()) + listOf("created" to "我创建的")).forEach { (value, label) ->
                     val selected = taskScope == value
                     Text(
                         label,
@@ -123,6 +138,13 @@ fun CalendarScreen(
                     )
                 }
             }
+            if (notice != null) Text(notice, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp), fontSize = 12.sp, color = Ink.copy(alpha = .6f))
+            // 年视图圆点图例：圆点表示当天有任务，颜色为该任务主标签色
+            if (mode == CalendarMode.YEAR) Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(6.dp).clip(CircleShape).background(Peach))
+                Spacer(Modifier.width(4.dp))
+                Text("当天有任务；圆点颜色为任务主标签颜色，点击日期查看详情", fontSize = 11.sp, color = Ink.copy(alpha = .5f))
+            }
             if (filterTags.isNotEmpty()) Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("仅显示：", fontSize = 12.sp, color = Ink.copy(alpha = .6f))
                 filterTags.forEach { name ->
@@ -133,8 +155,19 @@ fun CalendarScreen(
             }
             // 应用标签筛选后的任务集合：空筛选 = 全部任务
             val visibleTasks = remember(tasks, filterTags) { if (filterTags.isEmpty()) tasks else tasks.filter { task -> filterTags.all { name -> task.tags.any { it.name == name } } } }
+            val density = LocalDensity.current
+            // 月视图卷轴：索引与滚动状态上提，供捏合缩放（月→周按手势所在行定位）使用
+            val monthScrollIndex = remember(today.year) { buildMonthScrollIndex(today.year - MonthScrollSpanYears, today.year + MonthScrollSpanYears) }
+            val monthScrollState = rememberLazyListState(initialFirstVisibleItemIndex = monthScrollIndex.monthItemIndex[monthKey(cursor)] ?: 0)
+            // 月→周捏合放大：按捏合中心的纵向位置定位到手指所在的那一周
+            val onPinchZoomInCenter: (Float) -> Unit = { centerY ->
+                val y = centerY - with(density) { 20.dp.toPx() }  // 扣除卷轴上方的星期表头高度
+                val info = monthScrollState.layoutInfo.visibleItemsInfo.firstOrNull { y >= it.offset && y < it.offset + it.size }
+                val row = info?.let { monthScrollIndex.items.getOrNull(it.index) }
+                if (row != null && !row.isTitle) onCursorChange(row.week.first())
+            }
             val yearGridState = rememberLazyGridState(initialFirstVisibleItemIndex = YearGridAnchorIndex)
-            Box(Modifier.fillMaxWidth().weight(1f).pinchToZoom(mode, onModeChange).swipeNavigate(mode) { forward ->
+            Box(Modifier.fillMaxWidth().weight(1f).pinchToZoom(mode, onChangeModeRecenter, onPinchZoomInCenter).swipeNavigate(mode) { forward ->
                 onCursorChange(when (mode) {
                     CalendarMode.MONTH -> cursor.plusMonths(if (forward) 1 else -1)
                     CalendarMode.WEEK -> cursor.plusDays(if (forward) 7 else -7)
@@ -143,8 +176,8 @@ fun CalendarScreen(
                 })
             }) {
                 when (mode) {
-                    CalendarMode.YEAR -> YearGrid(cursor, visibleTasks, today, yearGridState, onYearChange = { onCursorChange(cursor.plusYears(it - cursor.year)) }, onSelectDate = onCursorChange, onSelectMonth = { onCursorChange(it); onModeChange(CalendarMode.MONTH) })
-                    CalendarMode.MONTH -> CompactMonth(cursor, visibleTasks, today, onSelect = onCursorChange, onOpen = onOpen)
+                    CalendarMode.YEAR -> YearGrid(cursor, visibleTasks, today, yearGridState, jumpTarget = gridJumpTarget, onJumpConsumed = { gridJumpTarget = null }, onYearChange = { onCursorChange(cursor.plusYears(it - cursor.year)) }, onSelectDate = onCursorChange, onSelectMonth = { onCursorChange(it); onModeChange(CalendarMode.MONTH) })
+                    CalendarMode.MONTH -> MonthScroll(cursor, visibleTasks, today, monthScrollIndex, monthScrollState, jumpTarget = gridJumpTarget, onJumpConsumed = { gridJumpTarget = null }, onCursorChange = onCursorChange, onOpen = onOpen, onOpenDay = { date -> onCursorChange(date); onModeChange(CalendarMode.DAY) })
                     CalendarMode.WEEK, CalendarMode.DAY -> Column(Modifier.fillMaxSize()) {
                         val visibleDates = if (mode == CalendarMode.DAY) listOf(cursor) else dates
                         WeekDates(visibleDates, today) { date ->
@@ -154,7 +187,7 @@ fun CalendarScreen(
                         AllDayTasks(visibleDates, visibleTasks, onSelect = { task, date -> onCursorChange(date); onOpen(task) })
                         HorizontalDivider(color = Ink.copy(alpha = .08f))
                         key(mode, if (mode == CalendarMode.DAY) cursor else weekStart) {
-                            TimeGrid(visibleDates, visibleTasks, mode == CalendarMode.DAY) { task, _ -> onOpen(task) }
+                            TimeGrid(visibleDates, visibleTasks, mode == CalendarMode.DAY, today, businessTimezone, onSelect = { task, _ -> onOpen(task) })
                         }
                     }
                 }
@@ -180,9 +213,9 @@ fun CalendarScreen(
             CalendarMode.MONTH -> cursor.year == today.year && cursor.month == today.month
             CalendarMode.YEAR -> cursor.year == today.year
         }
-        if (!atToday) Button(onClick = { onCursorChange(today) }, modifier = Modifier.align(Alignment.BottomEnd).fillMaxWidth(.25f).height(34.dp), shape = RoundedCornerShape(topStart = 17.dp, bottomStart = 17.dp), contentPadding = PaddingValues(horizontal = 4.dp), colors = ButtonDefaults.buttonColors(containerColor = ThemeButton, contentColor = OnThemeButton)) { Text("回到今年", fontSize = 12.sp, maxLines = 1) }
+        if (!atToday) Button(onClick = { gridJumpTarget = today; onCursorChange(today) }, modifier = Modifier.align(Alignment.BottomEnd).fillMaxWidth(.25f).height(34.dp), shape = RoundedCornerShape(topStart = 17.dp, bottomStart = 17.dp), contentPadding = PaddingValues(horizontal = 4.dp), colors = ButtonDefaults.buttonColors(containerColor = ThemeButton, contentColor = OnThemeButton)) { Text("回到今年", fontSize = 12.sp, maxLines = 1) }
     }
-    if (adding && (canCreatePersonal || canCreateDelegated)) TaskEntrySheet(cursor, canCreatePersonal, canCreateDelegated, availableTags, taskRepo, businessTimezone, onDismiss = { adding = false }, onCreated = { task -> onCreated(task) })
+    if (adding && (canCreatePersonal || canCreateDelegated)) TaskEntrySheet(cursor, canCreatePersonal, canCreateDelegated, availableTags, taskRepo, businessTimezone, currentUser, onDismiss = { adding = false }, onCreated = { task -> onCreated(task) })
     if (showTagFilter) {
         var pending by remember { mutableStateOf(filterTags) }
         AlertDialog(
@@ -224,38 +257,132 @@ fun CalendarScreen(
     }
 }
 
-@Composable private fun CompactMonth(cursor: DemoDate, tasks: List<TaskItem>, today: DemoDate, onSelect: (DemoDate) -> Unit, onOpen: (TaskItem) -> Unit) {
-    var overflowDates by remember { mutableStateOf<List<DemoDate>?>(null) }
+// ===== 月视图卷轴：连续纵向滚动；每个月独立按星期列排布（上月尾不挤入下月首行），任务条裁剪在本月列内 =====
+private const val MonthScrollSpanYears = 5  // 以今天为基准前后各 5 年静态构建，无需重锚
+
+/** 卷轴内容项：月份大标题或该月的某一行（week 为含邻月补位的 7 列基准，渲染时只显示本月日） */
+private class MonthScrollItem(val month: DemoDate, val isTitle: Boolean, val week: List<DemoDate>)
+
+/** 卷轴索引：全部内容项与「月份 → 项下标」映射 */
+private class MonthScrollIndex(val items: List<MonthScrollItem>, val monthItemIndex: Map<Long, Int>)
+
+private fun monthKey(d: DemoDate) = d.year * 12L + (d.month - 1)
+
+private fun buildMonthScrollIndex(startYear: Int, endYear: Int): MonthScrollIndex {
+    val items = ArrayList<MonthScrollItem>()
+    val monthItemIndex = HashMap<Long, Int>()
+    var y = startYear
+    while (y <= endYear) {
+        var m = 1
+        while (m <= 12) {
+            val month = DemoDate(y, m, 1)
+            monthItemIndex[monthKey(month)] = items.size
+            items.add(MonthScrollItem(month, true, emptyList()))
+            monthWeeks(month).forEach { week -> items.add(MonthScrollItem(month, false, week)) }
+            m++
+        }
+        y++
+    }
+    return MonthScrollIndex(items, monthItemIndex)
+}
+
+@Composable
+private fun MonthScroll(
+    cursor: DemoDate,
+    tasks: List<TaskItem>,
+    today: DemoDate,
+    index: MonthScrollIndex,
+    state: LazyListState,
+    jumpTarget: DemoDate?,
+    onJumpConsumed: () -> Unit,
+    onCursorChange: (DemoDate) -> Unit,
+    onOpen: (TaskItem) -> Unit,
+    onOpenDay: (DemoDate) -> Unit
+) {
+    val currentCursor by rememberUpdatedState(cursor)
+    // 滚动上报：首个可见项所属月份写回 cursor（按月平移，日期不变），驱动顶部标题与「回到今年」按钮
+    LaunchedEffect(state) {
+        snapshotFlow { state.firstVisibleItemIndex }
+            .collect { idx ->
+                val item = index.items.getOrNull(idx) ?: return@collect
+                if (monthKey(item.month) != monthKey(currentCursor)) onCursorChange(currentCursor.plusMonths((monthKey(item.month) - monthKey(currentCursor)).toInt()))
+            }
+    }
+    // 外部跳转（日期选择器/回到今年）：定位到目标月标题并置顶
+    LaunchedEffect(jumpTarget) {
+        val target = jumpTarget ?: return@LaunchedEffect
+        index.monthItemIndex[monthKey(target)]?.let { state.scrollToItem(it) }
+        onJumpConsumed()
+    }
     Column(Modifier.fillMaxSize().padding(horizontal = 8.dp)) {
         Row(Modifier.fillMaxWidth().height(20.dp)) { listOf("一", "二", "三", "四", "五", "六", "日").forEach { Text("周$it", Modifier.weight(1f), fontSize = 11.sp, textAlign = TextAlign.Center, color = Ink.copy(alpha = .6f)) } }
-        monthWeeks(cursor).forEach { week ->
-            BoxWithConstraints(Modifier.fillMaxWidth().weight(1f).calendarGuides()) {
-                val lanes = packTaskRows(tasks, week)
-                val capacity = ((maxHeight.value - 24f) / 18f).toInt().coerceAtLeast(1)
-                val visible = if (lanes.size > capacity) (capacity - 1).coerceAtLeast(0) else lanes.size
-                Column(Modifier.fillMaxSize().clickable { onSelect(week.first()) }) {
-                    Row(Modifier.fillMaxWidth().height(24.dp)) {
-                        week.forEach { date ->
-                            Box(Modifier.weight(1f).fillMaxHeight().clickable { onSelect(date) }, contentAlignment = Alignment.Center) {
-                                Text("${date.day}", fontSize = 15.sp, lineHeight = 15.sp, fontWeight = if (date == today) FontWeight.Bold else FontWeight.Normal, color = if (date.month == cursor.month) Ink else Ink.copy(alpha = .3f), modifier = Modifier.clip(CircleShape).background(if (date == today) Peach else Color.Transparent).padding(horizontal = 6.dp, vertical = 1.dp))
-                            }
-                        }
-                    }
-                    lanes.take(visible).forEach { lane -> DateLane(lane, week, 17, compact = true) { task, _ -> onOpen(task) }; Spacer(Modifier.height(1.dp)) }
-                    val remaining = lanes.drop(visible).sumOf { it.size }
-                    if (remaining > 0) Box(Modifier.fillMaxWidth().height(18.dp).clickable { overflowDates = week }, contentAlignment = Alignment.CenterEnd) { Text("+$remaining 条计划 ›", Modifier.padding(end = 6.dp), fontSize = 11.sp, color = Ink.copy(alpha = .7f)) }
+        LazyColumn(state = state, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 96.dp)) {
+            items(index.items.size) { i ->
+                val item = index.items[i]
+                if (item.isTitle) {
+                    Text("${item.month.month}月", fontSize = 26.sp, fontWeight = FontWeight.Bold, color = Ink, modifier = Modifier.padding(top = 18.dp, bottom = 6.dp))
+                } else {
+                    MonthScrollRow(item.month, item.week, tasks, today, onCursorChange, onOpen, onOpenDay)
                 }
             }
         }
     }
-    overflowDates?.let { dates ->
-        AlertDialog(onDismissRequest = { overflowDates = null }, title = { Text("本周计划") }, text = {
-            Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())) {
-                tasks.filter { it.end >= dates.first() && it.start <= dates.last() }.forEach { task ->
-                    TextButton({ overflowDates = null; onOpen(task) }, Modifier.fillMaxWidth()) { Text(task.title, Modifier.fillMaxWidth()) }
+}
+
+/** 月视图卷轴的一行：week 为 7 列基准（可含邻月补位日），仅渲染本月日期，任务条裁剪到本月列范围；
+ *  行高固定：每天最多展示 3 条任务道，第 4 行按日显示灰色“+N”（正对该日列、不与任务重合），点击跳转当天日视图 */
+@Composable
+private fun MonthScrollRow(month: DemoDate, week: List<DemoDate>, tasks: List<TaskItem>, today: DemoDate, onCursorChange: (DemoDate) -> Unit, onOpen: (TaskItem) -> Unit, onOpenDay: (DemoDate) -> Unit) {
+    val inMonth = week.map { it.year == month.year && it.month == month.month }
+    val firstCol = inMonth.indexOfFirst { it }
+    val lastCol = inMonth.lastIndexOf(true)
+    if (firstCol < 0) return
+    // 任务条按整周分道后裁剪到本月列范围，避免条带延伸进邻月的空白格
+    val lanes = packTaskRows(tasks, week).mapNotNull { lane ->
+        lane.mapNotNull { seg ->
+            val f = maxOf(seg.first, firstCol); val l = minOf(seg.last, lastCol)
+            if (f <= l) TaskSegment(seg.task, f, l) else null
+        }
+    }.filter { it.isNotEmpty() }
+    val capacity = 3  // 固定行高内可展示的任务条道数
+    val shownLanes = lanes.take(capacity)
+    // 每日未展示任务数：超出容量的分道中覆盖该列的任务条数
+    val hiddenPerDay = IntArray(7)
+    lanes.drop(capacity).forEach { lane -> lane.forEach { seg -> for (c in seg.first..seg.last) hiddenPerDay[c]++ } }
+    val dayRowHeight = 30.dp
+    val laneHeight = 18.dp
+    val laneGap = 3.dp       // 行间距加大
+    val overflowRowHeight = 16.dp  // 第 4 行：放每日“+N”
+    Column(Modifier.fillMaxWidth().height(dayRowHeight + (laneHeight + laneGap) * capacity + overflowRowHeight + 2.dp)) {
+        DayNumberRow(month, week, inMonth, today, onOpenDay)
+        shownLanes.forEach { lane ->
+            BoxWithConstraints(Modifier.fillMaxWidth().height(laneHeight)) {
+                DateLane(lane, week, 17, compact = true) { task, _ -> onOpen(task) }
+            }
+            Spacer(Modifier.height(laneGap))
+        }
+        // 第 4 行：每日“+N”，居中正对该日列，与任务条不重叠；点击进入当天日视图
+        BoxWithConstraints(Modifier.fillMaxWidth().height(overflowRowHeight)) {
+            val cell = maxWidth / 7
+            (0..6).forEach { c ->
+                if (hiddenPerDay[c] > 0 && inMonth[c]) {
+                    Box(Modifier.offset(x = cell * c).width(cell), contentAlignment = Alignment.Center) {
+                        Text("+${hiddenPerDay[c]}", Modifier.clickable { onOpenDay(week[c]) }, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = Ink.copy(alpha = .6f), maxLines = 1)
+                    }
                 }
             }
-        }, confirmButton = { TextButton({ overflowDates = null }) { Text("关闭") } })
+        }
+    }
+}
+
+@Composable
+private fun DayNumberRow(month: DemoDate, week: List<DemoDate>, inMonth: List<Boolean>, today: DemoDate, onOpenDay: (DemoDate) -> Unit) {
+    Row(Modifier.fillMaxWidth().height(30.dp)) {
+        week.forEachIndexed { col, date ->
+            Box(Modifier.weight(1f).fillMaxHeight().clickable(enabled = inMonth[col]) { onOpenDay(date) }, contentAlignment = Alignment.Center) {
+                if (inMonth[col]) Text("${date.day}", fontSize = 16.sp, lineHeight = 16.sp, fontWeight = if (date == today) FontWeight.Bold else FontWeight.Normal, color = Ink, modifier = Modifier.clip(CircleShape).background(if (date == today) Peach else Color.Transparent).padding(horizontal = 7.dp, vertical = 1.dp))
+            }
+        }
     }
 }
 
@@ -277,73 +404,64 @@ fun CalendarScreen(
             Box(Modifier.offset(x = cellWidth * segment.first).width(cellWidth * (segment.last - segment.first + 1)).fillMaxHeight().padding(horizontal = 1.dp).clip(RoundedCornerShape(3.dp)).background(taskColor(segment.task))
                 .semantics { role = Role.Button; onClick("查看${segment.task.title}") { onSelect(segment.task, dates[segment.first]); true } }
                 .pointerInput(segment.task.id, dates) { detectTapGestures { position -> val day = (position.x / (size.width.toFloat() / (segment.last - segment.first + 1))).toInt().coerceIn(0, segment.last - segment.first); onSelect(segment.task, dates[segment.first + day]) } }, contentAlignment = Alignment.CenterStart) {
-                // 重要及以上的任务在标题前加着色等级前缀，扫视即可分辨轻重缓急
-                Text(priorityTitledText(segment.task.title, segment.task.priorityLevel), Modifier.padding(horizontal = 3.dp), fontSize = if (compact) 11.sp else 12.sp, lineHeight = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Ink)
+                Text(segment.task.title, Modifier.padding(horizontal = 3.dp), fontSize = if (compact) 11.sp else 12.sp, lineHeight = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Ink)
             }
         }
     }
 }
 
-/** 任务标题：重要(4)及以上在前面加着色的等级文字前缀（“重要 · ”/“紧急 · ”），其余原样 */
-@Composable
-private fun priorityTitledText(title: String, priorityLevel: Int) =
-    if (priorityLevel.coerceIn(1, 5) >= 4) {
-        val (color, label) = priorityMeta(priorityLevel)
-        buildAnnotatedString {
-            withStyle(SpanStyle(color = color, fontWeight = FontWeight.Bold)) { append("$label · ") }
-            append(title)
-        }
-    } else {
-        buildAnnotatedString { append(title) }
-    }
-
-// 任务颜色：优先服务端 displayColor（主标签颜色），无则用主标签目录 colorHex，最后回退既有色板
+// 任务颜色：优先服务端 displayColor（主标签颜色），其次主标签目录 colorHex；
+// 无标签的任务使用中性灰（不同于任何标签色），标签已改为可选
 private fun taskColor(task: TaskItem): Color =
     task.displayColorHex?.let { hex -> runCatching { Color(android.graphics.Color.parseColor(hex)) }.getOrNull() }
         ?: task.tags.firstOrNull()?.let { tag -> tag.colorHex.takeIf { it.isNotBlank() }?.let { hex -> runCatching { Color(android.graphics.Color.parseColor(hex)) }.getOrNull() } }
-        ?: listOf(Peach, Sky, Mint, Lilac)[task.priorityLevel.mod(4)]
+        ?: Ink.copy(alpha = 0.12f)
 private fun Modifier.calendarGuides(): Modifier = drawBehind {
     val effect = PathEffect.dashPathEffect(floatArrayOf(3.dp.toPx(), 4.dp.toPx()))
     for (i in 1..6) drawLine(Ink.copy(alpha = .06f), Offset(size.width * i / 7, 0f), Offset(size.width * i / 7, size.height), pathEffect = effect)
     drawLine(Ink.copy(alpha = .08f), Offset(0f, size.height), Offset(size.width, size.height), pathEffect = effect)
 }
 
-@Composable private fun TimeGrid(dates: List<DemoDate>, tasks: List<TaskItem>, dayMode: Boolean, onSelect: (TaskItem, DemoDate) -> Unit) {
+@Composable private fun TimeGrid(dates: List<DemoDate>, tasks: List<TaskItem>, dayMode: Boolean, today: DemoDate, businessTimezone: String?, onSelect: (TaskItem, DemoDate) -> Unit) {
     val hourHeight = if (dayMode) 60.dp else 56.dp
     val density = LocalDensity.current
-    val scroll = rememberScrollState(with(density) { (hourHeight * 8).roundToPx() })
+    // 初始定位到当前时间上一小时半（按公司业务时区），不再从凌晨开始
+    val nowMinute = businessNowMinute(businessTimezone)
+    val initialHour = ((nowMinute - 90) / 60).coerceIn(0, 22)
+    val scroll = rememberScrollState(with(density) { (hourHeight * initialHour).roundToPx() })
+    val todayIndex = dates.indexOfFirst { it == today }
     Row(Modifier.fillMaxSize().padding(end = 8.dp).verticalScroll(scroll)) {
         Column(Modifier.width(40.dp)) {
             (0..23).forEach { hour -> Text("%02d".format(hour), Modifier.fillMaxWidth().height(hourHeight).padding(top = 2.dp), textAlign = TextAlign.Center, fontSize = 11.sp, color = Ink.copy(alpha = .5f)) }
+            // 底部留白：避免悬浮“添加任务”按钮遮挡 24:00 附近内容
+            Spacer(Modifier.height(72.dp))
         }
-        BoxWithConstraints(Modifier.weight(1f).height(hourHeight * 24).drawBehind {
+        BoxWithConstraints(Modifier.weight(1f).height(hourHeight * 24 + 72.dp).drawBehind {
             val dash = PathEffect.dashPathEffect(floatArrayOf(3.dp.toPx(), 4.dp.toPx()))
             for (hour in 0..24) drawLine(Ink.copy(alpha = .08f), Offset(0f, hourHeight.toPx() * hour), Offset(size.width, hourHeight.toPx() * hour), pathEffect = dash)
             for (day in 1 until dates.size) drawLine(Ink.copy(alpha = .07f), Offset(size.width * day / dates.size, 0f), Offset(size.width * day / dates.size, size.height), pathEffect = dash)
+        }.drawWithContent {
+            drawContent()
+            // “现在”指示线：今天的列内一条红线，随时间实时对位
+            if (todayIndex >= 0) {
+                val y = hourHeight.toPx() * nowMinute / 60f
+                val left = size.width * todayIndex / dates.size
+                drawLine(Color(0xFFE5484D), Offset(left, y), Offset(size.width * (todayIndex + 1) / dates.size, y), strokeWidth = 1.5.dp.toPx())
+                drawCircle(Color(0xFFE5484D), radius = 3.dp.toPx(), center = Offset(left, y))
+            }
         }) {
             val dayWidth = maxWidth / dates.size
             dates.forEachIndexed { index, date ->
                 val entries = tasks.mapNotNull { task -> timeRangeOnDate(task, date)?.let { task to it } }.filter { !it.second.isEmpty() }.sortedBy { it.second.first }
-                // One column per simultaneous cluster, allowing non-overlapping events to regain full width.
-                val clusters = mutableListOf<MutableList<Pair<TaskItem, IntRange>>>()
-                entries.forEach { entry ->
-                    val last = clusters.lastOrNull()
-                    if (last != null && entry.second.first <= last.maxOf { it.second.last }) last.add(entry) else clusters.add(mutableListOf(entry))
-                }
-                clusters.forEach { cluster ->
-                    val laneEnds = mutableListOf<Int>()
-                    val assigned = cluster.map { entry ->
-                        var lane = laneEnds.indexOfFirst { it < entry.second.first }
-                        if (lane < 0) { lane = laneEnds.size; laneEnds.add(entry.second.last) } else laneEnds[lane] = entry.second.last
-                        Triple(entry.first, entry.second, lane)
-                    }
-                    val eventWidth = dayWidth / laneEnds.size
-                    assigned.forEach { (task, range, lane) ->
-                        Box(Modifier.offset(x = dayWidth * index + eventWidth * lane, y = hourHeight * (range.first / 60f)).width(eventWidth).height(hourHeight * ((range.last - range.first + 1) / 60f)).padding(1.dp).clip(RoundedCornerShape(4.dp)).background(taskColor(task)).clickable { onSelect(task, date) }) {
-                            Column(Modifier.padding(horizontal = 4.dp, vertical = 2.dp)) {
-                                Text(priorityTitledText(task.title, task.priorityLevel), fontSize = if (dayMode) 13.sp else 11.sp, lineHeight = if (dayMode) 16.sp else 13.sp, maxLines = if (dayMode) 2 else 3, overflow = TextOverflow.Ellipsis)
-                                if (dayMode && range.last - range.first >= 30) Text("${minuteLabel(range.first)}—${minuteLabel(range.last + 1)}", fontSize = 11.sp, color = Ink.copy(alpha = .7f))
-                            }
+                // 时间重叠的任务直接上下堆叠（后绘制的覆盖先绘制的），各占整列宽度，随时间轴垂直排布
+                entries.forEach { (task, range) ->
+                    // 跨天任务在当天裁剪显示，并标注起止来源
+                    val spansFrom = date > task.start
+                    val spansInto = date < task.end
+                    Box(Modifier.offset(x = dayWidth * index, y = hourHeight * (range.first / 60f)).width(dayWidth).height(hourHeight * ((range.last - range.first + 1) / 60f)).padding(1.dp).clip(RoundedCornerShape(4.dp)).background(taskColor(task)).clickable { onSelect(task, date) }) {
+                        Column(Modifier.padding(horizontal = 4.dp, vertical = 2.dp)) {
+                            Text(task.title, fontSize = if (dayMode) 13.sp else 11.sp, lineHeight = if (dayMode) 16.sp else 13.sp, maxLines = if (dayMode) 2 else 1, overflow = TextOverflow.Ellipsis)
+                            if (dayMode && range.last - range.first >= 30) Text("${if (spansFrom) "自昨日 " else ""}${minuteLabel(range.first)}—${minuteLabel(range.last + 1)}${if (spansInto) " →次日" else ""}", fontSize = 11.sp, color = Ink.copy(alpha = .7f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
                 }
@@ -354,7 +472,7 @@ private fun Modifier.calendarGuides(): Modifier = drawBehind {
 
 // 双指缩放：两指张开（间距由短到长）切到更小时间周期，两指收拢切到更大周期
 // 在 Initial 通道提前截获：一旦出现多指就消费该手势全部事件，避免两指分别触发子项点击（如月视图两行周）与触摸反馈
-private fun Modifier.pinchToZoom(mode: CalendarMode, onModeChange: (CalendarMode) -> Unit): Modifier = pointerInput(mode) {
+private fun Modifier.pinchToZoom(mode: CalendarMode, onModeChange: (CalendarMode) -> Unit, onZoomedInCenterY: ((Float) -> Unit)? = null): Modifier = pointerInput(mode, onZoomedInCenterY) {
     awaitEachGesture {
         var accumulated = 1f
         var multiTouch = false
@@ -375,7 +493,13 @@ private fun Modifier.pinchToZoom(mode: CalendarMode, onModeChange: (CalendarMode
                     }
                     if (target != null) {
                         accumulated = 1f
-                        if (target != mode) onModeChange(target)
+                        if (target != mode) {
+                            onModeChange(target)
+                            // 月视图放大到周视图：上报捏合中心的纵向位置，用于定位到手指所在周
+                            if (mode == CalendarMode.MONTH && target == CalendarMode.WEEK) {
+                                onZoomedInCenterY?.invoke((pressed[0].position.y + pressed[1].position.y) / 2f)
+                            }
+                        }
                     }
                 }
             }
@@ -392,7 +516,7 @@ private fun Modifier.pinchToZoom(mode: CalendarMode, onModeChange: (CalendarMode
 private fun Modifier.swipeNavigate(mode: CalendarMode, onAdvance: (Boolean) -> Unit): Modifier {
     val advance by rememberUpdatedState(onAdvance)
     return pointerInput(mode) {
-        if (mode == CalendarMode.YEAR) return@pointerInput
+        if (mode == CalendarMode.YEAR || mode == CalendarMode.MONTH) return@pointerInput
         awaitEachGesture {
             val down = awaitFirstDown(requireUnconsumed = false)
             var dx = 0f
@@ -426,8 +550,8 @@ private fun Modifier.swipeNavigate(mode: CalendarMode, onAdvance: (Boolean) -> U
 }
 
 // 年视图：跨多年连续滚动的月份网格（锚点前后各 YearGridSpanYears 年），拖动跟手、跨年自然衔接，不再分片跳年
-// 顶部年份随滚动实时上报（驱动日期行标题与「回到今天」状态）；滚动接近列表边缘时静默重锚并保持视觉位置，近似无限滚动
-// 外部年份跳转（如「回到今天」）时定位到目标年一月
+// 顶部年份随滚动实时上报（驱动日期行标题）；滚动接近列表边缘时静默重锚并保持视觉位置，近似无限滚动
+// 外部跳转（日期选择器选定）定位到目标年月对应格并置顶
 private const val YearGridSpanYears = 12
 private const val YearGridAnchorIndex = YearGridSpanYears * 12
 
@@ -436,6 +560,8 @@ private const val YearGridAnchorIndex = YearGridSpanYears * 12
     tasks: List<TaskItem>,
     today: DemoDate,
     state: LazyGridState,
+    jumpTarget: DemoDate?,
+    onJumpConsumed: () -> Unit,
     onYearChange: (Int) -> Unit,
     onSelectDate: (DemoDate) -> Unit,
     onSelectMonth: (DemoDate) -> Unit
@@ -459,19 +585,20 @@ private const val YearGridAnchorIndex = YearGridSpanYears * 12
                 }
             }
     }
-    LaunchedEffect(cursor.year) {
-        if (cursor.year != lastReportedYear) {
-            val targetIndex = (cursor.year - startYear) * 12
-            lastReportedYear = cursor.year
-            if (targetIndex in 0 until YearGridSpanYears * 2 * 12) {
-                state.scrollToItem(targetIndex)
-            } else {
-                anchorYear = cursor.year
-                state.scrollToItem(YearGridAnchorIndex)
-            }
+    // 外部跳转（日期选择器选定）：定位到目标年月对应格并置顶；与滚动上报互不干扰（jumpTarget 消费后即清空）
+    LaunchedEffect(jumpTarget) {
+        val target = jumpTarget ?: return@LaunchedEffect
+        val targetIndex = (target.year - startYear) * 12 + (target.month - 1)
+        lastReportedYear = target.year
+        if (targetIndex in 0 until YearGridSpanYears * 2 * 12) {
+            state.scrollToItem(targetIndex)
+        } else {
+            anchorYear = target.year
+            state.scrollToItem(YearGridAnchorIndex + (target.month - 1))
         }
+        onJumpConsumed()
     }
-    LazyVerticalGrid(state = state, columns = GridCells.Fixed(2), modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    LazyVerticalGrid(state = state, columns = GridCells.Fixed(2), modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp), contentPadding = PaddingValues(bottom = 96.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         items(YearGridSpanYears * 2 * 12) { index ->
             val month = DemoDate(currentStartYear + index / 12, index % 12 + 1, 1)
             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(WarmCard).border(1.dp, CreamDeep, RoundedCornerShape(10.dp)).padding(4.dp)) {

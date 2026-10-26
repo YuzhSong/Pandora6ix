@@ -129,7 +129,7 @@ public class TaskService
                         "A personal task can only belong to its creator.");
             recipients = List.of(a.id());
         } else {
-            var managed = scope.activeManaged(a);
+            var managed = scope.taskRecipients(a, recipients);
             if (recipients.isEmpty())
                 throw BusinessException.invalid("A delegated task requires recipients.");
             if (!managed.containsAll(recipients))
@@ -507,7 +507,8 @@ public class TaskService
             throw BusinessException.policy(
                     "Editing approved/rejected tasks and resubmission await Q-02 confirmation.");
         if ("DELEGATED".equals(task.get("task_kind"))) {
-            var managed = scope.activeManaged(a);
+            var managed = scope.taskRecipients(a, assignments(a, id).stream()
+                    .map(row -> str(row, "recipient_user_id")).toList());
             if (assignments(a, id).stream()
                     .anyMatch(row -> !managed.contains(str(row, "recipient_user_id"))))
                 throw new BusinessException(

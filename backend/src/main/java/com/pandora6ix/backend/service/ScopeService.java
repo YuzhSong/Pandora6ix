@@ -71,6 +71,13 @@ public class ScopeService {
                 || (actor.businessRank() < 3 && managed(actor).contains(owner));
     }
 
+    /** Task participation only: a manager may join a delegation containing other recipients. */
+    public Set<String> taskRecipients(IdentityService.Actor actor, Collection<String> recipients) {
+        var allowed = activeManaged(actor);
+        if (recipients.stream().anyMatch(id -> !actor.id().equals(id))) allowed.add(actor.id());
+        return allowed;
+    }
+
     public void read(IdentityService.Actor actor, String owner) {
         if (!readable(actor, owner)) throw BusinessException.missing();
     }
