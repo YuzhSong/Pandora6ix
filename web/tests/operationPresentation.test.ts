@@ -67,9 +67,26 @@ test('positions use historical roles once and organization references include de
   assert.equal(result[0].before, '部门老总'); assert.equal(result[0].after, '员工')
   assert.equal(result[0].changed, true)
   assert.equal(operationOrganizationPath('org-web', data), '潘多拉科技 → 产品研发部 → Web 开发组')
-  assert.equal(presentOperationValue('recipientUserId', 'u-cy', data), '潘多拉科技 → 产品研发部 → Web 开发组 → 程瑶（cheng.yao）')
+  assert.equal(presentOperationValue('recipientUserId', 'u-cy', data), '历史人员名称未记录')
   assert.equal(presentOperationValue('jobTitle', '项目统筹', data), '该历史记录未提供业务角色')
   assert.equal(before.fields[0].value, '项目统筹')
   data.units.find(unit => unit.id === 'org-product')!.parentId = 'org-web'
   assert.match(operationOrganizationPath('org-web', data), /组织层级异常/)
+})
+
+
+test('captured organization and supervisor names survive directory changes', () => {
+  const data = createSeed()
+  const snapshot = { version: 0, fields: [
+    { key: 'orgUnitId', label: 'orgUnitId', value: 'org-web' },
+    { key: 'orgUnitName', label: 'orgUnitName', value: 'Recorded team' },
+    { key: 'supervisorUserId', label: 'supervisorUserId', value: 'u-cy' },
+    { key: 'supervisorName', label: 'supervisorName', value: 'Recorded supervisor' },
+  ] }
+  data.units.find(unit => unit.id === 'org-web')!.name = 'Renamed now'
+  const result = presentOperationComparison(snapshot, snapshot, data)
+  assert.equal(result.length, 2)
+  assert.equal(result.find(field => field.key === 'orgUnitId')?.after, 'Recorded team')
+  assert.equal(result.find(field => field.key === 'supervisorUserId')?.after, 'Recorded supervisor')
+  assert.equal(hasReportedSnapshotVersions({ before: { version: null, fields: [] }, after: null }), false)
 })
