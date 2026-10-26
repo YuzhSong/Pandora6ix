@@ -7,7 +7,7 @@
 ## 2. 后端日期集合接口
 
 - [x] 2.1 `GET /work-logs/dates` 返回本人全部有日志日期 + `businessToday`
-- [x] 2.2 `generate-openapi.py` 增加 `JournalDates` 与路由（顺带补上 dev 缺失的 `/task-reviews/pending-count`），重生成 `openapi.json`（60 operations）
+- [x] 2.2 `generate-openapi.py` 增加 `JournalDates` 与路由（顺带补上 dev 缺失的 `/task-reviews/pending-count`），重生成 `openapi.json`（61 operations at PR #28; 63 after the complete PR stack）
 - [x] 2.3 新增测试 `workLogDatesListEveryJournalDateForTheOwner`
 
 ## 3. Android 日志页
