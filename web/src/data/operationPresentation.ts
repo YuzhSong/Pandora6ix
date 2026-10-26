@@ -4,10 +4,10 @@ import { compareSnapshots } from './operationHistory.ts'
 import type { OperationSnapshot, OperationDetail } from './operationHistory.ts'
 
 export function hasReportedSnapshotVersions(detail: Pick<OperationDetail, 'before' | 'after'>): boolean {
-  return (detail.before?.version ?? 0) > 0 || (detail.after?.version ?? 0) > 0
+  return detail.before?.version != null || detail.after?.version != null
 }
 export function reportedHistory(detail: OperationDetail) {
-  return detail.versions.filter(version => version.logId !== detail.id || version.version > 0)
+  return detail.versions
 }
 
 const labels: Record<string, string> = {
@@ -49,12 +49,6 @@ export function operationOrganizationPath(id: string, data: AdminData): string {
   }
   return names.join(' → ')
 }
-function personPath(id: string, data: AdminData): string {
-  const person = data.people.find(person => person.id === id)
-  if (!person) return '人员已删除或当前不可用'
-  const name = `${person.displayName}（${person.loginName}）`
-  return person.orgUnitId ? `${operationOrganizationPath(person.orgUnitId, data)} → ${name}` : `未分配组织 → ${name}`
-}
 export function presentOperationValue(key: string, value: string | null, data: AdminData): string | null {
   if (value === null || value === '') return value
   if (key === 'jobTitle') {
@@ -63,8 +57,8 @@ export function presentOperationValue(key: string, value: string | null, data: A
   }
   if (key === 'roles') return items(value).map(role => roleLabels[role as Role] ?? '其他角色').join('、') || '无角色'
   if (states[key]) return states[key][value] ?? '其他状态'
-  if (key === 'orgUnitId' || key === 'parentId') return operationOrganizationPath(value, data)
-  if (/UserId$/.test(key)) return personPath(value, data)
+  if (key === 'orgUnitId' || key === 'parentId') return '历史组织名称未记录'
+  if (/UserId$/.test(key)) return '历史人员名称未记录'
   if (key === 'tagIds') return items(value).map(id => data.tags.find(tag => tag.id === id)?.name ?? '标签当前不可用').join('、') || '无标签'
   if (key === 'progressPercent' && /^\d+$/.test(value)) return `${value}%`
   if (key === 'priorityLevel' && /^[1-5]$/.test(value)) return `${value} 星`
@@ -75,10 +69,15 @@ export function presentOperationValue(key: string, value: string | null, data: A
 export function presentOperationComparison(before: OperationSnapshot | null, after: OperationSnapshot | null, data: AdminData) {
   const comparisons = compareSnapshots(before, after)
   const hasRoles = comparisons.some(field => field.key === 'roles')
-  return comparisons.filter(field => field.key !== 'jobTitle' || !hasRoles).map(field => ({
+  const historical = (key: string, value: string | null, snapshot: OperationSnapshot | null) => {
+    if (!value) return value
+    const nameKey = key === 'orgUnitId' ? 'orgUnitName' : key === 'supervisorUserId' ? 'supervisorName' : undefined
+    return nameKey ? snapshot?.fields.find(field => field.key === nameKey)?.value ?? (key === 'orgUnitId' ? '历史组织名称未记录' : '历史人员名称未记录') : presentOperationValue(key, value, data)
+  }
+  return comparisons.filter(field => (field.key !== 'jobTitle' || !hasRoles) && !((field.key === 'orgUnitName' && comparisons.some(item => item.key === 'orgUnitId')) || (field.key === 'supervisorName' && comparisons.some(item => item.key === 'supervisorUserId')))).map(field => ({
     ...field,
     label: field.key === 'roles' ? '职位 / 角色' : labels[field.key] ?? (/[\u4e00-\u9fff]/.test(field.label) ? field.label : '其他资料'),
-    before: presentOperationValue(field.key, field.before, data), after: presentOperationValue(field.key, field.after, data),
+    before: historical(field.key, field.before, before), after: historical(field.key, field.after, after),
     rawBefore: field.before, rawAfter: field.after,
   }))
 }

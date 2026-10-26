@@ -9,3 +9,9 @@
 
 - [x] 2.1 Add integration tests for list/detail, filtering, isolation and sensitive-field exclusion; verify with `BusinessApiIntegrationTests`.
 - [x] 2.2 Run backend tests and strict OpenSpec validation; verify both pass.
+
+## 3. Historical integrity
+
+- [ ] 3.1 Add nullable actual-version and immutable name columns; verify migration preserves legacy rows as unknown.
+- [ ] 3.2 Populate exact actor/object/organization/supervisor labels and versions on new writes; verify rename/move history remains unchanged.
+- [ ] 3.3 Return same-enterprise/object successful history and nullable legacy versions; verify history ordering and rollback exclusion.

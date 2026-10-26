@@ -6,17 +6,17 @@ export const logResults = { SUCCESS: '成功', FAILURE: '失败' } as const
 export interface OperationRecord {
   id: string
   occurredAt: string
-  actor: { id: string | null; displayName: string; loginName: string | null }
+  actor: { id: string | null; displayName: string | null; loginName: string | null }
   module: string
   action: string
   source: string
   result: 'SUCCESS' | 'FAILURE'
-  object: { type: string; id: string | null; label: string }
+  object: { type: string; id: string | null; label: string | null }
   summary: string
 }
 export interface SnapshotField { key: string; label: string; value: string | null }
-export interface OperationSnapshot { version: number; fields: SnapshotField[] }
-export interface OperationVersion { logId: string; version: number; occurredAt: string; actorName: string; action: string }
+export interface OperationSnapshot { version: number | null; fields: SnapshotField[] }
+export interface OperationVersion { logId: string; version: number | null; occurredAt: string; actorName: string | null; action: string }
 export interface OperationDetail extends OperationRecord {
   requestId: string | null
   failureReason: string | null
