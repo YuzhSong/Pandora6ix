@@ -441,6 +441,22 @@ class BusinessApiIntegrationTests {
     }
 
     @Test
+    void managerCanParticipateInDelegationWithoutWideningOtherRecipientScopes() throws Exception {
+        var task = createTask(managerToken, "DELEGATED", List.of(manager, employee));
+        assertEquals("PENDING", task.get("reviewStatus"));
+        var decision = reviewDecision(founderToken, task, "APPROVE");
+        assertEquals("APPROVED", ((Map<?, ?>) decision.get("review")).get("decision"));
+        var assigned = db.rows("SELECT * FROM task_assignment WHERE enterprise_id=? AND task_id=?", enterprise, task.get("id"));
+        assertEquals(2, assigned.size());
+        assertTrue(assigned.stream().allMatch(row -> "ACTIVE".equals(row.get("execution_status"))));
+        request("POST", "/tasks", managerToken, taskBody("DELEGATED", List.of(manager), List.of(), null), 403);
+        request("POST", "/tasks", managerToken, taskBody("DELEGATED", List.of(manager, founder), List.of(), null), 403);
+        request("POST", "/tasks", employeeToken, taskBody("DELEGATED", List.of(employee, peer), List.of(), null), 403);
+        db.update("UPDATE app_user SET status='DISABLED' WHERE id=?", peer);
+        request("POST", "/tasks", managerToken, taskBody("DELEGATED", List.of(manager, peer), List.of(), null), 403);
+    }
+
+    @Test
     void realPersonalApprovalProgressAndCompletionUseReturnedRelationshipVersions()
             throws Exception {
         var task = createTask(employeeToken, "PERSONAL", List.of());

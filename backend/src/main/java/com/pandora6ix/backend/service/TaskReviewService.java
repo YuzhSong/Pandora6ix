@@ -101,7 +101,8 @@ public class TaskReviewService {
             return assignments.size() == 1
                     && creator.id().equals(assignments.getFirst().get("recipient_user_id"));
         if (creator.businessRank() >= 3) return false;
-        var managed = scope.activeManaged(creator);
+        var managed = scope.taskRecipients(creator, assignments.stream()
+                .map(row -> str(row, "recipient_user_id")).toList());
         return assignments.stream().allMatch(x -> managed.contains(str(x, "recipient_user_id")));
     }
 
