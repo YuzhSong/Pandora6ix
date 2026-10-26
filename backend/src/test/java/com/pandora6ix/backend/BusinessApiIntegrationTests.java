@@ -248,6 +248,13 @@ class BusinessApiIntegrationTests {
         var detailAfterRename=request("GET","/admin/operation-logs/"+operation.get("id"),adminToken,null,200);
         assertTrue(json.writeValueAsString(detailAfterRename).contains("Team"));
         assertFalse(json.writeValueAsString(detailAfterRename).contains("Renamed Team"));
+        db.update("UPDATE app_user SET display_name='Current renamed administrator' WHERE enterprise_id=? AND id=?", enterprise, admin);
+        var oldActorSearch = request("GET", "/admin/operation-logs?module=PERSONNEL&action=JOB_CHANGE&keyword=Administrator", adminToken, null, 200);
+        assertEquals(1, items(oldActorSearch).size());
+        assertEquals("Administrator", ((Map<?, ?>) items(oldActorSearch).getFirst().get("actor")).get("displayName"));
+        db.update("UPDATE operation_log SET actor_display_name=NULL,actor_login_name=NULL WHERE id=?", operation.get("id"));
+        var unknownActor = request("GET", "/admin/operation-logs?module=PERSONNEL&action=JOB_CHANGE", adminToken, null, 200);
+        assertNull(((Map<?, ?>) items(unknownActor).getFirst().get("actor")).get("displayName"));
         request("GET","/admin/operation-logs?module=ACCOUNT&snapshotToken="+operationPage.get("snapshotToken"),adminToken,null,422);
         request("GET","/admin/operation-logs",peerToken,null,403);
         request("POST","/admin/users/"+lead+"/job-change",adminToken,fields("expectedVersion",0,"jobTitle","Member","orgUnitId",team,"supervisorUserId",manager,"roles",List.of("EMPLOYEE")),409);
