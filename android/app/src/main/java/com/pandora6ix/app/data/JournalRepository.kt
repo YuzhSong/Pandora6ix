@@ -34,6 +34,10 @@ class JournalRepository(private val api: ApiClient) {
     suspend fun journal(journalId: String): JournalDto =
         api.get("/work-logs/$journalId", JournalDto.serializer())
 
+    /** 有日志的日期（全部历史，不受列表 367 天窗口限制）：日期选择器着色与月份区间用 */
+    suspend fun dates(): JournalDatesDto =
+        api.get("/work-logs/dates", JournalDatesDto.serializer())
+
     suspend fun create(
         workDate: String,
         entries: List<EntryCreateDto>,
