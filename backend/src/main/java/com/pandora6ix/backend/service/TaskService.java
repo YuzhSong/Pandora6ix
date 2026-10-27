@@ -129,7 +129,7 @@ public class TaskService
                         "A personal task can only belong to its creator.");
             recipients = List.of(a.id());
         } else {
-            var managed = scope.activeManaged(a);
+            var managed = scope.taskRecipients(a, recipients);
             if (recipients.isEmpty())
                 throw BusinessException.invalid("A delegated task requires recipients.");
             if (!managed.containsAll(recipients))
@@ -138,18 +138,22 @@ public class TaskService
                         "RECIPIENT_OUT_OF_SCOPE",
                         "All recipients must be authorized subordinate business users.");
         }
-        var user = db.entity("app_user", a.enterpriseId(), a.id());
-        String supervisor = str(user, "supervisor_user_id");
-        if (supervisor == null || supervisor.equals(a.id()))
-            throw BusinessException.policy(
-                    "A direct-supervisor approval policy is required; self approval is not"
-                            + " supported.");
-        var reviewer = db.entity("app_user", a.enterpriseId(), supervisor);
-        if (!"ACTIVE".equals(reviewer.get("status"))
-                || identity.actor(supervisor, a.enterpriseId(), str(reviewer, "org_unit_id"), null)
-                                .businessRank()
-                        >= 3)
-            throw BusinessException.policy("An active business reviewer must be configured.");
+        boolean founder = a.has("FOUNDER");
+        String supervisor = null;
+        if (!founder) {
+            var user = db.entity("app_user", a.enterpriseId(), a.id());
+            supervisor = str(user, "supervisor_user_id");
+            if (supervisor == null || supervisor.equals(a.id()))
+                throw BusinessException.policy(
+                        "A direct-supervisor approval policy is required; self approval is not"
+                                + " supported.");
+            var reviewer = db.entity("app_user", a.enterpriseId(), supervisor);
+            if (!"ACTIVE".equals(reviewer.get("status"))
+                    || identity.actor(supervisor, a.enterpriseId(), str(reviewer, "org_unit_id"), null)
+                                    .businessRank()
+                            >= 3)
+                throw BusinessException.policy("An active business reviewer must be configured.");
+        }
         String task = id(), review = id();
         db.update(
                 "INSERT INTO"
@@ -177,6 +181,18 @@ public class TaskService
                     a.enterpriseId(),
                     task,
                     recipient);
+        if (founder) {
+            db.update(
+                    "UPDATE task SET review_status='APPROVED' WHERE enterprise_id=? AND id=?",
+                    a.enterpriseId(),
+                    task);
+            db.update(
+                    "UPDATE task_assignment SET execution_status='ACTIVE',activated_at=CURRENT_TIMESTAMP"
+                            + " WHERE enterprise_id=? AND task_id=?",
+                    a.enterpriseId(),
+                    task);
+            notifications.taskApproved(a.enterpriseId(), task, c.title());
+        }
         var snapshot =
                 fields(
                         "kind",
@@ -203,19 +219,22 @@ public class TaskService
                         tagIds,
                         "primaryTagId",
                         c.primaryTagId());
-        db.update(
-                "INSERT INTO"
-                    + " task_review(id,enterprise_id,task_id,reviewer_user_id,submitted_by_user_id,task_version,submitted_snapshot)"
-                    + " VALUES(?,?,?,?,?,0,?)",
-                review,
-                a.enterpriseId(),
-                task,
-                supervisor,
-                a.id(),
-                json.writeValueAsString(snapshot));
+        if (!founder)
+            db.update(
+                    "INSERT INTO"
+                        + " task_review(id,enterprise_id,task_id,reviewer_user_id,submitted_by_user_id,task_version,submitted_snapshot)"
+                        + " VALUES(?,?,?,?,?,0,?)",
+                    review,
+                    a.enterpriseId(),
+                    task,
+                    supervisor,
+                    a.id(),
+                    json.writeValueAsString(snapshot));
+        if (!founder)
+            notifications.reviewRequested(a.enterpriseId(), review, task, a.id(), supervisor, c.title());
         var result = detail(a, task);
         result.put("taskId", task);
-        result.put("reviewId", review);
+        if (!founder) result.put("reviewId", review);
         return result;
     }
 
@@ -490,7 +509,8 @@ public class TaskService
             throw BusinessException.policy(
                     "Editing approved/rejected tasks and resubmission await Q-02 confirmation.");
         if ("DELEGATED".equals(task.get("task_kind"))) {
-            var managed = scope.activeManaged(a);
+            var managed = scope.taskRecipients(a, assignments(a, id).stream()
+                    .map(row -> str(row, "recipient_user_id")).toList());
             if (assignments(a, id).stream()
                     .anyMatch(row -> !managed.contains(str(row, "recipient_user_id"))))
                 throw new BusinessException(

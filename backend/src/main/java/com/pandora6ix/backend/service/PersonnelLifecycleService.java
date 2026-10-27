@@ -16,8 +16,9 @@ public class PersonnelLifecycleService {
     private final DirectoryService directory;
     private final IdentityService identity;
     private final JsonMapper json;
-    public PersonnelLifecycleService(BusinessDb db, DirectoryService directory, IdentityService identity, JsonMapper json) {
-        this.db=db; this.directory=directory; this.identity=identity; this.json=json;
+    private final OperationLogService operationLogs;
+    public PersonnelLifecycleService(BusinessDb db, DirectoryService directory, IdentityService identity, JsonMapper json, OperationLogService operationLogs) {
+        this.db=db; this.directory=directory; this.identity=identity; this.json=json; this.operationLogs=operationLogs;
     }
     private Map<String,Object> lock(IdentityService.Actor a, String id, long version) {
         a.admin();
@@ -35,14 +36,21 @@ public class PersonnelLifecycleService {
         return LocalDate.now(ZoneId.of(zone==null?"UTC":zone));
     }
     private Map<String,Object> snapshot(IdentityService.Actor a, Map<String,Object> user) {
-        return fields("employmentStatus",user.get("employment_status"),"departureDate",str(user,"departure_date"),
+        String orgId=str(user,"org_unit_id"), supervisorId=str(user,"supervisor_user_id");
+        String orgName=orgId==null?null:str(db.entity("org_unit",a.enterpriseId(),orgId),"name");
+        String supervisorName=null;
+        if(supervisorId!=null) supervisorName=str(db.entity("app_user",a.enterpriseId(),supervisorId),"display_name");
+        return fields("version",number(user,"version"),"displayName",str(user,"display_name"),"loginName",str(user,"login_name"),
+            "employmentStatus",user.get("employment_status"),"departureDate",str(user,"departure_date"),
             "jobTitle",user.get("job_title"),"orgUnitId",user.get("org_unit_id"),
-            "supervisorUserId",user.get("supervisor_user_id"),"roles",roles(a,user),"status",user.get("status"));
+            "orgUnitName",orgName,"supervisorUserId",supervisorId,"supervisorName",supervisorName,
+            "roles",roles(a,user),"status",user.get("status"));
     }
     private void record(IdentityService.Actor a, String id, String kind, LocalDate date, Map<String,Object> before) {
-        db.update("INSERT INTO personnel_change(id,enterprise_id,user_id,actor_user_id,kind,effective_date,before_values,after_values) VALUES(?,?,?,?,?,?,?,?)",
+        var actor=db.entity("app_user",a.enterpriseId(),a.id());
+        db.update("INSERT INTO personnel_change(id,enterprise_id,user_id,actor_user_id,kind,effective_date,before_values,after_values,actor_display_name,actor_login_name) VALUES(?,?,?,?,?,?,?,?,?,?)",
             id(),a.enterpriseId(),id,a.id(),kind,date,json.writeValueAsString(before),
-            json.writeValueAsString(snapshot(a,db.entity("app_user",a.enterpriseId(),id))));
+            json.writeValueAsString(snapshot(a,db.entity("app_user",a.enterpriseId(),id))),str(actor,"display_name"),str(actor,"login_name"));
     }
     @Transactional
     public Map<String,Object> depart(IdentityService.Actor a,String id,Contracts.UserDeparture c) {
@@ -55,6 +63,7 @@ public class PersonnelLifecycleService {
         var updated=directory.patchUser(a,id,new Contracts.UserPatch(c.expectedVersion(),str(old,"display_name"),str(old,"org_unit_id"),null,str(old,"job_title"),"DISABLED",roles(a,old),null,null,null,null));
         db.update("UPDATE app_user SET employment_status='DEPARTED',departure_date=? WHERE enterprise_id=? AND id=?",c.departureDate(),a.enterpriseId(),id);
         record(a,id,"DEPARTURE",c.departureDate(),before);
+        operationLogs.record(a,id,"USER","PERSONNEL","DEPARTURE","WEB","办理离职",before,snapshot(a,db.entity("app_user",a.enterpriseId(),id)));
         updated.put("employmentStatus","DEPARTED"); updated.put("departureDate",c.departureDate().toString());
         return updated;
     }
@@ -67,6 +76,7 @@ public class PersonnelLifecycleService {
         var updated=directory.patchUser(a,id,new Contracts.UserPatch(c.expectedVersion(),str(old,"display_name"),c.orgUnitId(),c.supervisorUserId(),c.jobTitle(),str(old,"status"),c.roles(),null,null,null,null));
         db.update("UPDATE auth_session SET revoked=TRUE WHERE enterprise_id=? AND user_id=?",a.enterpriseId(),id);
         record(a,id,"JOB_CHANGE",today(a),before);
+        operationLogs.record(a,id,"USER","PERSONNEL","JOB_CHANGE","WEB","调整员工职位",before,snapshot(a,db.entity("app_user",a.enterpriseId(),id)));
         return updated;
     }
     private int rank(Collection<String> r) {
@@ -117,6 +127,7 @@ public class PersonnelLifecycleService {
                 db.update("UPDATE app_user SET supervisor_user_id=?,version=version+1 WHERE enterprise_id=? AND id=?",c.successorUserId(),a.enterpriseId(),userId);
             db.update("UPDATE auth_session SET revoked=TRUE WHERE enterprise_id=? AND user_id=?",a.enterpriseId(),userId);
             record(a,userId,"JOB_CHANGE",today(a),affected.get(userId));
+            operationLogs.record(a,userId,"USER","PERSONNEL","MANAGER_REPLACEMENT","WEB","更换负责人",affected.get(userId),snapshot(a,db.entity("app_user",a.enterpriseId(),userId)));
         }
         return fields("items",affected.keySet().stream().map(userId->directory.user(a,userId)).toList());
     }
@@ -135,7 +146,7 @@ public class PersonnelLifecycleService {
     }
     public Map<String,Object> history(IdentityService.Actor a,String id) {
         a.admin(); db.entity("app_user",a.enterpriseId(),id);
-        var rows=db.rows("SELECT c.*,u.display_name AS actor_name FROM personnel_change c JOIN app_user u ON u.enterprise_id=c.enterprise_id AND u.id=c.actor_user_id WHERE c.enterprise_id=? AND c.user_id=? ORDER BY c.recorded_at DESC,c.id DESC",a.enterpriseId(),id);
-        return fields("items",rows.stream().map(row->{ var value=view(row); value.put("beforeValues",json.readValue(str(row,"before_values"),Map.class)); value.put("afterValues",json.readValue(str(row,"after_values"),Map.class)); return value; }).toList());
+        var rows=db.rows("SELECT * FROM personnel_change WHERE enterprise_id=? AND user_id=? ORDER BY recorded_at DESC,id DESC",a.enterpriseId(),id);
+        return fields("items",rows.stream().map(row->{ var value=view(row); value.put("actorName",row.get("actor_display_name")); value.put("actorLoginName",row.get("actor_login_name")); value.put("beforeValues",json.readValue(str(row,"before_values"),Map.class)); value.put("afterValues",json.readValue(str(row,"after_values"),Map.class)); return value; }).toList());
     }
 }

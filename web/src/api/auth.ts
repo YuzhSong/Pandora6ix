@@ -2,7 +2,7 @@ import { ApiError } from './client.ts'
 import type { createApiClient } from './client.ts'
 import type { createSessionStore } from './session.ts'
 
-export interface LoginInput { enterpriseDomain: string; loginName: string; password: string }
+export interface LoginInput { accountIdentifier: string; password: string }
 export function validatePassword(password: string) {
   if (password.length < 10 || new TextEncoder().encode(password).length > 72) throw new Error('密码至少 10 个字符，UTF-8 编码后不能超过 72 字节。')
 }

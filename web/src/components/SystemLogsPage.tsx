@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { apiClient } from '../api/config.ts'
 import { createOperationLogReader } from '../api/operationLogs.ts'
 import { errorMessage } from '../api/feedback.ts'
-import { compareSnapshots, dateRangeValid, emptyLogFilters, logActions, logLabel, logModules, logResults, logSources, logTime } from '../data/operationHistory.ts'
+import { dateRangeValid, emptyLogFilters, logActions, logLabel, logModules, logResults, logSources, logTime } from '../data/operationHistory.ts'
 import type { OperationDetail, OperationFilters, OperationPage } from '../data/operationHistory.ts'
 import { operationLogWorkbook } from '../data/operationLogWorkbook.ts'
 import { textDifference } from '../data/textDifference.ts'
@@ -12,6 +12,8 @@ import { Select } from './Select.tsx'
 import { Icon } from './Icon.tsx'
 import { DateRangePicker } from './DateRangePicker.tsx'
 import { operationChoices } from '../data/operationChoices.ts'
+import { presentOperationComparison } from '../data/operationPresentation.ts'
+import type { AdminData } from '../data/types.ts'
 import './SystemLogsPage.css'
 
 const previewLogs = import.meta.env.DEV && ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname) && new URLSearchParams(location.search).get('previewLogs') === '1'
@@ -21,7 +23,7 @@ const reader = createOperationLogReader({ async request<T>(path: string, options
 } })
 function options(labels: Readonly<Record<string, string>>, all: string) { return [{ value: '', label: all }, ...Object.entries(labels).map(([value, label]) => ({ value, label }))] }
 
-export function SystemLogsPage({ refreshKey }: { refreshKey?: unknown }) {
+export function SystemLogsPage({ refreshKey, data }: { refreshKey?: unknown; data: AdminData }) {
   const [filters, setFilters] = useState<OperationFilters>({ ...emptyLogFilters })
   const [keyword, setKeyword] = useState('')
   const [cursors, setCursors] = useState<(string | undefined)[]>([undefined])
@@ -95,13 +97,13 @@ export function SystemLogsPage({ refreshKey }: { refreshKey?: unknown }) {
     {error ? <div className="log-load-state" role="alert"><Icon name="journal" size={30} /><h3>日志加载失败</h3><p>{error}</p><button className="button secondary" onClick={() => { resetPaging(); setRetry(value => value + 1) }}>重新加载</button></div>
       : loading ? <div className="log-load-state" role="status">正在加载操作日志…</div>
       : !page?.items.length ? <div className="log-load-state"><Icon name="journal" size={30} /><h3>{Object.values(filters).some(Boolean) ? '没有符合条件的日志' : '暂无操作日志'}</h3>{Object.values(filters).some(Boolean) && <button className="button secondary" onClick={clear}>重置筛选</button>}</div>
-      : <div className="log-table-scroll"><table className="log-table"><thead><tr><th scope="col">操作时间</th><th scope="col">操作记录</th><th scope="col">结果</th><th scope="col">详情</th></tr></thead><tbody>{page.items.map(row => <tr key={row.id}><td><time dateTime={row.occurredAt}>{logTime(row.occurredAt)}</time></td><td><div className="log-record-line"><strong>{row.actor.displayName}</strong><span>{row.summary}</span><span className="badge log-module" data-log-module={row.module}>{logLabel(logModules, row.module)}</span></div></td><td><span className={`badge ${row.result === 'SUCCESS' ? 'log-success' : 'log-failure'}`}>{logResults[row.result]}</span></td><td><button className="text-button" aria-label={`查看${row.actor.displayName}的${logLabel(logActions, row.action)}记录`} onClick={() => setSelected(row.id)}>查看</button></td></tr>)}</tbody></table></div>}
+      : <div className="log-table-scroll"><table className="log-table"><thead><tr><th scope="col">操作时间</th><th scope="col">操作记录</th><th scope="col">结果</th><th scope="col">详情</th></tr></thead><tbody>{page.items.map(row => <tr key={row.id}><td><time dateTime={row.occurredAt}>{logTime(row.occurredAt)}</time></td><td><div className="log-record-line"><strong>{row.actor.displayName ?? '历史操作人（未记录）'}</strong><span>{row.summary}</span><span className="badge log-module" data-log-module={row.module}>{logLabel(logModules, row.module)}</span></div></td><td><span className={`badge ${row.result === 'SUCCESS' ? 'log-success' : 'log-failure'}`}>{logResults[row.result]}</span></td><td><button className="text-button" aria-label={`查看${row.actor.displayName ?? '历史操作人'}的${logLabel(logActions, row.action)}记录`} onClick={() => setSelected(row.id)}>查看</button></td></tr>)}</tbody></table></div>}
     <div className="table-footer"><span>{page ? `共 ${page.total} 条` : '—'}</span><div className="log-pagination" aria-label="日志分页"><button className="button secondary" disabled={loading || exporting || pageIndex === 0} onClick={() => { setCursors(previous => previous.slice(0, pageIndex)); setPageIndex(value => value - 1) }}>上一页</button><span>第 {pageIndex + 1} 页</span><button className="button secondary" disabled={loading || exporting || !page?.nextCursor} onClick={nextPage}>下一页</button></div></div>
-    {selected && <OperationLogDialog id={selected} onClose={() => setSelected(null)} />}
+    {selected && <OperationLogDialog data={data} id={selected} onClose={() => setSelected(null)} />}
   </section>
 }
 
-function OperationLogDialog({ id, onClose }: { id: string; onClose: () => void }) {
+function OperationLogDialog({ id, onClose, data }: { id: string; onClose: () => void; data: AdminData }) {
   const dialog = useRef<HTMLDialogElement>(null)
   const [activeId, setActiveId] = useState(id)
   const [detail, setDetail] = useState<OperationDetail | null>(null)
@@ -122,13 +124,13 @@ function OperationLogDialog({ id, onClose }: { id: string; onClose: () => void }
     <div className="dialog-head"><h2 id="log-detail-title">日志详情</h2><button className="icon-button" aria-label="关闭日志详情" onClick={onClose}><Icon name="close" size={20} /></button></div>
     <div ref={content} tabIndex={-1} className="dialog-body log-detail-content">
       {error ? <div role="alert"><p className="error-message">{error}</p><button className="button secondary" onClick={() => setRetry(value => value + 1)}>重新加载</button></div> : !detail ? <p role="status">正在加载日志详情…</p> : <>
-        <div className="log-detail-summary"><div><h3>{detail.actor.displayName} · {detail.summary}</h3><p><time dateTime={detail.occurredAt}>{logTime(detail.occurredAt)}</time><span>{logLabel(logModules, detail.module)}</span></p></div><span className={`badge ${detail.result === 'SUCCESS' ? 'log-success' : 'log-failure'}`}>{logResults[detail.result]}</span></div>
+        <div className="log-detail-summary"><div><h3>{detail.actor.displayName ?? '历史操作人（未记录）'} · {detail.summary}</h3><p><time dateTime={detail.occurredAt}>{logTime(detail.occurredAt)}</time><span>{logLabel(logModules, detail.module)}</span></p></div><span className={`badge ${detail.result === 'SUCCESS' ? 'log-success' : 'log-failure'}`}>{logResults[detail.result]}</span></div>
         <div className="log-detail-tabs" role="tablist" aria-label="日志内容" onKeyDown={event => { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) { event.preventDefault(); const next = event.key === 'Home' ? 'change' : event.key === 'End' ? 'history' : tab === 'change' ? 'history' : 'change'; switchTab(next); event.currentTarget.querySelector<HTMLButtonElement>(`[data-log-tab="${next}"]`)?.focus() } }}><button id="log-change-tab" data-log-tab="change" role="tab" aria-selected={tab === 'change'} aria-controls="log-change-panel" tabIndex={tab === 'change' ? 0 : -1} onClick={() => switchTab('change')}>本次操作</button><button id="log-history-tab" data-log-tab="history" role="tab" aria-selected={tab === 'history'} aria-controls="log-history-panel" tabIndex={tab === 'history' ? 0 : -1} onClick={() => switchTab('history')}>历史版本</button></div>
         {detail.failureReason && <p className="error-message">{detail.failureReason}</p>}
-        {tab === 'change' ? <section id="log-change-panel" role="tabpanel" aria-labelledby="log-change-tab"><SnapshotComparison detail={detail} /></section> : <section id="log-history-panel" role="tabpanel" aria-labelledby="log-history-tab">
-          {!historyOpen ? <>{detail.versions.length ? <ol className="log-history-list">{detail.versions.map(version => <li key={version.logId}><div><strong>版本 {version.version}</strong><span>{version.actorName} · {logLabel(logActions, version.action)}</span><time dateTime={version.occurredAt}>{logTime(version.occurredAt)}</time></div><button className="text-button" onClick={() => { setActiveId(version.logId); setHistoryOpen(true) }}>查看版本 {version.version}</button></li>)}</ol> : <p className="log-empty-fields">暂无历史版本</p>}</> : <><button className="text-button log-back-history" onClick={() => setHistoryOpen(false)}>返回版本列表</button><SnapshotComparison detail={detail} /></>}
+        {tab === 'change' ? <section id="log-change-panel" role="tabpanel" aria-labelledby="log-change-tab"><SnapshotComparison detail={detail} data={data} /></section> : <section id="log-history-panel" role="tabpanel" aria-labelledby="log-history-tab">
+          {!historyOpen ? <>{detail.versions.length ? <ol className="log-history-list">{detail.versions.map(version => <li key={version.logId}><div><strong>{version.version !== null ? `版本 ${version.version}` : '版本号未记录'}</strong><span>{version.actorName ?? '历史操作人（未记录）'} · {logLabel(logActions, version.action)}</span><time dateTime={version.occurredAt}>{logTime(version.occurredAt)}</time></div><button className="text-button" onClick={() => { setActiveId(version.logId); setHistoryOpen(true) }}>{version.version !== null ? `查看版本 ${version.version}` : '查看历史快照'}</button></li>)}</ol> : <p className="log-empty-fields">暂无历史版本</p>}</> : <><button className="text-button log-back-history" onClick={() => setHistoryOpen(false)}>返回版本列表</button><SnapshotComparison detail={detail} data={data} /></>}
         </section>}
-        <details className="log-operation-info"><summary>操作信息</summary><dl className="log-metadata"><div><dt>登录账号</dt><dd>{detail.actor.loginName ?? '—'}</dd></div><div><dt>操作来源</dt><dd>{logLabel(logSources, detail.source)}</dd></div><div><dt>操作对象</dt><dd>{detail.object.label}</dd></div>{detail.requestId && <div><dt>操作编号</dt><dd>{detail.requestId}</dd></div>}</dl></details>
+        <details className="log-operation-info"><summary>操作信息</summary><dl className="log-metadata"><div><dt>登录账号</dt><dd>{detail.actor.loginName ?? '—'}</dd></div><div><dt>操作来源</dt><dd>{logLabel(logSources, detail.source)}</dd></div><div><dt>操作对象</dt><dd>{detail.object.label ?? '未记录'}</dd></div>{detail.requestId && <div><dt>操作编号</dt><dd>{detail.requestId}</dd></div>}</dl><details><summary>原始关联标识与职位记录</summary><dl className="log-metadata">{presentOperationComparison(detail.before, detail.after, data).filter(field => /(?:UserId|orgUnitId|parentId|tagIds)$/.test(field.key)).map(field => <div key={field.key}><dt>{field.label}</dt><dd>修改前：{field.rawBefore || '—'}<br />修改后：{field.rawAfter || '—'}</dd></div>)}{(detail.before?.fields.some(field => field.key === 'jobTitle') || detail.after?.fields.some(field => field.key === 'jobTitle')) && <div><dt>原始职位记录</dt><dd>修改前：{detail.before?.fields.find(field => field.key === 'jobTitle')?.value || '—'}<br />修改后：{detail.after?.fields.find(field => field.key === 'jobTitle')?.value || '—'}</dd></div>}</dl></details></details>
       </>}
     </div><div className="dialog-footer"><button className="button secondary" onClick={onClose}>关闭</button></div>
   </dialog>
@@ -138,11 +140,11 @@ function DifferenceText({ parts, side }: { parts: DifferencePart[]; side: 'befor
   return <>{parts.map((part, index) => part.changed ? <mark key={index} className={`log-diff-${side}`} aria-label={`${side === 'before' ? '修改前差异' : '修改后差异'}：${part.text}`}>{part.text}</mark> : <span key={index}>{part.text}</span>)}</>
 }
 
-function SnapshotComparison({ detail }: { detail: OperationDetail }) {
-  const fields = compareSnapshots(detail.before, detail.after), comparing = !!detail.before && !!detail.after
+function SnapshotComparison({ detail, data }: { detail: OperationDetail; data: AdminData }) {
+  const fields = presentOperationComparison(detail.before, detail.after, data), comparing = !!detail.before && !!detail.after
   if (!detail.before && !detail.after) return <p className="log-empty-fields">{detail.result === 'FAILURE' ? '本次操作未生成新版本' : '此操作无内容版本'}</p>
   return <div className="log-versions-scroll"><div className={`log-version-pair ${comparing ? '' : 'single-version'}`} aria-label="完整历史内容">
-    {detail.before && <h3 className="log-version-heading">{comparing ? '修改前' : '删除前'}<span>版本 {detail.before.version}</span></h3>}{detail.after && <h3 className="log-version-heading">{comparing ? '修改后' : '创建后'}<span>版本 {detail.after.version}</span></h3>}
+    {detail.before && <h3 className="log-version-heading">{comparing ? '修改前' : '删除前'}{detail.before.version !== null && <span>版本 {detail.before.version}</span>}</h3>}{detail.after && <h3 className="log-version-heading">{comparing ? '修改后' : '创建后'}{detail.after.version !== null && <span>版本 {detail.after.version}</span>}</h3>}
     {fields.map(field => {
       const diff = textDifference(field.before ?? '', field.after ?? '')
       return <div className="log-version-field-row" key={field.key}>{detail.before && <div className="log-version-field"><h4>{field.label}{comparing && field.changed && <span className="log-field-dot" aria-label="此字段已修改" />}</h4><p>{field.before === null || field.before === '' ? '—' : comparing ? <DifferenceText parts={diff.before} side="before" /> : field.before}</p></div>}{detail.after && <div className="log-version-field"><h4>{field.label}{comparing && field.changed && <span className="log-field-dot" aria-label="此字段已修改" />}</h4><p>{field.after === null || field.after === '' ? '—' : comparing ? <DifferenceText parts={diff.after} side="after" /> : field.after}</p></div>}</div>

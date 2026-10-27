@@ -1,9 +1,9 @@
 export const roleLabels = {
   ADMIN: '系统管理员',
   FOUNDER: '创始人',
-  DEPARTMENT_MANAGER: '部门负责人',
-  TEAM_LEAD: '团队负责人',
-  EMPLOYEE: '普通员工',
+  DEPARTMENT_MANAGER: '部门老总',
+  TEAM_LEAD: '团队长',
+  EMPLOYEE: '员工',
 } as const
 
 export type Role = keyof typeof roleLabels
@@ -49,7 +49,7 @@ export interface AdminRepository {
 }
 
 export interface JobChangeInput { jobTitle: string; orgUnitId: string; supervisorId: string | null; roles: Role[] }
-export interface PersonnelChange { id: string; actorName: string; recordedAt: string; effectiveDate: string; kind: 'DEPARTURE' | 'JOB_CHANGE'; beforeValues: Record<string, unknown>; afterValues: Record<string, unknown> }
+export interface PersonnelChange { id: string; actorName: string | null; actorLoginName: string | null; recordedAt: string; effectiveDate: string; kind: 'DEPARTURE' | 'JOB_CHANGE'; beforeValues: Record<string, unknown>; afterValues: Record<string, unknown> }
 
 export interface CredentialHandoff {
   personId: string; displayName: string; loginName: string; enterpriseDomain: string

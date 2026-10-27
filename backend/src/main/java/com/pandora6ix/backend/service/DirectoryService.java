@@ -20,12 +20,14 @@ public class DirectoryService {
     private final IdentityService identity;
     private final CredentialHandoffService handoffs;
     private final PersonnelResponsibilityPolicy responsibility;
+    private final OperationLogService operationLogs;
 
-    public DirectoryService(BusinessDb db, IdentityService identity, CredentialHandoffService handoffs, PersonnelResponsibilityPolicy responsibility) {
+    public DirectoryService(BusinessDb db, IdentityService identity, CredentialHandoffService handoffs, PersonnelResponsibilityPolicy responsibility, OperationLogService operationLogs) {
         this.db = db;
         this.identity = identity;
         this.handoffs = handoffs;
         this.responsibility = responsibility;
+        this.operationLogs = operationLogs;
     }
 
     public Map<String, Object> enterprise(IdentityService.Actor a) {
@@ -271,6 +273,16 @@ public class DirectoryService {
                                         role));
     }
 
+    private Map<String,Object> operationSnapshot(IdentityService.Actor a, Map<String,Object> row) {
+        String orgId=str(row,"org_unit_id"), supervisorId=str(row,"supervisor_user_id");
+        String orgName=orgId==null?null:str(db.entity("org_unit",a.enterpriseId(),orgId),"name");
+        String supervisorName=supervisorId==null?null:str(db.entity("app_user",a.enterpriseId(),supervisorId),"display_name");
+        return fields("version",number(row,"version"),"displayName",str(row,"display_name"),"loginName",str(row,"login_name"),
+                "jobTitle",row.get("job_title"),"orgUnitId",orgId,"orgUnitName",orgName,
+                "supervisorUserId",supervisorId,"supervisorName",supervisorName,"status",str(row,"status"),
+                "roles",identity.actor(str(row,"id"),a.enterpriseId(),orgId,null).roles());
+    }
+
     @Transactional
     public Map<String, Object> createUser(IdentityService.Actor a, Contracts.UserCreate c) {
         a.admin();
@@ -292,7 +304,9 @@ public class DirectoryService {
                 c.jobTitle(), c.gender(), c.idNumber(), c.phoneNumber());
         roles(a, id, c.roles());
         if (!c.roles().contains("ADMIN")) handoffs.capture(a.enterpriseId(), id, c.password(), str(db.entity("app_user", a.enterpriseId(), id), "password_hash"));
-        return user(a, id);
+        var result = user(a, id);
+        operationLogs.record(a,id,"USER","ACCOUNT","CREATE","WEB","创建账号",null,operationSnapshot(a,db.entity("app_user",a.enterpriseId(),id)));
+        return result;
     }
 
     @Transactional
@@ -303,6 +317,7 @@ public class DirectoryService {
         var old = db.entity("app_user", a.enterpriseId(), id);
         if ("DEPARTED".equals(old.get("employment_status")))
             throw new BusinessException(409,"EMPLOYEE_DEPARTED","Employee has departed.");
+        var before = operationSnapshot(a,old);
         if (number(old, "version") != c.expectedVersion()) checkVersion(0);
         if (c.loginName() != null) {
             if (c.loginName().isBlank() || !c.loginName().equals(c.loginName().strip()))
@@ -356,7 +371,9 @@ public class DirectoryService {
                     "UPDATE auth_session SET revoked=TRUE WHERE enterprise_id=? AND user_id=?",
                     a.enterpriseId(),
                     id);
-        return user(a, id);
+        var result = user(a, id);
+        operationLogs.record(a,id,"USER","ACCOUNT","UPDATE","WEB","修改账号",before,operationSnapshot(a,db.entity("app_user",a.enterpriseId(),id)));
+        return result;
     }
 
     @Transactional
@@ -369,12 +386,15 @@ public class DirectoryService {
         if (identity.actor(id, a.enterpriseId(), str(old, "org_unit_id"), null).has("ADMIN"))
             throw new BusinessException(403, "ADMIN_PASSWORD_RESET_FORBIDDEN", "Use the administrator's own password-change flow.");
         if (number(old, "version") != c.expectedVersion()) checkVersion(0);
+        var before=operationSnapshot(a,old);
         String hash = identity.encode(c.newPassword());
         checkVersion(db.update("UPDATE app_user SET password_hash=?,version=version+1 WHERE enterprise_id=? AND id=? AND version=?",
                 hash, a.enterpriseId(), id, c.expectedVersion()));
         db.update("UPDATE auth_session SET revoked=TRUE WHERE enterprise_id=? AND user_id=?", a.enterpriseId(), id);
         handoffs.capture(a.enterpriseId(), id, c.newPassword(), hash);
-        return user(a, id);
+        var result = user(a, id);
+        operationLogs.record(a,id,"USER","ACCOUNT","PASSWORD_RESET","WEB","重置账号密码",before,operationSnapshot(a,db.entity("app_user",a.enterpriseId(),id)));
+        return result;
     }
 
     private void validatePhone(String phone) {

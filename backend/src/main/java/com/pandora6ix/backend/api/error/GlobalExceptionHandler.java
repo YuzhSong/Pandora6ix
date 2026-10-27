@@ -13,9 +13,16 @@ import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
 import java.time.Instant;
+import java.sql.SQLException;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
+    private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+    private static final Pattern CONSTRAINT = Pattern.compile("(?i)constraint\\s+[\\\"']?([A-Za-z][A-Za-z0-9_.-]{0,127})");
     @ExceptionHandler(com.pandora6ix.backend.api.BusinessException.class)
     public ResponseEntity<Object> handleBusiness(
             com.pandora6ix.backend.api.BusinessException exception, HttpServletRequest request) {
@@ -38,12 +45,32 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     public ResponseEntity<Object> handleIntegrity(
             org.springframework.dao.DataIntegrityViolationException exception,
             HttpServletRequest request) {
+        String sqlState = null, constraint = null;
+        int vendorCode = 0;
+        for (Throwable cause = exception; cause != null; cause = cause.getCause()) {
+            if (cause instanceof SQLException sql) {
+                if (sqlState == null) sqlState = sql.getSQLState();
+                if (vendorCode == 0) vendorCode = sql.getErrorCode();
+            }
+            String safeName = constraintName(cause.getMessage());
+            if (constraint == null && safeName != null) constraint = safeName;
+        }
+        Object requestId = request.getAttribute(RequestIdFilter.ATTRIBUTE_NAME);
+        log.warn("database_integrity_conflict requestId={} method={} path={} sqlState={} vendorCode={} constraint={}",
+                requestId, request.getMethod(), request.getRequestURI(), sqlState, vendorCode,
+                constraint == null ? "unavailable" : constraint);
         return handleBusiness(
                 new com.pandora6ix.backend.api.BusinessException(
                         409,
                         "DATA_CONFLICT",
                         "A unique resource or valid relationship is required."),
                 request);
+    }
+
+    private String constraintName(String message) {
+        if (message == null) return null;
+        Matcher matcher = CONSTRAINT.matcher(message);
+        return matcher.find() ? matcher.group(1) : null;
     }
 
     @ExceptionHandler(ApiException.class)

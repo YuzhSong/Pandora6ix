@@ -1,6 +1,7 @@
 import { ApiError } from './client.ts'
 
 const messages: Record<string, string> = {
+  DATA_CONFLICT: '保存失败，数据存在重复或关联关系冲突。请刷新资料后重试；若仍失败，请联系系统维护人员核查服务端错误记录。',
   MANAGER_SUCCESSOR_REQUIRED: '该组织需要保留负责人，请先使用“更换负责人”。',
   INVALID_MANAGER_SUCCESSOR: '接任人员不符合条件，请选择在职且启用的普通员工，或本组织同级负责人；其他组织负责人请先完成岗位调整。',
   EMPLOYEE_DEPARTED: '该员工已离职，不能继续修改账号或岗位。',

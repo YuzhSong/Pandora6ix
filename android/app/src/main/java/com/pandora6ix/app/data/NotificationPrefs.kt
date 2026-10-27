@@ -22,6 +22,11 @@ class NotificationPrefs(context: Context, val ownerId: String?) {
         get() = prefs.getBoolean("master", true)
         set(value) = prefs.edit().putBoolean("master", value).apply()
 
+    /** 系统通知权限是否已申请过：只问一次，被拒也不重复骚扰（页内弹窗不依赖该权限） */
+    var permissionRequested: Boolean
+        get() = prefs.getBoolean("permission_requested", false)
+        set(value) = prefs.edit().putBoolean("permission_requested", value).apply()
+
     /** 新任务提醒：你被派发了新任务 / 个人任务批准 */
     var newTask: Boolean
         get() = prefs.getBoolean("new_task", true)
