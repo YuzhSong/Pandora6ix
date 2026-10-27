@@ -1,6 +1,6 @@
 # 后端验证记录
 
-2026-10-17：最新增量验证、PR 合并与云端边界见 [本轮验证](../openspec/changes/complete-client-administration-backend/validation.md)，接口交接见 [CLIENT_HANDOFF_20261017.md](CLIENT_HANDOFF_20261017.md)。后端完整包 58 项及另增公司时区边界 1 项通过，Android 18 项、Web 66 项通过；112 次真实 HTTP 与 Web 仓库真接口验证通过。云端仅已部署原 #12/#13，新的公司日期规则需本次 PR 合并后发布。
+2026-10-17：最新增量验证、PR 合并与云端边界见 [本轮验证](../openspec/changes/archive/2026-10-27-complete-client-administration-backend/validation.md)，接口交接见 [CLIENT_HANDOFF_20261017.md](CLIENT_HANDOFF_20261017.md)。后端完整包 58 项及另增公司时区边界 1 项通过，Android 18 项、Web 66 项通过；112 次真实 HTTP 与 Web 仓库真接口验证通过。云端仅已部署原 #12/#13，新的公司日期规则需本次 PR 合并后发布。
 
 ## 2026-10-15：Android 十模块与真实任务闭环
 

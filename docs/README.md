@@ -23,5 +23,5 @@
 
 - 本次移除10份旧版/重复Markdown；原件与旧草案可从Git基线 `ab32ced` 或更早提交恢复，不在当前目录另建备份副本。
 - 最新5份主文档与本索引共6份Markdown；目录及.gitkeep不删除，既有OpenSpec历史记录不改写。
-- 整理记录：[consolidate-latest-design-documents](../openspec/changes/consolidate-latest-design-documents/proposal.md)；业务确认依据：[reconcile-confirmed-requirements-1009](../openspec/changes/reconcile-confirmed-requirements-1009/proposal.md)。
+- 整理记录：[consolidate-latest-design-documents](../openspec/changes/archive/2026-10-27-consolidate-latest-design-documents/proposal.md)；业务确认依据：[reconcile-confirmed-requirements-1009](../openspec/changes/archive/2026-10-27-reconcile-confirmed-requirements-1009/proposal.md)。
 - 后续业务实现另建OpenSpec并评审。PR由非作者审核；合并并验证后才归档，本次不自动合并dev/main。
