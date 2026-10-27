@@ -28,6 +28,7 @@ class BusinessApiIntegrationTests {
     @Autowired MockMvc mvc;
     @Autowired JsonMapper json;
     @Autowired BusinessDb db;
+    @Autowired javax.sql.DataSource dataSource;
     @Autowired NotificationService notifications;
     @Autowired com.pandora6ix.backend.service.CredentialHandoffService credentialHandoffs;
     private static final String PASSWORD = "integration-password-123";
@@ -489,6 +490,36 @@ class BusinessApiIntegrationTests {
                 (Map<?, ?>) request("GET", "/me", adminToken, null, 200).get("capabilities");
         assertEquals(false, adminCaps.get("createPersonalTasks"));
         assertEquals(false, adminCaps.get("reviewTasks"));
+    }
+
+    @Test
+    void taskKindsAndSchedulesRemainUsableAfterPhysicalPoolConnectionsRetire() throws Exception {
+        var actors = List.of(
+                List.of(employeeToken, "PERSONAL", leadToken),
+                List.of(managerToken, "PERSONAL", founderToken),
+                List.of(managerToken, "DELEGATED", founderToken),
+                List.of(founderToken, "PERSONAL", "AUTO"),
+                List.of(founderToken, "DELEGATED", "AUTO"));
+        for (var actor : actors) for (String schedule : List.of("ALL_DAY", "TIMED", "CROSS_DAY")) {
+            ((com.zaxxer.hikari.HikariDataSource)dataSource).getHikariPoolMXBean().softEvictConnections();
+            var recipients = actor.get(1).equals("PERSONAL") ? List.<String>of() : actor.get(0).equals(managerToken) ? List.of(manager, employee) : List.of(employee);
+            var body = taskBody(actor.get(1), recipients, List.of(), null);
+            if (!schedule.equals("ALL_DAY")) {
+                body.put("timeKind", "TIMED");
+                body.put("startTime", schedule.equals("CROSS_DAY") ? "23:00" : "09:00");
+                body.put("endTime", schedule.equals("CROSS_DAY") ? "01:00" : "10:00");
+                if (schedule.equals("CROSS_DAY")) body.put("endDate", today.plusDays(1).toString());
+            }
+            var task = request("POST", "/tasks", actor.get(0), body, 201);
+            if (actor.get(2).equals("AUTO")) assertEquals("APPROVED", task.get("reviewStatus"));
+            else {
+                assertEquals("PENDING", task.get("reviewStatus"));
+                var decided = reviewDecision(actor.get(2), task, "APPROVE");
+                assertEquals("APPROVED", ((Map<?,?>)decided.get("review")).get("decision"));
+            }
+            var live = request("GET", "/tasks/" + task.get("id"), actor.get(0), null, 200);
+            assertEquals("APPROVED", live.get("reviewStatus"));
+        }
     }
 
     @Test

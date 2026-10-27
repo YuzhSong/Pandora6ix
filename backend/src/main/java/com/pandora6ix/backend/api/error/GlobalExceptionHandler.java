@@ -23,6 +23,7 @@ import org.slf4j.LoggerFactory;
 public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
     private static final Pattern CONSTRAINT = Pattern.compile("(?i)constraint\\s+[\\\"']?([A-Za-z][A-Za-z0-9_.-]{0,127})");
+    private static final Pattern QUOTED_CONSTRAINT = Pattern.compile("(?i)(?:check constraint (?:invalid|violation)|referential integrity constraint violation|unique index or primary key violation):\\s*[\"']([A-Za-z][A-Za-z0-9_.-]{0,127})(?=[:\\s\"'])");
     @ExceptionHandler(com.pandora6ix.backend.api.BusinessException.class)
     public ResponseEntity<Object> handleBusiness(
             com.pandora6ix.backend.api.BusinessException exception, HttpServletRequest request) {
@@ -67,10 +68,14 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                 request);
     }
 
-    private String constraintName(String message) {
+    static String constraintName(String message) {
         if (message == null) return null;
+        Matcher quoted = QUOTED_CONSTRAINT.matcher(message);
+        if (quoted.find()) return quoted.group(1);
         Matcher matcher = CONSTRAINT.matcher(message);
-        return matcher.find() ? matcher.group(1) : null;
+        if (!matcher.find()) return null;
+        String name = matcher.group(1);
+        return java.util.Set.of("invalid", "violation", "failed").contains(name.toLowerCase(java.util.Locale.ROOT)) ? null : name;
     }
 
     @ExceptionHandler(ApiException.class)

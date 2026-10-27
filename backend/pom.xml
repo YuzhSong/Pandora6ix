@@ -28,6 +28,8 @@
 	</scm>
 	<properties>
 		<java.version>21</java.version>
+		<!-- 2.4.240 binds IN/CHECK evaluation to retired JDBC sessions (H2 #4311). -->
+		<h2.version>2.5.252</h2.version>
 	</properties>
 	<dependencies>
 		<dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-jdbc</artifactId></dependency>
