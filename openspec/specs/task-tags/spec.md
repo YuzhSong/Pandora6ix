@@ -5,12 +5,12 @@ Define ordered primary and secondary task tags, color presentation, task detail 
 ## Requirements
 ### Requirement: 标签目录
 
-系统 SHALL 提供预置任务标签目录，每个标签 SHALL 具有唯一的展示颜色；任务 SHALL 最多持有一个主标签与若干次标签（列表首项为主标签）。
+系统 SHALL 使用当前企业服务端共享标签目录，每个标签 SHALL 带有名称与展示颜色；任务 SHALL 最多持有一个主标签与若干次标签（列表首项为主标签），且可不选择任何标签。标签权限与生命周期 SHALL 遵循 enterprise-tag-management。
 
 #### Scenario: 查看标签目录
 
 - **WHEN** 用户在创建任务时打开标签选择弹窗
-- **THEN** 展示全部预置标签，每个标签带独立的颜色圆点与名称
+- **THEN** 展示当前企业服务端返回的共享标签，每个标签带其颜色圆点与名称
 
 ### Requirement: 创建任务时选择标签
 
