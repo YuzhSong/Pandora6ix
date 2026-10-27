@@ -24,4 +24,4 @@ This change adds no task deletion endpoint, credentials, tables or infrastructur
 
 Shared Web/Android clients now forward their source header. Android task-edit/status/text-progress screens are not wired in this backend change; the existing percentage-based completion display needs client adaptation to distinguish pending acceptance. No Android device acceptance, cloud deployment, production-data mutation or live push-provider test was performed.
 
-The PR targets `dev` and awaits non-author review. Keep the OpenSpec change active until merge and validation; no separate archive PR is created here.
+[PR #35](https://github.com/YuzhSong/Pandora6ix/pull/35) targets `dev` and awaits non-author review. Keep the OpenSpec change active until merge and validation; no separate archive PR is created here.

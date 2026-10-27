@@ -10,4 +10,4 @@
 ## 3. Verification and handoff
 - [x] 3.1 Regenerate OpenAPI and document request/response examples for Android/Web integration.
 - [x] 3.2 Run backend full checks, shared client module checks, packaged smoke tests and strict OpenSpec validation.
-- [ ] 3.3 Submit one focused PR into dev with actual completed scope and remaining deployment/device acceptance.
+- [x] 3.3 Submit one focused PR into dev with actual completed scope and remaining deployment/device acceptance.
