@@ -100,6 +100,13 @@ public class TaskController {
                 a, "POST /assignments/" + id + "/progress", key, c, () -> tasks.progress(a, id, c));
     }
 
+    @PatchMapping("/task-assignments/{id}/status")
+    public Object workStatus(@PathVariable String id,@Valid @RequestBody Contracts.AssignmentStatus c,
+            @RequestHeader(value="Idempotency-Key",required=false) String key) {
+        var actor=identity.current();
+        return idempotency.execute(actor,"PATCH /assignments/"+id+"/status",key,c,()->tasks.setWorkStatus(actor,id,c));
+    }
+
     @PostMapping("/tasks/{id}/complete")
     public Object complete(
             @PathVariable String id,

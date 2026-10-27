@@ -132,6 +132,7 @@ def read_schemas():
     assignment = obj({**versioned, "taskId": ID, "recipientUserId": ID,
         "executionStatus": {"type": "string", "enum": ["PENDING_APPROVAL", "ACTIVE", "AWAITING_ACCEPTANCE", "COMPLETED"]},
         "progressPercent": {"type": "integer", "minimum": 0, "maximum": 100},
+        "workStatus": {"type": "string", "enum": ["NOT_STARTED", "IN_PROGRESS", "COMPLETED"]}, "allowedWorkStatuses": array(STRING),
         "activatedAt": nullable(INSTANT), "completionSource": nullable({"type": "string", "enum": ["SELF", "CREATOR_ACCEPTANCE"]}),
         "completedByUserId": nullable(ID), "completedAt": nullable(INSTANT), "allowedActions": array(STRING)})
     progress = obj({"id": ID, "assignmentId": ID, "actorUserId": ID, "progressPercent": INTEGER, "note": nullable(STRING), "recordedAt": INSTANT})
@@ -141,7 +142,7 @@ def read_schemas():
         "priorityLevel": {"type": "integer", "minimum": 1, "maximum": 5}, "startDate": DATE, "endDate": DATE,
         "timeKind": java_type("TimeKind"), "startTime": nullable(STRING), "endTime": nullable(STRING), "reviewStatus": {"type": "string", "enum": ["PENDING", "APPROVED", "REJECTED"]},
         "primaryTagId": nullable(ID), "tags": array(ref("Tag")), "tagIds": array(ID), "displayColor": nullable(STRING), "createdAt": INSTANT,
-        "authorizedAssignments": array(ref("Assignment")), "allowedActions": array(STRING), "reviewId": nullable(ID),
+        "authorizedAssignments": array(ref("Assignment")), "allowedActions": array(STRING), "reviewId": nullable(ID), "pendingEditReviewId": nullable(ID),
         "progressRecords": array(ref("ProgressRecord")), "completionRequests": array(ref("CompletionRequestView"))})
     entry = obj({**versioned, "entryId": ID, "journalId": ID, "workLogId": ID, "workDate": DATE, "authorUserId": ID,
         "clientEntryKey": STRING, "content": STRING, "displayOrder": INTEGER, "recordedAt": INSTANT, "eligible": BOOLEAN})
@@ -174,6 +175,7 @@ def read_schemas():
         "decision": {"type": "string", "enum": ["PENDING", "APPROVED", "REJECTED"]},
         "reviewStatus": {"type": "string", "enum": ["PENDING", "APPROVED", "REJECTED"]},
         "decidedByUserId": nullable(ID), "decisionNote": nullable(STRING), "decidedAt": nullable(INSTANT),
+        "reviewKind": {"type": "string", "enum": ["CREATE", "EDIT"]}, "effectiveTaskReviewStatus": STRING,
         "isCurrent": BOOLEAN, "allowedActions": array({"type": "string", "enum": ["APPROVE", "REJECT"]}),
         # 展示名与职位：审批详情要显示"谁申请、谁执行"，只有 userId 无法呈现
         "submittedByName": nullable(STRING), "submittedByJobTitle": nullable(STRING),
@@ -187,6 +189,7 @@ def read_schemas():
         "JournalDates": obj({"items": array(DATE), "businessToday": DATE}, ("items", "businessToday")),
         "TaskReviewPendingCount": obj({"count": INTEGER}, ("count",)),
         "PushDeviceRegistrationResult": obj({"installationId": STRING, "active": BOOLEAN}, ("installationId", "active")),
+        "AssignmentStatusResult": obj({"assignment": ref("Assignment"), "completionRequest": nullable(ref("CompletionRequestView"))}),
         "TaskReview": review, "ReviewDecisionResult": obj({"review": ref("TaskReview"), "task": ref("Task")}),
         "Recipient": obj({"id": ID, "displayName": STRING, "orgUnitId": nullable(ID), "jobTitle": nullable(STRING), "organizationName": nullable(STRING), "departmentId": nullable(ID), "departmentName": nullable(STRING), "relationship": STRING}),
         "LoginResult": obj({"accessToken": STRING, "tokenType": {"type": "string", "const": "Bearer"}, "expiresAt": INSTANT, "user": ref("Profile")}),
@@ -234,10 +237,11 @@ RESPONSES = {
     ("POST", "/admin/users/{id}/password-reset"): "User",
     ("GET", "/tags"): "TagPage", ("POST", "/tags"): "Tag", ("PATCH", "/tags/{id}"): "Tag",
     ("GET", "/tasks/recipient-candidates"): "RecipientPage", ("GET", "/tasks"): "TaskPage", ("POST", "/tasks"): "Task", ("GET", "/tasks/{id}"): "Task", ("PATCH", "/tasks/{id}"): "Task",
+    ("PATCH", "/task-assignments/{id}/status"): "AssignmentStatusResult",
     ("POST", "/tasks/{id}/complete"): "Assignment", ("POST", "/task-assignments/{id}/progress-records"): "ProgressResult",
     ("POST", "/task-assignments/{id}/completion-requests"): "CompletionResult", ("POST", "/task-completion-requests/{id}/decision"): "CompletionResult",
     ("GET", "/task-reviews"): "TaskReviewPage", ("GET", "/task-reviews/{id}"): "TaskReview", ("POST", "/task-reviews/{id}/decision"): "ReviewDecisionResult",
-    ("GET", "/task-reviews/pending-count"): "UnreadCount",
+    ("GET", "/task-reviews/pending-count"): "TaskReviewPendingCount",
     ("GET", "/work-logs/dates"): "JournalDates", ("GET", "/calendar"): "Calendar", ("GET", "/work-logs"): "JournalPage", ("POST", "/work-logs"): "Journal", ("GET", "/work-logs/{id}"): "Journal", ("PATCH", "/work-logs/{id}"): "Journal", ("DELETE", "/work-logs/{id}"): "JournalDeleted",
     ("DELETE", "/tags/{id}"): "TagDeleted",
     ("GET", "/work-log-entries/{id}"): "WorkEntry", ("GET", "/me/important-entry-candidates"): "WorkEntryPage", ("GET", "/me/important-entries"): "ImportantSelection", ("PUT", "/me/important-entries"): "ImportantSelection",

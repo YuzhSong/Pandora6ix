@@ -14,13 +14,16 @@ import java.util.*;
 
 @Service
 public class JournalService implements com.pandora6ix.backend.application.journals.JournalUseCases {
+    private final MutationAudit audit;
     private final BusinessDb db;
     private final IdentityService identity;
     private final ScopeService scope;
     private final TagService tags;
 
     public JournalService(
-            BusinessDb db, IdentityService identity, ScopeService scope, TagService tags) {
+            BusinessDb db,
+            MutationAudit audit, IdentityService identity, ScopeService scope, TagService tags) {
+        this.audit = audit;
         this.db = db;
         this.identity = identity;
         this.scope = scope;
@@ -212,6 +215,7 @@ public class JournalService implements com.pandora6ix.backend.application.journa
         for (var entry : c.entries())
             insertEntry(a, id, entry.clientEntryKey(), entry.content(), order++);
         tags.replace(a, "work_log_tag", "work_log_id", id, tagIds);
+        audit.record(a,id,"WORK_LOG","WORK_LOG","CREATE","新增工作日报",null,audit.journal(a,id));
         return detail(a, id);
     }
 
@@ -248,6 +252,7 @@ public class JournalService implements com.pandora6ix.backend.application.journa
         scope.read(a, str(row, "author_user_id"));
         if (!a.id().equals(row.get("author_user_id"))) throw BusinessException.forbidden();
         checkEditWindow(a, row);
+        var auditBefore=audit.journal(a,id);
         for (var entry : db.rows(
                 "SELECT id FROM work_log_entry WHERE enterprise_id=? AND work_log_id=?",
                 a.enterpriseId(), id)) {
@@ -262,6 +267,7 @@ public class JournalService implements com.pandora6ix.backend.application.journa
                 a.enterpriseId(),
                 id);
         db.update("DELETE FROM work_log WHERE enterprise_id=? AND id=?", a.enterpriseId(), id);
+        audit.record(a,id,"WORK_LOG","WORK_LOG","DELETE","删除工作日报",auditBefore,null);
         return Map.of("journalId", id);
     }
 
@@ -282,6 +288,7 @@ public class JournalService implements com.pandora6ix.backend.application.journa
         scope.read(a, str(row, "author_user_id"));
         if (!a.id().equals(row.get("author_user_id"))) throw BusinessException.forbidden();
         checkEditWindow(a, row);
+        var auditBefore=audit.journal(a,id);
         List<String> tagIds = null;
         if (c.tagIds() != null) tagIds = tags.validate(a, c.tagIds(), c.primaryTagId());
         else if (c.primaryTagId() != null)
@@ -350,6 +357,7 @@ public class JournalService implements com.pandora6ix.backend.application.journa
                 throw BusinessException.invalid("Deleted entry does not belong to this journal.");
         }
         if (tagIds != null) tags.replace(a, "work_log_tag", "work_log_id", id, tagIds);
+        audit.record(a,id,"WORK_LOG","WORK_LOG","UPDATE","修改工作日报",auditBefore,audit.journal(a,id));
         return detail(a, id);
     }
 

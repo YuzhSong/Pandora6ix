@@ -16,6 +16,7 @@ import java.util.*;
 
 @Service
 public class TaskReviewService {
+    private final MutationAudit audit;
     private final BusinessDb db;
     private final IdentityService identity;
     private final ScopeService scope;
@@ -25,11 +26,13 @@ public class TaskReviewService {
 
     public TaskReviewService(
             BusinessDb db,
+            MutationAudit audit,
             IdentityService identity,
             ScopeService scope,
             TaskService tasks,
             JsonMapper json,
             NotificationService notifications) {
+        this.audit = audit;
         this.db = db;
         this.identity = identity;
         this.scope = scope;
@@ -58,7 +61,7 @@ public class TaskReviewService {
 
     private boolean pending(Map<String, Object> review, Map<String, Object> task) {
         return "PENDING".equals(review.get("decision"))
-                && "PENDING".equals(task.get("review_status"))
+                && ("EDIT".equals(review.get("review_kind")) ? "APPROVED".equals(task.get("review_status")) : "PENDING".equals(task.get("review_status")))
                 && number(review, "task_version") == number(task, "version")
                 && current(review);
     }
@@ -94,8 +97,7 @@ public class TaskReviewService {
                         .anyMatch(
                                 x ->
                                         !"ACTIVE".equals(x.get("user_status"))
-                                                || !"PENDING_APPROVAL"
-                                                        .equals(x.get("execution_status"))))
+                                                || (!"EDIT".equals(review.get("review_kind")) && !"PENDING_APPROVAL".equals(x.get("execution_status")))))
             return false;
         if ("PERSONAL".equals(task.get("task_kind")))
             return assignments.size() == 1
@@ -166,7 +168,8 @@ public class TaskReviewService {
         var snapshot = (Map<String, Object>) json.readValue(str(review, "submitted_snapshot"), Map.class);
         v.put("submittedSnapshot", snapshot);
         v.put("currentTaskVersion", task.get("version"));
-        v.put("reviewStatus", task.get("review_status"));
+        v.put("effectiveTaskReviewStatus", task.get("review_status"));
+        v.put("reviewStatus", "EDIT".equals(review.get("review_kind"))&&"PENDING".equals(review.get("decision"))?"PENDING":task.get("review_status"));
         v.put("isCurrent", current(review));
         // 审批详情要显示"谁申请的、谁执行"，只有 ID 无法呈现，故附带展示名与职位
         var submitter = users.get(str(review, "submitted_by_user_id"));
@@ -197,7 +200,7 @@ public class TaskReviewService {
             a.manager();
             query +=
                     " AND r.reviewer_user_id=? AND r.decision='PENDING' AND"
-                            + " t.review_status='PENDING' AND r.task_version=t.version AND"
+                            + " ((r.review_kind='CREATE' AND t.review_status='PENDING') OR (r.review_kind='EDIT' AND t.review_status='APPROVED')) AND r.task_version=t.version AND"
                             + " r.attempt_no=(SELECT MAX(x.attempt_no) FROM task_review x WHERE"
                             + " x.enterprise_id=r.enterprise_id AND x.task_id=r.task_id)";
         } else query += " AND r.submitted_by_user_id=?";
@@ -219,7 +222,7 @@ public class TaskReviewService {
                 "SELECT COUNT(*) AS review_count FROM task_review r JOIN task t"
                         + " ON t.enterprise_id=r.enterprise_id AND t.id=r.task_id"
                         + " WHERE r.enterprise_id=? AND r.reviewer_user_id=?"
-                        + " AND r.decision='PENDING' AND t.review_status='PENDING'"
+                        + " AND r.decision='PENDING' AND ((r.review_kind='CREATE' AND t.review_status='PENDING') OR (r.review_kind='EDIT' AND t.review_status='APPROVED'))"
                         + " AND r.task_version=t.version"
                         + " AND r.attempt_no=(SELECT MAX(x.attempt_no) FROM task_review x"
                         + " WHERE x.enterprise_id=r.enterprise_id AND x.task_id=r.task_id)",
@@ -242,6 +245,7 @@ public class TaskReviewService {
             throw BusinessException.missing();
         // Task edits use the same first lock, preventing an old snapshot from winning a race.
         var task = db.lock("task", a.enterpriseId(), str(before, "task_id"));
+        var auditBefore=audit.task(a,str(task,"id"));
         var review = db.lock("task_review", a.enterpriseId(), id);
         if (number(review, "version") != c.expectedVersion()) checkVersion(0);
         if (!pending(review, task))
@@ -265,17 +269,18 @@ public class TaskReviewService {
                         a.enterpriseId(),
                         id,
                         c.expectedVersion()));
-        checkVersion(
-                db.update(
-                        "UPDATE task SET review_status=?,version=version+1"
-                                + " WHERE enterprise_id=? AND id=? AND version=?",
-                        approve ? "APPROVED" : "REJECTED",
-                        a.enterpriseId(),
-                        task.get("id"),
-                        review.get("task_version")));
+        boolean edit="EDIT".equals(review.get("review_kind"));
+        if(edit&&approve) {
+            @SuppressWarnings("unchecked") var content=(Map<String,Object>)json.readValue(str(review,"submitted_snapshot"),Map.class);
+            tasks.applyContent(a,str(task,"id"),content,number(review,"task_version"));
+        } else if(edit) {
+            checkVersion(db.update("UPDATE task SET version=version+1 WHERE enterprise_id=? AND id=? AND version=?",a.enterpriseId(),task.get("id"),review.get("task_version")));
+        } else {
+            checkVersion(db.update("UPDATE task SET review_status=?,version=version+1 WHERE enterprise_id=? AND id=? AND version=?",approve?"APPROVED":"REJECTED",a.enterpriseId(),task.get("id"),review.get("task_version")));
+        }
         notifications.reviewDecided(a.enterpriseId(), id, str(task, "id"),
                 str(review, "submitted_by_user_id"), approve ? "APPROVED" : "REJECTED");
-        if (approve) {
+        if (approve && !edit) {
             db.update(
                     "UPDATE task_assignment SET"
                         + " execution_status='ACTIVE',activated_at=CURRENT_TIMESTAMP,version=version+1"
@@ -286,6 +291,7 @@ public class TaskReviewService {
             // 提醒与激活在同一事务：任务未生效则不产生新任务提醒
             notifications.taskApproved(a.enterpriseId(), str(task, "id"), str(task, "title"));
         }
+        audit.record(a,str(task,"id"),"TASK","TASK",approve?"APPROVE":"REJECT","审批任务",auditBefore,audit.task(a,str(task,"id")));
         return fields("review", detail(a, id), "task", tasks.detail(a, str(task, "id")));
     }
 }

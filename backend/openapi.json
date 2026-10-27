@@ -6456,6 +6456,136 @@
         }
       }
     },
+    "/task-assignments/{id}/status": {
+      "patch": {
+        "operationId": "TaskController_workStatus",
+        "tags": [
+          "Task"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful command/read; 201 task submission remains PENDING.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/AssignmentStatusResult"
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssignmentStatus"
+              }
+            }
+          }
+        }
+      }
+    },
     "/tasks/{id}/complete": {
       "post": {
         "operationId": "TaskController_complete",
@@ -7147,7 +7277,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/UnreadCount"
+                      "$ref": "#/components/schemas/TaskReviewPendingCount"
                     },
                     "requestId": {
                       "type": "string"
@@ -8418,10 +8548,47 @@
             "minimum": 0
           },
           "progressPercent": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0,
+                "maximum": 100
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "expectedVersion"
+        ],
+        "additionalProperties": false
+      },
+      "AssignmentStatus": {
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
             "type": "integer",
             "format": "int64",
-            "minimum": 0,
-            "maximum": 100
+            "minimum": 0
+          },
+          "workStatus": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^(?:NOT_STARTED|IN_PROGRESS|COMPLETED)$"
           },
           "note": {
             "anyOf": [
@@ -8437,7 +8604,7 @@
         },
         "required": [
           "expectedVersion",
-          "progressPercent"
+          "workStatus"
         ],
         "additionalProperties": false
       },
@@ -8858,6 +9025,20 @@
             "minimum": 0,
             "maximum": 100
           },
+          "workStatus": {
+            "type": "string",
+            "enum": [
+              "NOT_STARTED",
+              "IN_PROGRESS",
+              "COMPLETED"
+            ]
+          },
+          "allowedWorkStatuses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "activatedAt": {
             "anyOf": [
               {
@@ -9161,6 +9342,17 @@
             }
           },
           "reviewId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pendingEditReviewId": {
             "anyOf": [
               {
                 "type": "string",
@@ -9913,6 +10105,24 @@
           "active"
         ]
       },
+      "AssignmentStatusResult": {
+        "type": "object",
+        "properties": {
+          "assignment": {
+            "$ref": "#/components/schemas/Assignment"
+          },
+          "completionRequest": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CompletionRequestView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
       "TaskReview": {
         "type": "object",
         "properties": {
@@ -10007,6 +10217,16 @@
                 "type": "null"
               }
             ]
+          },
+          "reviewKind": {
+            "type": "string",
+            "enum": [
+              "CREATE",
+              "EDIT"
+            ]
+          },
+          "effectiveTaskReviewStatus": {
+            "type": "string"
           },
           "isCurrent": {
             "type": "boolean"

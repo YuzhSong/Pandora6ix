@@ -49,6 +49,7 @@ export function createApiClient({ baseUrl, fetcher = fetch, timeoutMs = 15000, o
       const signal = options.signal ? AbortSignal.any([controller.signal, options.signal]) : controller.signal
       try {
         const headers = new Headers({ Accept: 'application/json', ...options.headers })
+        headers.set('X-Client-Source', 'WEB')
         if (options.body !== undefined) headers.set('Content-Type', 'application/json')
         const token = options.authenticated === false ? null : getAccessToken?.()
         if (token) headers.set('Authorization', `Bearer ${token}`)

@@ -1609,7 +1609,7 @@ class BusinessApiIntegrationTests {
     }
 
     @Test
-    void pendingEditRefreshesSnapshotAndApprovedEditIsClosed() throws Exception {
+    void pendingEditRefreshesSnapshotAndApprovedEditSubmitsProposal() throws Exception {
         var task = createTask(employeeToken, "PERSONAL", List.of(employee));
         String id = (String) task.get("id");
         var patch =
@@ -1644,7 +1644,9 @@ class BusinessApiIntegrationTests {
         request("PATCH", "/tasks/" + id, employeeToken, patch, 409);
         approved(id);
         patch.put("expectedVersion", 1);
-        request("PATCH", "/tasks/" + id, employeeToken, patch, 409);
+        var proposal=request("PATCH", "/tasks/" + id, employeeToken, patch, 200);
+        assertNotNull(proposal.get("pendingEditReviewId"));
+        assertEquals("APPROVED",proposal.get("reviewStatus"));
     }
 
     @Test
@@ -3103,6 +3105,190 @@ class BusinessApiIntegrationTests {
         assertEquals("CHANGED", handoff(peer).get("status"));
         assertNull(db.one("SELECT encrypted_password FROM credential_handoff WHERE enterprise_id=? AND user_id=?", enterprise, employee).get("encrypted_password"));
         assertNull(db.one("SELECT encrypted_password FROM credential_handoff WHERE enterprise_id=? AND user_id=?", enterprise, peer).get("encrypted_password"));
+    }
+
+    private Map<String,Object> revision(long version,String title) {
+        var body=taskBody("PERSONAL",List.of(),List.of(),null);
+        body.remove("kind"); body.remove("recipientIds");
+        body.put("expectedVersion",version); body.put("title",title); body.put("description","Revised explanation");
+        return body;
+    }
+
+    @Test void effectiveEditsRetainOldContentUntilApprovalAndRejectionPreservesIt() throws Exception {
+        var task=createTask(employeeToken,"PERSONAL",List.of());
+        String id=str(task,"id"); reviewDecision(leadToken,task,"APPROVE");
+        var pending=request("PATCH","/tasks/"+id,employeeToken,revision(1,"Rejected revision"),200);
+        assertEquals("Task",pending.get("title")); assertEquals("APPROVED",pending.get("reviewStatus"));
+        String first=(String)pending.get("pendingEditReviewId"); assertNotNull(first);
+        assertEquals(1,request("GET","/task-reviews/pending-count",leadToken,null,200).get("count"));
+        var review=request("GET","/task-reviews/"+first,leadToken,null,200);
+        assertEquals("EDIT",review.get("reviewKind")); assertEquals(List.of("APPROVE","REJECT"),review.get("allowedActions"));
+        String relation=assignment(id,employee);
+        request("POST","/task-assignments/"+relation+"/progress-records",employeeToken,fields("expectedVersion",1,"note","Old content remains executable"),201);
+        request("POST","/task-reviews/"+first+"/decision",leadToken,fields("expectedVersion",0,"decision","REJECT"),200);
+        var old=request("GET","/tasks/"+id,employeeToken,null,200);
+        assertEquals("Task",old.get("title")); assertEquals("APPROVED",old.get("reviewStatus"));
+        var next=request("PATCH","/tasks/"+id,employeeToken,revision(number(old,"version"),"Accepted revision"),200);
+        String second=(String)next.get("pendingEditReviewId");
+        request("POST","/task-reviews/"+second+"/decision",leadToken,fields("expectedVersion",0,"decision","APPROVE"),200);
+        var changed=request("GET","/tasks/"+id,employeeToken,null,200);
+        assertEquals("Accepted revision",changed.get("title")); assertEquals("Revised explanation",changed.get("description"));
+        assertEquals(2,number(db.entity("task_assignment",enterprise,relation),"version"));
+        assertEquals(0,request("GET","/task-reviews/pending-count",leadToken,null,200).get("count"));
+    }
+
+    @Test void supersededEffectiveEditsCannotApplyAndFounderEditsNeedNoReview() throws Exception {
+        var task=createTask(employeeToken,"PERSONAL",List.of()); reviewDecision(leadToken,task,"APPROVE");
+        String id=str(task,"id");
+        var first=request("PATCH","/tasks/"+id,employeeToken,revision(1,"First proposal"),200);
+        var second=request("PATCH","/tasks/"+id,employeeToken,revision(2,"Second proposal"),200);
+        String old=(String)first.get("pendingEditReviewId");
+        assertEquals(List.of(),request("GET","/task-reviews/"+old,leadToken,null,200).get("allowedActions"));
+        request("POST","/task-reviews/"+old+"/decision",leadToken,fields("expectedVersion",0,"decision","APPROVE"),409);
+        request("POST","/task-reviews/"+second.get("pendingEditReviewId")+"/decision",leadToken,fields("expectedVersion",0,"decision","APPROVE"),200);
+        assertEquals("Second proposal",request("GET","/tasks/"+id,employeeToken,null,200).get("title"));
+        var founderTask=createTask(founderToken,"DELEGATED",List.of(employee));
+        var direct=request("PATCH","/tasks/"+founderTask.get("id"),founderToken,revision(0,"Founder edit"),200);
+        assertEquals("Founder edit",direct.get("title")); assertNull(direct.get("pendingEditReviewId"));
+        assertEquals(0,db.rows("SELECT id FROM task_review WHERE enterprise_id=? AND task_id=?",enterprise,founderTask.get("id")).size());
+        request("PATCH","/tasks/"+founderTask.get("id"),employeeToken,revision(1,"Unauthorized"),404);
+    }
+
+    @Test void textProgressAndWorkStatusPreserveSuperiorAcceptance() throws Exception {
+        var task=createTask(managerToken,"DELEGATED",List.of(employee,peer)); reviewDecision(founderToken,task,"APPROVE");
+        String id=str(task,"id"), relation=assignment(id,employee), peerRelation=assignment(id,peer);
+        Object description=task.get("description");
+        var written=request("POST","/task-assignments/"+relation+"/progress-records",employeeToken,fields("expectedVersion",1,"note","Stage one completed"),201);
+        assertEquals(0,((Number)((Map<?,?>)written.get("assignment")).get("progressPercent")).intValue());
+        assertEquals(description,request("GET","/tasks/"+id,employeeToken,null,200).get("description"));
+        request("PATCH","/task-assignments/"+relation+"/status",peerToken,fields("expectedVersion",2,"workStatus","COMPLETED"),404);
+        request("PATCH","/task-assignments/"+relation+"/status",employeeToken,fields("expectedVersion",2,"workStatus","NOT_STARTED"),200);
+        request("PATCH","/task-assignments/"+relation+"/status",employeeToken,fields("expectedVersion",2,"workStatus","IN_PROGRESS"),409);
+        request("PATCH","/task-assignments/"+relation+"/status",employeeToken,fields("expectedVersion",3,"workStatus","IN_PROGRESS"),200);
+        String key=UUID.randomUUID().toString();
+        var completionBody=fields("expectedVersion",4,"workStatus","COMPLETED","note","Please inspect");
+        var submitted=request("PATCH","/task-assignments/"+relation+"/status",employeeToken,completionBody,200,"Idempotency-Key",key);
+        assertEquals(submitted,request("PATCH","/task-assignments/"+relation+"/status",employeeToken,completionBody,200,"Idempotency-Key",key));
+        assertEquals(1,db.rows("SELECT id FROM task_completion_request WHERE enterprise_id=? AND assignment_id=?",enterprise,relation).size());
+        var submission=db.one("SELECT after_values FROM operation_log WHERE enterprise_id=? AND object_id=? AND action='SUBMIT'",enterprise,relation);
+        assertTrue(str(submission,"after_values").contains("Please inspect"));
+        assertEquals("AWAITING_ACCEPTANCE",((Map<?,?>)submitted.get("assignment")).get("executionStatus"));
+        String completion=(String)((Map<?,?>)submitted.get("completionRequest")).get("id");
+        request("POST","/task-completion-requests/"+completion+"/decision",employeeToken,fields("expectedVersion",0,"decision","ACCEPT"),404);
+        request("POST","/task-completion-requests/"+completion+"/decision",managerToken,fields("expectedVersion",0,"decision","REJECT"),200);
+        var again=request("PATCH","/task-assignments/"+relation+"/status",employeeToken,fields("expectedVersion",6,"workStatus","COMPLETED"),200);
+        completion=(String)((Map<?,?>)again.get("completionRequest")).get("id");
+        request("POST","/task-completion-requests/"+completion+"/decision",managerToken,fields("expectedVersion",0,"decision","ACCEPT"),200);
+        assertEquals("COMPLETED",db.entity("task_assignment",enterprise,relation).get("work_status"));
+        assertEquals("ACTIVE",db.entity("task_assignment",enterprise,peerRelation).get("execution_status"));
+        request("PATCH","/task-assignments/"+relation+"/status",employeeToken,fields("expectedVersion",8,"workStatus","IN_PROGRESS"),409);
+        request("POST","/task-assignments/"+peerRelation+"/progress-records",peerToken,fields("expectedVersion",1),422);
+    }
+
+    @Test void taskAndJournalAuditsCaptureCommittedSnapshotsAndSanitizedFailures() throws Exception {
+        String key=UUID.randomUUID().toString();
+        var tag=request("POST","/tags",founderToken,fields("name","Historical tag","colorHex","#123456"),201);
+        String tagId=(String)tag.get("id");
+        var body=taskBody("PERSONAL",List.of(),List.of(tagId),tagId);
+        var task=request("POST","/tasks",employeeToken,body,201,"Idempotency-Key",key,"X-Client-Source","ANDROID");
+        request("POST","/tasks",employeeToken,body,201,"Idempotency-Key",key,"X-Client-Source","ANDROID");
+        var records=db.rows("SELECT * FROM operation_log WHERE enterprise_id=? AND object_id=? AND module='TASK'",enterprise,task.get("id"));
+        assertEquals(1,records.size());assertEquals("ANDROID",records.getFirst().get("source"));
+        assertEquals(0,number(records.getFirst(),"after_version"));
+        assertTrue(str(records.getFirst(),"after_values").contains("Historical tag"));
+        db.update("UPDATE enterprise_tag SET name='Current tag' WHERE enterprise_id=? AND id=?",enterprise,tagId);
+        String logId=str(records.getFirst(),"id");
+        db.update("UPDATE app_user SET display_name='Current renamed employee' WHERE enterprise_id=? AND id=?",enterprise,employee);
+        var detail=request("GET","/admin/operation-logs/"+logId,adminToken,null,200);
+        assertEquals("employee",((Map<?,?>)detail.get("actor")).get("displayName"));
+        assertTrue(json.writeValueAsString(detail).contains("Historical tag"));
+        assertFalse(json.writeValueAsString(detail).contains("11010119900101001X"));
+        request("PATCH","/tasks/"+task.get("id"),peerToken,revision(0,"PRIVATE FAILED BODY"),404,"X-Client-Source","WEB");
+        var failures=db.rows("SELECT * FROM operation_log WHERE enterprise_id=? AND object_id=? AND result='FAILURE'",enterprise,task.get("id"));
+        assertEquals(1,failures.size());assertEquals("WEB",failures.getFirst().get("source"));
+        assertNull(failures.getFirst().get("before_values")); assertNull(failures.getFirst().get("after_values"));
+        var failure=request("GET","/admin/operation-logs/"+failures.getFirst().get("id"),adminToken,null,200);
+        assertEquals(List.of(),failure.get("versions"));assertFalse(json.writeValueAsString(failure).contains("PRIVATE FAILED BODY"));
+        var journal=journal(employeeToken,today,1);String journalId=str(journal,"id");
+        request("PATCH","/work-logs/"+journalId,employeeToken,fields("expectedVersion",99),409,"X-Client-Source","ANDROID");
+        assertEquals(0,number(db.entity("work_log",enterprise,journalId),"version"));
+        assertEquals(1,db.rows("SELECT id FROM operation_log WHERE enterprise_id=? AND object_id=? AND result='SUCCESS'",enterprise,journalId).size());
+        request("PATCH","/work-logs/"+journalId,employeeToken,fields("expectedVersion",0),200);
+        request("DELETE","/work-logs/"+journalId,employeeToken,null,200);
+        var deletion=db.one("SELECT * FROM operation_log WHERE enterprise_id=? AND object_id=? AND action='DELETE'",enterprise,journalId);
+        assertNotNull(deletion.get("before_values"));assertNull(deletion.get("after_values"));
+        request("GET","/admin/operation-logs/"+deletion.get("id"),employeeToken,null,403);
+        assertEquals(0,db.rows("SELECT id FROM work_log WHERE enterprise_id=? AND id=?",enterprise,journalId).size());
+    }
+
+    @Test void effectiveEditAndApprovalRaceNeverAppliesSupersededContent() throws Exception {
+        var task=createTask(employeeToken,"PERSONAL",List.of());reviewDecision(leadToken,task,"APPROVE");
+        String id=str(task,"id");
+        var first=request("PATCH","/tasks/"+id,employeeToken,revision(1,"First proposal"),200);
+        var start=new CountDownLatch(1);
+        try(var executor=Executors.newFixedThreadPool(2)) {
+            var edit=executor.submit(()->{start.await();return raw("PATCH","/tasks/"+id,employeeToken,revision(2,"Second proposal"));});
+            var approval=executor.submit(()->{start.await();return raw("POST","/task-reviews/"+first.get("pendingEditReviewId")+"/decision",leadToken,fields("expectedVersion",0,"decision","APPROVE"));});
+            start.countDown();int edited=edit.get(20,TimeUnit.SECONDS).status(),decided=approval.get(20,TimeUnit.SECONDS).status();
+            assertTrue((edited==200&&decided==409)||(edited==409&&decided==200),edited+"/"+decided);
+            String title=str(db.entity("task",enterprise,id),"title");
+            assertEquals(edited==200?"Task":"First proposal",title);
+        }
+    }
+
+    @Test void failedJournalMutationRollsBackWritesButKeepsOnlySafeFailureAudit() throws Exception {
+        var journal=journal(employeeToken,today,1);String id=str(journal,"id");
+        String entry=(String)entries(journal).getFirst().get("entryId");
+        Object content=db.entity("work_log_entry",enterprise,entry).get("content");
+        request("PATCH","/work-logs/"+id,employeeToken,fields("expectedVersion",0,"upsertEntries",List.of(
+                fields("entryId",entry,"content","Must roll back"),fields("entryId",UUID.randomUUID().toString(),"content","Private failure body"))),404,"X-Client-Source","ANDROID");
+        assertEquals(content,db.entity("work_log_entry",enterprise,entry).get("content"));
+        assertEquals(0,number(db.entity("work_log",enterprise,id),"version"));
+        assertEquals(1,db.rows("SELECT id FROM operation_log WHERE enterprise_id=? AND object_id=? AND result='SUCCESS'",enterprise,id).size());
+        var failure=db.one("SELECT * FROM operation_log WHERE enterprise_id=? AND object_id=? AND result='FAILURE'",enterprise,id);
+        assertNull(failure.get("after_values"));assertFalse(str(failure,"failure_reason").contains("Private failure body"));
+    }
+
+    @Test void taskAuditFailureRollsBackTheTaskTransaction() throws Exception {
+        String constraint="fixture_audit_"+UUID.randomUUID().toString().replace("-","");
+        db.update("ALTER TABLE operation_log ADD CONSTRAINT "+constraint+" CHECK(enterprise_id<>'"+enterprise+"' OR module<>'TASK' OR result<>'SUCCESS')");
+        try {
+            request("POST","/tasks",employeeToken,taskBody("PERSONAL",List.of(),List.of(),null),409);
+            assertEquals(0,db.rows("SELECT id FROM task WHERE enterprise_id=?",enterprise).size());
+            assertEquals(0,db.rows("SELECT id FROM task_review WHERE enterprise_id=?",enterprise).size());
+            assertEquals(0,db.rows("SELECT id FROM notification WHERE enterprise_id=?",enterprise).size());
+            assertEquals(1,db.rows("SELECT id FROM operation_log WHERE enterprise_id=? AND module='TASK' AND result='FAILURE'",enterprise).size());
+        } finally {db.update("ALTER TABLE operation_log DROP CONSTRAINT "+constraint);}
+    }
+
+    @Test void foreignTenantCannotUpdateStatusOrReadTaskAuditHistory() throws Exception {
+        var task=createTask(employeeToken,"PERSONAL",List.of());reviewDecision(leadToken,task,"APPROVE");
+        String relation=assignment(str(task,"id"),employee);
+        var other=request("POST","/admin/enterprise-initializations",null,fields("loginDomain","foreign-"+UUID.randomUUID(),"name","Foreign","businessTimezone","Asia/Shanghai","adminLoginName","admin","adminPassword",PASSWORD,"adminDisplayName","Foreign admin"),201,"X-Bootstrap-Token","integration-tests-only-bootstrap");
+        String foreign=(String)other.get("id");
+        String foreignToken=(String)request("POST","/auth/login",null,fields("enterpriseDomain",other.get("loginDomain"),"loginName","admin","password",PASSWORD),200).get("accessToken");
+        String logId=str(db.one("SELECT id FROM operation_log WHERE enterprise_id=? AND object_id=? AND action='CREATE'",enterprise,task.get("id")),"id");
+        request("GET","/admin/operation-logs/"+logId,foreignToken,null,404);
+        db.update("UPDATE user_role SET role_code='EMPLOYEE' WHERE enterprise_id=? AND user_id=?",foreign,other.get("adminUserId"));
+        request("PATCH","/task-assignments/"+relation+"/status",foreignToken,fields("expectedVersion",1,"workStatus","COMPLETED"),404);
+        assertEquals("ACTIVE",db.entity("task_assignment",enterprise,relation).get("execution_status"));
+        var failure=db.one("SELECT * FROM operation_log WHERE enterprise_id=? AND object_id=? AND result='FAILURE'",foreign,relation);
+        assertEquals("操作失败",failure.get("summary"));assertNull(failure.get("before_values"));
+    }
+
+    @Test void effectiveEditCannotBeApprovedAfterRecipientOrSupervisorContextChanges() throws Exception {
+        var task=createTask(managerToken,"DELEGATED",List.of(employee)); reviewDecision(founderToken,task,"APPROVE");
+        String id=str(task,"id");
+        var proposal=request("PATCH","/tasks/"+id,managerToken,revision(1,"Should remain pending"),200);
+        String review=(String)proposal.get("pendingEditReviewId");
+        db.update("UPDATE app_user SET status='DISABLED' WHERE enterprise_id=? AND id=?",enterprise,employee);
+        request("POST","/task-reviews/"+review+"/decision",founderToken,fields("expectedVersion",0,"decision","APPROVE"),409);
+        db.update("UPDATE app_user SET status='ACTIVE' WHERE enterprise_id=? AND id=?",enterprise,employee);
+        db.update("UPDATE app_user SET supervisor_user_id=? WHERE enterprise_id=? AND id=?",lead,enterprise,manager);
+        request("POST","/task-reviews/"+review+"/decision",founderToken,fields("expectedVersion",0,"decision","APPROVE"),409);
+        assertEquals("Task",db.entity("task",enterprise,id).get("title"));
+        assertEquals("APPROVED",db.entity("task",enterprise,id).get("review_status"));
+        assertEquals("PENDING",db.entity("task_review",enterprise,review).get("decision"));
     }
 
 }
