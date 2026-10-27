@@ -5,6 +5,7 @@ import com.pandora6ix.app.data.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -83,7 +84,7 @@ fun CalendarScreen(
         if (!canReviewTasks && taskScope == "managed") onTaskScopeChange("mine")
     }
     val today = todayDate()
-    // 年/月视图外部跳转信号（日期选择器选定、「回到今年」）：带年月精确定位；消费后置空避免与滚动上报互相干扰
+    // 年/月视图外部跳转信号（日期选择器选定、回到当前周期）：带年月精确定位；消费后置空避免与滚动上报互相干扰
     var gridJumpTarget by remember { mutableStateOf<DemoDate?>(null) }
     // 视图模式切换：从周视图切回月视图时，月卷轴回卷到 cursor 所在月
     val onChangeModeRecenter: (CalendarMode) -> Unit = { target ->
@@ -122,8 +123,8 @@ fun CalendarScreen(
                 onDismiss = { showDatePick = false },
                 onConfirm = { d -> showDatePick = false; gridJumpTarget = d; onCursorChange(d) }
             )
-            // 年视图任务范围：GET /tasks?scope=mine|managed|created（服务端校验可见范围）；"我管理的"仅对有审批能力的用户显示
-            if (mode == CalendarMode.YEAR) Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            // 所有视图共用任务范围；"我管理的"仅对有审批能力的用户显示。
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 (listOf("mine" to "我的任务") + (if (canReviewTasks) listOf("managed" to "我管理的") else emptyList()) + listOf("created" to "我创建的")).forEach { (value, label) ->
                     val selected = taskScope == value
                     Text(
@@ -134,24 +135,27 @@ fun CalendarScreen(
                             .padding(horizontal = 12.dp, vertical = 5.dp),
                         fontSize = 12.sp,
                         fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                        color = if (selected) Ink else Ink.copy(alpha = .65f)
+                        color = if (selected) Ink else Ink.copy(alpha = .65f),
+                        maxLines = 1,
+                        softWrap = false
                     )
                 }
             }
             if (notice != null) Text(notice, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp), fontSize = 12.sp, color = Ink.copy(alpha = .6f))
-            // 年视图圆点图例：圆点表示当天有任务，颜色为该任务主标签色
-            if (mode == CalendarMode.YEAR) Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(6.dp).clip(CircleShape).background(Peach))
-                Spacer(Modifier.width(4.dp))
-                Text("当天有任务；圆点颜色为任务主标签颜色，点击日期查看详情", fontSize = 11.sp, color = Ink.copy(alpha = .5f))
-            }
             if (filterTags.isNotEmpty()) Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("仅显示：", fontSize = 12.sp, color = Ink.copy(alpha = .6f))
-                filterTags.forEach { name ->
-                    val chipBg = availableTags.firstOrNull { it.name == name }?.let { tagHexColor(it.colorHex).copy(alpha = .4f) } ?: Ink.copy(alpha = .15f)
-                    Text(name, Modifier.clip(RoundedCornerShape(10.dp)).background(chipBg).padding(horizontal = 8.dp, vertical = 2.dp), fontSize = 12.sp, color = Ink)
+                Text("仅显示：", fontSize = 12.sp, color = Ink.copy(alpha = .6f), maxLines = 1, softWrap = false)
+                // 仅标签区域横向滚动，避免多选时换行挤占日历，并保持清除按钮可见。
+                Row(
+                    Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    filterTags.forEach { name ->
+                        val chipBg = availableTags.firstOrNull { it.name == name }?.let { tagHexColor(it.colorHex).copy(alpha = .4f) } ?: Ink.copy(alpha = .15f)
+                        Text(name, Modifier.clip(RoundedCornerShape(10.dp)).background(chipBg).padding(horizontal = 8.dp, vertical = 2.dp), fontSize = 12.sp, color = Ink, maxLines = 1, softWrap = false)
+                    }
                 }
-                TextButton({ filterTags = emptyList() }, contentPadding = PaddingValues(horizontal = 8.dp)) { Text("清除", fontSize = 12.sp, color = WarmOrange) }
+                TextButton({ filterTags = emptyList() }, contentPadding = PaddingValues(horizontal = 8.dp)) { Text("清除", fontSize = 12.sp, color = WarmOrange, maxLines = 1, softWrap = false) }
             }
             // 应用标签筛选后的任务集合：空筛选 = 全部任务
             val visibleTasks = remember(tasks, filterTags) { if (filterTags.isEmpty()) tasks else tasks.filter { task -> filterTags.all { name -> task.tags.any { it.name == name } } } }
@@ -213,7 +217,13 @@ fun CalendarScreen(
             CalendarMode.MONTH -> cursor.year == today.year && cursor.month == today.month
             CalendarMode.YEAR -> cursor.year == today.year
         }
-        if (!atToday) Button(onClick = { gridJumpTarget = today; onCursorChange(today) }, modifier = Modifier.align(Alignment.BottomEnd).fillMaxWidth(.25f).height(34.dp), shape = RoundedCornerShape(topStart = 17.dp, bottomStart = 17.dp), contentPadding = PaddingValues(horizontal = 4.dp), colors = ButtonDefaults.buttonColors(containerColor = ThemeButton, contentColor = OnThemeButton)) { Text("回到今年", fontSize = 12.sp, maxLines = 1) }
+        val returnToCurrentLabel = when (mode) {
+            CalendarMode.YEAR -> "回到今年"
+            CalendarMode.MONTH -> "回到本月"
+            CalendarMode.WEEK -> "回到本周"
+            CalendarMode.DAY -> "回到今天"
+        }
+        if (!atToday) Button(onClick = { gridJumpTarget = today; onCursorChange(today) }, modifier = Modifier.align(Alignment.BottomEnd).fillMaxWidth(.25f).height(34.dp), shape = RoundedCornerShape(topStart = 17.dp, bottomStart = 17.dp), contentPadding = PaddingValues(horizontal = 4.dp), colors = ButtonDefaults.buttonColors(containerColor = ThemeButton, contentColor = OnThemeButton)) { Text(returnToCurrentLabel, fontSize = 12.sp, maxLines = 1) }
     }
     if (adding && (canCreatePersonal || canCreateDelegated)) TaskEntrySheet(cursor, canCreatePersonal, canCreateDelegated, availableTags, taskRepo, businessTimezone, currentUser, onDismiss = { adding = false }, onCreated = { task -> onCreated(task) })
     if (showTagFilter) {
@@ -300,7 +310,7 @@ private fun MonthScroll(
     onOpenDay: (DemoDate) -> Unit
 ) {
     val currentCursor by rememberUpdatedState(cursor)
-    // 滚动上报：首个可见项所属月份写回 cursor（按月平移，日期不变），驱动顶部标题与「回到今年」按钮
+    // 滚动上报：首个可见项所属月份写回 cursor（按月平移，日期不变），驱动顶部标题与「回到本月」按钮
     LaunchedEffect(state) {
         snapshotFlow { state.firstVisibleItemIndex }
             .collect { idx ->
@@ -308,7 +318,7 @@ private fun MonthScroll(
                 if (monthKey(item.month) != monthKey(currentCursor)) onCursorChange(currentCursor.plusMonths((monthKey(item.month) - monthKey(currentCursor)).toInt()))
             }
     }
-    // 外部跳转（日期选择器/回到今年）：定位到目标月标题并置顶
+    // 外部跳转（日期选择器/回到本月）：定位到目标月标题并置顶
     LaunchedEffect(jumpTarget) {
         val target = jumpTarget ?: return@LaunchedEffect
         index.monthItemIndex[monthKey(target)]?.let { state.scrollToItem(it) }

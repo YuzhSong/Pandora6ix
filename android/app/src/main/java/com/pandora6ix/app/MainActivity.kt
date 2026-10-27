@@ -425,7 +425,7 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository, noti
         // 非阻断提示（如权限自动切换），重载后仍保留，用户手动操作后清除
         var calNotice by remember { mutableStateOf<String?>(null) }
         var calRetry by remember { mutableStateOf(0) }
-        // 年视图任务范围：mine=我的任务 / managed=我管理的 / created=我创建的
+        // 所有视图任务范围：mine=我的任务 / managed=我管理的 / created=我创建的
         var taskScope by rememberSaveable { mutableStateOf("mine") }
         LaunchedEffect(current, modeName, dateKey, currentUser?.id, calRetry, taskScope) {
             if (current != Route.VIEW || currentUser == null) return@LaunchedEffect
@@ -433,9 +433,9 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository, noti
             val anchor = "%04d-%02d-%02d".format(date.year, date.month, date.day)
             try {
                 val loaded = when (CalendarMode.valueOf(modeName)) {
-                    CalendarMode.DAY -> calendarRepo.calendar("day", anchor).tasks
-                    CalendarMode.WEEK -> calendarRepo.calendar("week", anchor).tasks
-                    CalendarMode.MONTH -> calendarRepo.calendar("month", anchor).tasks
+                    CalendarMode.DAY -> calendarRepo.calendar("day", anchor, scope = taskScope).tasks
+                    CalendarMode.WEEK -> calendarRepo.calendar("week", anchor, scope = taskScope).tasks
+                    CalendarMode.MONTH -> calendarRepo.calendar("month", anchor, scope = taskScope).tasks
                     CalendarMode.YEAR -> calendarRepo.tasks(scope = taskScope, from = "%04d-01-01".format(date.year), to = "%04d-12-31".format(date.year)).items
                 }
                 taskItems.clear(); taskItems.addAll(loaded.map { it.toTaskItem() })
