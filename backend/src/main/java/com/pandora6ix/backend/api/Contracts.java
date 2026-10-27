@@ -136,8 +136,13 @@ public final class Contracts {
 
     public record Progress(
             @NotNull @Min(0) Long expectedVersion,
-            @NotNull @Min(0) @Max(100) Integer progressPercent,
+            @Min(0) @Max(100) Integer progressPercent,
             @Size(max = 20000) String note) {}
+
+    public record AssignmentStatus(
+            @NotNull @Min(0) Long expectedVersion,
+            @NotBlank @Pattern(regexp="NOT_STARTED|IN_PROGRESS|COMPLETED") String workStatus,
+            @Size(max=20000) String note) {}
 
     public record Complete(@NotNull @Min(0) Long expectedAssignmentVersion) {}
 

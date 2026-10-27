@@ -38,6 +38,8 @@ class PushDeliveryWorkerTests {
             db.update("INSERT INTO notification VALUES('notification','company','user','STATUS','REVIEW_RESULT','审批结果')");
             db.update("INSERT INTO push_device VALUES('device','company','user','registration',TRUE)");
             db.update("INSERT INTO notification_push_delivery(id,enterprise_id,notification_id,push_device_id,status) VALUES('delivery','company','notification','device','PENDING')");
+            // Database microsecond rounding must not make a newly inserted fixture appear in the future.
+            due();
         }
         String status() { return (String) db.one("SELECT status FROM notification_push_delivery").get("status"); }
         int attempts() { return ((Number) db.one("SELECT attempt_count FROM notification_push_delivery").get("attempt_count")).intValue(); }

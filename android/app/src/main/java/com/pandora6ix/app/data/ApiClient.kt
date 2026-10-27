@@ -154,7 +154,7 @@ class ApiClient(private val session: SessionStore, private val baseUrl: String =
      */
     suspend fun getBytes(path: String): ByteArray? = withContext(Dispatchers.IO) {
         val tokenAtRequest = session.token
-        val builder = Request.Builder().url(baseUrl + path)
+        val builder = Request.Builder().url(baseUrl + path).header("X-Client-Source", "ANDROID")
         tokenAtRequest?.let { builder.header("Authorization", "Bearer $it") }
         http.newCall(builder.build()).execute().use { resp ->
             if (session.token != tokenAtRequest) throw SessionExpiredException()
@@ -178,7 +178,7 @@ class ApiClient(private val session: SessionStore, private val baseUrl: String =
         dataSerializer: DeserializationStrategy<T>
     ): T = withContext(Dispatchers.IO) {
         val tokenAtRequest = session.token
-        val builder = Request.Builder()
+        val builder = Request.Builder().header("X-Client-Source", "ANDROID")
             .url(baseUrl + path)
             .method(method, (body ?: if (method in setOf("POST", "PUT", "PATCH")) "" else null)
                 ?.toRequestBody("application/json".toMediaType()))

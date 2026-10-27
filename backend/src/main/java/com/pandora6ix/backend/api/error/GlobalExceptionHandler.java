@@ -27,6 +27,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(com.pandora6ix.backend.api.BusinessException.class)
     public ResponseEntity<Object> handleBusiness(
             com.pandora6ix.backend.api.BusinessException exception, HttpServletRequest request) {
+        request.setAttribute("pandora.errorCode", exception.getCode());
         var body = new java.util.LinkedHashMap<String, Object>();
         var err =
                 error(exception.getStatus(), exception.getCode(), exception.getMessage(), request);
