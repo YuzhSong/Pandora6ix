@@ -17,7 +17,7 @@ class NotificationPrefs(context: Context, val ownerId: String?) {
 
     private val prefs = context.getSharedPreferences("notify_" + (ownerId ?: "anon"), Context.MODE_PRIVATE)
 
-    /** 总控，关闭则全部静默；默认开启，用户可在设置中关闭 */
+    /** 总控，关闭则全部静默；默认开启（用户仍可在设置中关闭；关闭时不申请通知权限） */
     var master: Boolean
         get() = prefs.getBoolean("master", true)
         set(value) = prefs.edit().putBoolean("master", value).apply()
