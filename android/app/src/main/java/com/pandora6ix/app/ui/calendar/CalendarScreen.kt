@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -84,11 +83,21 @@ fun CalendarScreen(
         if (!canReviewTasks && taskScope == "managed") onTaskScopeChange("mine")
     }
     val today = todayDate()
-    // 年/月视图外部跳转信号（日期选择器选定、回到当前周期）：带年月精确定位；消费后置空避免与滚动上报互相干扰
+    // 月视图消费定位信号；年视图用导航版本直接重建目标网格，避免旧布局参与跳转。
     var gridJumpTarget by remember { mutableStateOf<DemoDate?>(null) }
-    // 视图模式切换：从周视图切回月视图时，月卷轴回卷到 cursor 所在月
+    var monthAnchorYear by remember { mutableIntStateOf(cursor.year) }
+    var yearNavigationVersion by remember { mutableIntStateOf(0) }
+    fun jumpToDate(date: DemoDate) {
+        if (mode == CalendarMode.MONTH) monthAnchorYear = date.year
+        if (mode == CalendarMode.YEAR) yearNavigationVersion++
+        gridJumpTarget = if (mode == CalendarMode.MONTH) date else null
+        onCursorChange(date)
+    }
+    // 每次进入卷轴视图都以当前日期定位，旧滚动位置不能覆盖 cursor。
     val onChangeModeRecenter: (CalendarMode) -> Unit = { target ->
-        if (mode == CalendarMode.WEEK && target == CalendarMode.MONTH) gridJumpTarget = cursor
+        if (target == CalendarMode.MONTH) monthAnchorYear = cursor.year
+        yearNavigationVersion++
+        gridJumpTarget = if (target == CalendarMode.MONTH) cursor else null
         onModeChange(target)
     }
     Box(Modifier.fillMaxSize()) {
@@ -108,12 +117,7 @@ fun CalendarScreen(
             val dates = (0..6).map { weekStart.plusDays(it) }
             var showDatePick by rememberSaveable { mutableStateOf(false) }
             Row(Modifier.fillMaxWidth().height(44.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(when (mode) {
-                    CalendarMode.YEAR -> "${cursor.year}年"
-                    CalendarMode.MONTH -> cursor.monthLabel()
-                    CalendarMode.WEEK -> "${weekStart.shortLabel()}—${dates.last().shortLabel()}"
-                    CalendarMode.DAY -> cursor.shortLabelWithWeekday()
-                }, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f).clickable { showDatePick = true })
+                Text(calendarPeriodTitle(mode, cursor), fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f).clickable { showDatePick = true })
                 IconButton({ showTagFilter = true }) {
                     Icon(Icons.Default.Search, "按标签筛选任务", tint = if (filterTags.isEmpty()) Ink else WarmOrange)
                 }
@@ -121,7 +125,7 @@ fun CalendarScreen(
             if (showDatePick) DateWheelDialog(
                 initial = cursor,
                 onDismiss = { showDatePick = false },
-                onConfirm = { d -> showDatePick = false; gridJumpTarget = d; onCursorChange(d) }
+                onConfirm = { d -> showDatePick = false; jumpToDate(d) }
             )
             // 所有视图共用任务范围；"我管理的"仅对有审批能力的用户显示。
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -158,30 +162,37 @@ fun CalendarScreen(
                 TextButton({ filterTags = emptyList() }, contentPadding = PaddingValues(horizontal = 8.dp)) { Text("清除", fontSize = 12.sp, color = WarmOrange, maxLines = 1, softWrap = false) }
             }
             // 应用标签筛选后的任务集合：空筛选 = 全部任务
-            val visibleTasks = remember(tasks, filterTags) { if (filterTags.isEmpty()) tasks else tasks.filter { task -> filterTags.all { name -> task.tags.any { it.name == name } } } }
+            val taskSnapshot = tasks.toList()
+            val visibleTasks = remember(taskSnapshot, filterTags) { if (filterTags.isEmpty()) taskSnapshot else taskSnapshot.filter { task -> filterTags.all { name -> task.tags.any { it.name == name } } } }
             val density = LocalDensity.current
             // 月视图卷轴：索引与滚动状态上提，供捏合缩放（月→周按手势所在行定位）使用
-            val monthScrollIndex = remember(today.year) { buildMonthScrollIndex(today.year - MonthScrollSpanYears, today.year + MonthScrollSpanYears) }
-            val monthScrollState = rememberLazyListState(initialFirstVisibleItemIndex = monthScrollIndex.monthItemIndex[monthKey(cursor)] ?: 0)
+            val monthScrollIndex = remember(monthAnchorYear) { lazy { buildMonthScrollIndex(monthAnchorYear - MonthScrollSpanYears, monthAnchorYear + MonthScrollSpanYears) } }
+            val monthScrollState = key(monthAnchorYear) {
+                rememberLazyListState(initialFirstVisibleItemIndex = if (mode == CalendarMode.MONTH) monthScrollIndex.value.monthItemIndex[monthKey(cursor)] ?: 0 else 0)
+            }
             // 月→周捏合放大：按捏合中心的纵向位置定位到手指所在的那一周
             val onPinchZoomInCenter: (Float) -> Unit = { centerY ->
                 val y = centerY - with(density) { 20.dp.toPx() }  // 扣除卷轴上方的星期表头高度
                 val info = monthScrollState.layoutInfo.visibleItemsInfo.firstOrNull { y >= it.offset && y < it.offset + it.size }
-                val row = info?.let { monthScrollIndex.items.getOrNull(it.index) }
+                val row = info?.let { monthScrollIndex.value.items.getOrNull(it.index) }
                 if (row != null && !row.isTitle) onCursorChange(row.week.first())
             }
-            val yearGridState = rememberLazyGridState(initialFirstVisibleItemIndex = YearGridAnchorIndex)
             Box(Modifier.fillMaxWidth().weight(1f).pinchToZoom(mode, onChangeModeRecenter, onPinchZoomInCenter).swipeNavigate(mode) { forward ->
-                onCursorChange(when (mode) {
-                    CalendarMode.MONTH -> cursor.plusMonths(if (forward) 1 else -1)
-                    CalendarMode.WEEK -> cursor.plusDays(if (forward) 7 else -7)
-                    CalendarMode.DAY -> cursor.plusDays(if (forward) 1 else -1)
-                    else -> cursor
-                })
+                onCursorChange(advanceCalendarDate(mode, cursor, forward))
             }) {
                 when (mode) {
-                    CalendarMode.YEAR -> YearGrid(cursor, visibleTasks, today, yearGridState, jumpTarget = gridJumpTarget, onJumpConsumed = { gridJumpTarget = null }, onYearChange = { onCursorChange(cursor.plusYears(it - cursor.year)) }, onSelectDate = onCursorChange, onSelectMonth = { onCursorChange(it); onModeChange(CalendarMode.MONTH) })
-                    CalendarMode.MONTH -> MonthScroll(cursor, visibleTasks, today, monthScrollIndex, monthScrollState, jumpTarget = gridJumpTarget, onJumpConsumed = { gridJumpTarget = null }, onCursorChange = onCursorChange, onOpen = onOpen, onOpenDay = { date -> onCursorChange(date); onModeChange(CalendarMode.DAY) })
+                    CalendarMode.YEAR -> key(yearNavigationVersion) {
+                        val displayedVersion = yearNavigationVersion
+                        YearGrid(cursor, visibleTasks, today,
+                            onYearChange = { year ->
+                                // 确认新日期后、下一次重组前，旧网格的滚动回调也必须失效。
+                                if (yearNavigationVersion == displayedVersion) onCursorChange(cursor.plusYears(year - cursor.year))
+                            },
+                            onSelectDate = onCursorChange,
+                            onSelectMonth = { yearNavigationVersion++; monthAnchorYear = it.year; gridJumpTarget = it; onCursorChange(it); onModeChange(CalendarMode.MONTH) }
+                        )
+                    }
+                    CalendarMode.MONTH -> MonthScroll(cursor, visibleTasks, today, monthScrollIndex.value, monthScrollState, jumpTarget = gridJumpTarget, onJumpConsumed = { gridJumpTarget = null }, onCursorChange = onCursorChange, onOpen = onOpen, onOpenDay = { date -> onCursorChange(date); onModeChange(CalendarMode.DAY) })
                     CalendarMode.WEEK, CalendarMode.DAY -> Column(Modifier.fillMaxSize()) {
                         val visibleDates = if (mode == CalendarMode.DAY) listOf(cursor) else dates
                         WeekDates(visibleDates, today) { date ->
@@ -223,7 +234,7 @@ fun CalendarScreen(
             CalendarMode.WEEK -> "回到本周"
             CalendarMode.DAY -> "回到今天"
         }
-        if (!atToday) Button(onClick = { gridJumpTarget = today; onCursorChange(today) }, modifier = Modifier.align(Alignment.BottomEnd).fillMaxWidth(.25f).height(34.dp), shape = RoundedCornerShape(topStart = 17.dp, bottomStart = 17.dp), contentPadding = PaddingValues(horizontal = 4.dp), colors = ButtonDefaults.buttonColors(containerColor = ThemeButton, contentColor = OnThemeButton)) { Text(returnToCurrentLabel, fontSize = 12.sp, maxLines = 1) }
+        if (!atToday) Button(onClick = { jumpToDate(today) }, modifier = Modifier.align(Alignment.BottomEnd).fillMaxWidth(.25f).height(34.dp), shape = RoundedCornerShape(topStart = 17.dp, bottomStart = 17.dp), contentPadding = PaddingValues(horizontal = 4.dp), colors = ButtonDefaults.buttonColors(containerColor = ThemeButton, contentColor = OnThemeButton)) { Text(returnToCurrentLabel, fontSize = 12.sp, maxLines = 1) }
     }
     if (adding && (canCreatePersonal || canCreateDelegated)) TaskEntrySheet(cursor, canCreatePersonal, canCreateDelegated, availableTags, taskRepo, businessTimezone, currentUser, onDismiss = { adding = false }, onCreated = { task -> onCreated(task) })
     if (showTagFilter) {
@@ -268,17 +279,19 @@ fun CalendarScreen(
 }
 
 // ===== 月视图卷轴：连续纵向滚动；每个月独立按星期列排布（上月尾不挤入下月首行），任务条裁剪在本月列内 =====
-private const val MonthScrollSpanYears = 5  // 以今天为基准前后各 5 年静态构建，无需重锚
+internal const val MonthScrollSpanYears = 5 // 以显式选定年份为基准构建
 
 /** 卷轴内容项：月份大标题或该月的某一行（week 为含邻月补位的 7 列基准，渲染时只显示本月日） */
-private class MonthScrollItem(val month: DemoDate, val isTitle: Boolean, val week: List<DemoDate>)
+internal class MonthScrollItem(val month: DemoDate, val isTitle: Boolean, val week: List<DemoDate>) {
+    val key: String = "${monthKey(month)}:${if (isTitle) "title" else week.first().toString()}"
+}
 
 /** 卷轴索引：全部内容项与「月份 → 项下标」映射 */
-private class MonthScrollIndex(val items: List<MonthScrollItem>, val monthItemIndex: Map<Long, Int>)
+internal class MonthScrollIndex(val items: List<MonthScrollItem>, val monthItemIndex: Map<Long, Int>)
 
-private fun monthKey(d: DemoDate) = d.year * 12L + (d.month - 1)
+internal fun monthKey(d: DemoDate) = d.year * 12L + (d.month - 1)
 
-private fun buildMonthScrollIndex(startYear: Int, endYear: Int): MonthScrollIndex {
+internal fun buildMonthScrollIndex(startYear: Int, endYear: Int): MonthScrollIndex {
     val items = ArrayList<MonthScrollItem>()
     val monthItemIndex = HashMap<Long, Int>()
     var y = startYear
@@ -310,16 +323,19 @@ private fun MonthScroll(
     onOpenDay: (DemoDate) -> Unit
 ) {
     val currentCursor by rememberUpdatedState(cursor)
+    val currentJump by rememberUpdatedState(jumpTarget)
+    val reportCursor by rememberUpdatedState(onCursorChange)
     // 滚动上报：首个可见项所属月份写回 cursor（按月平移，日期不变），驱动顶部标题与「回到本月」按钮
-    LaunchedEffect(state) {
-        snapshotFlow { state.firstVisibleItemIndex }
-            .collect { idx ->
+    LaunchedEffect(state, index) {
+        snapshotFlow { state.firstVisibleItemIndex to state.isScrollInProgress }
+            .collect { (idx, scrolling) ->
+                if (!scrolling || currentJump != null) return@collect
                 val item = index.items.getOrNull(idx) ?: return@collect
-                if (monthKey(item.month) != monthKey(currentCursor)) onCursorChange(currentCursor.plusMonths((monthKey(item.month) - monthKey(currentCursor)).toInt()))
+                if (monthKey(item.month) != monthKey(currentCursor)) reportCursor(currentCursor.plusMonths((monthKey(item.month) - monthKey(currentCursor)).toInt()))
             }
     }
     // 外部跳转（日期选择器/回到本月）：定位到目标月标题并置顶
-    LaunchedEffect(jumpTarget) {
+    LaunchedEffect(jumpTarget, state, index) {
         val target = jumpTarget ?: return@LaunchedEffect
         index.monthItemIndex[monthKey(target)]?.let { state.scrollToItem(it) }
         onJumpConsumed()
@@ -327,7 +343,10 @@ private fun MonthScroll(
     Column(Modifier.fillMaxSize().padding(horizontal = 8.dp)) {
         Row(Modifier.fillMaxWidth().height(20.dp)) { listOf("一", "二", "三", "四", "五", "六", "日").forEach { Text("周$it", Modifier.weight(1f), fontSize = 11.sp, textAlign = TextAlign.Center, color = Ink.copy(alpha = .6f)) } }
         LazyColumn(state = state, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 96.dp)) {
-            items(index.items.size) { i ->
+            items(index.items.size,
+                key = { i -> index.items[i].key },
+                contentType = { i -> index.items[i].isTitle }
+            ) { i ->
                 val item = index.items[i]
                 if (item.isTitle) {
                     Text("${item.month.month}月", fontSize = 26.sp, fontWeight = FontWeight.Bold, color = Ink, modifier = Modifier.padding(top = 18.dp, bottom = 6.dp))
@@ -348,12 +367,14 @@ private fun MonthScrollRow(month: DemoDate, week: List<DemoDate>, tasks: List<Ta
     val lastCol = inMonth.lastIndexOf(true)
     if (firstCol < 0) return
     // 任务条按整周分道后裁剪到本月列范围，避免条带延伸进邻月的空白格
-    val lanes = packTaskRows(tasks, week).mapNotNull { lane ->
-        lane.mapNotNull { seg ->
-            val f = maxOf(seg.first, firstCol); val l = minOf(seg.last, lastCol)
-            if (f <= l) TaskSegment(seg.task, f, l) else null
-        }
-    }.filter { it.isNotEmpty() }
+    val lanes = remember(month, week, tasks.toList()) {
+        packTaskRows(tasks, week).mapNotNull { lane ->
+            lane.mapNotNull { seg ->
+                val f = maxOf(seg.first, firstCol); val l = minOf(seg.last, lastCol)
+                if (f <= l) TaskSegment(seg.task, f, l) else null
+            }
+        }.filter { it.isNotEmpty() }
+    }
     val capacity = 3  // 固定行高内可展示的任务条道数
     val shownLanes = lanes.take(capacity)
     // 每日未展示任务数：超出容量的分道中覆盖该列的任务条数
@@ -366,7 +387,7 @@ private fun MonthScrollRow(month: DemoDate, week: List<DemoDate>, tasks: List<Ta
     Column(Modifier.fillMaxWidth().height(dayRowHeight + (laneHeight + laneGap) * capacity + overflowRowHeight + 2.dp)) {
         DayNumberRow(month, week, inMonth, today, onOpenDay)
         shownLanes.forEach { lane ->
-            BoxWithConstraints(Modifier.fillMaxWidth().height(laneHeight)) {
+            Box(Modifier.fillMaxWidth().height(laneHeight)) {
                 DateLane(lane, week, 17, compact = true) { task, _ -> onOpen(task) }
             }
             Spacer(Modifier.height(laneGap))
@@ -397,7 +418,7 @@ private fun DayNumberRow(month: DemoDate, week: List<DemoDate>, inMonth: List<Bo
 }
 
 @Composable private fun AllDayTasks(dates: List<DemoDate>, tasks: List<TaskItem>, onSelect: (TaskItem, DemoDate) -> Unit) {
-    val lanes = packTaskRows(tasks.filter(::isAllDay), dates)
+    val lanes = remember(dates, tasks.toList()) { packTaskRows(tasks.filter(::isAllDay), dates) }
     Row(Modifier.fillMaxWidth().padding(end = 8.dp, bottom = 6.dp)) {
         Text("全天", Modifier.width(40.dp).padding(top = 4.dp), fontSize = 12.sp, textAlign = TextAlign.Center, color = Ink.copy(alpha = .7f))
         Column(Modifier.weight(1f).heightIn(max = 150.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -559,71 +580,58 @@ private fun Modifier.swipeNavigate(mode: CalendarMode, onAdvance: (Boolean) -> U
     }
 }
 
-// 年视图：跨多年连续滚动的月份网格（锚点前后各 YearGridSpanYears 年），拖动跟手、跨年自然衔接，不再分片跳年
-// 顶部年份随滚动实时上报（驱动日期行标题）；滚动接近列表边缘时静默重锚并保持视觉位置，近似无限滚动
-// 外部跳转（日期选择器选定）定位到目标年月对应格并置顶
-private const val YearGridSpanYears = 12
-private const val YearGridAnchorIndex = YearGridSpanYears * 12
-
+// 年窗口与初始位置一起生效。显式导航由父级 key 重建；边缘重锚保留首月和像素偏移。
 @Composable private fun YearGrid(
     cursor: DemoDate,
     tasks: List<TaskItem>,
     today: DemoDate,
-    state: LazyGridState,
-    jumpTarget: DemoDate?,
-    onJumpConsumed: () -> Unit,
     onYearChange: (Int) -> Unit,
     onSelectDate: (DemoDate) -> Unit,
     onSelectMonth: (DemoDate) -> Unit
 ) {
-    var anchorYear by remember { mutableStateOf(cursor.year) }
-    var lastReportedYear by remember { mutableStateOf(cursor.year) }
-    val startYear = anchorYear - YearGridSpanYears
-    val currentStartYear by rememberUpdatedState(startYear)
+    var window by remember { mutableStateOf(YearGridWindow(cursor.year, cursor.month)) }
+    val taskSnapshot = tasks.toList()
+    val currentCursor by rememberUpdatedState(cursor)
     val reportYear by rememberUpdatedState(onYearChange)
-    LaunchedEffect(state) {
-        snapshotFlow { state.layoutInfo.visibleItemsInfo.firstOrNull()?.index }
-            .collect { index ->
-                if (index == null) return@collect
-                val year = currentStartYear + index / 12
-                lastReportedYear = year
-                reportYear(year)
-                if (year <= currentStartYear + 1 || year >= currentStartYear + YearGridSpanYears * 2 - 2) {
-                    val offset = state.firstVisibleItemScrollOffset
-                    anchorYear = year
-                    state.scrollToItem(YearGridAnchorIndex + index % 12, offset)
+    key(window) {
+        val activeWindow = window
+        // 不恢复其他窗口的滚动状态；当前 cursor 已由上层保存。
+        val state = remember { LazyGridState(activeWindow.initialIndex, activeWindow.scrollOffset) }
+        LaunchedEffect(state) {
+            snapshotFlow { state.layoutInfo.visibleItemsInfo.firstOrNull()?.index }
+                .collect { index ->
+                    if (index == null) return@collect
+                    val year = activeWindow.monthAt(index).year
+                    if (year != currentCursor.year) reportYear(year)
+                    window = activeWindow.recenteredAt(state.firstVisibleItemIndex, state.firstVisibleItemScrollOffset)
                 }
-            }
-    }
-    // 外部跳转（日期选择器选定）：定位到目标年月对应格并置顶；与滚动上报互不干扰（jumpTarget 消费后即清空）
-    LaunchedEffect(jumpTarget) {
-        val target = jumpTarget ?: return@LaunchedEffect
-        val targetIndex = (target.year - startYear) * 12 + (target.month - 1)
-        lastReportedYear = target.year
-        if (targetIndex in 0 until YearGridSpanYears * 2 * 12) {
-            state.scrollToItem(targetIndex)
-        } else {
-            anchorYear = target.year
-            state.scrollToItem(YearGridAnchorIndex + (target.month - 1))
         }
-        onJumpConsumed()
-    }
-    LazyVerticalGrid(state = state, columns = GridCells.Fixed(2), modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp), contentPadding = PaddingValues(bottom = 96.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        items(YearGridSpanYears * 2 * 12) { index ->
-            val month = DemoDate(currentStartYear + index / 12, index % 12 + 1, 1)
-            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(WarmCard).border(1.dp, CreamDeep, RoundedCornerShape(10.dp)).padding(4.dp)) {
-                Text(if (month.month == 1) "${month.year}年1月" else "${month.month}月", fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.fillMaxWidth().clickable { onSelectMonth(month) }.padding(horizontal = 2.dp))
-                Row(Modifier.fillMaxWidth().padding(top = 1.dp)) { listOf("一", "二", "三", "四", "五", "六", "日").forEach { Text(it, Modifier.weight(1f), fontSize = 8.sp, lineHeight = 8.sp, textAlign = TextAlign.Center, color = Ink.copy(alpha = .45f)) } }
-                monthWeeks(month).forEach { week ->
-                    Row(Modifier.fillMaxWidth()) {
-                        week.forEach { date ->
-                            val inMonth = date.month == month.month
-                            val planTask = if (inMonth) tasks.firstOrNull { date >= it.start && date <= it.end } else null
-                            Column(Modifier.weight(1f).clickable { onSelectDate(date) }, horizontalAlignment = Alignment.CenterHorizontally) {
-                                Box(Modifier.size(20.dp).clip(CircleShape).background(if (date == today) Peach else Color.Transparent), contentAlignment = Alignment.Center) {
-                                    Text("${date.day}", fontSize = 9.sp, lineHeight = 9.sp, fontWeight = if (date == today) FontWeight.Bold else FontWeight.Normal, color = if (inMonth) Ink else Ink.copy(alpha = .25f))
+        LazyVerticalGrid(state = state, columns = GridCells.Fixed(2), modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp), contentPadding = PaddingValues(bottom = 96.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            items(activeWindow.itemCount, key = { monthKey(activeWindow.monthAt(it)) }) { index ->
+                val month = activeWindow.monthAt(index)
+                val weeks = remember(month) { monthWeeks(month) }
+                val dayTaskColors = remember(month, taskSnapshot) {
+                    val lastDay = month.plusMonths(1).plusDays(-1)
+                    val monthTasks = taskSnapshot.filter { it.end >= month && it.start <= lastDay }
+                    (1..lastDay.day).associateWith { day ->
+                        val date = month.copy(day = day)
+                        monthTasks.firstOrNull { date >= it.start && date <= it.end }?.let(::taskColor) ?: Color.Transparent
+                    }
+                }
+                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(WarmCard).border(1.dp, CreamDeep, RoundedCornerShape(10.dp)).padding(4.dp)) {
+                    Text(if (month.month == 1) "${month.year}年1月" else "${month.month}月", fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.fillMaxWidth().clickable { onSelectMonth(month) }.padding(horizontal = 2.dp))
+                    Row(Modifier.fillMaxWidth().padding(top = 1.dp)) { listOf("一", "二", "三", "四", "五", "六", "日").forEach { Text(it, Modifier.weight(1f), fontSize = 8.sp, lineHeight = 8.sp, textAlign = TextAlign.Center, color = Ink.copy(alpha = .45f)) } }
+                    weeks.forEach { week ->
+                        Row(Modifier.fillMaxWidth()) {
+                            week.forEach { date ->
+                                val inMonth = date.month == month.month
+                                val marker = if (inMonth) dayTaskColors.getValue(date.day) else Color.Transparent
+                                Box(Modifier.weight(1f).height(24.dp).clickable { onSelectDate(date) }.drawBehind {
+                                    if (date == today) drawCircle(Peach, radius = 10.dp.toPx(), center = Offset(size.width / 2, 10.dp.toPx()))
+                                    if (marker != Color.Transparent) drawCircle(marker, radius = 2.dp.toPx(), center = Offset(size.width / 2, 22.dp.toPx()))
+                                }, contentAlignment = Alignment.TopCenter) {
+                                    Text("${date.day}", Modifier.height(20.dp).wrapContentHeight(Alignment.CenterVertically), fontSize = 9.sp, lineHeight = 9.sp, fontWeight = if (date == today) FontWeight.Bold else FontWeight.Normal, color = if (inMonth) Ink else Ink.copy(alpha = .25f))
                                 }
-                                Box(Modifier.size(4.dp).clip(CircleShape).background(planTask?.let { taskColor(it) } ?: Color.Transparent))
                             }
                         }
                     }

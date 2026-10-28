@@ -3,7 +3,12 @@ package com.pandora6ix.app.mock
 import java.util.Calendar
 
 data class DemoDate(val year: Int, val month: Int, val day: Int) : Comparable<DemoDate> {
-    override fun compareTo(other: DemoDate): Int = ordinal().compareTo(other.ordinal())
+    override fun compareTo(other: DemoDate): Int {
+        val yearOrder = year.compareTo(other.year)
+        if (yearOrder != 0) return yearOrder
+        val monthOrder = month.compareTo(other.month)
+        return if (monthOrder != 0) monthOrder else day.compareTo(other.day)
+    }
     fun ordinal(): Int = Calendar.getInstance().apply {
         set(year, month - 1, day, 0, 0, 0)
         set(Calendar.MILLISECOND, 0)

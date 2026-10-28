@@ -427,10 +427,11 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository, noti
         var calRetry by remember { mutableStateOf(0) }
         // 所有视图任务范围：mine=我的任务 / managed=我管理的 / created=我创建的
         var taskScope by rememberSaveable { mutableStateOf("mine") }
-        LaunchedEffect(current, modeName, dateKey, currentUser?.id, calRetry, taskScope) {
+        val calendarAnchor = calendarQueryDate(CalendarMode.valueOf(modeName), date)
+        LaunchedEffect(current, modeName, calendarAnchor, currentUser?.id, calRetry, taskScope) {
             if (current != Route.VIEW || currentUser == null) return@LaunchedEffect
             calLoading = true; calError = null
-            val anchor = "%04d-%02d-%02d".format(date.year, date.month, date.day)
+            val anchor = "%04d-%02d-%02d".format(calendarAnchor.year, calendarAnchor.month, calendarAnchor.day)
             try {
                 val loaded = when (CalendarMode.valueOf(modeName)) {
                     CalendarMode.DAY -> calendarRepo.calendar("day", anchor, scope = taskScope).tasks
@@ -438,9 +439,12 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository, noti
                     CalendarMode.MONTH -> calendarRepo.calendar("month", anchor, scope = taskScope).tasks
                     CalendarMode.YEAR -> calendarRepo.tasks(scope = taskScope, from = "%04d-01-01".format(date.year), to = "%04d-12-31".format(date.year)).items
                 }
+                coroutineContext.ensureActive()
                 taskItems.clear(); taskItems.addAll(loaded.map { it.toTaskItem() })
                 taskDtoById.clear(); taskDtoById.putAll(loaded.associateBy { it.id })
                 calNotice = null
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (e: SessionExpiredException) {
                 // 401 已由全局回调处理
             } catch (e: Exception) {
@@ -455,7 +459,7 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository, noti
                 }
                 taskItems.clear(); taskDtoById.clear()
             } finally {
-                calLoading = false
+                if (coroutineContext[kotlinx.coroutines.Job]?.isActive == true) calLoading = false
             }
         }
         // 创建入口由 /me.capabilities 驱动：个人/派发能力分别控制任务类型；具体命令仍由服务端校验

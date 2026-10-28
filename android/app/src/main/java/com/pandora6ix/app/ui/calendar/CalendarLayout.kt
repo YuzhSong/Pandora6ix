@@ -2,6 +2,7 @@ package com.pandora6ix.app.ui.calendar
 
 import com.pandora6ix.app.data.TaskItem
 import com.pandora6ix.app.mock.*
+import java.util.Calendar
 
 enum class CalendarMode(val label: String) { DAY("日视图"), WEEK("周视图"), MONTH("月视图"), YEAR("年视图") }
 data class TaskSegment(val task: TaskItem, val first: Int, val last: Int)
@@ -25,7 +26,15 @@ fun monthWeeks(date: DemoDate): List<List<DemoDate>> {
     val monday = mondayOfWeek(first)
     val last = first.plusMonths(1).plusDays(-1)
     val count = ((daysBetween(monday, last) + 7) / 7) * 7
-    return (0 until count).map { monday.plusDays(it) }.chunked(7)
+    val calendar = Calendar.getInstance().apply {
+        clear()
+        set(monday.year, monday.month - 1, monday.day, 12, 0, 0)
+    }
+    return List(count) {
+        val date = DemoDate(calendar.get(Calendar.YEAR), calendar.get(Calendar.MONTH) + 1, calendar.get(Calendar.DAY_OF_MONTH))
+        calendar.add(Calendar.DAY_OF_MONTH, 1)
+        date
+    }.chunked(7)
 }
 
 fun packTaskRows(tasks: List<TaskItem>, dates: List<DemoDate>): List<List<TaskSegment>> {
