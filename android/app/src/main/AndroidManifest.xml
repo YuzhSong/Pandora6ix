@@ -18,6 +18,15 @@
         android:theme="@style/Theme.Pandora6ix">
         <meta-data android:name="JPUSH_APPKEY" android:value="${JPUSH_APP_KEY}" tools:replace="android:value" />
         <meta-data android:name="JPUSH_CHANNEL" android:value="default" tools:replace="android:value" />
+        <service
+            android:name=".PandoraPushService"
+            android:enabled="true"
+            android:exported="false"
+            android:process=":pushcore">
+            <intent-filter>
+                <action android:name="cn.jiguang.user.service.action" />
+            </intent-filter>
+        </service>
         <receiver android:name=".PandoraPushReceiver" android:enabled="true" android:exported="false">
             <intent-filter>
                 <action android:name="cn.jpush.android.intent.RECEIVER_MESSAGE" />

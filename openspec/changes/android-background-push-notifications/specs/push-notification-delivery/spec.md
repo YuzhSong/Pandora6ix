@@ -77,3 +77,7 @@ Android SHALL initialize JPush when configured, register its installation only w
 #### Scenario: Push configuration absent
 - **WHEN** the Android build has no JPush AppKey
 - **THEN** the app starts normally and continues to use its non-push features without crashing.
+
+#### Scenario: Configured SDK starts its push service
+- **WHEN** an Android build with a configured AppKey starts
+- **THEN** its packaged manifest declares an enabled, non-exported application service extending JCommonService with the provider discovery action, allowing the SDK to establish its channel and obtain a registration identifier.

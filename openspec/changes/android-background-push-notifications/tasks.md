@@ -19,3 +19,9 @@
 
 - [x] 3.1 Run strict OpenSpec validation, backend tests, Android unit tests, and debug assembly; record any environment-dependent checks.
 - [x] 3.2 Document JPush console setup and server environment variables without committing AppKey secrets or Master Secret; verify secret scanning and configuration examples.
+
+## 4. SDK service repair (2026-10-28)
+
+- [x] 4.1 Add and declare the required application-owned JCommonService subclass without changing approval or permission behavior.
+- [x] 4.2 Run Android unit tests, debug assembly, release Kotlin compilation, strict OpenSpec validation, and inspect the packaged service declaration and AppKey without exposing credentials.
+- [x] 4.3 Update both running emulators without clearing application data; verify provider registration and report cloud device binding separately from actual notification delivery.

@@ -41,3 +41,7 @@ Retain the notification preference and one-time permission request from PR #28. 
 The worker checks active account and installation ownership when selecting, claiming and preparing to send; attempts fence stale workers and stop at five. Same-owner re-registration preserves queued work, while ownership changes cancel it. A provider-accepted request cannot be recalled if account ownership changes during network I/O. Notifications are generic and protected details remain server-authenticated.
 
 The original credential-bearing Word guide was removed from candidate history and replaced with a sanitized Markdown guide. Old credentials require rotation; external-provider and physical-device acceptance remain pending.
+
+## SDK service repair, 2026-10-28
+
+Live emulator logs show that JPush initialization cannot start its channel because no application service extends `JCommonService`. Add a minimal `PandoraPushService` subclass and declare it enabled, non-exported, in `:pushcore`, with the `cn.jiguang.user.service.action` intent filter, following the provider's Android quick-start guide. Keep existing receiver, account binding, notification preferences, permissions, and key-free build behavior unchanged. Inspect the packaged manifest and verify SDK registration on both independent emulators after an in-place APK update. Device registration does not prove delivery; approval creation and visible notification receipt remain a separate user-driven acceptance step.
