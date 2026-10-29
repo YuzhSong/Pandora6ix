@@ -2322,15 +2322,10 @@ private fun SettingsScreen(
                 Spacer(Modifier.height(18.dp))
                 // 通知提醒独立成一级分区：主开关 + 三个同级开关（提前量是截止时间临近的子项）
                 SettingsSectionLabel("通知提醒")
-                Text(
-                    "这里设置的是应用内提醒与系统通知：站内消息暂未开放，审批记录请到「我的 → 审批中心」查看。",
-                    Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp), fontSize = 12.sp, color = Ink.copy(alpha = .55f), lineHeight = 17.sp
-                )
                 SettingsCard {
                     SettingsRow(
                         icon = Icons.Default.Notifications,
                         title = "通知提醒",
-                        subtitle = "默认关闭，开启后按下方分项提醒",
                         onClick = { toggleMaster() }
                     ) {
                         Switch(
@@ -2358,7 +2353,6 @@ private fun SettingsScreen(
                         SettingsRow(
                             icon = Icons.Default.Assignment,
                             title = "新任务提醒",
-                            subtitle = "你被派发了新任务，或个人任务批准生效时提醒",
                             onClick = { onNewTaskChange(!newTaskEnabled) }
                         ) {
                             ReminderSwitch(newTaskEnabled, onNewTaskChange)
@@ -2367,7 +2361,6 @@ private fun SettingsScreen(
                         SettingsRow(
                             icon = Icons.Default.Schedule,
                             title = "截止时间临近",
-                            subtitle = "任务截止前 ${leadLabel(leadMinutes)}提醒；已完成任务不再提醒",
                             onClick = { onDeadlineChange(!deadlineEnabled) }
                         ) {
                             ReminderSwitch(deadlineEnabled, onDeadlineChange)
@@ -2377,7 +2370,6 @@ private fun SettingsScreen(
                             SubValueRow(
                                 icon = Icons.Default.Timelapse,
                                 title = "提前提醒时间",
-                                subtitle = "截止前多久提醒，可自定义到分钟",
                                 value = leadLabel(leadMinutes),
                                 onClick = { showLeadDialog = true }
                             )
@@ -2386,7 +2378,6 @@ private fun SettingsScreen(
                         SettingsRow(
                             icon = Icons.Default.SyncAlt,
                             title = "任务状态变化",
-                            subtitle = "他人更新了你参与任务的进度或验收结果时提醒",
                             onClick = { onStatusChangeChange(!statusChangeEnabled) }
                         ) {
                             ReminderSwitch(statusChangeEnabled, onStatusChangeChange)
@@ -2743,7 +2734,6 @@ private fun fontScaleLabel(s: Float): String = when {
 private fun SubValueRow(
     icon: ImageVector,
     title: String,
-    subtitle: String,
     value: String,
     onClick: () -> Unit
 ) {
@@ -2756,7 +2746,6 @@ private fun SubValueRow(
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
             Text(title, fontSize = 13.sp, color = Ink)
-            Text(subtitle, fontSize = 11.sp, color = Ink.copy(alpha = 0.5f), lineHeight = 16.sp)
         }
         Text(value, color = WarmOrange, fontSize = 13.sp)
         Spacer(Modifier.width(4.dp))
