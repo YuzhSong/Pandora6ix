@@ -33,3 +33,8 @@
 - Real logged-in localhost:5173 page: 0 available accounts, 33 unavailable accounts collapsed; no cloud mutation or real credential export performed. Fixed form-style collisions after visual inspection.
 - Final production bundle tested against isolated in-memory localhost:5180 fixture: two available accounts, one unavailable; searching successor@local and selecting all yielded exactly one selected account; export completed with `已导出 1 人`, controls unlocked. An earlier test was interrupted by rebuilding assets during the fixture session; restarted against the final build and repeated successfully.
 - First-login mandatory password change still requires backend and Android support. Export/copy does not claim the employee has received the account. No automatic password resets, messaging, commit or deployment performed.
+
+
+## Integration review after PR #40 (2026-10-30)
+
+Rebased onto dev after #40 (730ddc8). The rebase did not change any Web source compared with the reviewed original #41 head. Verified 145 Web tests, lint and production build; existing lint and bundle-size warnings are non-blocking. Strict OpenSpec validation and diff checks passed. Ran the Spring + file H2 + Vite + Web repository integration script against the newly packaged #40 backend, using its isolated loopback database and random test accounts; passed. No cloud accounts or data were modified. Real-device push receipt and production avatar availability are not covered by these local checks.
