@@ -36,7 +36,30 @@ test('export retrieves every filtered cursor page within a fixed server snapshot
   const rows = await reader.all({ ...emptyLogFilters, module: 'TASK' })
   assert.deepEqual(rows.map(item => item.id), ['l1', 'l2'])
   const params = new URL(`https://example.invalid${paths[1]}`).searchParams
-  assert.equal(params.get('snapshotToken'), 'snapshot'); assert.equal(params.get('cursor'), 'cursor-two'); assert.equal(params.get('module'), 'TASK'); assert.equal(params.get('limit'), '200')
+  assert.equal(params.get('snapshotToken'), 'snapshot'); assert.equal(params.get('cursor'), 'cursor-two'); assert.equal(params.get('module'), 'TASK'); assert.equal(params.get('limit'), '100')
+})
+
+test('Excel export respects the server 100-row limit and includes all 205 filtered records', async () => {
+  const records = Array.from({ length: 205 }, (_, index) => ({ ...row, id: `log-${index}`, summary: `操作 ${index}` }))
+  const requests: number[] = []
+  const reader = createOperationLogReader(client(path => {
+    const params = new URL(`https://example.invalid${path}`).searchParams
+    const limit = Number(params.get('limit')), offset = Number(params.get('cursor') ?? 0)
+    if (limit < 1 || limit > 100) throw new ApiError('limit must be between 1 and 100.', 422, 'VALIDATION_ERROR')
+    assert.equal(params.get('module'), 'TASK')
+    assert.equal(params.get('keyword'), '操作')
+    if (offset > 0) assert.equal(params.get('snapshotToken'), 'snapshot')
+    requests.push(offset)
+    return page(records.slice(offset, offset + limit), records.length, offset + limit < records.length ? String(offset + limit) : null)
+  }))
+  const exported = await reader.all({ ...emptyLogFilters, module: 'TASK', keyword: '操作' })
+  assert.deepEqual(requests, [0, 100, 200])
+  assert.deepEqual(exported.map(item => item.id), records.map(item => item.id))
+  const workbook = new ExcelJS.Workbook()
+  await workbook.xlsx.load(await operationLogWorkbook(exported))
+  const sheet = workbook.getWorksheet('系统操作日志')!
+  assert.equal(sheet.rowCount, 206)
+  assert.equal(sheet.getCell('G206').value, '操作 204')
 })
 
 test('export rejects partial, duplicated, looping and inconsistent datasets', async () => {

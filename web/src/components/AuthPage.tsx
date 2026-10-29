@@ -19,7 +19,7 @@ export function AuthPage({ brand, message }: { brand: ReactNode; message: string
       } catch (reason) { setError(errorMessage(reason)) }
       finally { setBusy(false) }
     }}><fieldset disabled={busy}>
-      <label><span>登录账号 <span className="required">*</span></span><input required maxLength={257} autoComplete="username" value={accountIdentifier} onChange={event => setAccountIdentifier(event.target.value)} placeholder="例如：admin@6ix" /></label>
+      <label><span>登录账号 <span className="required">*</span></span><input required maxLength={257} autoComplete="username" value={accountIdentifier} onChange={event => setAccountIdentifier(event.target.value)} placeholder="例如：admin@pandora" /></label>
       <label><span>密码 <span className="required">*</span></span><input type="password" required maxLength={72} autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} /></label>
       {message && <p role="status">{message}</p>}{error && <p role="alert" className="error-message">{error}</p>}
       <button className="button primary entry-button" type="submit">{busy ? '正在登录…' : '登录工作台'}<Icon name="arrow" /></button>

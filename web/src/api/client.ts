@@ -18,7 +18,7 @@ interface RequestOptions {
   body?: unknown
   signal?: AbortSignal
   // Only unwrapped infrastructure endpoints (such as /health) opt into JSON.
-  responseFormat?: 'envelope' | 'json'
+  responseFormat?: 'envelope' | 'json' | 'blob'
   headers?: Record<string, string>
   authenticated?: boolean
 }
@@ -62,6 +62,7 @@ export function createApiClient({ baseUrl, fetcher = fetch, timeoutMs = 15000, o
           signal,
         })
         if (response.status === 204) return undefined as T
+        if (response.ok && options.responseFormat === 'blob') return await response.blob() as T
         const raw = await response.text()
         let payload: Record<string, unknown> | null = null
         try {

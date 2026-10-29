@@ -16,6 +16,46 @@ function reader(url: string) {
   return { items: [], nextCursor: null }
 }
 
+test('account restoration preserves identity/profile/roles and rejects departed or unknown employment before writes', async () => {
+  for (const employmentStatus of ['IN_SERVICE', 'DEPARTED', undefined] as const) {
+    let writes = 0
+    const target = { ...employee, employmentStatus, departureDate: employmentStatus === 'DEPARTED' ? '2026-10-01' : null, gender: 'FEMALE', idNumber: '000000200001010001', phoneNumber: '00000000001' }
+    const repository = createHttpAdminRepository(createApiClient({ baseUrl: '/api/v1', fetcher: async (url, options) => {
+      if (options?.method === 'PATCH') {
+        writes++
+        const body = JSON.parse(String(options.body))
+        assert.equal(body.expectedVersion, 0); assert.equal(body.status, 'ACTIVE')
+        assert.equal(body.phoneNumber, target.phoneNumber); assert.equal(body.idNumber, target.idNumber)
+        assert.equal(body.supervisorUserId, target.supervisorUserId); assert.deepEqual(body.roles, target.roles)
+        assert.equal('password' in body, false); assert.equal('newPassword' in body, false)
+        return Response.json({ data: { ...target, status: 'ACTIVE', version: 1 } })
+      }
+      const value = String(url).includes('/admin/users') ? { items: [administrator, target], nextCursor: null } : reader(String(url))
+      return Response.json({ data: value })
+    } }))
+    await repository.getWorkspace()
+    if (employmentStatus === 'IN_SERVICE') {
+      await assert.rejects(repository.restoreAccount('employee', 2), /刷新/)
+      const next = await repository.restoreAccount('employee', 0)
+      assert.equal(next.people.find(value => value.id === 'employee')?.status, 'ACTIVE')
+      assert.equal(writes, 1)
+    } else {
+      await assert.rejects(repository.restoreAccount('employee', 0), /在职/)
+      assert.equal(writes, 0)
+    }
+  }
+})
+
+test('restoration conflict never activates local account', async () => {
+  const repository = createHttpAdminRepository(createApiClient({ baseUrl: '/api/v1', fetcher: async (url, options) => {
+    if (options?.method === 'PATCH') return Response.json({ code: 'VERSION_CONFLICT', message: 'stale' }, { status: 409 })
+    return Response.json({ data: String(url).includes('/admin/users') ? { items: [administrator, { ...employee, employmentStatus: 'IN_SERVICE', departureDate: null }], nextCursor: null } : reader(String(url)) })
+  } }))
+  await repository.getWorkspace()
+  await assert.rejects(repository.restoreAccount('employee', 0), (reason: unknown) => reason instanceof ApiError && reason.status === 409)
+  assert.equal((await repository.getWorkspace()).people.find(value => value.id === 'employee')?.status, 'DISABLED')
+})
+
 test('workspace does not request tags or employee business records; tag writes are unavailable', async () => {
   const calls: string[] = []
   const repository = createHttpAdminRepository(createApiClient({ baseUrl: '/api/v1', fetcher: async url => {

@@ -98,6 +98,16 @@ export function createHttpAdminRepository(client: ReturnType<typeof createApiCli
   }
   const checkPersonnelWrite = () => { if (uncertainPersonnelWrite) throw new Error('上次人员保存结果尚未确认，请先关闭窗口并刷新资料，勿重复提交。') }
   return {
+    async restoreAccount(personId, expectedVersion) {
+      checkPersonnelWrite()
+      const old = current().people.find(person => person.id === personId)
+      if (!old || old.status !== 'DISABLED' || old.employmentStatus !== 'IN_SERVICE' || old.version !== expectedVersion) throw new Error('仅可恢复资料已确认的在职停用账号，请刷新后核对。')
+      return write(`/admin/users/${encodeURIComponent(personId)}`, { ...userBody(old, expectedVersion), status: 'ACTIVE' }, value => {
+        const result = verifyPerson(profileBody(old))(value)
+        if (result.id !== old.id || result.loginName !== old.loginName || result.status !== 'ACTIVE' || result.employmentStatus !== 'IN_SERVICE' || result.version !== expectedVersion + 1 || result.orgUnitId !== old.orgUnitId || result.supervisorId !== old.supervisorId || JSON.stringify([...result.roles].sort()) !== JSON.stringify([...old.roles].sort())) throw invalid()
+        return result
+      }, (data, value) => { data.people = replace(data.people, value) }, true)
+    },
     async replaceManager(personId, successorId, expectedVersion, successorExpectedVersion, successorJobTitle, formerJobTitle) {
       checkPersonnelWrite()
       return write(`/admin/users/${encodeURIComponent(personId)}/manager-replacement`, { expectedVersion, successorUserId: successorId, successorExpectedVersion, successorJobTitle, formerJobTitle }, value => {

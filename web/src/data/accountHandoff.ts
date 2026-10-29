@@ -3,10 +3,13 @@ import type { CredentialHandoff } from './types.ts'
 export interface AccountLogin { loginName: string; enterpriseDomain?: string }
 export interface CreatedAccountReceipt extends AccountLogin { personId: string; displayName: string; initialPassword: string; reason?: 'created' | 'reset' }
 
+export function accountIdentifier(account: AccountLogin): string {
+  return account.enterpriseDomain ? `${account.loginName}@${account.enterpriseDomain}` : account.loginName
+}
+
 export function accountLoginText(account: AccountLogin, initialPassword?: string): string {
   return [
-    ...(account.enterpriseDomain ? [`公司登录标识：${account.enterpriseDomain}`] : []),
-    `登录账号：${account.loginName}`,
+    `登录账号：${accountIdentifier(account)}`,
     ...(initialPassword === undefined ? [] : [`初始密码：${initialPassword}`]),
   ].join('\n')
 }

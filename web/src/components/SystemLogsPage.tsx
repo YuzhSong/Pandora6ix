@@ -82,22 +82,36 @@ export function SystemLogsPage({ refreshKey, data }: { refreshKey?: unknown; dat
     setCursors(previous => [...previous.slice(0, pageIndex + 1), next]); setPageIndex(value => value + 1)
   }
   return <section className="panel operation-logs" aria-label="系统操作日志">
-    <div className="panel-heading"><div className="log-heading-title"><h2>系统操作日志</h2>{previewLogs && <span className="badge neutral">预览数据</span>}</div><button className="button primary" disabled={loading || !page?.total || exporting || keyword !== filters.keyword} onClick={() => void exportLogs()}>{exporting ? '正在导出…' : '导出 Excel'}</button></div>
     <fieldset className="log-filter-fields" disabled={exporting}>
       <div className="log-filter-row"><label className="search-box"><Icon name="search" size={18} /><input aria-label="搜索操作人、账号或操作内容" placeholder="搜索操作人、账号、操作内容" value={keyword} onChange={event => setKeyword(event.target.value)} />{keyword && <button className="icon-button" aria-label="清空搜索" onClick={() => setKeyword('')}><Icon name="close" size={14} /></button>}</label>
-        <Select label="操作模块" value={filters.module} options={options(logModules, '全部模块')} onChange={value => change('module', value)} />
-        <Select label="操作类型" value={filters.action} options={operationChoices(filters.module)} popupMinWidth={210} onChange={value => change('action', value)} />
-        <Select label="操作来源" value={filters.source} options={options(logSources, '全部来源')} onChange={value => change('source', value)} />
-        <Select label="操作结果" value={filters.result} options={options(logResults, '全部结果')} onChange={value => change('result', value)} />
-        <DateRangePicker start={filters.startDate} end={filters.endDate} onChange={(startDate, endDate) => { resetPaging(); setSelected(null); setFilters(previous => ({ ...previous, startDate, endDate })) }} />
         {Object.values(filters).some(Boolean) && <button className="text-button" onClick={clear}>重置</button>}
+        {previewLogs && <span className="badge neutral">预览数据</span>}
+        <button className="button primary log-export-button" disabled={loading || !page?.total || exporting || keyword !== filters.keyword} onClick={() => void exportLogs()}>{exporting ? '正在导出…' : '导出 Excel'}</button>
       </div>
     </fieldset>
     {exportError && <p className="error-message log-feedback" role="alert">{exportError}</p>}{exportMessage && <p className="log-feedback" role="status">{exportMessage}</p>}
-    {error ? <div className="log-load-state" role="alert"><Icon name="journal" size={30} /><h3>日志加载失败</h3><p>{error}</p><button className="button secondary" onClick={() => { resetPaging(); setRetry(value => value + 1) }}>重新加载</button></div>
-      : loading ? <div className="log-load-state" role="status">正在加载操作日志…</div>
-      : !page?.items.length ? <div className="log-load-state"><Icon name="journal" size={30} /><h3>{Object.values(filters).some(Boolean) ? '没有符合条件的日志' : '暂无操作日志'}</h3>{Object.values(filters).some(Boolean) && <button className="button secondary" onClick={clear}>重置筛选</button>}</div>
-      : <div className="log-table-scroll"><table className="log-table"><thead><tr><th scope="col">操作时间</th><th scope="col">操作记录</th><th scope="col">结果</th><th scope="col">详情</th></tr></thead><tbody>{page.items.map(row => <tr key={row.id}><td><time dateTime={row.occurredAt}>{logTime(row.occurredAt)}</time></td><td><div className="log-record-line"><strong>{row.actor.displayName ?? '历史操作人（未记录）'}</strong><span>{row.summary}</span><span className="badge log-module" data-log-module={row.module}>{logLabel(logModules, row.module)}</span></div></td><td><span className={`badge ${row.result === 'SUCCESS' ? 'log-success' : 'log-failure'}`}>{logResults[row.result]}</span></td><td><button className="text-button" aria-label={`查看${row.actor.displayName ?? '历史操作人'}的${logLabel(logActions, row.action)}记录`} onClick={() => setSelected(row.id)}>查看</button></td></tr>)}</tbody></table></div>}
+    <div className="log-table-scroll"><table className="log-table log-header-filters">
+      <colgroup><col style={{ width: '20%' }} /><col style={{ width: '35%' }} /><col style={{ width: '13%' }} /><col style={{ width: '12%' }} /><col style={{ width: '12%' }} /><col style={{ width: '8%' }} /></colgroup>
+      <thead><tr>
+        <th scope="col" data-filtered={!!(filters.startDate || filters.endDate)}><DateRangePicker disabled={exporting} triggerLabel={filters.startDate || filters.endDate ? '操作时间 · 已筛选' : '操作时间'} start={filters.startDate} end={filters.endDate} onChange={(startDate, endDate) => { resetPaging(); setSelected(null); setFilters(previous => ({ ...previous, startDate, endDate })) }} /></th>
+        <th scope="col" data-filtered={!!filters.action}><Select className="log-header-filter" label="操作类型" triggerLabel={filters.action ? `操作记录 · ${logLabel(logActions, filters.action)}` : '操作记录'} disabled={exporting} value={filters.action} options={operationChoices(filters.module)} popupMinWidth={210} onChange={value => change('action', value)} /></th>
+        <th scope="col" data-filtered={!!filters.module}><Select className="log-header-filter" label="操作模块" triggerLabel={filters.module ? `模块 · ${logLabel(logModules, filters.module)}` : '模块'} disabled={exporting} value={filters.module} options={options(logModules, '全部模块')} popupMinWidth={180} onChange={value => change('module', value)} /></th>
+        <th scope="col" data-filtered={!!filters.source}><Select className="log-header-filter" label="操作来源" triggerLabel={filters.source ? `来源 · ${logLabel(logSources, filters.source)}` : '来源'} disabled={exporting} value={filters.source} options={options(logSources, '全部来源')} popupMinWidth={160} onChange={value => change('source', value)} /></th>
+        <th scope="col" data-filtered={!!filters.result}><Select className="log-header-filter" label="操作结果" triggerLabel={filters.result ? `结果 · ${logResults[filters.result as keyof typeof logResults]}` : '结果'} disabled={exporting} value={filters.result} options={options(logResults, '全部结果')} popupMinWidth={160} onChange={value => change('result', value)} /></th>
+        <th scope="col">详情</th>
+      </tr></thead><tbody>
+        {error ? <tr><td colSpan={6}><div className="log-load-state" role="alert"><Icon name="journal" size={30} /><h3>日志加载失败</h3><p>{error}</p><button className="button secondary" onClick={() => { resetPaging(); setRetry(value => value + 1) }}>重新加载</button></div></td></tr>
+          : loading ? <tr><td colSpan={6}><div className="log-load-state" role="status">正在加载操作日志…</div></td></tr>
+          : !page?.items.length ? <tr><td colSpan={6}><div className="log-load-state"><Icon name="journal" size={30} /><h3>{Object.values(filters).some(Boolean) ? '没有符合条件的日志' : '暂无操作日志'}</h3>{Object.values(filters).some(Boolean) && <button className="button secondary" onClick={clear}>重置筛选</button>}</div></td></tr>
+          : page.items.map(row => <tr key={row.id}>
+            <td><time dateTime={row.occurredAt}>{logTime(row.occurredAt)}</time></td>
+            <td><div className="log-record-line"><strong>{row.actor.displayName ?? '历史操作人（未记录）'}</strong><span>{row.summary}</span></div></td>
+            <td><span className="badge log-module" data-log-module={row.module}>{logLabel(logModules, row.module)}</span></td>
+            <td>{logLabel(logSources, row.source)}</td>
+            <td><span className={`badge ${row.result === 'SUCCESS' ? 'log-success' : 'log-failure'}`}>{logResults[row.result]}</span></td>
+            <td><button className="text-button" aria-label={`查看${row.actor.displayName ?? '历史操作人'}的${logLabel(logActions, row.action)}记录`} onClick={() => setSelected(row.id)}>查看</button></td>
+          </tr>)}
+      </tbody></table></div>
     <div className="table-footer"><span>{page ? `共 ${page.total} 条` : '—'}</span><div className="log-pagination" aria-label="日志分页"><button className="button secondary" disabled={loading || exporting || pageIndex === 0} onClick={() => { setCursors(previous => previous.slice(0, pageIndex)); setPageIndex(value => value - 1) }}>上一页</button><span>第 {pageIndex + 1} 页</span><button className="button secondary" disabled={loading || exporting || !page?.nextCursor} onClick={nextPage}>下一页</button></div></div>
     {selected && <OperationLogDialog data={data} id={selected} onClose={() => setSelected(null)} />}
   </section>

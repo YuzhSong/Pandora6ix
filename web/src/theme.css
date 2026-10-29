@@ -434,6 +434,32 @@ body { background: var(--canvas-gradient); background-attachment: fixed; min-hei
 .account-information { padding: 18px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
 .account-information-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 18px; }
 .account-information-heading h3 { margin: 0; font-size: calc(15px * var(--font-scale)); }
+dialog.editor-dialog.person-details-dialog { width: min(980px, calc(100vw - 48px)); max-width: calc(100vw - 48px); }
+.person-details-dialog[open] { display: flex; flex-direction: column; max-height: 90dvh; overflow: hidden; }
+.person-details-dialog > .dialog-head, .person-details-dialog > .dialog-footer { flex-shrink: 0; }
+.person-details-dialog > .dialog-body { min-height: 0; overflow-y: auto; padding: 22px 28px; }
+.person-profile-identity { display: flex; align-items: center; gap: 16px; margin-bottom: 20px; }
+.person-profile-identity .person-name-line { margin-bottom: 8px; }
+.person-profile-identity h3 { font-size: calc(22px * var(--font-scale)); }
+.person-profile-section { padding: 16px 0; border-top: 1px solid var(--border); }
+.person-profile-section > h3 { margin: 0 0 14px; font-size: calc(15px * var(--font-scale)); }
+.person-profile-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 28px; margin: 0; }
+.person-profile-grid > div { display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: 12px; align-items: start; }
+.person-profile-grid .profile-full-row { grid-column: 1 / -1; }
+.person-profile-grid dt { color: var(--muted); font-size: calc(13px * var(--font-scale)); line-height: 1.7; }
+.person-profile-grid dd { margin: 0; font-size: calc(14px * var(--font-scale)); line-height: 1.6; overflow-wrap: anywhere; }
+.person-profile-grid dd > .text-button { margin-left: 14px; }
+.person-reports summary { cursor: pointer; color: var(--action-text); }
+.person-reports ul { padding: 0; list-style: none; margin: 8px 0 0; }
+.person-reports li { padding-block: 4px; }
+.person-disabled-summary { padding: 12px 16px; margin-bottom: 18px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-soft); display: flex; gap: 6px 18px; flex-wrap: wrap; font-size: 13px; }
+.person-disabled-summary > span:last-child { flex-basis: 100%; color: var(--muted); }
+.person-details-dialog .compact-account-information { border: 0; border-top: 1px solid var(--border); border-radius: 0; background: transparent; padding: 16px 0 0; }
+.compact-account-information .account-information-heading { margin-bottom: 12px; }
+.person-account-actions { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 12px; padding-left: 100px; }
+.compact-account-information .account-copy-feedback:empty { display: none; }
+.compact-account-information > label { margin: 14px 0 0; }
+@media (max-width: 680px) { dialog.editor-dialog.person-details-dialog { width: calc(100vw - 16px); max-width: calc(100vw - 16px); }.person-details-dialog > .dialog-body { padding: 18px; }.person-profile-grid { grid-template-columns: minmax(0, 1fr); }.person-profile-grid > div { grid-template-columns: 76px minmax(0, 1fr); }.person-account-actions { padding-left: 88px; } }
 .account-information > label { display: flex; flex-direction: column; gap: 8px; font-size: calc(13px * var(--font-scale)); margin-bottom: 16px; }
 .account-information input { font-size: calc(14px * var(--font-scale)); }
 .account-information > p, .account-handoff-intro { color: var(--muted); font-size: calc(13px * var(--font-scale)); line-height: 1.7; }
@@ -444,6 +470,20 @@ body { background: var(--canvas-gradient); background-attachment: fixed; min-hei
 .account-handoff-intro { margin: 0 0 18px; }
 .personnel-toolbar { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .personnel-toolbar .button { white-space: nowrap; }
+.personnel-view-switch { display: flex; gap: 8px; margin: 0 24px 16px; }
+.personnel-view-switch button[aria-pressed='true'] { background: var(--surface-soft); border-color: var(--action-text); font-weight: 700; }
+.personnel-result-count { padding: 0 24px 16px; color: var(--muted); font-size: 13px; }
+.personnel-table-scroll { overflow-x: auto; margin: 0 24px 20px; border: 1px solid var(--border); border-radius: 10px; }
+.personnel-table { width: 100%; min-width: 1050px; table-layout: fixed; border-collapse: collapse; }
+.personnel-table th, .personnel-table td { height: auto; padding: 12px; text-align: left; vertical-align: top; white-space: normal; overflow-wrap: anywhere; border-bottom: 1px solid var(--border); font-size: 13px; }
+.personnel-table th { background: var(--surface-soft); }
+.personnel-table th:first-child { width: 18%; }.personnel-table th:nth-child(2) { width: 22%; }.personnel-table th:last-child { width: 20%; }
+.personnel-table small { display: block; color: var(--muted); margin-top: 6px; }
+.personnel-table .personnel-actions { gap: 8px 12px; }.personnel-table .text-button { font-size: 12px; }
+.personnel-row-actions { margin-top: 8px; }.personnel-row-actions summary { color: var(--action-text); cursor: pointer; }.personnel-row-actions[open] .personnel-actions { margin-top: 12px; display: flex; }
+.handover-guidance { padding: 14px; margin-bottom: 18px; background: var(--surface-soft); border: 1px solid var(--border); border-radius: 10px; }
+.handover-guidance p { margin: 8px 0 0; line-height: 1.6; }
+.avatar .saved-avatar { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
 .bulk-personnel-dialog { width: 900px; }
 .credential-tools-dialog[open] { display: flex; flex-direction: column; max-height: 90vh; overflow: hidden; }
 .credential-tools-dialog > form { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
@@ -456,6 +496,23 @@ dialog.editor-dialog.personnel-history-dialog { width: min(1120px, calc(100vw - 
 .credential-tools-dialog .dialog-body > fieldset, .credential-tools-dialog .dialog-body fieldset { border: 0; padding: 0; margin: 16px 0; min-width: 0; }
 .credential-tools-dialog fieldset > label { display: flex; flex-direction: column; gap: 8px; margin: 16px 0; font-size: calc(13px * var(--font-scale)); }
 .credential-list-label { display: flex; flex-direction: column; gap: 8px; }
+.delivery-controls { border: 0; margin: 0; padding: 0; display: flex; gap: 14px 20px; align-items: center; flex-wrap: wrap; }
+.dialog-body .delivery-controls .search-box { display: flex; flex-direction: row; flex: 1 1 260px; min-width: 180px; margin: 0; height: 42px; }
+.dialog-body .delivery-controls .search-box input { border: 0; border-radius: 0; padding: 0; height: 100%; box-shadow: none; background: transparent; }
+.dialog-body .delivery-controls .search-box svg { flex-shrink: 0; }
+.dialog-body .delivery-controls .delivery-checkbox { display: inline-flex; flex-direction: row; align-items: center; gap: 8px; margin: 0; font-size: 13px; white-space: nowrap; }
+.delivery-checkbox input, .delivery-accounts-table input[type='checkbox'] { width: 16px; height: 16px; padding: 0; }
+.delivery-count { font-size: 13px; color: var(--muted); margin: 16px 0; }
+.delivery-accounts-table { max-height: 360px; margin: 0; border: 1px solid var(--border); border-radius: 10px; }
+.delivery-accounts-table table { min-width: 700px; width: 100%; }
+.delivery-accounts-table th { position: sticky; top: 0; background: var(--surface-soft); }
+.delivery-accounts-table th:first-child, .delivery-accounts-table td:first-child { width: 58px; }
+.delivery-empty { padding: 28px 16px; text-align: center; border: 1px dashed var(--border); border-radius: 10px; }
+.delivery-empty h3 { margin: 0 0 10px; font-size: 16px; }.delivery-empty p { margin: 0; color: var(--muted); font-size: 13px; }
+.delivery-unavailable { margin-top: 22px; border-top: 1px solid var(--border); padding-top: 16px; }
+.delivery-unavailable summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+.creation-delivery-result { padding: 16px; margin-top: 18px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-soft); }
+.creation-delivery-result h3 { font-size: 15px; margin: 0; }
 .credential-delivery-actions > div { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
 .credential-delivery-actions > p { margin: 10px 0 0; font-size: calc(13px * var(--font-scale)); color: var(--muted); }
 .bulk-result-table { overflow-x: auto; max-height: 320px; margin-top: 16px; }
