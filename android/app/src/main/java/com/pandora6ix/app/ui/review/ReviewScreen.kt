@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -76,6 +77,7 @@ import com.pandora6ix.app.data.businessDateTimeLabel
 import com.pandora6ix.app.data.TagDto
 import com.pandora6ix.app.data.TaskRepository
 import com.pandora6ix.app.data.TaskReviewDto
+import com.pandora6ix.app.data.reviewResultKey
 import com.pandora6ix.app.ui.calendar.tagHexColor
 import com.pandora6ix.app.ui.theme.CoralDark
 import com.pandora6ix.app.ui.theme.CreamDeep
@@ -103,29 +105,49 @@ import java.util.UUID
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ReviewScreen(taskRepo: TaskRepository, availableTags: List<TagDto>, businessTimezone: String? = null, userRepo: UserRepository? = null, canReview: Boolean = true, onBack: () -> Unit) {
+fun ReviewScreen(taskRepo: TaskRepository, availableTags: List<TagDto>, businessTimezone: String? = null, userRepo: UserRepository? = null, canReview: Boolean = true, readResultKeys: Set<String> = emptySet(), refreshRevision: Int = 0, onResultRead: (TaskReviewDto) -> Unit = {}, onBack: () -> Unit) {
     // 无审批权限时直接隐藏"待我审批"入口，仅展示自己提交的申请
     var scope by rememberSaveable { mutableStateOf(if (canReview) "pending" else "created") }
-    var items by remember { mutableStateOf<List<TaskReviewDto>>(emptyList()) }
-    var nextCursor by remember { mutableStateOf<String?>(null) }
+    var items by remember(scope) { mutableStateOf<List<TaskReviewDto>>(emptyList()) }
+    var nextCursor by remember(scope) { mutableStateOf<String?>(null) }
+    var loadedPageCount by remember(scope) { mutableStateOf(0) }
+    // 位于详情分支之外，进入详情时不会随 LazyColumn 一同销毁。
+    val listState = rememberSaveable(scope, saver = LazyListState.Saver) { LazyListState() }
     var loading by remember { mutableStateOf(true) }
     var loadError by remember { mutableStateOf<String?>(null) }
     // 403 无权限：重试无意义，改为引导查看自己提交的申请
     var loadDenied by remember { mutableStateOf(false) }
     var loadRetry by remember { mutableStateOf(0) }
     var selected by remember { mutableStateOf<TaskReviewDto?>(null) }
+    var loadGeneration by remember { mutableStateOf(0) }
     val uiScope = rememberCoroutineScope()
 
     fun load(append: Boolean, cursor: String? = null) {
+        val generation = ++loadGeneration
+        val requestedScope = scope
+        val pagesToRefresh = loadedPageCount.coerceAtLeast(1)
         loading = true; loadError = null
         uiScope.launch {
             try {
-                val page = taskRepo.reviews(scope, cursor = cursor)
-                items = if (append) items + page.items else page.items
-                nextCursor = page.nextCursor
+                val window = if (append) {
+                    val page = taskRepo.reviews(requestedScope, cursor = cursor)
+                    ReviewListWindow((items + page.items).distinctBy { it.id }, page.nextCursor, pagesToRefresh + 1)
+                } else {
+                    refreshReviewWindow(pagesToRefresh) { pageCursor ->
+                        taskRepo.reviews(requestedScope, cursor = pageCursor)
+                    }
+                }
+                if (generation != loadGeneration || requestedScope != scope) return@launch
+                items = window.items
+                nextCursor = window.nextCursor
+                loadedPageCount = window.pageCount
+                loadDenied = false
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: SessionExpiredException) {
                 // 401 已由全局回调处理
             } catch (e: Exception) {
+                if (generation != loadGeneration || requestedScope != scope) return@launch
                 val api = e as? ApiException
                 loadDenied = api?.httpStatus == 403
                 loadError = when {
@@ -133,13 +155,16 @@ fun ReviewScreen(taskRepo: TaskRepository, availableTags: List<TagDto>, business
                     api != null -> api.friendlyMessage()
                     else -> "加载失败，请重试"
                 }
-                if (!append) items = emptyList()
+                // 刷新中间页失败时保留完整的旧窗口；权限失效则隐藏旧内容。
+                if (loadDenied) { items = emptyList(); nextCursor = null; loadedPageCount = 0 }
             } finally {
-                loading = false
+                if (generation == loadGeneration) loading = false
             }
         }
     }
-    LaunchedEffect(scope, loadRetry) { load(append = false) }
+    LaunchedEffect(scope, loadRetry, refreshRevision, selected?.id) {
+        if (selected == null) load(append = false)
+    }
 
     selected?.let { review ->
         ReviewDetail(review, taskRepo, availableTags, businessTimezone, userRepo, onBack = { selected = null }, onChanged = { load(append = false) })
@@ -149,7 +174,7 @@ fun ReviewScreen(taskRepo: TaskRepository, availableTags: List<TagDto>, business
     // 背景与设置页一致（主题 dashboard 色），避免同一主题下不同页面底色深浅不一
     Column(Modifier.fillMaxSize().background(WarmDashboard)) {
         TopAppBar(
-            title = { Column { Text("审批中心", fontWeight = FontWeight.Bold); Text("任务申请与审批结果", fontSize = 12.sp, color = Ink.copy(alpha = .6f)) } },
+            title = { Text("审批中心", fontWeight = FontWeight.Bold, maxLines = 1) },
             navigationIcon = { IconButton(onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") } },
             colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
         )
@@ -160,7 +185,7 @@ fun ReviewScreen(taskRepo: TaskRepository, availableTags: List<TagDto>, business
         Box(Modifier.fillMaxSize()) {
             when {
                 loading && items.isEmpty() -> CircularProgressIndicator(Modifier.align(Alignment.Center).size(36.dp), color = WarmOrange)
-                loadError != null -> Column(Modifier.align(Alignment.Center).padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                loadError != null && items.isEmpty() -> Column(Modifier.align(Alignment.Center).padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(loadError!!, color = Ink.copy(alpha = .7f), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                     Spacer(Modifier.height(12.dp))
                     if (loadDenied) OutlinedButton({ scope = "created" }) { Text("查看我提交的") }
@@ -170,9 +195,21 @@ fun ReviewScreen(taskRepo: TaskRepository, availableTags: List<TagDto>, business
                     if (scope == "pending") "暂无待审批的申请" else "暂无提交的申请",
                     Modifier.align(Alignment.Center), color = Ink.copy(alpha = .5f)
                 )
-                else -> LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                else -> LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     items(items, key = { it.id }) { review ->
-                        ReviewCard(review, businessTimezone) { selected = review }
+                        val unread = scope == "created" && reviewResultKey(review)?.let { it !in readResultKeys } == true
+                        ReviewCard(review, businessTimezone, unread) {
+                            if (scope == "created") onResultRead(review)
+                            selected = review
+                        }
+                    }
+                    if (loadError != null) {
+                        item(key = "review-load-error") {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                                Text(loadError!!, color = Ink.copy(alpha = .7f))
+                                OutlinedButton({ loadRetry++ }, enabled = !loading) { Text("重试") }
+                            }
+                        }
                     }
                     nextCursor?.let { cursor ->
                         item {
@@ -201,13 +238,14 @@ private fun QueueTab(label: String, selected: Boolean, modifier: Modifier = Modi
 }
 
 @Composable
-private fun ReviewCard(review: TaskReviewDto, businessTimezone: String?, onOpen: () -> Unit) {
+private fun ReviewCard(review: TaskReviewDto, businessTimezone: String?, unread: Boolean = false, onOpen: () -> Unit) {
     val snapshot = parseSnapshot(review.submittedSnapshot)
     Card(Modifier.fillMaxWidth().clickable(onClick = onOpen), colors = CardDefaults.cardColors(containerColor = WarmCard), shape = RoundedCornerShape(16.dp)) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(snapshot.title.ifBlank { "未命名任务" }, Modifier.weight(1f), fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 DecisionBadge(review.decision)
+                if (unread) Text("新结果", color = WarmOrange, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("${kindLabel(snapshot.kind)} · 请求人 ${personName(review.submittedByName, review.submittedByUserId)}", fontSize = 12.sp, color = Ink.copy(alpha = .6f))

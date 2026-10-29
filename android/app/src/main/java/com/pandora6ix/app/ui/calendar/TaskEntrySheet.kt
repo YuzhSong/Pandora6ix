@@ -352,21 +352,30 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
                         val selected = tag.name in tags
                         val isPrimary = selected && tags.first() == tag.name
                         Row(
-                            // 选中行整行高亮，勾选状态一目了然
-                            Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(if (selected) CreamDeep else Color.Transparent).clickable { tags = if (selected) tags - tag.name else tags + tag.name }.padding(horizontal = 4.dp, vertical = 6.dp),
+                            // 用勾选表示选择状态，操作区始终占位，避免选中后变色或撑宽弹窗。
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { tags = if (selected) tags - tag.name else tags + tag.name }.padding(horizontal = 4.dp, vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Box(Modifier.size(14.dp).clip(CircleShape).background(tagHexColor(tag.colorHex)))
                             Spacer(Modifier.width(10.dp))
                             Text(tag.name, Modifier.weight(1f), fontSize = 15.sp)
-                            if (selected) {
-                                if (isPrimary) {
-                                    Text("主标签", fontSize = 12.sp, color = Ink.copy(alpha = .6f))
-                                } else {
-                                    TextButton({ tags = listOf(tag.name) + (tags - tag.name) }, contentPadding = PaddingValues(horizontal = 8.dp)) { Text("设为主", fontSize = 12.sp, color = WarmOrange) }
+                            Box(Modifier.width(72.dp).height(40.dp), contentAlignment = Alignment.Center) {
+                                if (selected) {
+                                    if (isPrimary) {
+                                        Text("主标签", fontSize = 12.sp, color = Ink.copy(alpha = .6f))
+                                    } else {
+                                        TextButton(
+                                            { tags = listOf(tag.name) + (tags - tag.name) },
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentPadding = PaddingValues(0.dp),
+                                            colors = ButtonDefaults.textButtonColors(contentColor = Ink.copy(alpha = .65f))
+                                        ) { Text("设为主", fontSize = 12.sp) }
+                                    }
                                 }
-                                Spacer(Modifier.width(6.dp))
-                                Icon(Icons.Default.Check, "已选", Modifier.size(18.dp), tint = Ink)
+                            }
+                            Spacer(Modifier.width(6.dp))
+                            Box(Modifier.size(18.dp), contentAlignment = Alignment.Center) {
+                                if (selected) Icon(Icons.Default.Check, "已选", Modifier.size(18.dp), tint = Ink)
                             }
                         }
                     }

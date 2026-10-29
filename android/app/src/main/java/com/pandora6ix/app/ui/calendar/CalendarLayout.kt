@@ -2,6 +2,7 @@ package com.pandora6ix.app.ui.calendar
 
 import com.pandora6ix.app.data.TaskItem
 import com.pandora6ix.app.mock.*
+import java.util.Calendar
 
 enum class CalendarMode(val label: String) { DAY("日视图"), WEEK("周视图"), MONTH("月视图"), YEAR("年视图") }
 data class TaskSegment(val task: TaskItem, val first: Int, val last: Int)
@@ -25,7 +26,15 @@ fun monthWeeks(date: DemoDate): List<List<DemoDate>> {
     val monday = mondayOfWeek(first)
     val last = first.plusMonths(1).plusDays(-1)
     val count = ((daysBetween(monday, last) + 7) / 7) * 7
-    return (0 until count).map { monday.plusDays(it) }.chunked(7)
+    val calendar = Calendar.getInstance().apply {
+        clear()
+        set(monday.year, monday.month - 1, monday.day, 12, 0, 0)
+    }
+    return List(count) {
+        val date = DemoDate(calendar.get(Calendar.YEAR), calendar.get(Calendar.MONTH) + 1, calendar.get(Calendar.DAY_OF_MONTH))
+        calendar.add(Calendar.DAY_OF_MONTH, 1)
+        date
+    }.chunked(7)
 }
 
 fun packTaskRows(tasks: List<TaskItem>, dates: List<DemoDate>): List<List<TaskSegment>> {
@@ -42,6 +51,11 @@ fun packTaskRows(tasks: List<TaskItem>, dates: List<DemoDate>): List<List<TaskSe
 }
 
 fun isAllDay(task: TaskItem) = task.startMinute == null || task.endMinute == null
+// 日/周视图将全天任务映射为整日高度，不修改原任务时间数据。
+fun timelineTimeRangeOnDate(task: TaskItem, date: DemoDate): IntRange? =
+    if (isAllDay(task)) {
+        if (date >= task.start && date <= task.end) 0 until 1440 else null
+    } else timeRangeOnDate(task, date)
 fun minuteLabel(value: Int): String = "%02d:%02d".format(value / 60, value % 60)
 fun taskTimeLabel(task: TaskItem): String = if (isAllDay(task)) "全天" else "${minuteLabel(task.startMinute!!)}—${minuteLabel(task.endMinute!!)}"
 fun timeRangeOnDate(task: TaskItem, date: DemoDate): IntRange? {
@@ -49,6 +63,24 @@ fun timeRangeOnDate(task: TaskItem, date: DemoDate): IntRange? {
     val from = if (date == task.start) task.startMinute!! else 0
     val until = if (date == task.end) task.endMinute!! else 1440
     return from until until
+}
+
+data class TimedTaskPlacement(val task: TaskItem, val range: IntRange, val depth: Int)
+
+fun timelineTasksAt(tasks: List<TaskItem>, date: DemoDate, minute: Int): List<TaskItem> =
+    if (minute !in 0 until 1440) emptyList() else staggerTimedTasks(tasks, date)
+        .filter { minute in it.range }.map { it.task }.distinctBy { it.id }
+
+fun staggerTimedTasks(tasks: List<TaskItem>, date: DemoDate): List<TimedTaskPlacement> {
+    val entries = tasks.mapNotNull { task ->
+        timelineTimeRangeOnDate(task, date)?.takeUnless { it.isEmpty() }?.let { TimedTaskPlacement(task, it, 0) }
+    }.sortedWith(compareBy<TimedTaskPlacement> { it.range.first }
+        .thenByDescending { it.range.last }.thenBy { it.task.id })
+    val active = mutableListOf<TimedTaskPlacement>()
+    return entries.map { entry ->
+        active.removeAll { it.range.last < entry.range.first }
+        entry.copy(depth = (active.maxOfOrNull { it.depth } ?: -1) + 1).also { active.add(it) }
+    }
 }
 
 fun validTaskInterval(start: DemoDate, end: DemoDate, startMinute: Int?, endMinute: Int?): Boolean {

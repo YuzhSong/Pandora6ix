@@ -16,6 +16,8 @@ import android.widget.Toast
 import org.json.JSONObject
 import cn.jpush.android.api.JPushInterface
 import androidx.activity.ComponentActivity
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -24,6 +26,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ScrollState
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -58,6 +61,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -76,6 +80,7 @@ import com.pandora6ix.app.ui.review.ReviewScreen
 import com.pandora6ix.app.ui.task.ProgressSheet
 import com.pandora6ix.app.ui.tags.TagManageScreen
 import com.pandora6ix.app.ui.logs.JournalDatePickerDialog
+import com.pandora6ix.app.ui.logs.JournalEntryField
 import com.pandora6ix.app.ui.theme.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -210,7 +215,7 @@ private fun leadLabel(minutes: Int): String {
     }
 }
 
-/** 底部导航图标：待审批数 > 0 时在“我的”图标上挂数字角标（99+ 封顶） */
+/** 底部导航图标：待审批与未读结果在“我的”图标上挂数字角标（99+ 封顶） */
 @Composable
 private fun MeNavIcon(item: NavItem, badgeCount: Int) {
     if (item.route == Route.ME && badgeCount > 0) {
@@ -249,6 +254,8 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository, noti
         var fontScale by rememberSaveable { mutableStateOf(1f) }
         var themeKey by rememberSaveable { mutableStateOf("warm") }
         var currentUser by remember { mutableStateOf<UserDto?>(null) }
+        // 子页面替换“我的”时仍保留滚动位置，退出登录或切换账号时重置。
+        val profileScrollState = rememberSaveable(currentUser?.id, saver = ScrollState.Saver) { ScrollState(0) }
         var authChecked by remember { mutableStateOf(false) }
         // 标签增改删权限：与服务端一致（仅 FOUNDER/DEPARTMENT_MANAGER）；未来接入 capabilities 后再细分
         val tagManager = currentUser?.capabilities?.createTags == true
@@ -360,20 +367,37 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository, noti
                 }
             }
         }
-        // 待我审批数量：审批中心入口角标 + 底部导航“我的”红点（仅审批能力用户加载；超过一页按 99+ 显示）
+        val reviewReads = remember(currentUser?.id) { ReviewResultReads(appContext, currentUser?.id ?: "anon") }
+        var readReviewKeys by remember(reviewReads) { mutableStateOf(reviewReads.keys()) }
+        var unreadReviewKeys by remember(reviewReads) { mutableStateOf(emptySet<String>()) }
+        var reviewRefreshRevision by remember(reviewReads) { mutableIntStateOf(0) }
+        // 两项独立刷新：查询失败保留上次成功结果。
         var pendingReviewCount by remember(currentUser?.id, currentUser?.capabilities?.reviewTasks) { mutableStateOf(0) }
-        // 登录后、切换页签、关闭审批中心（可能已批准/驳回）时刷新角标
+        val reviewBadgeCount = (pendingReviewCount + (unreadReviewKeys - readReviewKeys).size).coerceAtMost(99)
         LaunchedEffect(currentUser?.id, authChecked, currentUser?.capabilities?.reviewTasks, current, showReviews) {
-            pendingReviewCount = 0
-            if (currentUser != null && authChecked && currentUser?.capabilities?.reviewTasks == true) {
-                try {
-                    val page = taskRepo.reviews("pending", limit = 100)
-                    coroutineContext.ensureActive()
-                    pendingReviewCount = if (page.nextCursor != null) 99 else page.items.size
-                } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                    throw cancelled
-                } catch (_: Exception) {
-                    pendingReviewCount = 0
+            if (currentUser == null || !authChecked) return@LaunchedEffect
+            (appContext as ComponentActivity).lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                while (true) {
+                    if (currentUser?.capabilities?.reviewTasks == true) {
+                        try {
+                            val page = taskRepo.reviews("pending", limit = 100)
+                            coroutineContext.ensureActive()
+                            pendingReviewCount = if (page.nextCursor != null) 99 else page.items.size
+                        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                            throw cancelled
+                        } catch (_: Exception) { }
+                    }
+                    try {
+                        val keys = unreadReviewResults(reviewReads.keys()) { cursor ->
+                            taskRepo.reviews("created", cursor = cursor, limit = 100)
+                        }
+                        coroutineContext.ensureActive()
+                        unreadReviewKeys = keys
+                        reviewRefreshRevision++
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) { }
+                    kotlinx.coroutines.delay(30_000)
                 }
             }
         }
@@ -427,10 +451,11 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository, noti
         var calRetry by remember { mutableStateOf(0) }
         // 所有视图任务范围：mine=我的任务 / managed=我管理的 / created=我创建的
         var taskScope by rememberSaveable { mutableStateOf("mine") }
-        LaunchedEffect(current, modeName, dateKey, currentUser?.id, calRetry, taskScope) {
+        val calendarAnchor = calendarQueryDate(CalendarMode.valueOf(modeName), date)
+        LaunchedEffect(current, modeName, calendarAnchor, currentUser?.id, calRetry, taskScope) {
             if (current != Route.VIEW || currentUser == null) return@LaunchedEffect
             calLoading = true; calError = null
-            val anchor = "%04d-%02d-%02d".format(date.year, date.month, date.day)
+            val anchor = "%04d-%02d-%02d".format(calendarAnchor.year, calendarAnchor.month, calendarAnchor.day)
             try {
                 val loaded = when (CalendarMode.valueOf(modeName)) {
                     CalendarMode.DAY -> calendarRepo.calendar("day", anchor, scope = taskScope).tasks
@@ -438,9 +463,12 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository, noti
                     CalendarMode.MONTH -> calendarRepo.calendar("month", anchor, scope = taskScope).tasks
                     CalendarMode.YEAR -> calendarRepo.tasks(scope = taskScope, from = "%04d-01-01".format(date.year), to = "%04d-12-31".format(date.year)).items
                 }
+                coroutineContext.ensureActive()
                 taskItems.clear(); taskItems.addAll(loaded.map { it.toTaskItem() })
                 taskDtoById.clear(); taskDtoById.putAll(loaded.associateBy { it.id })
                 calNotice = null
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (e: SessionExpiredException) {
                 // 401 已由全局回调处理
             } catch (e: Exception) {
@@ -455,7 +483,7 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository, noti
                 }
                 taskItems.clear(); taskDtoById.clear()
             } finally {
-                calLoading = false
+                if (coroutineContext[kotlinx.coroutines.Job]?.isActive == true) calLoading = false
             }
         }
         // 创建入口由 /me.capabilities 驱动：个人/派发能力分别控制任务类型；具体命令仍由服务端校验
@@ -480,7 +508,7 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository, noti
                 route = Route.HOME.name; detail = null; homeDetail = null; showSettings = false; showReviews = false
             }
             else -> CompositionLocalProvider(LocalAppTheme provides theme, LocalDensity provides scaledDensity) {
-        Scaffold(containerColor = theme.background, bottomBar = { NavigationBar(containerColor = theme.backgroundDeep) { nav.forEach { item -> NavigationBarItem(selected = current == item.route, onClick = { route = item.route.name; detail = null; homeDetail = null; journalDetailId = null; showSettings = false; showReviews = false; showTagManage = false; progressTaskId = null }, icon = { MeNavIcon(item, pendingReviewCount) }, label = { Text(item.label, fontSize = 11.sp) }, colors = NavigationBarItemDefaults.colors(selectedIconColor = WarmOrange, selectedTextColor = WarmOrange, indicatorColor = theme.backgroundDeep)) } } }) { padding ->
+        Scaffold(containerColor = theme.background, bottomBar = { NavigationBar(containerColor = theme.backgroundDeep) { nav.forEach { item -> NavigationBarItem(selected = current == item.route, onClick = { route = item.route.name; detail = null; homeDetail = null; journalDetailId = null; showSettings = false; showReviews = false; showTagManage = false; progressTaskId = null }, icon = { MeNavIcon(item, reviewBadgeCount) }, label = { Text(item.label, fontSize = 11.sp) }, colors = NavigationBarItemDefaults.colors(selectedIconColor = WarmOrange, selectedTextColor = WarmOrange, indicatorColor = theme.backgroundDeep)) } } }) { padding ->
             Surface(Modifier.padding(padding).fillMaxSize(), color = theme.background) {
                 when {
                     homeDetail != null -> HomeItemDetailScreen(dashboardRepo, homeDetail!!) { homeDetail = null }
@@ -508,7 +536,15 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository, noti
                         onLoggedOut = { currentUser = null },
                         onClose = { showSettings = false }
                     )
-                    showReviews -> ReviewScreen(taskRepo, serverTags, currentUser?.businessTimezone, userRepo, canReview = canReviewTasks) { showReviews = false }
+                    showReviews -> key(currentUser?.id) {
+                        ReviewScreen(taskRepo, serverTags, currentUser?.businessTimezone, userRepo,
+                            canReview = canReviewTasks, readResultKeys = readReviewKeys,
+                            refreshRevision = reviewRefreshRevision,
+                            onResultRead = { review ->
+                                reviewReads.markRead(review)
+                                readReviewKeys = reviewReads.keys()
+                            }) { showReviews = false }
+                    }
                     showTagManage -> TagManageScreen(
                         tagRepo,
                         // 与服务端一致的权限：仅 FOUNDER/DEPARTMENT_MANAGER 可建/改/删；无权限者根本进不了此页
@@ -536,7 +572,7 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository, noti
                             Route.VIEW -> CalendarScreen(CalendarMode.valueOf(modeName), date, taskItems, canCreatePersonal, canCreateDelegated, serverTags, taskRepo, { modeName = it.name }, { dateKey = "${it.year}-${it.month}-${it.day}" }, { calRetry++ }, { detail = it.id }, taskScope = taskScope, onTaskScopeChange = { taskScope = it; calNotice = null }, currentUser = currentUser, canReviewTasks = canReviewTasks, businessTimezone = currentUser?.businessTimezone, loading = calLoading, error = calError, onRetry = { calRetry++ }, notice = calNotice)
                             Route.LOGS -> LogsScreen(journalRepo, serverTags.toList(), currentUser?.businessTimezone) { journalDetailId = it }
                             Route.AI -> AiMapScreen()
-                            Route.ME -> ProfileScreen(currentUser!!, statistics, notifyMaster, showReviewCenter, pendingReviewCount, tagManager, userRepo, onOpenTagManage = { showTagManage = true }, onOpenReviews = { showReviews = true }, onOpenSettings = { showSettings = true })
+                            Route.ME -> ProfileScreen(currentUser!!, statistics, notifyMaster, showReviewCenter, reviewBadgeCount, tagManager, userRepo, scrollState = profileScrollState, onOpenTagManage = { showTagManage = true }, onOpenReviews = { showReviews = true }, onOpenSettings = { showSettings = true })
                         }
                     }
                 }
@@ -1449,15 +1485,15 @@ private data class EntryDraft(val entryId: String?, val content: String)
         if (writing) {
             androidx.activity.compose.BackHandler { closeEditor() }
             val imeVisible = WindowInsets.isImeVisible
+            val journalFocusManager = LocalFocusManager.current
             // 底部对齐 + 导航栏/键盘避让：弹窗直接落在键盘（或导航栏）上方，不再留出一段空白
             Box(Modifier.fillMaxSize()) {
             Card(Modifier.align(Alignment.BottomCenter).navigationBarsPadding().imePadding().fillMaxWidth(.9f).fillMaxHeight(if (imeVisible) .92f else .9f).border(2.dp, CreamDeep, RoundedCornerShape(24.dp)).clickable { }, shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = WarmCard)) {
                 Column(Modifier.fillMaxSize().padding(20.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) { Text(if (editingJournal != null) "编辑日志" else "记录日志", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f)); IconButton({ closeEditor() }) { Icon(Icons.Default.Close, "关闭") } }
                     Text("日志在创建当天内可修改或删除（按公司业务时区）", fontSize = 12.sp, color = Ink.copy(alpha = .6f))
-                    if (imeVisible) {
-                        Text(parseIsoDate(editorDateKey)?.shortLabelWithWeekday() ?: "", Modifier.padding(top = 2.dp, bottom = 8.dp), color = Ink.copy(alpha = .6f), fontSize = 13.sp)
-                    } else {
+                    // 日期、标签与工作条目共用滚动视口，标签再多也不会挤掉输入区。
+                    Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())) {
                         Text("· 日志日期", fontWeight = FontWeight.Bold)
                         Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             threeDays().forEach { d ->
@@ -1475,22 +1511,26 @@ private data class EntryDraft(val entryId: String?, val content: String)
                         }
                         val editorEditable = editingJournal == null || "EDIT" in editingJournal!!.allowedActions
                         if (!editorEditable) Text("补交日志已提交，不能再次修改。今日的日志可在今日内修改。", fontSize = 12.sp, color = Ink.copy(alpha = .55f))
-                        Text("· 标签（可多选，先选的为主）", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp, bottom = 6.dp))
+                        Text("· 标签（可多选，可切换主标签）", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp, bottom = 6.dp))
                         if (tags.isNotEmpty()) FlowRow(Modifier.fillMaxWidth().padding(vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             tags.forEach { name ->
                                 val tagColor = availableTags.firstOrNull { it.name == name }?.let { tagHexColor(it.colorHex) } ?: CreamDeep
                                 FilterChip(selected = true, onClick = { tags = tags - name }, label = { Text(name, fontSize = 13.sp) }, colors = FilterChipDefaults.filterChipColors(containerColor = tagColor, labelColor = Ink, selectedContainerColor = tagColor, selectedLabelColor = Ink))
                             }
                         }
-                        OutlinedButton({ showTagPicker = true }, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp), border = BorderStroke(1.dp, HairLine), colors = ButtonDefaults.outlinedButtonColors(contentColor = Ink)) { Icon(Icons.Default.Add, "选择标签", Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("选择标签", fontSize = 13.sp) }
-                    }
-                    // 「完成的工作」标题放在键盘分支之外：输入时也保留，避免这一节看起来"消失/显示不全"
-                    Text("· 完成的工作", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = if (imeVisible) 4.dp else 12.dp, bottom = 6.dp))
-                    Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        entryDrafts.forEachIndexed { i, draft ->
-                            Row(verticalAlignment = Alignment.Top) {
-                                OutlinedTextField(draft.content, { value -> entryDrafts = entryDrafts.toMutableList().also { it[i] = draft.copy(content = value) } }, Modifier.weight(1f), placeholder = { Text(if (editingJournal == null) "第 ${i + 1} 条：记录完成的工作" else "第 ${i + 1} 条") }, colors = mutedColors, minLines = 2)
-                                if (editingJournal == null && entryDrafts.size > 1) IconButton({ entryDrafts = entryDrafts.filterIndexed { idx, _ -> idx != i } }, Modifier.size(40.dp)) { Icon(Icons.Default.Close, "删除此条", Modifier.size(16.dp)) }
+                        OutlinedButton({ journalFocusManager.clearFocus(force = true); showTagPicker = true }, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp), border = BorderStroke(1.dp, HairLine), colors = ButtonDefaults.outlinedButtonColors(contentColor = Ink)) { Icon(Icons.Default.Add, "选择标签", Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("选择标签", fontSize = 13.sp) }
+                        Text("· 完成的工作", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp, bottom = 6.dp))
+                        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            entryDrafts.forEachIndexed { i, draft ->
+                                Row(verticalAlignment = Alignment.Top) {
+                                    JournalEntryField(
+                                        text = draft.content,
+                                        onValueChange = { value -> entryDrafts = entryDrafts.toMutableList().also { it[i] = draft.copy(content = value) } },
+                                        colors = mutedColors,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    if (editingJournal == null && entryDrafts.size > 1) IconButton({ entryDrafts = entryDrafts.filterIndexed { idx, _ -> idx != i } }, Modifier.size(40.dp)) { Icon(Icons.Default.Close, "删除此条", Modifier.size(16.dp)) }
+                                }
                             }
                         }
                     }
@@ -1515,7 +1555,7 @@ private data class EntryDraft(val entryId: String?, val content: String)
         title = { Text("选择标签") },
         text = {
             Column {
-                Text("可多选；先选的为主标签。再次点击已选标签可取消。", fontSize = 12.sp, color = Ink.copy(alpha = .6f))
+                Text("可多选；点“设为主”可更换主标签。再次点击已选标签可取消。", fontSize = 12.sp, color = Ink.copy(alpha = .6f))
                 Spacer(Modifier.height(6.dp))
                 Column(Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())) {
                     if (availableTags.isEmpty()) Text("暂无标签，可在「我的 → 标签管理」中创建。", fontSize = 13.sp, color = Ink.copy(alpha = .5f))
@@ -1523,16 +1563,29 @@ private data class EntryDraft(val entryId: String?, val content: String)
                         val selected = tag.name in tags
                         val isPrimary = selected && tags.first() == tag.name
                         Row(
-                            Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { tags = if (selected) tags - tag.name else tags + tag.name }.padding(horizontal = 4.dp, vertical = 9.dp),
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { tags = if (selected) tags - tag.name else tags + tag.name }.padding(horizontal = 4.dp, vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Box(Modifier.size(14.dp).clip(CircleShape).background(tagHexColor(tag.colorHex)))
                             Spacer(Modifier.width(10.dp))
                             Text(tag.name, Modifier.weight(1f), fontSize = 15.sp)
-                            if (selected) {
-                                Text(if (isPrimary) "主标签" else "次标签", fontSize = 12.sp, color = Ink.copy(alpha = .6f))
-                                Spacer(Modifier.width(6.dp))
-                                Icon(Icons.Default.Check, "已选", Modifier.size(18.dp), tint = Ink)
+                            Box(Modifier.width(72.dp).height(40.dp), contentAlignment = Alignment.Center) {
+                                if (selected) {
+                                    if (isPrimary) {
+                                        Text("主标签", fontSize = 12.sp, color = Ink.copy(alpha = .6f))
+                                    } else {
+                                        TextButton(
+                                            { tags = listOf(tag.name) + (tags - tag.name) },
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentPadding = PaddingValues(0.dp),
+                                            colors = ButtonDefaults.textButtonColors(contentColor = Ink.copy(alpha = .65f))
+                                        ) { Text("设为主", fontSize = 12.sp) }
+                                    }
+                                }
+                            }
+                            Spacer(Modifier.width(6.dp))
+                            Box(Modifier.size(18.dp), contentAlignment = Alignment.Center) {
+                                if (selected) Icon(Icons.Default.Check, "已选", Modifier.size(18.dp), tint = Ink)
                             }
                         }
                     }
@@ -1796,7 +1849,7 @@ private fun JournalDetailScreen(repo: JournalRepository, journalId: String, busi
     }
 }
 @Composable private fun AiMapScreen() { Column(Modifier.fillMaxSize().padding(16.dp)) { PageHeader("AI地图"); Spacer(Modifier.height(48.dp)); Icon(Icons.Default.Info, null, Modifier.size(70.dp).align(Alignment.CenterHorizontally), tint = Coral); Text("AI 地图", Modifier.fillMaxWidth().padding(top = 18.dp), textAlign = TextAlign.Center, fontSize = 28.sp, fontWeight = FontWeight.Bold); Text("功能规划中", Modifier.fillMaxWidth().padding(top = 8.dp), textAlign = TextAlign.Center, color = Ink.copy(alpha = .6f)) } }
-@Composable private fun ProfileScreen(user: UserDto, statistics: StatisticsDto?, notificationsEnabled: Boolean, showReviewCenter: Boolean, pendingReviewCount: Int, canManageTags: Boolean, userRepo: UserRepository, onOpenTagManage: () -> Unit, onOpenReviews: () -> Unit, onOpenSettings: () -> Unit) {
+@Composable private fun ProfileScreen(user: UserDto, statistics: StatisticsDto?, notificationsEnabled: Boolean, showReviewCenter: Boolean, pendingReviewCount: Int, canManageTags: Boolean, userRepo: UserRepository, scrollState: ScrollState, onOpenTagManage: () -> Unit, onOpenReviews: () -> Unit, onOpenSettings: () -> Unit) {
     val context = LocalContext.current
     val avatarScope = rememberCoroutineScope()
     val prefs = remember { context.getSharedPreferences("profile_avatar_" + SessionStore(context).ownerId, Context.MODE_PRIVATE) }
@@ -1871,7 +1924,7 @@ private fun JournalDetailScreen(repo: JournalRepository, journalId: String, busi
     val displayName = user.displayName.ifBlank { user.name }.ifBlank { "未命名" }
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         PageHeader("我的")
-        Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(scrollState).padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = WarmCard), shape = RoundedCornerShape(20.dp), border = cardBorderIfBlended()) {
                 Row(Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.size(64.dp).clickable { showAvatarMenu = true }) {
@@ -1946,7 +1999,6 @@ private fun JournalDetailScreen(repo: JournalRepository, journalId: String, busi
                         ProfileInfoRow("任务总数", "${st.total}")
                         ProfileInfoRow("已完成", "${st.completed}")
                         ProfileInfoRow("未完成", "${st.uncompleted}")
-                        Text("口径：本人已批准任务；进度 100% 不计为完成。", fontSize = 12.sp, color = Ink.copy(alpha = .5f))
                     }
                 }
             }
@@ -2270,15 +2322,10 @@ private fun SettingsScreen(
                 Spacer(Modifier.height(18.dp))
                 // 通知提醒独立成一级分区：主开关 + 三个同级开关（提前量是截止时间临近的子项）
                 SettingsSectionLabel("通知提醒")
-                Text(
-                    "这里设置的是应用内提醒与系统通知：站内消息暂未开放，审批记录请到「我的 → 审批中心」查看。",
-                    Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp), fontSize = 12.sp, color = Ink.copy(alpha = .55f), lineHeight = 17.sp
-                )
                 SettingsCard {
                     SettingsRow(
                         icon = Icons.Default.Notifications,
                         title = "通知提醒",
-                        subtitle = "默认关闭，开启后按下方分项提醒",
                         onClick = { toggleMaster() }
                     ) {
                         Switch(
@@ -2306,7 +2353,6 @@ private fun SettingsScreen(
                         SettingsRow(
                             icon = Icons.Default.Assignment,
                             title = "新任务提醒",
-                            subtitle = "你被派发了新任务，或个人任务批准生效时提醒",
                             onClick = { onNewTaskChange(!newTaskEnabled) }
                         ) {
                             ReminderSwitch(newTaskEnabled, onNewTaskChange)
@@ -2315,7 +2361,6 @@ private fun SettingsScreen(
                         SettingsRow(
                             icon = Icons.Default.Schedule,
                             title = "截止时间临近",
-                            subtitle = "任务截止前 ${leadLabel(leadMinutes)}提醒；已完成任务不再提醒",
                             onClick = { onDeadlineChange(!deadlineEnabled) }
                         ) {
                             ReminderSwitch(deadlineEnabled, onDeadlineChange)
@@ -2325,7 +2370,6 @@ private fun SettingsScreen(
                             SubValueRow(
                                 icon = Icons.Default.Timelapse,
                                 title = "提前提醒时间",
-                                subtitle = "截止前多久提醒，可自定义到分钟",
                                 value = leadLabel(leadMinutes),
                                 onClick = { showLeadDialog = true }
                             )
@@ -2334,7 +2378,6 @@ private fun SettingsScreen(
                         SettingsRow(
                             icon = Icons.Default.SyncAlt,
                             title = "任务状态变化",
-                            subtitle = "他人更新了你参与任务的进度或验收结果时提醒",
                             onClick = { onStatusChangeChange(!statusChangeEnabled) }
                         ) {
                             ReminderSwitch(statusChangeEnabled, onStatusChangeChange)
@@ -2691,7 +2734,6 @@ private fun fontScaleLabel(s: Float): String = when {
 private fun SubValueRow(
     icon: ImageVector,
     title: String,
-    subtitle: String,
     value: String,
     onClick: () -> Unit
 ) {
@@ -2704,7 +2746,6 @@ private fun SubValueRow(
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
             Text(title, fontSize = 13.sp, color = Ink)
-            Text(subtitle, fontSize = 11.sp, color = Ink.copy(alpha = 0.5f), lineHeight = 16.sp)
         }
         Text(value, color = WarmOrange, fontSize = 13.sp)
         Spacer(Modifier.width(4.dp))
