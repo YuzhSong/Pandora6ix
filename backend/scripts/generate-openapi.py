@@ -167,7 +167,7 @@ def read_schemas():
     tagDeleted = obj({"tagId": ID})
     notification = obj({"id": ID, "kind": {"type": "string", "enum": ["NEW_TASK", "DEADLINE", "STATUS"]}, "eventType": STRING,
         "taskId": ID, "assignmentId": nullable(ID), "title": STRING, "body": STRING, "dedupeKey": STRING,
-        "dueAt": nullable(INSTANT), "createdAt": INSTANT, "readAt": nullable(INSTANT)})
+        "dueAt": nullable(INSTANT), "createdAt": INSTANT, "readAt": nullable(INSTANT), "resolved": BOOLEAN})
     reviewActor = obj({"id": ID, "displayName": nullable(STRING), "jobTitle": nullable(STRING)}, ("id", "displayName"))
     review = obj({**versioned, "reviewId": ID, "taskId": ID, "reviewerUserId": ID, "submittedByUserId": ID,
         "taskVersion": INTEGER, "currentTaskVersion": INTEGER, "attemptNo": INTEGER, "submittedAt": INSTANT,

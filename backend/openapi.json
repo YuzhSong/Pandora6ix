@@ -10046,6 +10046,9 @@
                 "type": "null"
               }
             ]
+          },
+          "resolved": {
+            "type": "boolean"
           }
         }
       },
