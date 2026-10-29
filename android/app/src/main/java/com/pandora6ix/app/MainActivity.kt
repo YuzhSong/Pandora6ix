@@ -16,6 +16,8 @@ import android.widget.Toast
 import org.json.JSONObject
 import cn.jpush.android.api.JPushInterface
 import androidx.activity.ComponentActivity
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -210,7 +212,7 @@ private fun leadLabel(minutes: Int): String {
     }
 }
 
-/** 底部导航图标：待审批数 > 0 时在“我的”图标上挂数字角标（99+ 封顶） */
+/** 底部导航图标：待审批与未读结果在“我的”图标上挂数字角标（99+ 封顶） */
 @Composable
 private fun MeNavIcon(item: NavItem, badgeCount: Int) {
     if (item.route == Route.ME && badgeCount > 0) {
@@ -360,20 +362,37 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository, noti
                 }
             }
         }
-        // 待我审批数量：审批中心入口角标 + 底部导航“我的”红点（仅审批能力用户加载；超过一页按 99+ 显示）
+        val reviewReads = remember(currentUser?.id) { ReviewResultReads(appContext, currentUser?.id ?: "anon") }
+        var readReviewKeys by remember(reviewReads) { mutableStateOf(reviewReads.keys()) }
+        var unreadReviewKeys by remember(reviewReads) { mutableStateOf(emptySet<String>()) }
+        var reviewRefreshRevision by remember(reviewReads) { mutableIntStateOf(0) }
+        // 两项独立刷新：查询失败保留上次成功结果。
         var pendingReviewCount by remember(currentUser?.id, currentUser?.capabilities?.reviewTasks) { mutableStateOf(0) }
-        // 登录后、切换页签、关闭审批中心（可能已批准/驳回）时刷新角标
+        val reviewBadgeCount = (pendingReviewCount + (unreadReviewKeys - readReviewKeys).size).coerceAtMost(99)
         LaunchedEffect(currentUser?.id, authChecked, currentUser?.capabilities?.reviewTasks, current, showReviews) {
-            pendingReviewCount = 0
-            if (currentUser != null && authChecked && currentUser?.capabilities?.reviewTasks == true) {
-                try {
-                    val page = taskRepo.reviews("pending", limit = 100)
-                    coroutineContext.ensureActive()
-                    pendingReviewCount = if (page.nextCursor != null) 99 else page.items.size
-                } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                    throw cancelled
-                } catch (_: Exception) {
-                    pendingReviewCount = 0
+            if (currentUser == null || !authChecked) return@LaunchedEffect
+            (appContext as ComponentActivity).lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                while (true) {
+                    if (currentUser?.capabilities?.reviewTasks == true) {
+                        try {
+                            val page = taskRepo.reviews("pending", limit = 100)
+                            coroutineContext.ensureActive()
+                            pendingReviewCount = if (page.nextCursor != null) 99 else page.items.size
+                        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                            throw cancelled
+                        } catch (_: Exception) { }
+                    }
+                    try {
+                        val keys = unreadReviewResults(reviewReads.keys()) { cursor ->
+                            taskRepo.reviews("created", cursor = cursor, limit = 100)
+                        }
+                        coroutineContext.ensureActive()
+                        unreadReviewKeys = keys
+                        reviewRefreshRevision++
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) { }
+                    kotlinx.coroutines.delay(30_000)
                 }
             }
         }
@@ -484,7 +503,7 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository, noti
                 route = Route.HOME.name; detail = null; homeDetail = null; showSettings = false; showReviews = false
             }
             else -> CompositionLocalProvider(LocalAppTheme provides theme, LocalDensity provides scaledDensity) {
-        Scaffold(containerColor = theme.background, bottomBar = { NavigationBar(containerColor = theme.backgroundDeep) { nav.forEach { item -> NavigationBarItem(selected = current == item.route, onClick = { route = item.route.name; detail = null; homeDetail = null; journalDetailId = null; showSettings = false; showReviews = false; showTagManage = false; progressTaskId = null }, icon = { MeNavIcon(item, pendingReviewCount) }, label = { Text(item.label, fontSize = 11.sp) }, colors = NavigationBarItemDefaults.colors(selectedIconColor = WarmOrange, selectedTextColor = WarmOrange, indicatorColor = theme.backgroundDeep)) } } }) { padding ->
+        Scaffold(containerColor = theme.background, bottomBar = { NavigationBar(containerColor = theme.backgroundDeep) { nav.forEach { item -> NavigationBarItem(selected = current == item.route, onClick = { route = item.route.name; detail = null; homeDetail = null; journalDetailId = null; showSettings = false; showReviews = false; showTagManage = false; progressTaskId = null }, icon = { MeNavIcon(item, reviewBadgeCount) }, label = { Text(item.label, fontSize = 11.sp) }, colors = NavigationBarItemDefaults.colors(selectedIconColor = WarmOrange, selectedTextColor = WarmOrange, indicatorColor = theme.backgroundDeep)) } } }) { padding ->
             Surface(Modifier.padding(padding).fillMaxSize(), color = theme.background) {
                 when {
                     homeDetail != null -> HomeItemDetailScreen(dashboardRepo, homeDetail!!) { homeDetail = null }
@@ -512,7 +531,15 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository, noti
                         onLoggedOut = { currentUser = null },
                         onClose = { showSettings = false }
                     )
-                    showReviews -> ReviewScreen(taskRepo, serverTags, currentUser?.businessTimezone, userRepo, canReview = canReviewTasks) { showReviews = false }
+                    showReviews -> key(currentUser?.id) {
+                        ReviewScreen(taskRepo, serverTags, currentUser?.businessTimezone, userRepo,
+                            canReview = canReviewTasks, readResultKeys = readReviewKeys,
+                            refreshRevision = reviewRefreshRevision,
+                            onResultRead = { review ->
+                                reviewReads.markRead(review)
+                                readReviewKeys = reviewReads.keys()
+                            }) { showReviews = false }
+                    }
                     showTagManage -> TagManageScreen(
                         tagRepo,
                         // 与服务端一致的权限：仅 FOUNDER/DEPARTMENT_MANAGER 可建/改/删；无权限者根本进不了此页
@@ -540,7 +567,7 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository, noti
                             Route.VIEW -> CalendarScreen(CalendarMode.valueOf(modeName), date, taskItems, canCreatePersonal, canCreateDelegated, serverTags, taskRepo, { modeName = it.name }, { dateKey = "${it.year}-${it.month}-${it.day}" }, { calRetry++ }, { detail = it.id }, taskScope = taskScope, onTaskScopeChange = { taskScope = it; calNotice = null }, currentUser = currentUser, canReviewTasks = canReviewTasks, businessTimezone = currentUser?.businessTimezone, loading = calLoading, error = calError, onRetry = { calRetry++ }, notice = calNotice)
                             Route.LOGS -> LogsScreen(journalRepo, serverTags.toList(), currentUser?.businessTimezone) { journalDetailId = it }
                             Route.AI -> AiMapScreen()
-                            Route.ME -> ProfileScreen(currentUser!!, statistics, notifyMaster, showReviewCenter, pendingReviewCount, tagManager, userRepo, onOpenTagManage = { showTagManage = true }, onOpenReviews = { showReviews = true }, onOpenSettings = { showSettings = true })
+                            Route.ME -> ProfileScreen(currentUser!!, statistics, notifyMaster, showReviewCenter, reviewBadgeCount, tagManager, userRepo, onOpenTagManage = { showTagManage = true }, onOpenReviews = { showReviews = true }, onOpenSettings = { showSettings = true })
                         }
                     }
                 }

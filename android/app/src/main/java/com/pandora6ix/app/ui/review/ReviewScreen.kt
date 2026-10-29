@@ -76,6 +76,7 @@ import com.pandora6ix.app.data.businessDateTimeLabel
 import com.pandora6ix.app.data.TagDto
 import com.pandora6ix.app.data.TaskRepository
 import com.pandora6ix.app.data.TaskReviewDto
+import com.pandora6ix.app.data.reviewResultKey
 import com.pandora6ix.app.ui.calendar.tagHexColor
 import com.pandora6ix.app.ui.theme.CoralDark
 import com.pandora6ix.app.ui.theme.CreamDeep
@@ -103,7 +104,7 @@ import java.util.UUID
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ReviewScreen(taskRepo: TaskRepository, availableTags: List<TagDto>, businessTimezone: String? = null, userRepo: UserRepository? = null, canReview: Boolean = true, onBack: () -> Unit) {
+fun ReviewScreen(taskRepo: TaskRepository, availableTags: List<TagDto>, businessTimezone: String? = null, userRepo: UserRepository? = null, canReview: Boolean = true, readResultKeys: Set<String> = emptySet(), refreshRevision: Int = 0, onResultRead: (TaskReviewDto) -> Unit = {}, onBack: () -> Unit) {
     // 无审批权限时直接隐藏"待我审批"入口，仅展示自己提交的申请
     var scope by rememberSaveable { mutableStateOf(if (canReview) "pending" else "created") }
     var items by remember { mutableStateOf<List<TaskReviewDto>>(emptyList()) }
@@ -114,18 +115,26 @@ fun ReviewScreen(taskRepo: TaskRepository, availableTags: List<TagDto>, business
     var loadDenied by remember { mutableStateOf(false) }
     var loadRetry by remember { mutableStateOf(0) }
     var selected by remember { mutableStateOf<TaskReviewDto?>(null) }
+    var loadGeneration by remember { mutableStateOf(0) }
     val uiScope = rememberCoroutineScope()
 
     fun load(append: Boolean, cursor: String? = null) {
+        val generation = ++loadGeneration
+        val requestedScope = scope
         loading = true; loadError = null
         uiScope.launch {
             try {
-                val page = taskRepo.reviews(scope, cursor = cursor)
+                val page = taskRepo.reviews(requestedScope, cursor = cursor)
+                if (generation != loadGeneration || requestedScope != scope) return@launch
                 items = if (append) items + page.items else page.items
                 nextCursor = page.nextCursor
+                loadDenied = false
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: SessionExpiredException) {
                 // 401 已由全局回调处理
             } catch (e: Exception) {
+                if (generation != loadGeneration || requestedScope != scope) return@launch
                 val api = e as? ApiException
                 loadDenied = api?.httpStatus == 403
                 loadError = when {
@@ -135,11 +144,13 @@ fun ReviewScreen(taskRepo: TaskRepository, availableTags: List<TagDto>, business
                 }
                 if (!append) items = emptyList()
             } finally {
-                loading = false
+                if (generation == loadGeneration) loading = false
             }
         }
     }
-    LaunchedEffect(scope, loadRetry) { load(append = false) }
+    LaunchedEffect(scope, loadRetry, refreshRevision, selected?.id) {
+        if (selected == null) load(append = false)
+    }
 
     selected?.let { review ->
         ReviewDetail(review, taskRepo, availableTags, businessTimezone, userRepo, onBack = { selected = null }, onChanged = { load(append = false) })
@@ -172,7 +183,11 @@ fun ReviewScreen(taskRepo: TaskRepository, availableTags: List<TagDto>, business
                 )
                 else -> LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     items(items, key = { it.id }) { review ->
-                        ReviewCard(review, businessTimezone) { selected = review }
+                        val unread = scope == "created" && reviewResultKey(review)?.let { it !in readResultKeys } == true
+                        ReviewCard(review, businessTimezone, unread) {
+                            if (scope == "created") onResultRead(review)
+                            selected = review
+                        }
                     }
                     nextCursor?.let { cursor ->
                         item {
@@ -201,13 +216,14 @@ private fun QueueTab(label: String, selected: Boolean, modifier: Modifier = Modi
 }
 
 @Composable
-private fun ReviewCard(review: TaskReviewDto, businessTimezone: String?, onOpen: () -> Unit) {
+private fun ReviewCard(review: TaskReviewDto, businessTimezone: String?, unread: Boolean = false, onOpen: () -> Unit) {
     val snapshot = parseSnapshot(review.submittedSnapshot)
     Card(Modifier.fillMaxWidth().clickable(onClick = onOpen), colors = CardDefaults.cardColors(containerColor = WarmCard), shape = RoundedCornerShape(16.dp)) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(snapshot.title.ifBlank { "未命名任务" }, Modifier.weight(1f), fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 DecisionBadge(review.decision)
+                if (unread) Text("新结果", color = WarmOrange, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("${kindLabel(snapshot.kind)} · 请求人 ${personName(review.submittedByName, review.submittedByUserId)}", fontSize = 12.sp, color = Ink.copy(alpha = .6f))
