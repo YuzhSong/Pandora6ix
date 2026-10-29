@@ -199,7 +199,6 @@ fun CalendarScreen(
                             onCursorChange(date)
                             if (mode == CalendarMode.WEEK) onModeChange(CalendarMode.DAY)
                         }
-                        AllDayTasks(visibleDates, visibleTasks, onSelect = { task, date -> onCursorChange(date); onOpen(task) })
                         HorizontalDivider(color = Ink.copy(alpha = .08f))
                         key(mode, if (mode == CalendarMode.DAY) cursor else weekStart) {
                             TimeGrid(visibleDates, visibleTasks, mode == CalendarMode.DAY, today, businessTimezone, onSelect = { task, _ -> onOpen(task) })
@@ -417,17 +416,6 @@ private fun DayNumberRow(month: DemoDate, week: List<DemoDate>, inMonth: List<Bo
     }
 }
 
-@Composable private fun AllDayTasks(dates: List<DemoDate>, tasks: List<TaskItem>, onSelect: (TaskItem, DemoDate) -> Unit) {
-    val lanes = remember(dates, tasks.toList()) { packTaskRows(tasks.filter(::isAllDay), dates) }
-    Row(Modifier.fillMaxWidth().padding(end = 8.dp, bottom = 6.dp)) {
-        Text("全天", Modifier.width(40.dp).padding(top = 4.dp), fontSize = 12.sp, textAlign = TextAlign.Center, color = Ink.copy(alpha = .7f))
-        Column(Modifier.weight(1f).heightIn(max = 150.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            if (lanes.isEmpty()) Text("暂无全天任务", Modifier.padding(vertical = 7.dp), fontSize = 12.sp, color = Ink.copy(alpha = .45f))
-            lanes.forEach { DateLane(it, dates, 25, compact = false, onSelect = onSelect) }
-        }
-    }
-}
-
 @Composable private fun DateLane(lane: List<TaskSegment>, dates: List<DemoDate>, height: Int, compact: Boolean, onSelect: (TaskItem, DemoDate) -> Unit) {
     BoxWithConstraints(Modifier.fillMaxWidth().height(height.dp)) {
         val cellWidth = maxWidth / dates.size
@@ -447,15 +435,34 @@ private fun taskColor(task: TaskItem): Color =
     task.displayColorHex?.let { hex -> runCatching { Color(android.graphics.Color.parseColor(hex)) }.getOrNull() }
         ?: task.tags.firstOrNull()?.let { tag -> tag.colorHex.takeIf { it.isNotBlank() }?.let { hex -> runCatching { Color(android.graphics.Color.parseColor(hex)) }.getOrNull() } }
         ?: Ink.copy(alpha = 0.12f)
+// 主标签已排在首位：保留色相生成深色版本，原色不透明时同样能区分。
+private fun taskEdgeColor(task: TaskItem): Color {
+    val rawColor = task.tags.firstOrNull()?.colorHex?.let { hex -> runCatching { android.graphics.Color.parseColor(hex) }.getOrNull() }
+        ?: task.displayColorHex?.let { hex -> runCatching { android.graphics.Color.parseColor(hex) }.getOrNull() }
+        ?: return Ink.copy(alpha = .55f)
+    val hsv = FloatArray(3)
+    android.graphics.Color.colorToHSV(rawColor, hsv)
+    // 灰色保持中性；彩色适度提高饱和度并降低明度，不改变色相。
+    if (hsv[1] > .02f) hsv[1] = (hsv[1] + .20f).coerceAtMost(1f)
+    hsv[2] *= .70f
+    return Color(android.graphics.Color.HSVToColor(hsv))
+}
 private fun Modifier.calendarGuides(): Modifier = drawBehind {
     val effect = PathEffect.dashPathEffect(floatArrayOf(3.dp.toPx(), 4.dp.toPx()))
     for (i in 1..6) drawLine(Ink.copy(alpha = .06f), Offset(size.width * i / 7, 0f), Offset(size.width * i / 7, size.height), pathEffect = effect)
     drawLine(Ink.copy(alpha = .08f), Offset(0f, size.height), Offset(size.width, size.height), pathEffect = effect)
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable private fun TimeGrid(dates: List<DemoDate>, tasks: List<TaskItem>, dayMode: Boolean, today: DemoDate, businessTimezone: String?, onSelect: (TaskItem, DemoDate) -> Unit) {
     val hourHeight = if (dayMode) 60.dp else 56.dp
     val density = LocalDensity.current
+    var selection by remember(dates) { mutableStateOf<Pair<DemoDate, Int>?>(null) }
+    val selectAt by rememberUpdatedState({ date: DemoDate, minute: Int ->
+        val candidates = timelineTasksAt(tasks, date, minute)
+        if (candidates.size == 1) onSelect(candidates.single(), date)
+        else if (candidates.size > 1) selection = date to minute
+    })
     // 初始定位到当前时间上一小时半（按公司业务时区），不再从凌晨开始
     val nowMinute = businessNowMinute(businessTimezone)
     val initialHour = ((nowMinute - 90) / 60).coerceIn(0, 22)
@@ -469,10 +476,14 @@ private fun Modifier.calendarGuides(): Modifier = drawBehind {
         }
         BoxWithConstraints(Modifier.weight(1f).height(hourHeight * 24 + 72.dp).drawBehind {
             val dash = PathEffect.dashPathEffect(floatArrayOf(3.dp.toPx(), 4.dp.toPx()))
-            for (hour in 0..24) drawLine(Ink.copy(alpha = .08f), Offset(0f, hourHeight.toPx() * hour), Offset(size.width, hourHeight.toPx() * hour), pathEffect = dash)
             for (day in 1 until dates.size) drawLine(Ink.copy(alpha = .07f), Offset(size.width * day / dates.size, 0f), Offset(size.width * day / dates.size, size.height), pathEffect = dash)
         }.drawWithContent {
             drawContent()
+            // 整点实线覆盖任务色块，长任务内仍能辨认每小时边界。
+            for (hour in 0..24) {
+                val y = hourHeight.toPx() * hour
+                drawLine(Ink.copy(alpha = .10f), Offset(0f, y), Offset(size.width, y), strokeWidth = 1.dp.toPx())
+            }
             // “现在”指示线：今天的列内一条红线，随时间实时对位
             if (todayIndex >= 0) {
                 val y = hourHeight.toPx() * nowMinute / 60f
@@ -483,22 +494,81 @@ private fun Modifier.calendarGuides(): Modifier = drawBehind {
         }) {
             val dayWidth = maxWidth / dates.size
             dates.forEachIndexed { index, date ->
-                val entries = tasks.mapNotNull { task -> timeRangeOnDate(task, date)?.let { task to it } }.filter { !it.second.isEmpty() }.sortedBy { it.second.first }
-                // 时间重叠的任务直接上下堆叠（后绘制的覆盖先绘制的），各占整列宽度，随时间轴垂直排布
-                entries.forEach { (task, range) ->
+                // 日/周视图共用错位叠放，全天任务占据整日高度。
+                val placements = staggerTimedTasks(tasks, date)
+                val maxDepth = placements.maxOfOrNull { it.depth } ?: 0
+                val indentStep = if (maxDepth == 0) 0.dp else minOf(6.dp, dayWidth * .35f / maxDepth)
+                placements.forEach { (task, range, depth) ->
+                    val indent = indentStep * depth
+                    val edgeColor = taskEdgeColor(task)
                     // 跨天任务在当天裁剪显示，并标注起止来源
                     val spansFrom = date > task.start
                     val spansInto = date < task.end
-                    Box(Modifier.offset(x = dayWidth * index, y = hourHeight * (range.first / 60f)).width(dayWidth).height(hourHeight * ((range.last - range.first + 1) / 60f)).padding(1.dp).clip(RoundedCornerShape(4.dp)).background(taskColor(task)).clickable { onSelect(task, date) }) {
-                        Column(Modifier.padding(horizontal = 4.dp, vertical = 2.dp)) {
+                    // 半透明任务色必须有实色衬底，否则同刻开始的底层标题会透出。
+                    Box(Modifier.offset(x = dayWidth * index + indent, y = hourHeight * (range.first / 60f)).width(dayWidth - indent).height(hourHeight * ((range.last - range.first + 1) / 60f)).padding(1.dp).clip(RoundedCornerShape(4.dp)).background(WarmCard.copy(alpha = 1f)).background(taskColor(task))
+                        .drawBehind {
+                            val stroke = minOf(3.dp.toPx(), size.width)
+                            drawLine(edgeColor, Offset(stroke / 2, 0f), Offset(stroke / 2, size.height), strokeWidth = stroke)
+                        }
+                        .semantics {
+                            role = Role.Button
+                            onClick("选择${task.title}") { selectAt(date, range.first); true }
+                        }
+                        .pointerInput(task.id, date, range, hourHeight) {
+                            detectTapGestures { position ->
+                                val minute = (range.first + ((position.y + 1.dp.toPx()) / hourHeight.toPx() * 60).toInt())
+                                    .coerceIn(range.first, range.last)
+                                selectAt(date, minute)
+                            }
+                        }) {
+                        Column(Modifier.padding(start = 7.dp, end = 4.dp, top = 2.dp, bottom = 2.dp)) {
                             Text(task.title, fontSize = if (dayMode) 13.sp else 11.sp, lineHeight = if (dayMode) 16.sp else 13.sp, maxLines = if (dayMode) 2 else 1, overflow = TextOverflow.Ellipsis)
-                            if (dayMode && range.last - range.first >= 30) Text("${if (spansFrom) "自昨日 " else ""}${minuteLabel(range.first)}—${minuteLabel(range.last + 1)}${if (spansInto) " →次日" else ""}", fontSize = 11.sp, color = Ink.copy(alpha = .7f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            if (dayMode && !isAllDay(task) && range.last - range.first >= 30) Text("${if (spansFrom) "自昨日 " else ""}${minuteLabel(range.first)}—${minuteLabel(range.last + 1)}${if (spansInto) " →次日" else ""}", fontSize = 11.sp, color = Ink.copy(alpha = .7f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
                 }
             }
         }
     }
+    selection?.let { (date, minute) ->
+        val candidates = timelineTasksAt(tasks, date, minute)
+        LaunchedEffect(candidates.isEmpty()) { if (candidates.isEmpty()) selection = null }
+        ModalBottomSheet(
+            onDismissRequest = { selection = null },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = WarmCard
+        ) {
+            Text("选择任务", Modifier.padding(horizontal = 20.dp), fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Text("${date.year}年${date.month}月${date.day}日 · ${minuteLabel(minute)} · ${candidates.size} 项任务",
+                Modifier.padding(horizontal = 20.dp, vertical = 8.dp), fontSize = 13.sp, color = Ink.copy(alpha = .65f))
+            LazyColumn(Modifier.fillMaxWidth().heightIn(max = 480.dp)) {
+                items(candidates.size, key = { candidates[it].id }) { index ->
+                    val candidate = candidates[index]
+                    Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable {
+                        selection = null
+                        onSelect(candidate, date)
+                    }.padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(12.dp).clip(CircleShape).background(WarmCard.copy(alpha = 1f)).background(taskColor(candidate)))
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(candidate.title, fontSize = 16.sp, color = Ink)
+                            Text(taskSelectionTimeLabel(candidate), Modifier.padding(top = 4.dp), fontSize = 12.sp, color = Ink.copy(alpha = .65f))
+                        }
+                    }
+                    HorizontalDivider(color = Ink.copy(alpha = .08f))
+                }
+            }
+            TextButton(onClick = { selection = null }, modifier = Modifier.fillMaxWidth().padding(8.dp)) { Text("取消") }
+        }
+    }
+}
+
+private fun taskSelectionTimeLabel(task: TaskItem): String {
+    fun dateLabel(date: DemoDate) = "${date.year}/${date.month}/${date.day}"
+    val dates = if (task.start == task.end) dateLabel(task.start) else "${dateLabel(task.start)}—${dateLabel(task.end)}"
+    return if (isAllDay(task)) "$dates · 全天"
+        else if (task.start == task.end) "$dates · ${taskTimeLabel(task)}"
+        else "${dateLabel(task.start)} ${minuteLabel(task.startMinute!!)}—${dateLabel(task.end)} ${minuteLabel(task.endMinute!!)}"
 }
 
 // 双指缩放：两指张开（间距由短到长）切到更小时间周期，两指收拢切到更大周期

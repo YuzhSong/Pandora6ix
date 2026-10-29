@@ -1950,7 +1950,6 @@ private fun JournalDetailScreen(repo: JournalRepository, journalId: String, busi
                         ProfileInfoRow("任务总数", "${st.total}")
                         ProfileInfoRow("已完成", "${st.completed}")
                         ProfileInfoRow("未完成", "${st.uncompleted}")
-                        Text("口径：本人已批准任务；进度 100% 不计为完成。", fontSize = 12.sp, color = Ink.copy(alpha = .5f))
                     }
                 }
             }
