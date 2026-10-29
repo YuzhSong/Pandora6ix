@@ -25,3 +25,10 @@
 - [x] 4.1 Add and declare the required application-owned JCommonService subclass without changing approval or permission behavior.
 - [x] 4.2 Run Android unit tests, debug assembly, release Kotlin compilation, strict OpenSpec validation, and inspect the packaged service declaration and AppKey without exposing credentials.
 - [x] 4.3 Update both running emulators without clearing application data; verify provider registration and report cloud device binding separately from actual notification delivery.
+
+
+## 5. PR #40 notification presentation integration
+
+- [x] 5.1 Rebase on PR #39 without reverting journal scroll or keyboard/navigation inset fixes.
+- [x] 5.2 Describe optional resolved notification response in generated OpenAPI and the push notification specification.
+- [x] 5.3 Verify Android unit/debug/release compilation and backend tests before merging PR #40.

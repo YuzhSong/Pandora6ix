@@ -63,6 +63,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
@@ -640,6 +641,11 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository, noti
     LaunchedEffect(notificationOpenSequence) {
         if (notificationOpenSequence > 0) notifications = true
     }
+    // 信封角标：未读消息数（99+ 封顶）；打开抽屉、关闭抽屉、收到推送打开时刷新
+    var unreadCount by remember { mutableStateOf(0) }
+    LaunchedEffect(notifications, notificationOpenSequence) {
+        unreadCount = runCatching { notificationRepo.unreadCount() }.getOrDefault(0)
+    }
     var editingPersonal by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     var dashboard by remember { mutableStateOf<DashboardDto?>(null) }
@@ -728,7 +734,10 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository, noti
       Column(Modifier.fillMaxSize().padding(horizontal = 10.dp)) {
         Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(todayDate().shortLabelWithWeekday(), fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            IconButton(onClick = { notifications = true }) { Surface(shape = RoundedCornerShape(50), color = CreamDeep) { Icon(Icons.Default.Email, "邮箱", Modifier.padding(9.dp), tint = Ink) } }
+            // 与「我的」页红点同一实现：未读消息数角标（99+ 封顶）
+            BadgedBox(badge = { if (unreadCount > 0) Badge { Text(if (unreadCount >= 99) "99+" else "$unreadCount") } }) {
+                IconButton(onClick = { notifications = true }) { Surface(shape = RoundedCornerShape(50), color = CreamDeep) { Icon(Icons.Default.Email, "邮箱", Modifier.padding(9.dp), tint = Ink) } }
+            }
         }
         Box(Modifier.fillMaxWidth().weight(1f)) {
             when {
@@ -1132,15 +1141,18 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository, noti
                 Spacer(Modifier.height(8.dp))
                 // 左下：排序 / 取消；右下：保存 / 完成
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    // 排序与保存同宽同高（96×40），左右两角对称
                     if (sorting) {
                         TextButton(
                             { cancelSorting() },
+                            Modifier.defaultMinSize(minWidth = 96.dp, minHeight = 40.dp),
                             shape = RoundedCornerShape(12.dp),
                             border = BorderStroke(1.dp, accent)
                         ) { Text("取消", color = Ink.copy(alpha = .65f)) }
                     } else {
                         TextButton(
                             { showSortHint = true },
+                            Modifier.defaultMinSize(minWidth = 96.dp, minHeight = 40.dp),
                             enabled = selected.size > 1,
                             shape = RoundedCornerShape(12.dp),
                             // 描边让它看起来像按钮，而不是一段可点的文字
@@ -1152,6 +1164,7 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository, noti
                     Spacer(Modifier.weight(1f))
                     Button(
                         { if (sorting) { sorting = false; draggingIndex = null; dragOffset = 0f } else save() },
+                        Modifier.defaultMinSize(minWidth = 96.dp, minHeight = 40.dp),
                         enabled = !saving,
                         colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = Ink),
                         shape = RoundedCornerShape(12.dp)
@@ -1225,7 +1238,12 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository, noti
                             Text(error!!, color = MaterialTheme.colorScheme.error)
                             Button({ attempt++ }, colors = ButtonDefaults.buttonColors(containerColor = ThemeButton, contentColor = OnThemeButton), shape = RoundedCornerShape(12.dp)) { Text("重试") }
                         }
-                        else -> Text(content ?: detail.text, fontSize = 19.sp, lineHeight = 30.sp, fontWeight = FontWeight.Medium)
+                        else -> {
+                            // 详情正文前补上面板里的标题：面板只看到标题，点开后仍是「标题：全文」
+                            val text = content ?: detail.text
+                            val shown = if (detail.text.isNotBlank() && !text.startsWith(detail.text)) "${detail.text}：$text" else text
+                            Text(shown, fontSize = 19.sp, lineHeight = 30.sp, fontWeight = FontWeight.Medium)
+                        }
                     }
                 }
             }
@@ -1430,8 +1448,9 @@ private data class EntryDraft(val entryId: String?, val content: String)
     }
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-            // 标题行与视图页「周视图」同高（44dp 行、20sp 加粗），下方保留原来的间距
-            Row(Modifier.fillMaxWidth().height(44.dp), verticalAlignment = Alignment.CenterVertically) {
+            // 「日志」与导图页左上角当日日期同高：导图日期行上 12dp + 48dp 图标行 → 文字中心 36dp；
+            // 行高与下方间距同步各加 14dp，「记录今日工作」与「日志」的距离保持不变
+            Row(Modifier.fillMaxWidth().height(58.dp).padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("日志", fontSize = 20.sp, fontWeight = FontWeight.Bold)
             }
             Spacer(Modifier.height(10.dp))
@@ -1491,8 +1510,7 @@ private data class EntryDraft(val entryId: String?, val content: String)
             Card(Modifier.align(Alignment.BottomCenter).navigationBarsPadding().imePadding().fillMaxWidth(.9f).fillMaxHeight(if (imeVisible) .92f else .9f).border(2.dp, CreamDeep, RoundedCornerShape(24.dp)).clickable { }, shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = WarmCard)) {
                 Column(Modifier.fillMaxSize().padding(20.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) { Text(if (editingJournal != null) "编辑日志" else "记录日志", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f)); IconButton({ closeEditor() }) { Icon(Icons.Default.Close, "关闭") } }
-                    Text("日志在创建当天内可修改或删除（按公司业务时区）", fontSize = 12.sp, color = Ink.copy(alpha = .6f))
-                    // 日期、标签与工作条目共用滚动视口，标签再多也不会挤掉输入区。
+                    // 日期、标签与工作条目共用滚动视口，保留键盘和导航栏避让。
                     Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())) {
                         Text("· 日志日期", fontWeight = FontWeight.Bold)
                         Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1536,7 +1554,7 @@ private data class EntryDraft(val entryId: String?, val content: String)
                     }
                     publishError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)) }
                     Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        OutlinedButton({ closeEditor() }, Modifier.weight(1f), enabled = !publishing, colors = ButtonDefaults.outlinedButtonColors(contentColor = Ink)) { Text("取消") }
+                        OutlinedButton({ closeEditor() }, Modifier.weight(1f), enabled = !publishing, shape = RoundedCornerShape(14.dp), colors = ButtonDefaults.outlinedButtonColors(contentColor = Ink)) { Text("取消") }
                         Button(
                             { publish() },
                             Modifier.weight(1f),
@@ -1749,11 +1767,8 @@ private fun JournalDetailScreen(repo: JournalRepository, journalId: String, busi
     }
     val j = journal
     Column(Modifier.fillMaxSize().background(LocalAppTheme.current.dashboard)) {
-        // 抬头与视图页「周视图」同高（44dp 行、20sp 加粗）
-        Row(Modifier.fillMaxWidth().height(44.dp).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onBack, Modifier.size(40.dp)) { Icon(Icons.Default.ArrowBack, "返回") }
-            Text("日志详情", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-        }
+        // 抬头与导图片事项详情同为 PageHeader，两个详情界面的抬头高度一致
+        PageHeader("日志详情", onBack = onBack)
         when {
             loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = WarmOrange, strokeWidth = 3.dp)
@@ -1778,15 +1793,18 @@ private fun JournalDetailScreen(repo: JournalRepository, journalId: String, busi
                     val created = businessTimeLabel(j.publishedAt, businessTimezone)
                     Text(
                         if (created.isNotBlank()) "${isoLabel(j.workDate)} · $created" else isoLabel(j.workDate),
-                        fontSize = 15.sp
+                        fontSize = 19.sp,
+                        lineHeight = 30.sp,
+                        fontWeight = FontWeight.Medium
                     )
                 }
                 if (j.tags.isNotEmpty()) JournalSection("标签") { TagChips(j.tags, j.primaryTagId) }
                 JournalSection("完成的工作") {
                     val entries = j.entries.sortedBy { it.displayOrder }
                     entries.forEachIndexed { i, entry ->
-                        Text(entry.content, fontSize = 14.sp, lineHeight = 22.sp)
-                        if (i < entries.lastIndex) Spacer(Modifier.height(6.dp))
+                        // 正文与导图片事项详情一致（19sp / 30sp 行高），日志详情更易读
+                        Text(entry.content, fontSize = 19.sp, lineHeight = 30.sp, fontWeight = FontWeight.Medium)
+                        if (i < entries.lastIndex) Spacer(Modifier.height(10.dp))
                     }
                 }
             }
@@ -1832,14 +1850,17 @@ private fun JournalDetailScreen(repo: JournalRepository, journalId: String, busi
                                         records = records.map { if (it.id == item.id) it.copy(readAt = "read") else it }
                                 }
                             }.padding(12.dp)) {
+                                // 审批申请已处理（服务端 resolved）：不再引导去待审批，标记「已审批」
+                                val decided = item.eventType == "REVIEW_REQUEST" && item.resolved
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(item.title, modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
-                                    if (item.readAt == null) Text("未读", color = WarmOrange, fontSize = 12.sp)
+                                    if (decided) Text("已审批", color = Ink.copy(alpha = .6f), fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                                    else if (item.readAt == null) Text("未读", color = WarmOrange, fontSize = 12.sp)
                                 }
                                 Spacer(Modifier.height(4.dp))
                                 Text(item.body, color = Ink.copy(alpha = .72f), fontSize = 13.sp)
                                 Text(item.createdAt.replace('T', ' ').take(16), color = Ink.copy(alpha = .48f), fontSize = 11.sp, modifier = Modifier.padding(top = 6.dp))
-                                if (item.title == "审批申请") TextButton(onClick = onOpenReviews, contentPadding = PaddingValues(0.dp)) { Text("查看待审批", color = WarmOrange) }
+                                if (item.title == "审批申请" && !decided) TextButton(onClick = onOpenReviews, contentPadding = PaddingValues(0.dp)) { Text("查看待审批", color = WarmOrange) }
                             }
                         }
                     }
@@ -2073,6 +2094,9 @@ private fun roleLabel(role: String): String = when (role.uppercase()) {
     val scope = rememberCoroutineScope()
     // 任务说明弹窗：状态标签（已完成/未完成）+ 阶段性内容记录（不做百分比）
     var showDescDialog by remember { mutableStateOf(false) }
+    // 可执行关系与更新权限：无权限时详情只做展示（只读状态与已有记录）
+    val detailAssignment = dto?.authorizedAssignments?.firstOrNull()
+    val canUpdateTask = detailAssignment?.allowedActions?.any { it == "UPDATE_PROGRESS" || it == "COMPLETE_PERSONAL" || it == "REQUEST_COMPLETION" } == true
     var stageNote by remember { mutableStateOf("") }
     var stageBusy by remember { mutableStateOf(false) }
     var stageError by remember { mutableStateOf<String?>(null) }
@@ -2134,14 +2158,14 @@ private fun roleLabel(role: String): String = when (role.uppercase()) {
             }
             if (!isLog) { Text("详情", fontSize = 24.sp, fontWeight = FontWeight.Bold); Spacer(Modifier.height(12.dp)) }
             if (dto != null && item != null) {
-                // 任务说明可点开：弹窗内切换任务状态标签并记录阶段性内容
-                DetailCard("任务说明 · 点击查看与更新", dto.description?.takeIf { it.isNotBlank() } ?: "暂无备注", Color(0xFFE2E2E2), maxLines = 8) { showDescDialog = true }
+                // 任务说明可点开：弹窗内切换任务状态标签并记录阶段性内容；无更新权限时只写「点击查看」
+                DetailCard("任务说明 · ${if (canUpdateTask) "点击查看与更新" else "点击查看"}", dto.description?.takeIf { it.isNotBlank() } ?: "暂无备注", CreamDeep, maxLines = 8) { showDescDialog = true }
                 Spacer(Modifier.height(10.dp))
-                DetailCard("时间节点", "${item.start.year}/${item.start.month}/${item.start.day}—${item.end.year}/${item.end.month}/${item.end.day}\n${taskTimeLabel(item)}", Color(0xFFE2E2E2))
+                DetailCard("时间节点", "${item.start.year}/${item.start.month}/${item.start.day}—${item.end.year}/${item.end.month}/${item.end.day}\n${taskTimeLabel(item)}", CreamDeep)
                 Spacer(Modifier.height(10.dp))
-                DetailCard("类型与状态", "${kindLabelOf(dto.kind)} · ${reviewStatusLabel(dto.reviewStatus)}", Color(0xFFE2E2E2))
+                DetailCard("类型与状态", "${kindLabelOf(dto.kind)} · ${reviewStatusLabel(dto.reviewStatus)}", CreamDeep)
                 Spacer(Modifier.height(10.dp))
-                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFFE2E2E2).copy(alpha = .78f)), shape = RoundedCornerShape(16.dp)) {
+                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = CreamDeep.copy(alpha = .78f)), shape = RoundedCornerShape(16.dp)) {
                     Column(Modifier.padding(14.dp)) {
                         Text("重要程度", fontWeight = FontWeight.Bold)
                         val stars = dto.priorityLevel.coerceIn(1, 5)
@@ -2167,61 +2191,102 @@ private fun roleLabel(role: String): String = when (role.uppercase()) {
     }
     // 任务说明弹窗：状态标签（已完成/未完成）+ 阶段性内容输入框（不做百分比），已有记录直接展示
     if (showDescDialog && dto != null && item != null) {
-        val assignment = dto.authorizedAssignments.firstOrNull()
+        val assignment = detailAssignment
         val completed = assignment?.executionStatus == "COMPLETED" || (assignment?.progressPercent ?: 0) >= 100
+        val records = dto.progressRecords.filter { !it.note.isNullOrBlank() }.sortedByDescending { it.recordedAt }.take(5)
         AlertDialog(
             onDismissRequest = { if (!stageBusy) showDescDialog = false },
-            title = { Text("任务说明与进度", fontWeight = FontWeight.Bold) },
+            title = { Text(if (canUpdateTask) "任务说明与进度" else "任务说明", fontWeight = FontWeight.Bold) },
             text = {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
-                    Text(dto.description?.takeIf { it.isNotBlank() } ?: "暂无备注", fontSize = 14.sp, lineHeight = 21.sp, color = Ink.copy(alpha = .85f))
+                    // 备注正文比「任务状态」等小标题更大，与其他详情界面的正文字号一致
+                    Text(dto.description?.takeIf { it.isNotBlank() } ?: "暂无备注", fontSize = 19.sp, lineHeight = 30.sp, fontWeight = FontWeight.Medium, color = Ink.copy(alpha = .85f))
                     Spacer(Modifier.height(14.dp))
                     Text("任务状态", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.height(6.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(
-                            selected = completed,
-                            onClick = { if (!completed && assignment != null) markCompleted(assignment) },
-                            label = { Text("已完成") },
-                            colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Mint, selectedLabelColor = Ink)
-                        )
-                        FilterChip(
-                            selected = !completed,
-                            onClick = { if (completed) stageError = "已完成状态不可回退；如需调整请联系任务创建者" },
-                            label = { Text("未完成") },
-                            colors = FilterChipDefaults.filterChipColors(selectedContainerColor = CreamDeep, selectedLabelColor = Ink)
-                        )
+                    if (canUpdateTask) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilterChip(
+                                selected = completed,
+                                onClick = { if (!completed && assignment != null) markCompleted(assignment) },
+                                label = { Text("已完成") },
+                                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Mint, selectedLabelColor = Ink)
+                            )
+                            FilterChip(
+                                selected = !completed,
+                                onClick = { if (completed) stageError = "已完成状态不可回退；如需调整请联系任务创建者" },
+                                label = { Text("未完成") },
+                                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = CreamDeep, selectedLabelColor = Ink)
+                            )
+                        }
+                        if (assignment == null) Text("你没有该任务的执行关系，状态仅供查看。", fontSize = 12.sp, color = Ink.copy(alpha = .55f), modifier = Modifier.padding(top = 6.dp))
+                    } else {
+                        // 无更新权限：只显示当前状态，沿用状态标签原本的色块样式（已完成薄荷、未完成米黄）
+                        Surface(shape = RoundedCornerShape(8.dp), color = if (completed) Mint else CreamDeep) {
+                            Text(
+                                if (completed) "已完成" else "未完成",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Ink,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                            )
+                        }
                     }
-                    if (assignment == null) Text("你没有该任务的执行关系，状态仅供查看。", fontSize = 12.sp, color = Ink.copy(alpha = .55f), modifier = Modifier.padding(top = 6.dp))
                     Spacer(Modifier.height(14.dp))
                     Text("阶段性内容记录", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.height(6.dp))
-                    OutlinedTextField(
-                        stageNote,
-                        { stageNote = it; stageError = null },
-                        Modifier.fillMaxWidth(),
-                        placeholder = { Text("记录目前已完成的阶段性内容…") },
-                        minLines = 3,
-                        maxLines = 5,
-                        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Ink.copy(alpha = .65f), unfocusedBorderColor = Ink.copy(alpha = .25f), cursorColor = Ink)
-                    )
-                    if (assignment != null && "UPDATE_PROGRESS" in assignment.allowedActions) {
-                        TextButton({ recordStage(assignment) }, enabled = !stageBusy && stageNote.isNotBlank()) { Text("保存记录", color = WarmOrange, fontWeight = FontWeight.Bold) }
-                    } else if (assignment != null) {
-                        Text("当前账号无记录进度的权限。", fontSize = 12.sp, color = Ink.copy(alpha = .5f), modifier = Modifier.padding(top = 4.dp))
-                    }
-                    stageError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
-                    if (stageBusy) Text("处理中…", fontSize = 12.sp, color = Ink.copy(alpha = .6f), modifier = Modifier.padding(top = 4.dp))
-                    val records = dto.progressRecords.filter { !it.note.isNullOrBlank() }.sortedByDescending { it.recordedAt }.take(5)
-                    if (records.isNotEmpty()) {
-                        Spacer(Modifier.height(10.dp))
-                        Text("已有记录", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                        Spacer(Modifier.height(6.dp))
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            records.forEach { r ->
-                                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(CreamDeep).padding(10.dp)) {
-                                    Text(r.note!!, fontSize = 13.sp, lineHeight = 19.sp)
-                                    r.recordedAt?.let { Text(it.substring(0, minOf(16, it.length)).replace("T", " "), fontSize = 11.sp, color = Ink.copy(alpha = .55f)) }
+                    if (canUpdateTask) {
+                        OutlinedTextField(
+                            stageNote,
+                            { stageNote = it; stageError = null },
+                            Modifier.fillMaxWidth(),
+                            placeholder = { Text("记录目前已完成的阶段性内容…") },
+                            minLines = 3,
+                            maxLines = 5,
+                            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Ink.copy(alpha = .65f), unfocusedBorderColor = Ink.copy(alpha = .25f), cursorColor = Ink)
+                        )
+                        if (assignment != null && "UPDATE_PROGRESS" in assignment.allowedActions) {
+                            TextButton({ recordStage(assignment) }, enabled = !stageBusy && stageNote.isNotBlank()) { Text("保存记录", color = WarmOrange, fontWeight = FontWeight.Bold) }
+                        } else if (assignment != null) {
+                            Text("当前账号无记录进度的权限。", fontSize = 12.sp, color = Ink.copy(alpha = .5f), modifier = Modifier.padding(top = 4.dp))
+                        }
+                        stageError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
+                        if (stageBusy) Text("处理中…", fontSize = 12.sp, color = Ink.copy(alpha = .6f), modifier = Modifier.padding(top = 4.dp))
+                        if (records.isNotEmpty()) {
+                            Spacer(Modifier.height(10.dp))
+                            Text("已有记录", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            Spacer(Modifier.height(6.dp))
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                records.forEach { r ->
+                                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(CreamDeep).padding(10.dp)) {
+                                        Text(r.note!!, fontSize = 13.sp, lineHeight = 19.sp)
+                                        r.recordedAt?.let { Text(it.substring(0, minOf(16, it.length)).replace("T", " "), fontSize = 11.sp, color = Ink.copy(alpha = .55f)) }
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        // 无更新权限：沿用原来的文本框外观只读展示；无记录时框内直接显示「暂无内容」
+                        OutlinedTextField(
+                            if (records.isEmpty()) "暂无内容" else records.joinToString("\n\n") { it.note!! },
+                            {},
+                            Modifier.fillMaxWidth(),
+                            readOnly = true,
+                            minLines = 3,
+                            maxLines = 5,
+                            textStyle = TextStyle(color = Ink.copy(alpha = .6f), fontSize = 14.sp, lineHeight = 21.sp),
+                            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Ink.copy(alpha = .65f), unfocusedBorderColor = Ink.copy(alpha = .25f), cursorColor = Ink)
+                        )
+                        if (records.isNotEmpty()) {
+                            Spacer(Modifier.height(10.dp))
+                            Text("已有记录", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            Spacer(Modifier.height(6.dp))
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                records.forEach { r ->
+                                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(CreamDeep).padding(10.dp)) {
+                                        Text(r.note!!, fontSize = 13.sp, lineHeight = 19.sp)
+                                        r.recordedAt?.let { Text(it.substring(0, minOf(16, it.length)).replace("T", " "), fontSize = 11.sp, color = Ink.copy(alpha = .55f)) }
+                                    }
                                 }
                             }
                         }

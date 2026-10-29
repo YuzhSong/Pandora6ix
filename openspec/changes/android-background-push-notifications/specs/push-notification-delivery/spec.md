@@ -81,3 +81,15 @@ Android SHALL initialize JPush when configured, register its installation only w
 #### Scenario: Configured SDK starts its push service
 - **WHEN** an Android build with a configured AppKey starts
 - **THEN** its packaged manifest declares an enabled, non-exported application service extending JCommonService with the provider discovery action, allowing the SDK to establish its channel and obtain a registration identifier.
+
+
+### Requirement: Review notification presentation
+Notification APIs SHALL expose an optional resolved flag for review-request notifications using the associated enterprise-scoped review. Android SHALL hide the pending-review action for resolved requests and show the unread envelope count capped at 99+.
+
+#### Scenario: Request has been decided
+- **WHEN** a review-request notification is listed or marked read after its review stops being pending
+- **THEN** resolved is true and the pending-review action is hidden.
+
+#### Scenario: Request is pending
+- **WHEN** the associated review remains pending in the same enterprise
+- **THEN** resolved is false and its pending-review action remains available.

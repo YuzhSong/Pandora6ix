@@ -2887,8 +2887,12 @@ class BusinessApiIntegrationTests {
         var reviewerNote = items(request("GET", "/notifications?limit=100", leadToken, null, 200)).stream()
                 .filter(note -> "REVIEW_REQUEST".equals(note.get("eventType"))).findFirst().orElseThrow();
         assertEquals("NEW_TASK", reviewerNote.get("kind"));
+        assertEquals(false, reviewerNote.get("resolved"));
         assertEquals(1, db.rows("SELECT id FROM notification_push_delivery WHERE notification_id=?", reviewerNote.get("id")).size());
         reviewDecision(leadToken, task, "REJECT");
+        // 审批完成后，审批人的「审批申请」提醒标记为已处理（客户端据此处隐藏「查看待审批」）
+        assertEquals(true, items(request("GET", "/notifications?limit=100", leadToken, null, 200)).stream()
+                .filter(note -> "REVIEW_REQUEST".equals(note.get("eventType"))).findFirst().orElseThrow().get("resolved"));
         var submitterNote = items(request("GET", "/notifications?limit=100", employeeToken, null, 200)).stream()
                 .filter(note -> "REVIEW_RESULT".equals(note.get("eventType"))).findFirst().orElseThrow();
         assertEquals("STATUS", submitterNote.get("kind"));

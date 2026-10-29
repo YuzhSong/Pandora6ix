@@ -45,3 +45,8 @@ The original credential-bearing Word guide was removed from candidate history an
 ## SDK service repair, 2026-10-28
 
 Live emulator logs show that JPush initialization cannot start its channel because no application service extends `JCommonService`. Add a minimal `PandoraPushService` subclass and declare it enabled, non-exported, in `:pushcore`, with the `cn.jiguang.user.service.action` intent filter, following the provider's Android quick-start guide. Keep existing receiver, account binding, notification preferences, permissions, and key-free build behavior unchanged. Inspect the packaged manifest and verify SDK registration on both independent emulators after an in-place APK update. Device registration does not prove delivery; approval creation and visible notification receipt remain a separate user-driven acceptance step.
+
+
+## PR #40 integration (2026-10-30)
+
+Approval-request notifications expose optional resolved, derived from the enterprise-scoped review referenced by their deduplication key. Missing or non-pending reviews are resolved. Preserve the submitter name in the persisted request body, while remote push remains generic. Android shows an unread envelope badge and suppresses the pending-review link for resolved requests. Preserve PR #39 keyboard/navigation insets and shared scrolling content during rebase. Approval and journal date rules remain unchanged.
