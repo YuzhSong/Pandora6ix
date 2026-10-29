@@ -63,6 +63,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
@@ -2093,6 +2094,9 @@ private fun roleLabel(role: String): String = when (role.uppercase()) {
     val scope = rememberCoroutineScope()
     // 任务说明弹窗：状态标签（已完成/未完成）+ 阶段性内容记录（不做百分比）
     var showDescDialog by remember { mutableStateOf(false) }
+    // 可执行关系与更新权限：无权限时详情只做展示（只读状态与已有记录）
+    val detailAssignment = dto?.authorizedAssignments?.firstOrNull()
+    val canUpdateTask = detailAssignment?.allowedActions?.any { it == "UPDATE_PROGRESS" || it == "COMPLETE_PERSONAL" || it == "REQUEST_COMPLETION" } == true
     var stageNote by remember { mutableStateOf("") }
     var stageBusy by remember { mutableStateOf(false) }
     var stageError by remember { mutableStateOf<String?>(null) }
@@ -2154,14 +2158,14 @@ private fun roleLabel(role: String): String = when (role.uppercase()) {
             }
             if (!isLog) { Text("详情", fontSize = 24.sp, fontWeight = FontWeight.Bold); Spacer(Modifier.height(12.dp)) }
             if (dto != null && item != null) {
-                // 任务说明可点开：弹窗内切换任务状态标签并记录阶段性内容
-                DetailCard("任务说明 · 点击查看与更新", dto.description?.takeIf { it.isNotBlank() } ?: "暂无备注", Color(0xFFE2E2E2), maxLines = 8) { showDescDialog = true }
+                // 任务说明可点开：弹窗内切换任务状态标签并记录阶段性内容；无更新权限时只写「点击查看」
+                DetailCard("任务说明 · ${if (canUpdateTask) "点击查看与更新" else "点击查看"}", dto.description?.takeIf { it.isNotBlank() } ?: "暂无备注", CreamDeep, maxLines = 8) { showDescDialog = true }
                 Spacer(Modifier.height(10.dp))
-                DetailCard("时间节点", "${item.start.year}/${item.start.month}/${item.start.day}—${item.end.year}/${item.end.month}/${item.end.day}\n${taskTimeLabel(item)}", Color(0xFFE2E2E2))
+                DetailCard("时间节点", "${item.start.year}/${item.start.month}/${item.start.day}—${item.end.year}/${item.end.month}/${item.end.day}\n${taskTimeLabel(item)}", CreamDeep)
                 Spacer(Modifier.height(10.dp))
-                DetailCard("类型与状态", "${kindLabelOf(dto.kind)} · ${reviewStatusLabel(dto.reviewStatus)}", Color(0xFFE2E2E2))
+                DetailCard("类型与状态", "${kindLabelOf(dto.kind)} · ${reviewStatusLabel(dto.reviewStatus)}", CreamDeep)
                 Spacer(Modifier.height(10.dp))
-                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFFE2E2E2).copy(alpha = .78f)), shape = RoundedCornerShape(16.dp)) {
+                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = CreamDeep.copy(alpha = .78f)), shape = RoundedCornerShape(16.dp)) {
                     Column(Modifier.padding(14.dp)) {
                         Text("重要程度", fontWeight = FontWeight.Bold)
                         val stars = dto.priorityLevel.coerceIn(1, 5)
@@ -2187,61 +2191,102 @@ private fun roleLabel(role: String): String = when (role.uppercase()) {
     }
     // 任务说明弹窗：状态标签（已完成/未完成）+ 阶段性内容输入框（不做百分比），已有记录直接展示
     if (showDescDialog && dto != null && item != null) {
-        val assignment = dto.authorizedAssignments.firstOrNull()
+        val assignment = detailAssignment
         val completed = assignment?.executionStatus == "COMPLETED" || (assignment?.progressPercent ?: 0) >= 100
+        val records = dto.progressRecords.filter { !it.note.isNullOrBlank() }.sortedByDescending { it.recordedAt }.take(5)
         AlertDialog(
             onDismissRequest = { if (!stageBusy) showDescDialog = false },
-            title = { Text("任务说明与进度", fontWeight = FontWeight.Bold) },
+            title = { Text(if (canUpdateTask) "任务说明与进度" else "任务说明", fontWeight = FontWeight.Bold) },
             text = {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
-                    Text(dto.description?.takeIf { it.isNotBlank() } ?: "暂无备注", fontSize = 14.sp, lineHeight = 21.sp, color = Ink.copy(alpha = .85f))
+                    // 备注正文比「任务状态」等小标题更大，与其他详情界面的正文字号一致
+                    Text(dto.description?.takeIf { it.isNotBlank() } ?: "暂无备注", fontSize = 19.sp, lineHeight = 30.sp, fontWeight = FontWeight.Medium, color = Ink.copy(alpha = .85f))
                     Spacer(Modifier.height(14.dp))
                     Text("任务状态", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.height(6.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(
-                            selected = completed,
-                            onClick = { if (!completed && assignment != null) markCompleted(assignment) },
-                            label = { Text("已完成") },
-                            colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Mint, selectedLabelColor = Ink)
-                        )
-                        FilterChip(
-                            selected = !completed,
-                            onClick = { if (completed) stageError = "已完成状态不可回退；如需调整请联系任务创建者" },
-                            label = { Text("未完成") },
-                            colors = FilterChipDefaults.filterChipColors(selectedContainerColor = CreamDeep, selectedLabelColor = Ink)
-                        )
+                    if (canUpdateTask) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilterChip(
+                                selected = completed,
+                                onClick = { if (!completed && assignment != null) markCompleted(assignment) },
+                                label = { Text("已完成") },
+                                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Mint, selectedLabelColor = Ink)
+                            )
+                            FilterChip(
+                                selected = !completed,
+                                onClick = { if (completed) stageError = "已完成状态不可回退；如需调整请联系任务创建者" },
+                                label = { Text("未完成") },
+                                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = CreamDeep, selectedLabelColor = Ink)
+                            )
+                        }
+                        if (assignment == null) Text("你没有该任务的执行关系，状态仅供查看。", fontSize = 12.sp, color = Ink.copy(alpha = .55f), modifier = Modifier.padding(top = 6.dp))
+                    } else {
+                        // 无更新权限：只显示当前状态，沿用状态标签原本的色块样式（已完成薄荷、未完成米黄）
+                        Surface(shape = RoundedCornerShape(8.dp), color = if (completed) Mint else CreamDeep) {
+                            Text(
+                                if (completed) "已完成" else "未完成",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Ink,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                            )
+                        }
                     }
-                    if (assignment == null) Text("你没有该任务的执行关系，状态仅供查看。", fontSize = 12.sp, color = Ink.copy(alpha = .55f), modifier = Modifier.padding(top = 6.dp))
                     Spacer(Modifier.height(14.dp))
                     Text("阶段性内容记录", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.height(6.dp))
-                    OutlinedTextField(
-                        stageNote,
-                        { stageNote = it; stageError = null },
-                        Modifier.fillMaxWidth(),
-                        placeholder = { Text("记录目前已完成的阶段性内容…") },
-                        minLines = 3,
-                        maxLines = 5,
-                        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Ink.copy(alpha = .65f), unfocusedBorderColor = Ink.copy(alpha = .25f), cursorColor = Ink)
-                    )
-                    if (assignment != null && "UPDATE_PROGRESS" in assignment.allowedActions) {
-                        TextButton({ recordStage(assignment) }, enabled = !stageBusy && stageNote.isNotBlank()) { Text("保存记录", color = WarmOrange, fontWeight = FontWeight.Bold) }
-                    } else if (assignment != null) {
-                        Text("当前账号无记录进度的权限。", fontSize = 12.sp, color = Ink.copy(alpha = .5f), modifier = Modifier.padding(top = 4.dp))
-                    }
-                    stageError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
-                    if (stageBusy) Text("处理中…", fontSize = 12.sp, color = Ink.copy(alpha = .6f), modifier = Modifier.padding(top = 4.dp))
-                    val records = dto.progressRecords.filter { !it.note.isNullOrBlank() }.sortedByDescending { it.recordedAt }.take(5)
-                    if (records.isNotEmpty()) {
-                        Spacer(Modifier.height(10.dp))
-                        Text("已有记录", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                        Spacer(Modifier.height(6.dp))
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            records.forEach { r ->
-                                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(CreamDeep).padding(10.dp)) {
-                                    Text(r.note!!, fontSize = 13.sp, lineHeight = 19.sp)
-                                    r.recordedAt?.let { Text(it.substring(0, minOf(16, it.length)).replace("T", " "), fontSize = 11.sp, color = Ink.copy(alpha = .55f)) }
+                    if (canUpdateTask) {
+                        OutlinedTextField(
+                            stageNote,
+                            { stageNote = it; stageError = null },
+                            Modifier.fillMaxWidth(),
+                            placeholder = { Text("记录目前已完成的阶段性内容…") },
+                            minLines = 3,
+                            maxLines = 5,
+                            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Ink.copy(alpha = .65f), unfocusedBorderColor = Ink.copy(alpha = .25f), cursorColor = Ink)
+                        )
+                        if (assignment != null && "UPDATE_PROGRESS" in assignment.allowedActions) {
+                            TextButton({ recordStage(assignment) }, enabled = !stageBusy && stageNote.isNotBlank()) { Text("保存记录", color = WarmOrange, fontWeight = FontWeight.Bold) }
+                        } else if (assignment != null) {
+                            Text("当前账号无记录进度的权限。", fontSize = 12.sp, color = Ink.copy(alpha = .5f), modifier = Modifier.padding(top = 4.dp))
+                        }
+                        stageError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
+                        if (stageBusy) Text("处理中…", fontSize = 12.sp, color = Ink.copy(alpha = .6f), modifier = Modifier.padding(top = 4.dp))
+                        if (records.isNotEmpty()) {
+                            Spacer(Modifier.height(10.dp))
+                            Text("已有记录", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            Spacer(Modifier.height(6.dp))
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                records.forEach { r ->
+                                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(CreamDeep).padding(10.dp)) {
+                                        Text(r.note!!, fontSize = 13.sp, lineHeight = 19.sp)
+                                        r.recordedAt?.let { Text(it.substring(0, minOf(16, it.length)).replace("T", " "), fontSize = 11.sp, color = Ink.copy(alpha = .55f)) }
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        // 无更新权限：沿用原来的文本框外观只读展示；无记录时框内直接显示「暂无内容」
+                        OutlinedTextField(
+                            if (records.isEmpty()) "暂无内容" else records.joinToString("\n\n") { it.note!! },
+                            {},
+                            Modifier.fillMaxWidth(),
+                            readOnly = true,
+                            minLines = 3,
+                            maxLines = 5,
+                            textStyle = TextStyle(color = Ink.copy(alpha = .6f), fontSize = 14.sp, lineHeight = 21.sp),
+                            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Ink.copy(alpha = .65f), unfocusedBorderColor = Ink.copy(alpha = .25f), cursorColor = Ink)
+                        )
+                        if (records.isNotEmpty()) {
+                            Spacer(Modifier.height(10.dp))
+                            Text("已有记录", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            Spacer(Modifier.height(6.dp))
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                records.forEach { r ->
+                                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(CreamDeep).padding(10.dp)) {
+                                        Text(r.note!!, fontSize = 13.sp, lineHeight = 19.sp)
+                                        r.recordedAt?.let { Text(it.substring(0, minOf(16, it.length)).replace("T", " "), fontSize = 11.sp, color = Ink.copy(alpha = .55f)) }
+                                    }
                                 }
                             }
                         }
