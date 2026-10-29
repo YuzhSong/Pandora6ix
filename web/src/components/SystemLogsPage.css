@@ -1,6 +1,7 @@
-.log-filter-fields { border: 0; padding: 22px 26px; margin: 0; min-width: 0; border-bottom: 1px solid var(--border); }
+.log-filter-fields { border: 0; padding: 16px 24px; margin: 0; min-width: 0; border-bottom: 1px solid var(--border); }
 .log-filter-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
-.log-filter-row .search-box { flex: 1 1 190px; width: auto; min-width: 155px; max-width: 250px; min-height: 44px; }
+.log-filter-row .search-box { flex: 0 1 360px; width: auto; min-width: 155px; max-width: 100%; min-height: 44px; }
+.log-filter-row .log-export-button { margin-left: auto; flex-shrink: 0; }
 .log-filter-row > .select-control { flex: 1 1 105px; min-width: 102px; max-width: 145px; }
 .log-filter-row .select-trigger { padding-inline: 12px; }
 .log-heading-title { display: flex; align-items: center; gap: 12px; }
@@ -39,14 +40,26 @@ html[data-theme='dark'] .log-calendar-error { color: #f3aaa5; }
 .log-calendar-footer { display: flex; justify-content: space-between; align-items: center; padding-top: 14px; margin-top: 12px; border-top: 1px solid var(--border); }
 .log-calendar-footer .button { padding: 8px 18px; }
 .log-table-scroll { max-width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; }
-.log-table { width: 100%; min-width: 690px; border-collapse: collapse; }
+.log-table { width: 100%; min-width: 1040px; table-layout: fixed; border-collapse: collapse; }
 .log-table th, .log-table td { padding: 16px 24px; text-align: left; border-bottom: 1px solid var(--border); vertical-align: middle; height: auto; }
 .log-table th { background: var(--surface-soft); color: var(--muted); font-weight: 500; }
 .log-table td:first-child { white-space: nowrap; font-variant-numeric: tabular-nums; }
-.log-table td:nth-child(2) { width: 60%; }
+.log-table td { overflow-wrap: anywhere; }
 .log-table strong { font-size: inherit; color: var(--text); font-weight: 600; white-space: nowrap; }
 .log-record-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 8px; color: var(--text); line-height: 1.7; }
-.log-record-line > span:not(.badge) { overflow-wrap: anywhere; }
+.log-record-line > span:not(.badge) { min-width: 0; overflow-wrap: anywhere; }
+.log-record-line > .log-module { justify-self: start; }
+.log-header-filters .log-header-filter { width: auto; min-width: 0; }
+.log-header-filters .select-trigger, .log-header-filters .log-date-trigger { width: auto; min-height: 32px; height: auto; padding: 4px 0; border: 0; border-radius: 4px; background: transparent; box-shadow: none; color: inherit; font: inherit; gap: 6px; text-align: left; }
+.log-header-filters th, .log-header-filters td { padding-inline: 18px; }
+.log-header-filters .select-trigger, .log-header-filters .log-date-trigger { max-width: 100%; }
+.log-header-filters .select-trigger > span, .log-header-filters .log-date-trigger > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.log-header-filters .select-trigger > svg, .log-header-filters .log-date-trigger > svg { flex-shrink: 0; }
+.log-header-filters .log-date-picker { min-width: 0; }
+.log-header-filters .log-date-trigger > svg:first-child { display: none; }
+.log-header-filters .select-trigger:focus-visible, .log-header-filters .log-date-trigger:focus-visible { outline: 2px solid var(--action-text); outline-offset: 3px; }
+.log-header-filters th[data-filtered='true'] { color: var(--action-text); font-weight: 600; }
+.log-header-filters td[colspan] { padding: 0; white-space: normal; }
 .log-record-line .badge { font-size: .75rem; white-space: nowrap; }
 .badge.log-module { color: #566579; background: #edf0f4; border: 1px solid transparent; }
 .badge.log-module[data-log-module='TASK'] { color: #385ca2; background: #eaf0ff; }

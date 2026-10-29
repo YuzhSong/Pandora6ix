@@ -3,8 +3,8 @@ import type { KeyboardEvent } from 'react'
 import { Icon } from './Icon.tsx'
 
 interface Option { value: string; label: string; depth?: number; accessibleLabel?: string; symbol?: string }
-export function Select({ label, value, options, onChange, disabled = false, required = false, className = '', popupMinWidth = 0 }: {
-  label: string; value: string; options: Option[]; onChange: (value: string) => void; disabled?: boolean; required?: boolean; className?: string; popupMinWidth?: number
+export function Select({ label, value, options, onChange, disabled = false, required = false, className = '', popupMinWidth = 0, triggerLabel }: {
+  label: string; value: string; options: Option[]; onChange: (value: string) => void; disabled?: boolean; required?: boolean; className?: string; popupMinWidth?: number; triggerLabel?: string
 }) {
   const id = useId()
   const anchor = useRef<HTMLButtonElement>(null)
@@ -57,7 +57,7 @@ export function Select({ label, value, options, onChange, disabled = false, requ
     }
   }
   useEffect(() => { if (open) popup.current?.children[active]?.scrollIntoView({ block: 'nearest' }) }, [active, open])
-  return <div className={`select-control ${className}`}><button ref={anchor} type="button" className="select-trigger" role="combobox" aria-label={label} aria-required={required} aria-expanded={open} aria-controls={`${id}-list`} aria-haspopup="listbox" aria-activedescendant={open ? `${id}-option-${active}` : undefined} disabled={disabled || !options.length} onClick={() => open ? popup.current?.hidePopover() : show()} onKeyDown={key}><span>{options[selected]?.label ?? '请选择'}</span><Icon name="chevron" size={15} /></button>
+  return <div className={`select-control ${className}`}><button ref={anchor} type="button" className="select-trigger" role="combobox" aria-label={label} aria-required={required} aria-expanded={open} aria-controls={`${id}-list`} aria-haspopup="listbox" aria-activedescendant={open ? `${id}-option-${active}` : undefined} disabled={disabled || !options.length} onClick={() => open ? popup.current?.hidePopover() : show()} onKeyDown={key}><span>{triggerLabel ?? options[selected]?.label ?? '请选择'}</span><Icon name="chevron" size={15} /></button>
     <div ref={popup} id={`${id}-list`} popover="auto" role="listbox" aria-label={label} className="select-popup" data-hierarchical={hierarchical} onKeyDown={key}>{options.map((option, index) => <button key={option.value} id={`${id}-option-${index}`} role="option" title={option.accessibleLabel ?? option.label} aria-label={option.accessibleLabel} style={option.depth !== undefined ? { paddingInlineStart: 12 + option.depth * 18 } : undefined} aria-selected={option.value === value} tabIndex={-1} type="button" className={index === active ? 'select-option highlighted' : 'select-option'} onMouseEnter={() => setActive(index)} onClick={() => choose(index)}><span className="select-option-label">{option.symbol && <span className="organization-option-symbol" aria-hidden="true">{option.symbol}</span>}<span>{option.label}</span></span>{option.value === value && <Icon name="check" size={15} />}</button>)}</div>
   </div>
 }

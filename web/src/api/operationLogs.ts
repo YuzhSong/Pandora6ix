@@ -61,7 +61,7 @@ export function createOperationLogReader(client: ReaderClient) {
     let cursor: string | undefined, snapshotToken: string | undefined, total: number | undefined
     do {
       signal?.throwIfAborted()
-      const page = await list(filters, { cursor, snapshotToken, limit: 200, signal })
+      const page = await list(filters, { cursor, snapshotToken, limit: 100, signal })
       if (total !== undefined && total !== page.total) throw new Error('日志结果已发生变化，请重新导出。')
       total = page.total; snapshotToken = page.snapshotToken
       for (const row of page.items) { if (seen.has(row.id)) throw new Error('日志分页数据重复，请重新导出。'); seen.add(row.id); items.push(row) }

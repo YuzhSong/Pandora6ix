@@ -1,3 +1,4 @@
+import { supervisorOptionLabel } from '../data/personnelDisplay.ts'
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { adminRepository } from '../data/repository.ts'
@@ -45,7 +46,7 @@ export function AdminEditor({ request, data, onClose, onSaved }: {
   const candidates = supervisorCandidates(data.people, request.item?.id, draft.roles)
   const effectiveSupervisor = canHaveSupervisor(draft.roles) ? draft.supervisorId : ''
   const invalidSupervisor = !!effectiveSupervisor && !candidates.some(person => person.id === draft.supervisorId)
-  const supervisorField = canHaveSupervisor(draft.roles) ? <label>直属上级<Select label="直属上级" value={draft.supervisorId} onChange={value => set('supervisorId', value)} options={[{ value: '', label: '未设置直属上级' }, ...(invalidSupervisor ? [{ value: draft.supervisorId, label: `${data.people.find(person => person.id === draft.supervisorId)?.displayName ?? '原上级'}（不符合当前角色，请重新选择）` }] : []), ...candidates.map(person => ({ value: person.id, label: `${person.displayName} · ${person.roles.map(role => roleLabels[role]).join('、')}` }))]} />{invalidSupervisor && <button className="text-button" type="button" onClick={() => set('supervisorId', '')}>清除不符合层级的上级</button>}</label> : null
+  const supervisorField = canHaveSupervisor(draft.roles) ? <label>直属上级<Select label="直属上级" popupMinWidth={380} value={draft.supervisorId} onChange={value => set('supervisorId', value)} options={[{ value: '', label: '未设置直属上级' }, ...(invalidSupervisor ? [{ value: draft.supervisorId, label: `${data.people.find(person => person.id === draft.supervisorId)?.displayName ?? '原上级'}（不符合当前角色，请重新选择）` }] : []), ...candidates.map(person => ({ value: person.id, label: supervisorOptionLabel(data, person) }))]} />{invalidSupervisor && <button className="text-button" type="button" onClick={() => set('supervisorId', '')}>清除不符合层级的上级</button>}</label> : null
   useEffect(() => {
     const opener = document.activeElement as HTMLElement | null
     dialog.current?.showModal()

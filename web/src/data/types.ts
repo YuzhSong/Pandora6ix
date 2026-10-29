@@ -30,6 +30,7 @@ export type TagInput = Omit<Tag, 'id' | 'version'>
 export type CompanyItemInput = Pick<CompanyImportantItem, 'title' | 'content' | 'displayOrder'>
 
 export interface AdminRepository {
+  restoreAccount(personId: string, expectedVersion: number): Promise<AdminData>
   replaceManager(personId: string, successorId: string, expectedVersion: number, successorExpectedVersion: number, successorJobTitle: string, formerJobTitle: string): Promise<AdminData>
   departPerson(personId: string, departureDate: string, expectedVersion: number): Promise<AdminData>
   changePersonJob(personId: string, input: JobChangeInput, expectedVersion: number): Promise<AdminData>

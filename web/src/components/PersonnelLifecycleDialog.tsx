@@ -1,3 +1,4 @@
+import { supervisorOptionLabel } from '../data/personnelDisplay.ts'
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import type { AdminData, Person, PersonnelChange, Role } from '../data/types.ts'
@@ -13,7 +14,7 @@ import { Icon } from './Icon.tsx'
 import { ValidatedForm } from './ValidatedForm.tsx'
 
 export type PersonnelAction = 'departure' | 'job' | 'history' | 'replacement'
-export function PersonnelLifecycleDialog({ person, action, data, onClose, onSaved }: { person: Person; action: PersonnelAction; data: AdminData; onClose: () => void; onSaved: (data: AdminData) => void }) {
+export function PersonnelLifecycleDialog({ person, action, continuation, data, onClose, onSaved }: { person: Person; action: PersonnelAction; continuation?: 'job' | 'departure'; data: AdminData; onClose: () => void; onSaved: (data: AdminData) => void }) {
   const dialog = useRef<HTMLDialogElement>(null), submitting = useRef(false)
   const [jobTitle] = useState(person.jobTitle), [org, setOrg] = useState(person.orgUnitId), [supervisor, setSupervisor] = useState(person.supervisorId ?? ''), [roles, setRoles] = useState<Role[]>(person.roles)
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: data.enterprise.businessTimezone || 'UTC', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
@@ -68,10 +69,11 @@ export function PersonnelLifecycleDialog({ person, action, data, onClose, onSave
     <div className="dialog-head"><h2>{title} · {person.displayName}</h2><button className="icon-button" disabled={busy} onClick={onClose} aria-label={'关闭' + title}><Icon name="close" /></button></div>
     <ValidatedForm onSubmit={event => void submit(event)}>
       <div className="dialog-body">
+        {action === 'replacement' && continuation && <div className="handover-guidance"><strong>第 1 步：交接负责人 → 第 2 步：{continuation === 'departure' ? '办理离职' : '岗位调整'}</strong><p>请先选择接任负责人。交接成功后，将继续为 {person.displayName} {continuation === 'departure' ? '办理离职' : '调整岗位'}。</p></div>}
         {action === 'replacement' && !successors.length && <p className="error-message" role="alert">暂无符合条件的接任人员，请先新增员工或调整人员岗位。</p>}
         {action === 'departure' && <><label>离职日期<input type="date" value={date} max={today} required disabled={busy || blocked} onChange={event => setDate(event.target.value)} /></label>{departureError && <p className="error-message" role="alert">{departureError}</p>}</>}
         {action === 'replacement' && <fieldset disabled={busy || blocked}><label>接任负责人<Select label="接任负责人" value={successorId} options={[{ value: '', label: '请选择' }, ...successors.map(p => ({ value: p.id, label: `${p.displayName}（${p.loginName}）` }))]} onChange={setSuccessorId} required /></label><dl className="info-list"><div><dt>负责组织</dt><dd>{data.units.find(unit => unit.id === person.orgUnitId)?.name ?? '未分配'}</dd></div><div><dt>接任角色</dt><dd>{roleLabels[managerRole(person) ?? 'EMPLOYEE']}</dd></div><div><dt>原负责人角色</dt><dd>{person.roles.includes('ADMIN') ? '系统管理员、普通员工' : '普通员工'}</dd></div><div><dt>调整直属下属</dt><dd>{reports.filter(p => p.id !== successorId).map(p => p.displayName).join('、') || '无'}</dd></div></dl></fieldset>}
-        {action === 'job' && <fieldset disabled={busy || blocked}><label>所属组织<Select label="调整所属组织" value={org} options={[{ value: '', label: '未分配' }, ...organizationFilterOptions(data.units)]} onChange={setOrg} /></label><div className="lifecycle-roles" role="group" aria-label="岗位角色">{(Object.keys(roleLabels) as Role[]).map(role => <label key={role}><input type="checkbox" checked={roles.includes(role)} onChange={event => setRoles(current => event.target.checked ? [...current, role] : current.filter(value => value !== role))} />{roleLabels[role]}</label>)}</div>{canHaveSupervisor(roles) && <label>直属上级<Select label="调整直属上级" value={supervisor} options={[{ value: '', label: '未设置' }, ...(supervisor && !candidates.some(p => p.id === supervisor) ? [{ value: supervisor, label: '原上级（请重新选择）' }] : []), ...candidates.map(p => ({ value: p.id, label: p.displayName }))]} onChange={setSupervisor} /></label>}</fieldset>}
+        {action === 'job' && <fieldset disabled={busy || blocked}><label>所属组织<Select label="调整所属组织" value={org} options={[{ value: '', label: '未分配' }, ...organizationFilterOptions(data.units)]} onChange={setOrg} /></label><div className="lifecycle-roles" role="group" aria-label="岗位角色">{(Object.keys(roleLabels) as Role[]).map(role => <label key={role}><input type="checkbox" checked={roles.includes(role)} onChange={event => setRoles(current => event.target.checked ? [...current, role] : current.filter(value => value !== role))} />{roleLabels[role]}</label>)}</div>{canHaveSupervisor(roles) && <label>直属上级<Select label="调整直属上级" popupMinWidth={380} value={supervisor} options={[{ value: '', label: '未设置' }, ...(supervisor && !candidates.some(p => p.id === supervisor) ? [{ value: supervisor, label: '原上级（请重新选择）' }] : []), ...candidates.map(p => ({ value: p.id, label: supervisorOptionLabel(data, p) }))]} onChange={setSupervisor} /></label>}</fieldset>}
         {action === 'history' && <>{!history && !error && <p role="status">正在加载…</p>}{history?.length === 0 && <p className="quiet-empty">暂无变动记录</p>}<ol className="personnel-timeline">{orderedHistory.map((change, index) => <li className="personnel-change" key={change.id}>
           <span className="personnel-event-number">{index + 1}</span>
           <h3>{change.kind === 'DEPARTURE' ? '办理离职' : `第 ${++jobChangeNumber} 次岗位调整`}</h3>
@@ -81,7 +83,7 @@ export function PersonnelLifecycleDialog({ person, action, data, onClose, onSave
         </li>)}</ol></>}
         {error && <p className="error-message" role="alert">{error}{blocked ? ' 请关闭并刷新资料后核对。' : ''}</p>}
       </div>
-      <div className="dialog-footer"><button type="button" className="button secondary" disabled={busy} onClick={onClose}>关闭</button>{action !== 'history' && <button className={`button ${action === 'departure' ? 'danger' : 'primary'}`} type="submit" disabled={busy || blocked || (action === 'departure' && !!departureError)}>{busy ? '正在保存…' : action === 'departure' ? '确认离职并停用账号' : action === 'replacement' ? '确认更换负责人' : '保存岗位调整'}</button>}</div>
+      <div className="dialog-footer"><button type="button" className="button secondary" disabled={busy} onClick={onClose}>关闭</button>{action !== 'history' && <button className={`button ${action === 'departure' ? 'danger' : 'primary'}`} type="submit" disabled={busy || blocked || (action === 'departure' && !!departureError)}>{busy ? '正在保存…' : action === 'departure' ? '确认离职并停用账号' : action === 'replacement' ? continuation ? '确认交接并继续' : '确认更换负责人' : '保存岗位调整'}</button>}</div>
     </ValidatedForm>
   </dialog>
 }
