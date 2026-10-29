@@ -28,7 +28,9 @@ data class NotificationDto(
     val body: String,
     val dueAt: String? = null,
     val createdAt: String,
-    val readAt: String? = null
+    val readAt: String? = null,
+    /** 审批申请是否已被处理：服务端按 task_review.decision 判定，已审批/驳回为 true */
+    val resolved: Boolean = false
 )
 
 @Serializable
@@ -36,6 +38,9 @@ data class NotificationPageDto(
     val items: List<NotificationDto> = emptyList(),
     val nextCursor: String? = null
 )
+
+@Serializable
+data class NotificationUnreadCountDto(val unreadCount: Long = 0)
 
 class PushDeviceRepository(context: Context, private val api: ApiClient) {
     private val installationPrefs = context.getSharedPreferences("push_installation", Context.MODE_PRIVATE)
@@ -64,4 +69,10 @@ class NotificationRepository(private val api: ApiClient) {
     suspend fun markRead(id: String) {
         api.post("/notifications/$id/read", null, NotificationDto.serializer())
     }
+
+    /** 未读提醒条数：导图页信封角标使用（99+ 由客户端封顶） */
+    suspend fun unreadCount(): Int = api.get(
+        "/notifications/unread-count",
+        NotificationUnreadCountDto.serializer()
+    ).unreadCount.toInt()
 }

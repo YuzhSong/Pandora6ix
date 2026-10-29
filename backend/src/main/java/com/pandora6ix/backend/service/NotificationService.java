@@ -107,9 +107,21 @@ public class NotificationService {
 
     public void reviewRequested(String enterpriseId, String reviewId, String taskId, String submitterId,
                                 String reviewerId, String taskTitle) {
+        // 正文带上提交人姓名：审批人一眼看到是谁申请审批（查不到姓名时退回原文案）
+        String submitter = displayName(enterpriseId, submitterId);
         emit(enterpriseId, reviewerId, NEW_TASK, taskId, null, "审批申请",
-                "有一项任务等待你审批。打开应用查看详情。",
+                (submitter == null || submitter.isBlank() ? "" : submitter) + "有一项任务等待你审批。打开应用查看详情。",
                 reviewId + "|REVIEW_REQUEST|" + reviewerId, null, "REVIEW_REQUEST");
+    }
+
+    private String displayName(String enterpriseId, String userId) {
+        if (enterpriseId == null || userId == null) return null;
+        return db.optional(
+                        "SELECT display_name FROM app_user WHERE enterprise_id=? AND id=?",
+                        enterpriseId,
+                        userId)
+                .map(row -> str(row, "display_name"))
+                .orElse(null);
     }
 
     public void reviewDecided(String enterpriseId, String reviewId, String taskId, String submitterId,
@@ -179,7 +191,7 @@ public class NotificationService {
                 a.enterpriseId() + ":" + a.id() + ":notifications",
                 List.of("created_at", "id"),
                 true,
-                row -> view(row));
+                row -> notificationView(row));
     }
 
     public Map<String, Object> unreadCount(IdentityService.Actor a) {
@@ -208,7 +220,28 @@ public class NotificationService {
                         + " AND read_at IS NULL",
                 a.enterpriseId(),
                 id);
-        return view(db.entity("notification", a.enterpriseId(), id));
+        return notificationView(db.entity("notification", a.enterpriseId(), id));
+    }
+
+    /** 提醒视图：审批申请额外带 resolved，客户端据此隐藏「查看待审批」并标记为「已审批」 */
+    private Map<String, Object> notificationView(Map<String, Object> row) {
+        Map<String, Object> v = view(row);
+        if (!"REVIEW_REQUEST".equals(str(row, "event_type"))) return v;
+        String key = str(row, "dedupe_key");
+        String reviewId = key == null || key.indexOf('|') < 0 ? key : key.substring(0, key.indexOf('|'));
+        v.put("resolved", !reviewPending(str(row, "enterprise_id"), reviewId));
+        return v;
+    }
+
+    /** 审批申请对应的审批记录仍为 PENDING 才算「待我审批」；记录缺失视为已处理 */
+    private boolean reviewPending(String enterpriseId, String reviewId) {
+        if (enterpriseId == null || reviewId == null || reviewId.isBlank()) return false;
+        return db.optional(
+                        "SELECT decision FROM task_review WHERE enterprise_id=? AND id=?",
+                        enterpriseId,
+                        reviewId)
+                .map(row -> "PENDING".equals(str(row, "decision")))
+                .orElse(false);
     }
 
     /**
