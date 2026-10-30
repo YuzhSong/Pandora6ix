@@ -146,6 +146,13 @@ private fun decodeUriThumbnail(context: Context, uri: Uri, target: Int = 192) = 
 
 class MainActivity : ComponentActivity() {
     private val notificationOpenEvents = Channel<String>(Channel.BUFFERED)
+    private val approvalPromptEvents = Channel<ApprovalPrompt>(Channel.BUFFERED)
+    private var approvalReceiver: android.content.BroadcastReceiver? = null
+
+    companion object {
+        @Volatile var isForeground = false
+            private set
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -157,7 +164,36 @@ class MainActivity : ComponentActivity() {
         val session = SessionStore(this)
         val api = ApiClient(session)
         val auth = AuthRepository(api, session)
-        setContent { PandoraApp(session, api, auth, notificationOpenEvents.receiveAsFlow()) }
+        setContent { PandoraApp(session, api, auth, notificationOpenEvents.receiveAsFlow(), approvalPromptEvents.receiveAsFlow()) }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        isForeground = true
+        if (approvalReceiver != null) return
+        approvalReceiver = object : android.content.BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                val prompt = ApprovalPrompt.from(
+                    intent.getStringExtra(PandoraPushReceiver.EXTRA_NOTIFICATION_ID),
+                    intent.getStringExtra(PandoraPushReceiver.EXTRA_EVENT_TYPE)
+                ) ?: return
+                approvalPromptEvents.trySend(prompt)
+            }
+        }.also { receiver ->
+            ContextCompat.registerReceiver(
+                this,
+                receiver,
+                android.content.IntentFilter(PandoraPushReceiver.APPROVAL_ARRIVED),
+                ContextCompat.RECEIVER_NOT_EXPORTED
+            )
+        }
+    }
+
+    override fun onStop() {
+        isForeground = false
+        approvalReceiver?.let { unregisterReceiver(it) }
+        approvalReceiver = null
+        super.onStop()
     }
 
     override fun onNewIntent(intent: android.content.Intent) {
@@ -237,7 +273,13 @@ private fun cardBorderIfBlended(): BorderStroke? {
 }
 
 @Composable
-fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository, notificationOpenEvents: Flow<String>) {
+fun PandoraApp(
+    session: SessionStore,
+    api: ApiClient,
+    auth: AuthRepository,
+    notificationOpenEvents: Flow<String>,
+    approvalPromptEvents: Flow<ApprovalPrompt>
+) {
     PandoraTheme {
         var route by rememberSaveable { mutableStateOf(Route.HOME.name) }
         var modeName by rememberSaveable { mutableStateOf(CalendarMode.WEEK.name) }
@@ -248,6 +290,7 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository, noti
         var journalDetailId by remember { mutableStateOf<String?>(null) }
         var showSettings by rememberSaveable { mutableStateOf(false) }
         var showReviews by rememberSaveable { mutableStateOf(false) }
+        var approvalPrompt by remember { mutableStateOf<ApprovalPrompt?>(null) }
         // 标签管理覆盖层（我的页进入，入口仅对有权限角色显示）
         var showTagManage by rememberSaveable { mutableStateOf(false) }
         // 进度记录浮层：从任务详情进入，显示当前任务的执行关系
@@ -319,6 +362,9 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository, noti
                 detail = null
                 homeDetail = null
             }
+        }
+        LaunchedEffect(approvalPromptEvents) {
+            approvalPromptEvents.collect { approvalPrompt = it }
         }
         DisposableEffect(appContext) {
             val receiver = object : android.content.BroadcastReceiver() {
@@ -581,11 +627,32 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository, noti
                 reminderQueue.firstOrNull()?.let { event ->
                     ReminderDialog(event) { if (reminderQueue.isNotEmpty()) reminderQueue.removeAt(0) }
                 }
+                if (approvalPrompt != null && currentUser != null) {
+                    ApprovalPromptDialog(
+                        prompt = approvalPrompt!!,
+                        onReview = {
+                            approvalPrompt = null
+                            showReviews = true
+                        },
+                        onDismiss = { approvalPrompt = null }
+                    )
+                }
             }
         }
         }
         }
     }
+}
+
+@Composable
+private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("审批提醒") },
+        text = { Text(prompt.message) },
+        confirmButton = { TextButton(onClick = onReview) { Text("查看审批") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("稍后") } }
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
