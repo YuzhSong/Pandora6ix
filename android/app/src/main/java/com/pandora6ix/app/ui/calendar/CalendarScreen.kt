@@ -494,28 +494,36 @@ private fun Modifier.calendarGuides(): Modifier = drawBehind {
         }) {
             val dayWidth = maxWidth / dates.size
             dates.forEachIndexed { index, date ->
-                // 日/周视图共用错位叠放，全天任务占据整日高度。
-                val placements = staggerTimedTasks(tasks, date)
+                // 日视图并列分栏；周视图保留错位叠放。全天任务仍占据整日高度。
+                val placements = if (dayMode) parallelTimedTasks(tasks, date) else staggerTimedTasks(tasks, date)
                 val maxDepth = placements.maxOfOrNull { it.depth } ?: 0
                 val indentStep = if (maxDepth == 0) 0.dp else minOf(6.dp, dayWidth * .35f / maxDepth)
-                placements.forEach { (task, range, depth) ->
-                    val indent = indentStep * depth
+                placements.forEach { (task, range, depth, columnCount) ->
+                    val cardWidth = if (dayMode) dayWidth / columnCount else dayWidth - indentStep * depth
+                    val indent = if (dayMode) cardWidth * depth else indentStep * depth
                     val edgeColor = taskEdgeColor(task)
                     // 跨天任务在当天裁剪显示，并标注起止来源
                     val spansFrom = date > task.start
                     val spansInto = date < task.end
                     // 半透明任务色必须有实色衬底，否则同刻开始的底层标题会透出。
-                    Box(Modifier.offset(x = dayWidth * index + indent, y = hourHeight * (range.first / 60f)).width(dayWidth - indent).height(hourHeight * ((range.last - range.first + 1) / 60f)).padding(1.dp).clip(RoundedCornerShape(4.dp)).background(WarmCard.copy(alpha = 1f)).background(taskColor(task))
+                    Box(Modifier.offset(x = dayWidth * index + indent, y = hourHeight * (range.first / 60f)).width(cardWidth).height(hourHeight * ((range.last - range.first + 1) / 60f)).padding(1.dp).clip(RoundedCornerShape(4.dp)).background(WarmCard.copy(alpha = 1f)).background(taskColor(task))
                         .drawBehind {
                             val stroke = minOf(3.dp.toPx(), size.width)
                             drawLine(edgeColor, Offset(stroke / 2, 0f), Offset(stroke / 2, size.height), strokeWidth = stroke)
                         }
                         .semantics {
                             role = Role.Button
-                            onClick("选择${task.title}") { selectAt(date, range.first); true }
+                            onClick("选择${task.title}") {
+                                if (dayMode) onSelect(task, date) else selectAt(date, range.first)
+                                true
+                            }
                         }
-                        .pointerInput(task.id, date, range, hourHeight) {
+                        .pointerInput(task.id, date, range, hourHeight, dayMode) {
                             detectTapGestures { position ->
+                                if (dayMode) {
+                                    onSelect(task, date)
+                                    return@detectTapGestures
+                                }
                                 val minute = (range.first + ((position.y + 1.dp.toPx()) / hourHeight.toPx() * 60).toInt())
                                     .coerceIn(range.first, range.last)
                                 selectAt(date, minute)

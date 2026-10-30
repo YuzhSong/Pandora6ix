@@ -65,7 +65,36 @@ fun timeRangeOnDate(task: TaskItem, date: DemoDate): IntRange? {
     return from until until
 }
 
-data class TimedTaskPlacement(val task: TaskItem, val range: IntRange, val depth: Int)
+data class TimedTaskPlacement(val task: TaskItem, val range: IntRange, val depth: Int, val columnCount: Int = 1)
+
+/** 日视图：每个相交区间组等宽分列，已结束的列可供后续任务复用。 */
+fun parallelTimedTasks(tasks: List<TaskItem>, date: DemoDate): List<TimedTaskPlacement> {
+    val entries = tasks.mapNotNull { task ->
+        timelineTimeRangeOnDate(task, date)?.takeUnless { it.isEmpty() }?.let { TimedTaskPlacement(task, it, 0) }
+    }.sortedWith(compareBy<TimedTaskPlacement> { it.range.first }
+        .thenByDescending { it.range.last }.thenBy { it.task.id })
+    val result = mutableListOf<TimedTaskPlacement>()
+    val group = mutableListOf<TimedTaskPlacement>()
+    val columnEnds = mutableListOf<Int>()
+    var groupEnd = -1
+    fun flushGroup() {
+        result.addAll(group.map { it.copy(columnCount = columnEnds.size) })
+        group.clear()
+        columnEnds.clear()
+    }
+    entries.forEach { entry ->
+        if (entry.range.first > groupEnd) flushGroup()
+        var column = columnEnds.indexOfFirst { it < entry.range.first }
+        if (column < 0) {
+            column = columnEnds.size
+            columnEnds.add(entry.range.last)
+        } else columnEnds[column] = entry.range.last
+        group.add(entry.copy(depth = column))
+        groupEnd = maxOf(groupEnd, entry.range.last)
+    }
+    flushGroup()
+    return result
+}
 
 fun timelineTasksAt(tasks: List<TaskItem>, date: DemoDate, minute: Int): List<TaskItem> =
     if (minute !in 0 until 1440) emptyList() else staggerTimedTasks(tasks, date)
