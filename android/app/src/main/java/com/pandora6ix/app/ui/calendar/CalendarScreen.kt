@@ -201,7 +201,8 @@ fun CalendarScreen(
                         }
                         HorizontalDivider(color = Ink.copy(alpha = .08f))
                         key(mode, if (mode == CalendarMode.DAY) cursor else weekStart) {
-                            TimeGrid(visibleDates, visibleTasks, mode == CalendarMode.DAY, today, businessTimezone, onSelect = { task, _ -> onOpen(task) })
+                            if (mode == CalendarMode.WEEK) WeekTaskStacks(visibleDates, visibleTasks, onOpen)
+                            else TimeGrid(visibleDates, visibleTasks, true, today, businessTimezone, onSelect = { task, _ -> onOpen(task) })
                         }
                     }
                 }
@@ -265,7 +266,7 @@ fun CalendarScreen(
 }
 
 @Composable private fun WeekDates(dates: List<DemoDate>, today: DemoDate, onSelect: (DemoDate) -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(start = 40.dp, end = 8.dp, bottom = 8.dp)) {
+    Row(Modifier.fillMaxWidth().padding(start = if (dates.size == 1) 40.dp else 8.dp, end = 8.dp, bottom = 8.dp)) {
         dates.forEach { date ->
             Column(Modifier.weight(1f).clickable { onSelect(date) }, horizontalAlignment = Alignment.CenterHorizontally) {
                 Text("周${date.weekdayLabel()}", fontSize = 12.sp, color = Ink.copy(alpha = .65f))
@@ -567,6 +568,44 @@ private fun Modifier.calendarGuides(): Modifier = drawBehind {
                 }
             }
             TextButton(onClick = { selection = null }, modifier = Modifier.fillMaxWidth().padding(8.dp)) { Text("取消") }
+        }
+    }
+}
+
+@Composable private fun WeekTaskStacks(dates: List<DemoDate>, tasks: List<TaskItem>, onOpen: (TaskItem) -> Unit) {
+    val allDayRows = weekAllDayRows(tasks, dates)
+    val timedTasks = tasks.filterNot(::isAllDay)
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 80.dp)
+    ) {
+        allDayRows.forEach { lane ->
+            DateLane(lane, dates, height = 28, compact = false) { task, _ -> onOpen(task) }
+            Spacer(Modifier.height(4.dp))
+        }
+        if (allDayRows.isNotEmpty()) Spacer(Modifier.height(4.dp))
+        Row(Modifier.fillMaxWidth()) {
+        dates.forEach { date ->
+            Column(Modifier.weight(1f).padding(horizontal = 2.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                weekTasksOnDate(timedTasks, date).forEach { task ->
+                    val edge = taskEdgeColor(task)
+                    Column(
+                        Modifier.fillMaxWidth().height(88.dp).clip(RoundedCornerShape(4.dp))
+                            .background(WarmCard).background(taskColor(task))
+                            .clickable(role = Role.Button, onClickLabel = "查看${task.title}") { onOpen(task) }
+                            .drawBehind {
+                                drawLine(edge, Offset(1.dp.toPx(), 0f), Offset(1.dp.toPx(), size.height), strokeWidth = 2.dp.toPx())
+                            }.padding(start = 4.dp, end = 2.dp, top = 4.dp, bottom = 4.dp)
+                    ) {
+                        Text(task.title, Modifier.weight(1f), fontSize = 11.sp, lineHeight = 14.sp,
+                            maxLines = 3, overflow = TextOverflow.Ellipsis, color = Ink)
+                        val time = if (isAllDay(task)) "全天" else minuteLabel(task.startMinute!!)
+                        Text(if (date > task.start) "续 $time" else time,
+                            fontSize = 10.sp, lineHeight = 12.sp, maxLines = 1,
+                            overflow = TextOverflow.Ellipsis, color = Ink.copy(alpha = .7f))
+                    }
+                }
+            }
+        }
         }
     }
 }

@@ -51,6 +51,32 @@ fun packTaskRows(tasks: List<TaskItem>, dates: List<DemoDate>): List<List<TaskSe
 }
 
 fun isAllDay(task: TaskItem) = task.startMinute == null || task.endMinute == null
+
+fun weekAllDayRows(tasks: List<TaskItem>, dates: List<DemoDate>): List<List<TaskSegment>> {
+    if (dates.isEmpty()) return emptyList()
+    val rows = mutableListOf<MutableList<TaskSegment>>()
+    tasks.filter { isAllDay(it) && it.start <= dates.last() && it.end >= dates.first() }
+        .sortedWith(compareBy<TaskItem> { it.start }
+            .thenByDescending { daysBetween(it.start, it.end) }.thenBy { it.id })
+        .forEach { task ->
+            val segment = TaskSegment(task, maxOf(0, daysBetween(dates.first(), task.start)),
+                minOf(dates.lastIndex, daysBetween(dates.first(), task.end)))
+            val row = rows.firstOrNull { lane -> lane.none { segment.first <= it.last && segment.last >= it.first } }
+                ?: mutableListOf<TaskSegment>().also { rows.add(it) }
+            row.add(segment)
+        }
+    return rows.map { it.toList() }
+}
+
+/** 周视图使用任务原始起点与总时长排序，不使用当天裁剪后的区间。 */
+fun weekTasksOnDate(tasks: List<TaskItem>, date: DemoDate): List<TaskItem> =
+    tasks.filter { timelineTimeRangeOnDate(it, date)?.isEmpty() == false }
+        .sortedWith(compareBy<TaskItem> { it.start }
+            .thenBy { if (isAllDay(it)) 0 else it.startMinute!! }
+            .thenByDescending {
+                if (isAllDay(it)) (daysBetween(it.start, it.end).toLong() + 1) * 1440
+                else daysBetween(it.start, it.end).toLong() * 1440 + it.endMinute!! - it.startMinute!!
+            }.thenBy { it.id })
 // 日/周视图将全天任务映射为整日高度，不修改原任务时间数据。
 fun timelineTimeRangeOnDate(task: TaskItem, date: DemoDate): IntRange? =
     if (isAllDay(task)) {
