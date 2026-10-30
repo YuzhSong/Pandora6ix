@@ -67,7 +67,8 @@ data class TaskItem(
     val tags: List<TagDto>,
     val displayColorHex: String?,
     val assignments: List<AssignmentDto>,
-    val allowedActions: List<String>
+    val allowedActions: List<String>,
+    val recurrenceLabel: String? = null
 )
 
 fun TaskDto.toTaskItem(): TaskItem {
@@ -90,7 +91,8 @@ fun TaskDto.toTaskItem(): TaskItem {
         tags = (primary?.let { listOf(it) } ?: emptyList()) + tags.filter { it.id != primary?.id },
         displayColorHex = displayColor,
         assignments = authorizedAssignments,
-        allowedActions = allowedActions
+        allowedActions = allowedActions,
+        recurrenceLabel = recurrenceLabel
     )
 }
 

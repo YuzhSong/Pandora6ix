@@ -1,0 +1,2 @@
+ALTER TABLE task ADD COLUMN series_id VARCHAR(36);
+ALTER TABLE task ADD COLUMN recurrence_label VARCHAR(1000);

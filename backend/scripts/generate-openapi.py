@@ -143,7 +143,8 @@ def read_schemas():
         "timeKind": java_type("TimeKind"), "startTime": nullable(STRING), "endTime": nullable(STRING), "reviewStatus": {"type": "string", "enum": ["PENDING", "APPROVED", "REJECTED"]},
         "primaryTagId": nullable(ID), "tags": array(ref("Tag")), "tagIds": array(ID), "displayColor": nullable(STRING), "createdAt": INSTANT,
         "authorizedAssignments": array(ref("Assignment")), "allowedActions": array(STRING), "reviewId": nullable(ID), "pendingEditReviewId": nullable(ID),
-        "progressRecords": array(ref("ProgressRecord")), "completionRequests": array(ref("CompletionRequestView"))})
+        "progressRecords": array(ref("ProgressRecord")), "completionRequests": array(ref("CompletionRequestView")),
+        "seriesId": nullable(ID), "recurrenceLabel": nullable(STRING), "occurrenceCount": INTEGER, "occurrenceDate": nullable(DATE)})
     entry = obj({**versioned, "entryId": ID, "journalId": ID, "workLogId": ID, "workDate": DATE, "authorUserId": ID,
         "clientEntryKey": STRING, "content": STRING, "displayOrder": INTEGER, "recordedAt": INSTANT, "eligible": BOOLEAN})
     journal = obj({**versioned, "journalId": ID, "authorUserId": ID, "workDate": DATE, "publishedAt": INSTANT,
@@ -182,6 +183,7 @@ def read_schemas():
         "reviewerName": nullable(STRING), "reviewerJobTitle": nullable(STRING),
         "recipients": array(reviewActor)})
     schemas = {"Tag": tag, "Assignment": assignment, "ProgressRecord": progress, "CompletionRequestView": completion, "Task": task,
+        "TaskScope": obj({"items": array(ref("Task"))}, ("items",)),
         "WorkEntry": entry, "Journal": journal, "Enterprise": enterprise, "OrgUnit": org, "User": user, "Profile": profile, "CompanyItem": item, "ImportantSelection": selection, "Statistics": stats,
         "JournalDeleted": journalDeleted, "TagDeleted": tagDeleted,
         "CredentialHandoffPage": obj({"items": array(obj({"personId": ID, "displayName": STRING, "loginName": STRING, "enterpriseDomain": STRING, "status": {"type": "string", "enum": ["AVAILABLE", "CHANGED", "EXPIRED", "UNAVAILABLE"]}, "initialPassword": {"type": "string", "description": "Only present for available temporary credentials."}, "expiresAt": INSTANT}, ("personId", "displayName", "loginName", "enterpriseDomain", "status"))), "nextCursor": {"type": "null"}}, ("items", "nextCursor")),
@@ -238,7 +240,8 @@ RESPONSES = {
     ("GET", "/tags"): "TagPage", ("POST", "/tags"): "Tag", ("PATCH", "/tags/{id}"): "Tag",
     ("GET", "/tasks/recipient-candidates"): "RecipientPage", ("GET", "/tasks"): "TaskPage", ("POST", "/tasks"): "Task", ("GET", "/tasks/{id}"): "Task", ("PATCH", "/tasks/{id}"): "Task",
     ("PATCH", "/task-assignments/{id}/status"): "AssignmentStatusResult",
-    ("POST", "/tasks/{id}/complete"): "Assignment", ("POST", "/task-assignments/{id}/progress-records"): "ProgressResult",
+    ("GET", "/tasks/{id}/scope"): "TaskScope", ("POST", "/tasks/{id}/scoped-edit"): "Task", ("POST", "/tasks/{id}/scoped-status"): "Task",
+    ("POST", "/tasks/recurring"): "Task", ("POST", "/tasks/{id}/complete"): "Assignment", ("POST", "/task-assignments/{id}/progress-records"): "ProgressResult",
     ("POST", "/task-assignments/{id}/completion-requests"): "CompletionResult", ("POST", "/task-completion-requests/{id}/decision"): "CompletionResult",
     ("GET", "/task-reviews"): "TaskReviewPage", ("GET", "/task-reviews/{id}"): "TaskReview", ("POST", "/task-reviews/{id}/decision"): "ReviewDecisionResult",
     ("GET", "/task-reviews/pending-count"): "TaskReviewPendingCount",

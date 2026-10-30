@@ -22,6 +22,8 @@ public class MutationAudit {
                 "reviewStatus",row.get("review_status"),"startDate",row.get("start_date"),"endDate",row.get("end_date"),
                 "timeKind",row.get("time_kind"),"startMinute",row.get("start_minute"),"endMinute",row.get("end_minute"),
                 "creatorUserId",row.get("creator_user_id"),"creatorName",person(actor,str(row,"creator_user_id")));
+        snapshot.put("seriesId",row.get("series_id"));
+        snapshot.put("recurrenceLabel",row.get("recurrence_label"));
         snapshot.put("recipients",db.rows("SELECT a.recipient_user_id,u.display_name,a.execution_status,a.version FROM task_assignment a JOIN app_user u ON u.enterprise_id=a.enterprise_id AND u.id=a.recipient_user_id WHERE a.enterprise_id=? AND a.task_id=? ORDER BY a.id",actor.enterpriseId(),id));
         snapshot.put("tags",tags(actor,"task_tag","task_id",id));
         return snapshot;

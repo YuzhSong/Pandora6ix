@@ -424,7 +424,7 @@ private fun DayNumberRow(month: DemoDate, week: List<DemoDate>, inMonth: List<Bo
             Box(Modifier.offset(x = cellWidth * segment.first).width(cellWidth * (segment.last - segment.first + 1)).fillMaxHeight().padding(horizontal = 1.dp).clip(RoundedCornerShape(3.dp)).background(taskColor(segment.task))
                 .semantics { role = Role.Button; onClick("查看${segment.task.title}") { onSelect(segment.task, dates[segment.first]); true } }
                 .pointerInput(segment.task.id, dates) { detectTapGestures { position -> val day = (position.x / (size.width.toFloat() / (segment.last - segment.first + 1))).toInt().coerceIn(0, segment.last - segment.first); onSelect(segment.task, dates[segment.first + day]) } }, contentAlignment = Alignment.CenterStart) {
-                Text(segment.task.title, Modifier.padding(horizontal = 3.dp), fontSize = if (compact) 11.sp else 12.sp, lineHeight = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Ink)
+                Text((if (segment.task.recurrenceLabel != null) "↻ " else "") + segment.task.title, Modifier.padding(horizontal = 3.dp), fontSize = if (compact) 11.sp else 12.sp, lineHeight = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Ink)
             }
         }
     }
@@ -574,7 +574,6 @@ private fun Modifier.calendarGuides(): Modifier = drawBehind {
 
 @Composable private fun WeekTaskStacks(dates: List<DemoDate>, tasks: List<TaskItem>, onOpen: (TaskItem) -> Unit) {
     val allDayRows = weekAllDayRows(tasks, dates)
-    val timedTasks = tasks.filterNot(::isAllDay)
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 80.dp)
     ) {
@@ -586,7 +585,7 @@ private fun Modifier.calendarGuides(): Modifier = drawBehind {
         Row(Modifier.fillMaxWidth()) {
         dates.forEach { date ->
             Column(Modifier.weight(1f).padding(horizontal = 2.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                weekTasksOnDate(timedTasks, date).forEach { task ->
+                weekCardTasksOnDate(tasks, date).forEach { task ->
                     val edge = taskEdgeColor(task)
                     Column(
                         Modifier.fillMaxWidth().height(88.dp).clip(RoundedCornerShape(4.dp))
@@ -598,7 +597,7 @@ private fun Modifier.calendarGuides(): Modifier = drawBehind {
                     ) {
                         Text(task.title, Modifier.weight(1f), fontSize = 11.sp, lineHeight = 14.sp,
                             maxLines = 3, overflow = TextOverflow.Ellipsis, color = Ink)
-                        val time = if (isAllDay(task)) "全天" else minuteLabel(task.startMinute!!)
+                        val time = (if (task.recurrenceLabel != null) "↻ " else "") + if (isAllDay(task)) "全天" else minuteLabel(timelineTimeRangeOnDate(task, date)?.first ?: task.startMinute!!)
                         Text(if (date > task.start) "续 $time" else time,
                             fontSize = 10.sp, lineHeight = 12.sp, maxLines = 1,
                             overflow = TextOverflow.Ellipsis, color = Ink.copy(alpha = .7f))

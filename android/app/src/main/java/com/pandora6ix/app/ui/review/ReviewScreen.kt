@@ -349,6 +349,7 @@ private fun ReviewDetail(review: TaskReviewDto, taskRepo: TaskRepository, availa
             // 时间：全天/指定时间、跨天日期范围
             item {
                 SectionCard("时间安排") {
+                    snapshot.recurrenceLabel?.let { InfoRow("重复安排", it) }
                     InfoRow("日期", dateRangeLabel(snapshot.startDate, snapshot.endDate))
                     InfoRow(
                         "时间",
@@ -611,7 +612,8 @@ private fun parseSnapshot(snapshot: JsonObject?): SnapshotInfo {
         endTime = str("endTime"),
         recipientIds = strings("recipientIds"),
         tagIds = strings("tagIds"),
-        primaryTagId = str("primaryTagId")
+        primaryTagId = str("primaryTagId"),
+        recurrenceLabel = str("recurrenceLabel")
     )
 }
 
@@ -627,7 +629,8 @@ private data class SnapshotInfo(
     val endTime: String?,
     val recipientIds: List<String>,
     val tagIds: List<String>,
-    val primaryTagId: String?
+    val primaryTagId: String?,
+    val recurrenceLabel: String? = null
 )
 
 private fun kindLabel(kind: String?) = if (kind == "DELEGATED") "派发任务" else "个人任务"

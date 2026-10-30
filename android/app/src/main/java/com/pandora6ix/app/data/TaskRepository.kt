@@ -19,8 +19,27 @@ data class TaskCreateDto(
     val endTime: String? = null,
     val recipientIds: List<String>? = null,
     val tagIds: List<String>? = null,
-    val primaryTagId: String? = null
+    val primaryTagId: String? = null,
+    val recurrence: RecurrenceRule? = null
 )
+
+@Serializable
+data class TaskPatchDto(val expectedVersion: Long, val title: String, val description: String?,
+    val priorityLevel: Int, val timeKind: String, val startDate: String, val endDate: String,
+    val startTime: String?, val endTime: String?, val tagIds: List<String>, val primaryTagId: String?)
+@Serializable
+data class TaskScopeDto(val items: List<TaskDto> = emptyList())
+@Serializable
+data class ScopeVersionDto(val taskId: String, val taskVersion: Long, val assignmentId: String? = null, val assignmentVersion: Long? = null)
+@Serializable
+data class ScopedEditDto(val scope: String, val task: TaskPatchDto, val versions: List<ScopeVersionDto>)
+@Serializable
+data class ScopedStatusDto(val scope: String, val workStatus: String, val note: String? = null, val versions: List<ScopeVersionDto>)
+
+fun taskScopeVersions(tasks: List<TaskDto>, ownerId: String?): List<ScopeVersionDto> = tasks.map { task ->
+    val assignment = task.authorizedAssignments.firstOrNull { it.recipientUserId == ownerId }
+    ScopeVersionDto(task.id, task.version, assignment?.id, assignment?.version)
+}
 
 /** 接收人候选（管理范围内真实用户） */
 @Serializable
@@ -175,7 +194,7 @@ class TaskRepository(private val api: ApiClient) {
 
     suspend fun create(command: TaskCreateDto, idempotencyKey: String): TaskDto {
         val body = api.json.encodeToString(TaskCreateDto.serializer(), command)
-        return api.postIdempotent("/tasks", body, idempotencyKey, TaskDto.serializer())
+        return api.postIdempotent(if (command.recurrence == null) "/tasks" else "/tasks/recurring", body, idempotencyKey, TaskDto.serializer())
     }
 
     /** 审批队列：scope=pending（待我审批）| created（我提交的申请） */
@@ -195,6 +214,12 @@ class TaskRepository(private val api: ApiClient) {
     /** 任务详情（含 authorizedAssignments/progressRecords/allowedActions 最新版本） */
     suspend fun task(id: String): TaskDto =
         api.get("/tasks/${URLEncoder.encode(id, "UTF-8")}", TaskDto.serializer())
+
+    suspend fun scopeSnapshot(id: String): TaskScopeDto = api.get("/tasks/${URLEncoder.encode(id, "UTF-8")}/scope", TaskScopeDto.serializer())
+    suspend fun scopedEdit(id: String, command: ScopedEditDto, key: String): TaskDto = api.postIdempotent(
+        "/tasks/${URLEncoder.encode(id, "UTF-8")}/scoped-edit", api.json.encodeToString(ScopedEditDto.serializer(), command), key, TaskDto.serializer())
+    suspend fun scopedStatus(id: String, command: ScopedStatusDto, key: String): TaskDto = api.postIdempotent(
+        "/tasks/${URLEncoder.encode(id, "UTF-8")}/scoped-status", api.json.encodeToString(ScopedStatusDto.serializer(), command), key, TaskDto.serializer())
 
     /** 记录执行进度：percent ∈ 0..100；expectedVersion 为该执行关系当前版本 */
     suspend fun recordProgress(

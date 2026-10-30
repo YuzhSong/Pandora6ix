@@ -52,15 +52,24 @@ fun packTaskRows(tasks: List<TaskItem>, dates: List<DemoDate>): List<List<TaskSe
 
 fun isAllDay(task: TaskItem) = task.startMinute == null || task.endMinute == null
 
+fun coversFullDay(task: TaskItem, date: DemoDate): Boolean {
+    val range = timelineTimeRangeOnDate(task, date) ?: return false
+    return !range.isEmpty() && range.first == 0 && range.last >= 1438
+}
+
+fun weekCardTasksOnDate(tasks: List<TaskItem>, date: DemoDate): List<TaskItem> =
+    weekTasksOnDate(tasks, date).filterNot { coversFullDay(it, date) }
+
 fun weekAllDayRows(tasks: List<TaskItem>, dates: List<DemoDate>): List<List<TaskSegment>> {
     if (dates.isEmpty()) return emptyList()
     val rows = mutableListOf<MutableList<TaskSegment>>()
-    tasks.filter { isAllDay(it) && it.start <= dates.last() && it.end >= dates.first() }
+    tasks.filter { it.start <= dates.last() && it.end >= dates.first() }
         .sortedWith(compareBy<TaskItem> { it.start }
             .thenByDescending { daysBetween(it.start, it.end) }.thenBy { it.id })
         .forEach { task ->
-            val segment = TaskSegment(task, maxOf(0, daysBetween(dates.first(), task.start)),
-                minOf(dates.lastIndex, daysBetween(dates.first(), task.end)))
+            val fullDays = dates.indices.filter { coversFullDay(task, dates[it]) }
+            if (fullDays.isEmpty()) return@forEach
+            val segment = TaskSegment(task, fullDays.first(), fullDays.last())
             val row = rows.firstOrNull { lane -> lane.none { segment.first <= it.last && segment.last >= it.first } }
                 ?: mutableListOf<TaskSegment>().also { rows.add(it) }
             row.add(segment)

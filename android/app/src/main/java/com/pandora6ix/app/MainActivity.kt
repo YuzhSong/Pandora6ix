@@ -565,7 +565,7 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository, noti
                             } catch (_: Exception) { /* Existing detail remains available for retry. */ }
                         }
                         val dto = taskDtoById[detailId]
-                        DetailScreen(detailId, dto, serverTags, taskRepo, onBack = { detail = null }, onChanged = { calRetry++ })
+                        DetailScreen(detailId, dto, serverTags, taskRepo, onBack = { detail = null }, onChanged = { calRetry++ }, businessTimezone = currentUser?.businessTimezone)
                     }
                     else -> AnimatedContent(current, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "page") { target ->
                         when (target) {
@@ -2100,7 +2100,7 @@ private fun roleLabel(role: String): String = when (role.uppercase()) {
     else -> role
 }
 @Composable private fun DetailCard(title: String, body: String, color: Color, maxLines: Int = 2, onClick: () -> Unit = {}) { Card(Modifier.fillMaxWidth().clickable(onClick = onClick), colors = CardDefaults.cardColors(containerColor = color.copy(alpha = .78f)), shape = RoundedCornerShape(16.dp)) { Column(Modifier.padding(14.dp)) { Text(title, fontWeight = FontWeight.Bold); Text(body, fontSize = 13.sp, color = Ink.copy(alpha = .75f), maxLines = maxLines, overflow = TextOverflow.Ellipsis) } } }
-@Composable private fun DetailScreen(title: String, dto: TaskDto?, availableTags: List<TagDto>, taskRepo: TaskRepository, onBack: () -> Unit, onChanged: () -> Unit) {
+@Composable private fun DetailScreen(title: String, dto: TaskDto?, availableTags: List<TagDto>, taskRepo: TaskRepository, onBack: () -> Unit, onChanged: () -> Unit, businessTimezone: String? = null) {
     val isLog = title.startsWith("日志 · ")
     val logContent = if (isLog) title.substringAfter("§", "") else null
     val displayTitle = dto?.title ?: if (isLog) title.substringBefore("§") else title
@@ -2110,14 +2110,19 @@ private fun roleLabel(role: String): String = when (role.uppercase()) {
     // 任务说明弹窗：状态标签（已完成/未完成）+ 阶段性内容记录（不做百分比）
     var showDescDialog by remember { mutableStateOf(false) }
     // 可执行关系与更新权限：无权限时详情只做展示（只读状态与已有记录）
-    val detailAssignment = dto?.authorizedAssignments?.firstOrNull()
-    val canUpdateTask = detailAssignment?.allowedActions?.any { it == "UPDATE_PROGRESS" || it == "COMPLETE_PERSONAL" || it == "REQUEST_COMPLETION" } == true
+    val ownerId = SessionStore(LocalContext.current).ownerId
+    val detailAssignment = dto?.authorizedAssignments?.firstOrNull { it.recipientUserId == ownerId }
+    val canUpdateTask = detailAssignment?.allowedActions?.any { it == "UPDATE_PROGRESS" || it == "COMPLETE_PERSONAL" || it == "REQUEST_COMPLETION" } == true ||
+        (dto?.seriesId != null && dto.kind == "PERSONAL" && dto.reviewStatus == "APPROVED" && detailAssignment != null)
+    var repeatStatus by remember { mutableStateOf<String?>(null) }
+    var editOpen by remember { mutableStateOf(false) }
     var stageNote by remember { mutableStateOf("") }
     var stageBusy by remember { mutableStateOf(false) }
     var stageError by remember { mutableStateOf<String?>(null) }
     val stageKeys = remember { mutableStateMapOf<String, String>() }
     fun stageKey(action: String, id: String): String = stageKeys.getOrPut("$action:$id") { UUID.randomUUID().toString() }
     fun markCompleted(assignment: AssignmentDto) {
+        if (dto?.seriesId != null) { repeatStatus = "COMPLETED"; return }
         stageBusy = true; stageError = null
         scope.launch {
             try {
@@ -2159,8 +2164,18 @@ private fun roleLabel(role: String): String = when (role.uppercase()) {
             }
         }
     }
+    if (editOpen && dto != null && item != null) TaskEntrySheet(
+        initialDate = item.start, canCreatePersonal = true, canCreateDelegated = false,
+        availableTags = availableTags, taskRepo = taskRepo, businessTimezone = businessTimezone,
+        onDismiss = { editOpen = false }, onCreated = { onChanged() }, editingTask = dto)
+    if (repeatStatus != null && dto != null) com.pandora6ix.app.ui.task.SeriesStatusEditor(
+        dto, taskRepo, repeatStatus!!, businessTimezone, stageNote.trim().ifBlank { null },
+        onDismiss = { repeatStatus = null }, onSaved = { repeatStatus = null; stageNote = ""; onChanged() })
     Column(Modifier.fillMaxSize()) {
         PageHeader(displayTitle, null, onBack)
+        if (dto != null && dto.allowedActions.any { it == "EDIT_TASK" || it == "EDIT_PENDING" }) {
+            TextButton({ editOpen = true }, Modifier.fillMaxWidth()) { Text("编辑任务") }
+        }
         Column(Modifier.verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, top = 6.dp, bottom = 20.dp)) {
             if (dto != null && dto.tags.isNotEmpty()) {
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -2174,9 +2189,10 @@ private fun roleLabel(role: String): String = when (role.uppercase()) {
             if (!isLog) { Text("详情", fontSize = 24.sp, fontWeight = FontWeight.Bold); Spacer(Modifier.height(12.dp)) }
             if (dto != null && item != null) {
                 // 任务说明可点开：弹窗内切换任务状态标签并记录阶段性内容；无更新权限时只写「点击查看」
-                DetailCard("任务说明 · ${if (canUpdateTask) "点击查看与更新" else "点击查看"}", dto.description?.takeIf { it.isNotBlank() } ?: "暂无备注", CreamDeep, maxLines = 8) { showDescDialog = true }
+                DetailCard("任务说明", dto.description?.takeIf { it.isNotBlank() } ?: "暂无备注", CreamDeep, maxLines = 8) { showDescDialog = true }
                 Spacer(Modifier.height(10.dp))
                 DetailCard("时间节点", "${item.start.year}/${item.start.month}/${item.start.day}—${item.end.year}/${item.end.month}/${item.end.day}\n${taskTimeLabel(item)}", CreamDeep)
+                item.recurrenceLabel?.let { DetailCard("重复安排", it, CreamDeep) }
                 Spacer(Modifier.height(10.dp))
                 DetailCard("类型与状态", "${kindLabelOf(dto.kind)} · ${reviewStatusLabel(dto.reviewStatus)}", CreamDeep)
                 Spacer(Modifier.height(10.dp))
@@ -2207,7 +2223,7 @@ private fun roleLabel(role: String): String = when (role.uppercase()) {
     // 任务说明弹窗：状态标签（已完成/未完成）+ 阶段性内容输入框（不做百分比），已有记录直接展示
     if (showDescDialog && dto != null && item != null) {
         val assignment = detailAssignment
-        val completed = assignment?.executionStatus == "COMPLETED" || (assignment?.progressPercent ?: 0) >= 100
+        val completed = assignment?.executionStatus == "COMPLETED"
         val records = dto.progressRecords.filter { !it.note.isNullOrBlank() }.sortedByDescending { it.recordedAt }.take(5)
         AlertDialog(
             onDismissRequest = { if (!stageBusy) showDescDialog = false },
@@ -2229,12 +2245,11 @@ private fun roleLabel(role: String): String = when (role.uppercase()) {
                             )
                             FilterChip(
                                 selected = !completed,
-                                onClick = { if (completed) stageError = "已完成状态不可回退；如需调整请联系任务创建者" },
+                                onClick = { if (completed && dto.seriesId != null && dto.kind == "PERSONAL") repeatStatus = "NOT_STARTED" },
                                 label = { Text("未完成") },
                                 colors = FilterChipDefaults.filterChipColors(selectedContainerColor = CreamDeep, selectedLabelColor = Ink)
                             )
                         }
-                        if (assignment == null) Text("你没有该任务的执行关系，状态仅供查看。", fontSize = 12.sp, color = Ink.copy(alpha = .55f), modifier = Modifier.padding(top = 6.dp))
                     } else {
                         // 无更新权限：只显示当前状态，沿用状态标签原本的色块样式（已完成薄荷、未完成米黄）
                         Surface(shape = RoundedCornerShape(8.dp), color = if (completed) Mint else CreamDeep) {

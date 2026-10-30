@@ -46,6 +46,139 @@ class BusinessApiIntegrationTests {
     private String adminToken, founderToken, managerToken, leadToken, employeeToken, peerToken;
     private LocalDate today;
 
+    @Test
+    void recurringTasksAreIndependentAndRetriesAreIdempotent() throws Exception {
+        var body = taskBody("PERSONAL", List.of(), List.of(), null);
+        body.put("startDate", today.plusDays(1).toString());
+        body.put("endDate", today.plusDays(3).toString());
+        body.put("recurrence", fields("frequency", "DAILY", "interval", 1));
+        String key = UUID.randomUUID().toString();
+        var first = request("POST", "/tasks/recurring", founderToken, body, 201, "Idempotency-Key", key);
+        assertEquals(3, first.get("occurrenceCount"));
+        var retry = request("POST", "/tasks/recurring", founderToken, body, 201, "Idempotency-Key", key);
+        assertEquals(first.get("id"), retry.get("id"));
+        var rows = db.rows("SELECT * FROM task WHERE enterprise_id=? AND series_id=? ORDER BY start_date", enterprise, first.get("seriesId"));
+        assertEquals(3, rows.size());
+        assertEquals(rows.get(0).get("start_date"), rows.get(0).get("end_date"));
+        request("POST", "/tasks/" + first.get("id") + "/complete", founderToken, fields("expectedAssignmentVersion", 0), 200);
+        var states = db.rows("SELECT a.execution_status FROM task_assignment a JOIN task t ON t.enterprise_id=a.enterprise_id AND t.id=a.task_id WHERE t.enterprise_id=? AND t.series_id=? ORDER BY t.start_date", enterprise, first.get("seriesId"));
+        assertEquals("COMPLETED", states.get(0).get("execution_status"));
+        assertEquals("ACTIVE", states.get(1).get("execution_status"));
+        request("GET", "/tasks/" + first.get("id"), peerToken, null, 404);
+    }
+
+    @Test
+    void recurringValidationDoesNotPersistPartialTasks() throws Exception {
+        var body = taskBody("PERSONAL", List.of(), List.of(), null);
+        body.put("startDate", today.plusDays(1).toString());
+        body.put("endDate", today.plusDays(3).toString());
+        body.put("timeKind", "TIMED"); body.put("startTime", "10:00"); body.put("endTime", "09:00");
+        body.put("recurrence", fields("frequency", "DAILY", "interval", 1));
+        request("POST", "/tasks/recurring", founderToken, body, 422, "Idempotency-Key", UUID.randomUUID().toString());
+        assertTrue(db.rows("SELECT id FROM task WHERE enterprise_id=?", enterprise).isEmpty());
+        body.put("endTime", "11:00"); body.put("tagIds", List.of("missing-tag"));
+        request("POST", "/tasks/recurring", founderToken, body, 422, "Idempotency-Key", UUID.randomUUID().toString());
+        assertTrue(db.rows("SELECT id FROM task WHERE enterprise_id=?", enterprise).isEmpty());
+    }
+
+    @Test
+    void recurringEmployeeTasksUseOneGroupApproval() throws Exception {
+        var body = taskBody("PERSONAL", List.of(), List.of(), null);
+        body.put("startDate", today.plusDays(1).toString());
+        body.put("endDate", today.plusDays(2).toString());
+        body.put("recurrence", fields("frequency", "DAILY", "interval", 1));
+        var first = request("POST", "/tasks/recurring", employeeToken, body, 201, "Idempotency-Key", UUID.randomUUID().toString());
+        var reviews = db.rows("SELECT r.* FROM task_review r JOIN task t ON t.enterprise_id=r.enterprise_id AND t.id=r.task_id WHERE t.enterprise_id=? AND t.series_id=? ORDER BY t.start_date", enterprise, first.get("seriesId"));
+        assertEquals(1, reviews.size());
+        assertTrue(str(reviews.get(0), "submitted_snapshot").contains("recurrenceLabel"));
+        request("POST", "/task-reviews/" + reviews.get(0).get("id") + "/decision", leadToken,
+                fields("expectedVersion", 0, "decision", "APPROVE"), 200);
+        var tasks = db.rows("SELECT review_status FROM task WHERE enterprise_id=? AND series_id=? ORDER BY start_date", enterprise, first.get("seriesId"));
+        assertEquals("APPROVED", tasks.get(0).get("review_status"));
+        assertEquals("APPROVED", tasks.get(1).get("review_status"));
+    }
+
+    @Test
+    void recurringFailureInSecondOccurrenceRollsBackWholeBatch() throws Exception {
+        var body = taskBody("PERSONAL", List.of(), List.of(), null);
+        body.put("startDate", today.plusDays(1).toString());
+        body.put("endDate", today.plusDays(3).toString());
+        body.put("recurrence", fields("frequency", "DAILY", "interval", 1));
+        String constraint = "recurring_failure_" + UUID.randomUUID().toString().replace("-", "");
+        db.update("ALTER TABLE task ADD CONSTRAINT " + constraint + " CHECK (enterprise_id <> '" + enterprise + "' OR start_date <> DATE '" + today.plusDays(2) + "')");
+        try {
+            request("POST", "/tasks/recurring", founderToken, body, 409, "Idempotency-Key", UUID.randomUUID().toString());
+            assertTrue(db.rows("SELECT id FROM task WHERE enterprise_id=?", enterprise).isEmpty());
+            assertTrue(db.rows("SELECT id FROM task_assignment WHERE enterprise_id=?", enterprise).isEmpty());
+        } finally {
+            db.update("ALTER TABLE task DROP CONSTRAINT " + constraint);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String,Object>> recurringScopeRows(String token,String id) throws Exception {
+        return (List<Map<String,Object>>)request("GET","/tasks/"+id+"/scope",token,null,200).get("items");
+    }
+    @SuppressWarnings("unchecked")
+    private List<Map<String,Object>> recurringVersions(List<Map<String,Object>> rows) {
+        return rows.stream().map(t->{
+            var assignment=((List<Map<String,Object>>)t.get("authorizedAssignments")).getFirst();
+            return fields("taskId",t.get("id"),"taskVersion",t.get("version"),"assignmentId",assignment.get("id"),"assignmentVersion",assignment.get("version"));
+        }).toList();
+    }
+    private Map<String,Object> recurringFixture(String token) throws Exception {
+        var body=taskBody("PERSONAL",List.of(),List.of(),null);
+        body.put("startDate",today.plusDays(1).toString()); body.put("endDate",today.plusDays(3).toString());
+        body.put("recurrence",fields("frequency","DAILY","interval",1));
+        return request("POST","/tasks/recurring",token,body,201,"Idempotency-Key",UUID.randomUUID().toString());
+    }
+
+    @Test void recurringScopedEditsPreservePastAndDoNotCreateNewApprovals() throws Exception {
+        var first=recurringFixture(employeeToken);
+        request("POST","/task-reviews/"+first.get("reviewId")+"/decision",leadToken,fields("expectedVersion",0,"decision","APPROVE"),200);
+        var rows=recurringScopeRows(employeeToken,str(first,"id")).stream().sorted(Comparator.comparing(t->t.get("startDate").toString())).toList();
+        var selected=rows.get(1);
+        var command=fields("expectedVersion",selected.get("version"),"title","Edited future","description","Revised","priorityLevel",4,
+                "timeKind","ALL_DAY","startDate",selected.get("startDate"),"endDate",selected.get("endDate"),"tagIds",List.of());
+        request("POST","/tasks/"+selected.get("id")+"/scoped-edit",employeeToken,
+                fields("scope","THIS_AND_FUTURE","task",command,"versions",recurringVersions(rows)),200,"Idempotency-Key",UUID.randomUUID().toString());
+        var updated=db.rows("SELECT title,start_date,occurrence_date FROM task WHERE enterprise_id=? AND series_id=? ORDER BY occurrence_date",enterprise,first.get("seriesId"));
+        assertEquals("Task",updated.get(0).get("title")); assertEquals("Edited future",updated.get(1).get("title")); assertEquals("Edited future",updated.get(2).get("title"));
+        assertEquals(1,db.rows("SELECT id FROM task_review WHERE enterprise_id=?",enterprise).size());
+        var stale=fields("scope","THIS_AND_FUTURE","task",command,"versions",recurringVersions(rows));
+        request("POST","/tasks/"+selected.get("id")+"/scoped-edit",employeeToken,stale,409,"Idempotency-Key",UUID.randomUUID().toString());
+        request("POST","/tasks/"+selected.get("id")+"/scoped-edit",peerToken,stale,404,"Idempotency-Key",UUID.randomUUID().toString());
+    }
+
+    @Test void recurringScopedCompletionAndUndoPreserveOtherOccurrences() throws Exception {
+        var first=recurringFixture(founderToken);
+        var rows=recurringScopeRows(founderToken,str(first,"id")).stream().sorted(Comparator.comparing(t->t.get("startDate").toString())).toList();
+        var selected=rows.get(1);
+        request("POST","/tasks/"+selected.get("id")+"/scoped-status",founderToken,
+                fields("scope","THIS_AND_FUTURE","workStatus","COMPLETED","versions",recurringVersions(rows)),200,"Idempotency-Key",UUID.randomUUID().toString());
+        var states=db.rows("SELECT a.execution_status FROM task_assignment a JOIN task t ON t.enterprise_id=a.enterprise_id AND t.id=a.task_id WHERE t.enterprise_id=? AND t.series_id=? ORDER BY t.occurrence_date",enterprise,first.get("seriesId"));
+        assertEquals(List.of("ACTIVE","COMPLETED","COMPLETED"),states.stream().map(t->t.get("execution_status")).toList());
+        var current=recurringScopeRows(founderToken,str(selected,"id"));
+        request("POST","/tasks/"+selected.get("id")+"/scoped-status",founderToken,
+                fields("scope","SINGLE","workStatus","NOT_STARTED","versions",recurringVersions(current)),200,"Idempotency-Key",UUID.randomUUID().toString());
+        states=db.rows("SELECT a.execution_status FROM task_assignment a JOIN task t ON t.enterprise_id=a.enterprise_id AND t.id=a.task_id WHERE t.enterprise_id=? AND t.series_id=? ORDER BY t.occurrence_date",enterprise,first.get("seriesId"));
+        assertEquals(List.of("ACTIVE","ACTIVE","COMPLETED"),states.stream().map(t->t.get("execution_status")).toList());
+    }
+
+    @Test void recurringGroupRejectAndStaleFutureStatusAreAtomic() throws Exception {
+        var pending=recurringFixture(employeeToken);
+        request("POST","/task-reviews/"+pending.get("reviewId")+"/decision",leadToken,fields("expectedVersion",0,"decision","REJECT"),200);
+        assertTrue(db.rows("SELECT review_status FROM task WHERE enterprise_id=? AND series_id=?",enterprise,pending.get("seriesId")).stream().allMatch(t->"REJECTED".equals(t.get("review_status"))));
+        var first=recurringFixture(founderToken);
+        var rows=recurringScopeRows(founderToken,str(first,"id"));
+        var selected=rows.getFirst();
+        var versions=recurringVersions(rows);
+        versions.getLast().put("assignmentVersion",99);
+        request("POST","/tasks/"+first.get("id")+"/scoped-status",founderToken,
+                fields("scope","THIS_AND_FUTURE","workStatus","COMPLETED","versions",versions),409,"Idempotency-Key",UUID.randomUUID().toString());
+        assertTrue(db.rows("SELECT a.execution_status FROM task_assignment a JOIN task t ON t.enterprise_id=a.enterprise_id AND t.id=a.task_id WHERE t.enterprise_id=? AND t.series_id=?",enterprise,first.get("seriesId")).stream().allMatch(t->"ACTIVE".equals(t.get("execution_status"))));
+    }
+
     @BeforeEach
     void setUp() throws Exception {
         domain = "tests-" + UUID.randomUUID();

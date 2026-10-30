@@ -32,4 +32,39 @@ class WeekAllDayBarsTest {
         assertTrue(weekAllDayRows(listOf(task("all", 0, 0)), emptyList()).isEmpty())
         assertEquals(0 to 0, weekAllDayRows(listOf(task("one", 0, 0)), dates).single().single().let { it.first to it.last })
     }
+
+    @Test fun continuousInteriorUsesBarsButEndpointsRemainCards() {
+        val continuous = task("continuous", 0, 6).copy(startMinute = 540, endMinute = 600, timeKind = "TIMED")
+        val segment = weekAllDayRows(listOf(continuous), dates).single().single()
+        assertEquals(1 to 5, segment.first to segment.last)
+        assertEquals(continuous, segment.task)
+        dates.forEachIndexed { index, date ->
+            assertEquals(index in 1..5, coversFullDay(continuous, date))
+            assertEquals(index == 0 || index == 6, weekCardTasksOnDate(listOf(continuous), date).isNotEmpty())
+        }
+    }
+
+    @Test fun midnightBoundariesDoNotDuplicateOrShowEmptyFinalDate() {
+        val continuous = task("midnight", 0, 3).copy(startMinute = 0, endMinute = 0, timeKind = "TIMED")
+        val segment = weekAllDayRows(listOf(continuous), dates).single().single()
+        assertEquals(0 to 2, segment.first to segment.last)
+        assertTrue(weekCardTasksOnDate(listOf(continuous), dates[3]).isEmpty())
+        assertFalse(coversFullDay(continuous, dates[3]))
+    }
+
+    @Test fun explicit2359CoverageUsesBarButShorterIntervalDoesNot() {
+        val full = task("full", 1, 1).copy(startMinute = 0, endMinute = 1439, timeKind = "TIMED")
+        assertTrue(coversFullDay(full, dates[1]))
+        assertFalse(coversFullDay(full.copy(endMinute = 1438), dates[1]))
+        assertFalse(coversFullDay(full.copy(startMinute = 1), dates[1]))
+    }
+
+    @Test fun longContinuousTaskClipsFullDaysAcrossWeekBoundary() {
+        val continuous = task("long", -30, 40).copy(startMinute = 540, endMinute = 600, timeKind = "TIMED")
+        val all = task("all", 1, 2)
+        val rows = weekAllDayRows(listOf(all, continuous), dates)
+        assertEquals(2, rows.size)
+        assertEquals(0 to 6, rows[0].single().let { it.first to it.last })
+        assertTrue(dates.all { weekCardTasksOnDate(listOf(all, continuous), it).isEmpty() })
+    }
 }

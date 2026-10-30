@@ -22,7 +22,7 @@ class TaskWorkflowMigrationTests {
             sql.executeUpdate("INSERT INTO task(id,enterprise_id,creator_user_id,task_kind,title,priority_level,start_date,end_date,time_kind) VALUES('pending','company','user','PERSONAL','Pending task',3,CURRENT_DATE,CURRENT_DATE,'ALL_DAY')");
             sql.executeUpdate("INSERT INTO task_assignment(id,enterprise_id,task_id,recipient_user_id) VALUES('waiting','company','pending','user')");
         }
-        assertEquals(1, Flyway.configure().dataSource(url, "sa", "").load().migrate().migrationsExecuted);
+        assertEquals(3, Flyway.configure().dataSource(url, "sa", "").load().migrate().migrationsExecuted);
         try (var connection = DriverManager.getConnection(url, "sa", ""); var sql = connection.createStatement()) {
             try (var row = sql.executeQuery("SELECT review_kind,submitted_snapshot FROM task_review WHERE id='review'")) {
                 assertTrue(row.next()); assertEquals("CREATE", row.getString(1)); assertEquals("{}", row.getString(2));
@@ -33,8 +33,9 @@ class TaskWorkflowMigrationTests {
             try (var row = sql.executeQuery("SELECT work_status,execution_status FROM task_assignment WHERE id='waiting'")) {
                 assertTrue(row.next()); assertEquals("IN_PROGRESS", row.getString(1)); assertEquals("PENDING_APPROVAL", row.getString(2));
             }
-            try (var row = sql.executeQuery("SELECT title,version FROM task WHERE id='task'")) {
+            try (var row = sql.executeQuery("SELECT title,version,series_id,recurrence_label FROM task WHERE id='task'")) {
                 assertTrue(row.next()); assertEquals("Retained task", row.getString(1)); assertEquals(7, row.getLong(2));
+                assertNull(row.getString(3)); assertNull(row.getString(4));
             }
         }
     }
