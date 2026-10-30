@@ -4,10 +4,17 @@ import android.content.Context
 import android.content.Intent
 import cn.jpush.android.api.NotificationMessage
 import cn.jpush.android.service.JPushMessageReceiver
+import org.json.JSONObject
 
 /** Explicit SDK callbacks keep cold/warm notification taps and registration rotation connected. */
 class PandoraPushReceiver : JPushMessageReceiver() {
     override fun onNotifyMessageArrived(context: Context, message: NotificationMessage) {
+        onApprovalMessageArrived(context, message)
+        // 后台审批使用高优先级渠道；前台消息继续进入统一队列。
+        if (MainActivity.isForeground) onForegroundMessageArrived(context, message)
+    }
+
+    private fun onApprovalMessageArrived(context: Context, message: NotificationMessage) {
         val extras = runCatching { org.json.JSONObject(message.notificationExtras ?: "{}") }.getOrNull()
         val notificationId = extras?.optString("notificationId").orEmpty().ifBlank { null }
         val eventType = extras?.optString("eventType").orEmpty().ifBlank { null }
@@ -35,6 +42,21 @@ class PandoraPushReceiver : JPushMessageReceiver() {
         })
     }
 
+    /**
+     * 前台收到推送：只把 notificationId 交给页面，由统一的提醒队列决定是否弹窗，
+     * 避免这里单独弹一次、轮询又弹一次（标题/正文由页面按 id 从服务端取，extras 里没有）。
+     */
+    private fun onForegroundMessageArrived(context: Context, message: NotificationMessage) {
+        val id = runCatching { JSONObject(message.notificationExtras ?: "{}").optString("notificationId") }.getOrNull()
+        if (id.isNullOrBlank()) return
+        context.sendBroadcast(
+            Intent(MESSAGE_ARRIVED).setPackage(context.packageName)
+                .putExtra(EXTRA_NOTIFICATION_ID, id)
+                // SDK 的通知栏 id：前台时由页面据此清掉那条系统通知，避免「弹窗 + 通知栏」重复
+                .putExtra(EXTRA_NOTIFY_ID, message.notificationId)
+        )
+    }
+
     override fun onRegister(context: Context, registrationId: String) {
         context.sendBroadcast(Intent(REGISTRATION_CHANGED).setPackage(context.packageName))
     }
@@ -44,5 +66,7 @@ class PandoraPushReceiver : JPushMessageReceiver() {
         const val APPROVAL_ARRIVED = "com.pandora6ix.app.APPROVAL_ARRIVED"
         const val EXTRA_NOTIFICATION_ID = "notificationId"
         const val EXTRA_EVENT_TYPE = "eventType"
+        const val MESSAGE_ARRIVED = "com.pandora6ix.app.PUSH_MESSAGE_ARRIVED"
+        const val EXTRA_NOTIFY_ID = "notifyId"
     }
 }

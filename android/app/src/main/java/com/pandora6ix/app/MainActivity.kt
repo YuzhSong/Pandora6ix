@@ -236,10 +236,22 @@ private data class HomeDetail(
     val id: String? = null
 )
 
-/** 提醒轮询间隔（App 前台；无后台调度，退到后台或进程被杀后不再比对） */
-private const val REMINDER_POLL_MILLIS = 60L * 1000L
+/** 推送前台到达：服务端通知 id + SDK 通知栏 id（用于清掉那条系统通知） */
+private data class PushArrival(val notificationId: String, val notifyId: Int)
+
+/** 提醒轮询间隔（App 前台；退到后台暂停，回到前台立刻补一次检查） */
+private const val REMINDER_POLL_MILLIS = 10L * 1000L
 /** 截止时间提前量预设值（分钟）：1 / 2 / 6 / 12 / 24 小时 */
 private val REMINDER_LEAD_OPTIONS = listOf(60, 120, 360, 720, 1440)
+
+/** 服务端通知是否允许弹出提醒：kind 与设置中「通知提醒」三个子开关一一对应 */
+private fun NotificationDto.alertEnabled(newTask: Boolean, deadline: Boolean, statusChange: Boolean): Boolean =
+    when (kind) {
+        ReminderKind.NEW_TASK -> newTask
+        ReminderKind.DEADLINE -> deadline
+        ReminderKind.STATUS -> statusChange
+        else -> false
+    }
 
 /** 提前量展示：1440 → "24 小时"，90 → "1 小时 30 分钟"，45 → "45 分钟" */
 private fun leadLabel(minutes: Int): String {
@@ -291,6 +303,10 @@ fun PandoraApp(
         var showSettings by rememberSaveable { mutableStateOf(false) }
         var showReviews by rememberSaveable { mutableStateOf(false) }
         var approvalPrompt by remember { mutableStateOf<ApprovalPrompt?>(null) }
+        // 从消息进入审批中心时定位到具体那条审批
+        var reviewFocusId by rememberSaveable { mutableStateOf<String?>(null) }
+        // 消息在抽屉之外被置为已读（如直接点开任务详情）后，用于刷新信封角标
+        var notificationReadRevision by remember { mutableIntStateOf(0) }
         // 标签管理覆盖层（我的页进入，入口仅对有权限角色显示）
         var showTagManage by rememberSaveable { mutableStateOf(false) }
         // 进度记录浮层：从任务详情进入，显示当前任务的执行关系
@@ -354,23 +370,46 @@ fun PandoraApp(
         // 任意带 token 请求返回 401：清理会话并回登录（切换到主线程更新状态）
         var openedNotificationId by rememberSaveable { mutableStateOf<String?>(null) }
         var notificationOpenSequence by rememberSaveable { mutableIntStateOf(0) }
+        // 待处理的「点推送进入」：首页消费后立刻清空，避免之后每次回到「导图」都自动拉开抽屉
+        var pendingPushNotificationId by rememberSaveable { mutableStateOf<String?>(null) }
+        // 推送前台到达事件：id 由 PandoraPushReceiver 广播过来，交给统一提醒队列处理
+        val pushArrivedEvents = remember { kotlinx.coroutines.channels.Channel<PushArrival>(kotlinx.coroutines.channels.Channel.UNLIMITED) }
+        // 会话内已处理过的通知 id：推送弹过的轮询不再重复弹，反之亦然
+        val announcedNotifications = remember(currentUser?.id) { java.util.Collections.synchronizedSet(mutableSetOf<String>()) }
         LaunchedEffect(notificationOpenEvents) {
             notificationOpenEvents.collect { id ->
                 openedNotificationId = id
                 notificationOpenSequence++
+                pendingPushNotificationId = id
                 route = Route.HOME.name
                 detail = null
                 homeDetail = null
             }
         }
-        LaunchedEffect(approvalPromptEvents) {
-            approvalPromptEvents.collect { approvalPrompt = it }
+        LaunchedEffect(approvalPromptEvents, currentUser?.id, notifyMaster, notifyStatus) {
+            approvalPromptEvents.collect { prompt ->
+                if (currentUser == null || !notifyMaster || !notifyStatus) return@collect
+                // 两个 PR 共用去重记录；审批专用弹窗替换同一消息尚未确认的普通提醒。
+                if (claimApprovalPrompt(prompt.notificationId, announcedNotifications, reminderQueue)) approvalPrompt = prompt
+            }
         }
         DisposableEffect(appContext) {
             val receiver = object : android.content.BroadcastReceiver() {
-                override fun onReceive(context: Context, intent: android.content.Intent) { notificationPermissionRevision++ }
+                override fun onReceive(context: Context, intent: android.content.Intent) {
+                    if (intent.action == PandoraPushReceiver.MESSAGE_ARRIVED)
+                        intent.getStringExtra(PandoraPushReceiver.EXTRA_NOTIFICATION_ID)
+                            ?.let { id ->
+                                pushArrivedEvents.trySend(
+                                    PushArrival(id, intent.getIntExtra(PandoraPushReceiver.EXTRA_NOTIFY_ID, -1))
+                                )
+                            }
+                    else notificationPermissionRevision++
+                }
             }
-            ContextCompat.registerReceiver(appContext, receiver, android.content.IntentFilter(PandoraPushReceiver.REGISTRATION_CHANGED), ContextCompat.RECEIVER_NOT_EXPORTED)
+            val filter = android.content.IntentFilter(PandoraPushReceiver.REGISTRATION_CHANGED).apply {
+                addAction(PandoraPushReceiver.MESSAGE_ARRIVED)
+            }
+            ContextCompat.registerReceiver(appContext, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
             onDispose { appContext.unregisterReceiver(receiver) }
         }
         LaunchedEffect(currentUser?.id, session.token, notifyMaster, notificationPermissionRevision) {
@@ -468,26 +507,66 @@ fun PandoraApp(
             notifyPrefs.permissionRequested = true
             requestNotifyPermission()
         }
-        // 提醒轮询：登录后按固定间隔比对本人任务快照，产出弹窗（+ 有权限时发系统通知）
-        LaunchedEffect(currentUser?.id, notifyMaster, notifyNewTask, notifyDeadline, notifyStatus, notifyLeadMinutes) {
+        // 统一出口：轮询发现的新消息与推送前台到达的消息，都从这里发系统通知并入页内弹窗队列
+        fun announceNotification(n: NotificationDto) {
+            announcedNotifications.add(n.id)
+            NotificationHelper.notify(appContext, NotificationHelper.idOf(n.id), n.title, n.body)
+            reminderQueue.add(ReminderEvent(kind = n.kind, key = n.id, title = n.title, message = n.body))
+        }
+        // 提醒轮询：直接读服务端通知（消息一入库，下一轮就产出弹窗），不再依赖本地任务快照比对；
+        // repeatOnLifecycle(STARTED)：退到后台暂停轮询，回到前台立刻补一次检查
+        LaunchedEffect(currentUser?.id, notifyMaster, notifyNewTask, notifyDeadline, notifyStatus) {
             // 权限只在用户主动开启提醒时申请（见设置页），进入软件不打扰
             if (currentUser == null || !notifyMaster) return@LaunchedEffect
-            val reminderOwner = currentUser!!.id
             NotificationHelper.createChannel(appContext)
-            while (true) {
-                val events = runCatching {
-                    collectReminders(calendarRepo, notifyPrefs, currentUser?.businessTimezone)
-                }.getOrElse {
-                    if (it is kotlinx.coroutines.CancellationException) throw it
-                    emptyList()
+            // 本轮会话已登记的消息 id：首次只把现有消息作为基线，避免把历史消息一次性弹出来
+            var baselineReady = false
+            (appContext as ComponentActivity).lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                while (true) {
+                    val fresh = runCatching { notificationRepo.recent() }.getOrElse {
+                        if (it is kotlinx.coroutines.CancellationException) throw it
+                        emptyList()
+                    }
+                    coroutineContext.ensureActive()
+                    if (!baselineReady) {
+                        baselineReady = true
+                        announcedNotifications.addAll(fresh.map { it.id })
+                    } else {
+                        val pending = fresh.filter {
+                            it.readAt == null && it.id !in announcedNotifications &&
+                                it.alertEnabled(notifyNewTask, notifyDeadline, notifyStatus)
+                        }
+                        announcedNotifications.addAll(fresh.map { it.id })
+                        pending.forEach { n ->
+                            announceNotification(n)
+                        }
+                    }
+                    kotlinx.coroutines.delay(REMINDER_POLL_MILLIS)
                 }
-                kotlinx.coroutines.currentCoroutineContext().ensureActive()
-                if (currentUser?.id != reminderOwner || !notifyMaster) return@LaunchedEffect
-                events.forEach { event ->
-                    NotificationHelper.notify(appContext, NotificationHelper.idOf(event.key), event.title, event.message)
-                    reminderQueue.add(event)
-                }
-                kotlinx.coroutines.delay(REMINDER_POLL_MILLIS)
+            }
+        }
+        // 不论从消息进入还是自己点开：打开任务详情就把该任务的未读消息置为已读，并刷新信封角标
+        LaunchedEffect(detail, currentUser?.id) {
+            val taskId = detail ?: return@LaunchedEffect
+            runCatching {
+                notificationRepo.list()
+                    .filter { it.taskId == taskId && it.readAt == null }
+                    .forEach { notificationRepo.markRead(it.id) }
+            }
+            notificationReadRevision++
+        }
+        // 推送前台到达：不必等下一轮轮询，立刻按 id 取服务端这条消息弹出来
+        LaunchedEffect(pushArrivedEvents, notifyMaster, notifyNewTask, notifyDeadline, notifyStatus) {
+            for (arrival in pushArrivedEvents) {
+                // 前台收到推送：SDK 也会往通知栏塞一条，这里清掉，只保留页内弹窗
+                if (arrival.notifyId >= 0) runCatching { JPushInterface.clearNotificationById(appContext, arrival.notifyId) }
+                val id = arrival.notificationId
+                if (currentUser == null || !notifyMaster || id in announcedNotifications) continue
+                val n = runCatching { notificationRepo.recent() }.getOrNull()?.firstOrNull { it.id == id } ?: continue
+                // 请求期间审批广播可能已先展示该消息，不再重复入队。
+                if (id in announcedNotifications) continue
+                if (!n.alertEnabled(notifyNewTask, notifyDeadline, notifyStatus)) continue
+                announceNotification(n)
             }
         }
         // 视图页：按当前模式与日期加载真实任务；日/周/月走 /calendar，年视图按 /tasks 全年区间查询
@@ -586,11 +665,11 @@ fun PandoraApp(
                     showReviews -> key(currentUser?.id) {
                         ReviewScreen(taskRepo, serverTags, currentUser?.businessTimezone, userRepo,
                             canReview = canReviewTasks, readResultKeys = readReviewKeys,
-                            refreshRevision = reviewRefreshRevision,
+                            refreshRevision = reviewRefreshRevision, focusReviewId = reviewFocusId,
                             onResultRead = { review ->
                                 reviewReads.markRead(review)
                                 readReviewKeys = reviewReads.keys()
-                            }) { showReviews = false }
+                            }) { showReviews = false; reviewFocusId = null }
                     }
                     showTagManage -> TagManageScreen(
                         tagRepo,
@@ -615,7 +694,15 @@ fun PandoraApp(
                     }
                     else -> AnimatedContent(current, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "page") { target ->
                         when (target) {
-                            Route.HOME -> HomeScreen(dashboardRepo, selectionRepo, notificationRepo, openedNotificationId, notificationOpenSequence, onOpenHome = { homeDetail = it }, onOpenReviews = { showReviews = true })
+                            Route.HOME -> HomeScreen(dashboardRepo, selectionRepo, notificationRepo, openedNotificationId, notificationOpenSequence, notificationReadRevision, pendingPushNotificationId = pendingPushNotificationId, onPushNotificationConsumed = { pendingPushNotificationId = null }, onDrawerClosed = { openedNotificationId = null }, onOpenHome = { homeDetail = it }, onOpenNotification = { item ->
+                                // 只有仍在「待我审批」队列里的审批申请才进审批中心并展开该条；
+                                // 已审批/驳回的消息（含「审批结果」）队列里查不到，直接看对应任务详情
+                                val awaitingReview = item.reviewId != null && item.eventType == "REVIEW_REQUEST" && !item.resolved
+                                if (awaitingReview) {
+                                    reviewFocusId = item.reviewId
+                                    showReviews = true
+                                } else if (item.taskId.isNotBlank()) detail = item.taskId
+                            })
                             Route.VIEW -> CalendarScreen(CalendarMode.valueOf(modeName), date, taskItems, canCreatePersonal, canCreateDelegated, serverTags, taskRepo, { modeName = it.name }, { dateKey = "${it.year}-${it.month}-${it.day}" }, { calRetry++ }, { detail = it.id }, taskScope = taskScope, onTaskScopeChange = { taskScope = it; calNotice = null }, currentUser = currentUser, canReviewTasks = canReviewTasks, businessTimezone = currentUser?.businessTimezone, loading = calLoading, error = calError, onRetry = { calRetry++ }, notice = calNotice)
                             Route.LOGS -> LogsScreen(journalRepo, serverTags.toList(), currentUser?.businessTimezone) { journalDetailId = it }
                             Route.AI -> AiMapScreen()
@@ -624,7 +711,7 @@ fun PandoraApp(
                     }
                 }
                 // 提醒弹窗：逐条展示，关闭后显示下一条
-                reminderQueue.firstOrNull()?.let { event ->
+                reminderQueue.firstOrNull()?.takeIf { approvalPrompt == null }?.let { event ->
                     ReminderDialog(event) { if (reminderQueue.isNotEmpty()) reminderQueue.removeAt(0) }
                 }
                 if (approvalPrompt != null && currentUser != null) {
@@ -702,15 +789,18 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
     }
 }
 
-@Composable private fun HomeScreen(dashboardRepo: DashboardRepository, selectionRepo: SelectionRepository, notificationRepo: NotificationRepository, openedNotificationId: String?, notificationOpenSequence: Int, onOpenHome: (HomeDetail) -> Unit, onOpenReviews: () -> Unit) {
+@Composable private fun HomeScreen(dashboardRepo: DashboardRepository, selectionRepo: SelectionRepository, notificationRepo: NotificationRepository, openedNotificationId: String?, notificationOpenSequence: Int, notificationReadRevision: Int, pendingPushNotificationId: String?, onPushNotificationConsumed: () -> Unit, onDrawerClosed: () -> Unit, onOpenHome: (HomeDetail) -> Unit, onOpenNotification: (NotificationDto) -> Unit) {
     var expandedPanel by rememberSaveable { mutableStateOf<String?>(null) }
     var notifications by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(notificationOpenSequence) {
-        if (notificationOpenSequence > 0) notifications = true
+    // 只有「点推送进来」这一次会自动打开抽屉；消费后立刻清空挂在首页之外的待处理状态
+    LaunchedEffect(pendingPushNotificationId) {
+        if (pendingPushNotificationId == null) return@LaunchedEffect
+        notifications = true
+        onPushNotificationConsumed()
     }
-    // 信封角标：未读消息数（99+ 封顶）；打开抽屉、关闭抽屉、收到推送打开时刷新
+    // 信封角标：未读消息数（99+ 封顶）；打开抽屉、关闭抽屉、收到推送打开、以及任何地方把消息置为已读时刷新
     var unreadCount by remember { mutableStateOf(0) }
-    LaunchedEffect(notifications, notificationOpenSequence) {
+    LaunchedEffect(notifications, notificationOpenSequence, notificationReadRevision) {
         unreadCount = runCatching { notificationRepo.unreadCount() }.getOrDefault(0)
     }
     var editingPersonal by remember { mutableStateOf(false) }
@@ -901,8 +991,8 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
           PersonalImportantEditor(repo = selectionRepo, onClose = { editingPersonal = false }, onSaved = { loadDashboard() })
       }
       if (notifications) {
-          Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .42f)).clickable { notifications = false; expandedPanel = null })
-          NotificationDrawer(notificationRepo, openedNotificationId, onClose = { notifications = false }, onOpenReviews = { notifications = false; onOpenReviews() })
+          Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .42f)).clickable { notifications = false; expandedPanel = null; onDrawerClosed() })
+          NotificationDrawer(notificationRepo, openedNotificationId, onClose = { notifications = false; onDrawerClosed() }, onOpen = { notifications = false; onDrawerClosed(); onOpenNotification(it) })
       }
     }
 }
@@ -1894,7 +1984,7 @@ private fun JournalDetailScreen(repo: JournalRepository, journalId: String, busi
     }
 }
 
-@Composable private fun BoxScope.NotificationDrawer(repository: NotificationRepository, requestedId: String?, onClose: () -> Unit, onOpenReviews: () -> Unit) {
+@Composable private fun BoxScope.NotificationDrawer(repository: NotificationRepository, requestedId: String?, onClose: () -> Unit, onOpen: (NotificationDto) -> Unit) {
     var records by remember { mutableStateOf<List<NotificationDto>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var loadError by remember { mutableStateOf<String?>(null) }
@@ -1908,11 +1998,7 @@ private fun JournalDetailScreen(repo: JournalRepository, journalId: String, busi
             loading = false
         }
     }
-    LaunchedEffect(requestedId, records) {
-        val target = records.firstOrNull { it.id == requestedId && it.readAt == null } ?: return@LaunchedEffect
-        if (runCatching { repository.markRead(target.id) }.isSuccess)
-            records = records.map { if (it.id == target.id) it.copy(readAt = "read") else it }
-    }
+    // 点推送进 App 只做定位高亮，不自动置已读：未读标记统一在进入任务/审批详情时才消除
     Card(Modifier.align(Alignment.CenterEnd).fillMaxWidth(.75f).fillMaxHeight(), shape = RoundedCornerShape(0.dp), colors = CardDefaults.cardColors(containerColor = WarmCard), elevation = CardDefaults.cardElevation(14.dp)) {
         Column(Modifier.fillMaxSize().padding(18.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1925,24 +2011,24 @@ private fun JournalDetailScreen(repo: JournalRepository, journalId: String, busi
                 records.isEmpty() -> Text("暂无消息", color = Ink.copy(alpha = .6f), modifier = Modifier.padding(vertical = 16.dp))
                 else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     items(records, key = { it.id }) { item ->
-                        Card(colors = CardDefaults.cardColors(containerColor = if (item.id == requestedId) CreamDeep else Cream), shape = RoundedCornerShape(8.dp)) {
+                        // 未读主题色、已读白色；点推送进来的那条（requestedId）始终高亮，方便一眼找到
+                        Card(colors = CardDefaults.cardColors(containerColor = if (item.id == requestedId || item.readAt == null) CreamDeep else Color.White), shape = RoundedCornerShape(8.dp)) {
                             Column(Modifier.fillMaxWidth().clickable {
                                 if (item.readAt == null) scope.launch {
                                     if (runCatching { repository.markRead(item.id) }.isSuccess)
                                         records = records.map { if (it.id == item.id) it.copy(readAt = "read") else it }
                                 }
+                                onOpen(item)
                             }.padding(12.dp)) {
-                                // 审批申请已处理（服务端 resolved）：不再引导去待审批，标记「已审批」
-                                val decided = item.eventType == "REVIEW_REQUEST" && item.resolved
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(item.title, modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
-                                    if (decided) Text("已审批", color = Ink.copy(alpha = .6f), fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                                    else if (item.readAt == null) Text("未读", color = WarmOrange, fontSize = 12.sp)
+                                    Text(item.title, modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold, color = Ink)
+                                    val decided = item.eventType == "REVIEW_REQUEST" && item.resolved
+                                    if (decided) Text("已审批", color = Ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                                    else if (item.readAt == null) Text("未读", color = Ink, fontSize = 12.sp)
                                 }
                                 Spacer(Modifier.height(4.dp))
-                                Text(item.body, color = Ink.copy(alpha = .72f), fontSize = 13.sp)
-                                Text(item.createdAt.replace('T', ' ').take(16), color = Ink.copy(alpha = .48f), fontSize = 11.sp, modifier = Modifier.padding(top = 6.dp))
-                                if (item.title == "审批申请" && !decided) TextButton(onClick = onOpenReviews, contentPadding = PaddingValues(0.dp)) { Text("查看待审批", color = WarmOrange) }
+                                Text(item.body, color = Ink, fontSize = 13.sp)
+                                Text(item.createdAt.replace('T', ' ').take(16), color = Ink, fontSize = 11.sp, modifier = Modifier.padding(top = 6.dp))
                             }
                         }
                     }

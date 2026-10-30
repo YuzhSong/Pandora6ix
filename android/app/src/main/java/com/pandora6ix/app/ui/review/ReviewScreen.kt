@@ -105,7 +105,7 @@ import java.util.UUID
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ReviewScreen(taskRepo: TaskRepository, availableTags: List<TagDto>, businessTimezone: String? = null, userRepo: UserRepository? = null, canReview: Boolean = true, readResultKeys: Set<String> = emptySet(), refreshRevision: Int = 0, onResultRead: (TaskReviewDto) -> Unit = {}, onBack: () -> Unit) {
+fun ReviewScreen(taskRepo: TaskRepository, availableTags: List<TagDto>, businessTimezone: String? = null, userRepo: UserRepository? = null, canReview: Boolean = true, readResultKeys: Set<String> = emptySet(), refreshRevision: Int = 0, focusReviewId: String? = null, onResultRead: (TaskReviewDto) -> Unit = {}, onBack: () -> Unit) {
     // 无审批权限时直接隐藏"待我审批"入口，仅展示自己提交的申请
     var scope by rememberSaveable { mutableStateOf(if (canReview) "pending" else "created") }
     var items by remember(scope) { mutableStateOf<List<TaskReviewDto>>(emptyList()) }
@@ -164,6 +164,12 @@ fun ReviewScreen(taskRepo: TaskRepository, availableTags: List<TagDto>, business
     }
     LaunchedEffect(scope, loadRetry, refreshRevision, selected?.id) {
         if (selected == null) load(append = false)
+    }
+    // 从消息进入：本页列表里能找到该条审批时，直接展开它的详情
+    LaunchedEffect(focusReviewId, items) {
+        val target = focusReviewId ?: return@LaunchedEffect
+        if (selected?.id == target) return@LaunchedEffect
+        items.firstOrNull { it.id == target }?.let { selected = it }
     }
 
     selected?.let { review ->
