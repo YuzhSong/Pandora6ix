@@ -1272,6 +1272,19 @@ private data class EntryDraft(val entryId: String?, val content: String)
     var entryDrafts by remember { mutableStateOf(listOf(EntryDraft(null, ""))) }
     var publishing by remember { mutableStateOf(false) }
     var publishError by remember { mutableStateOf<String?>(null) }
+    var editNotice by remember { mutableStateOf<String?>(null) }
+    var editNoticeEvent by remember { mutableStateOf(0L) }
+    LaunchedEffect(editNoticeEvent) {
+        if (editNotice != null) {
+            kotlinx.coroutines.delay(2_000)
+            editNotice = null
+        }
+    }
+    LaunchedEffect(writing) { editNotice = null }
+    fun showEditNotice(message: String) {
+        editNotice = message
+        editNoticeEvent++
+    }
     var confirmExit by rememberSaveable { mutableStateOf(false) }
     // 编辑器业务日期（最近三日可选）；删除确认目标与错误
     var editorDateKey by rememberSaveable { mutableStateOf("") }
@@ -1339,7 +1352,8 @@ private data class EntryDraft(val entryId: String?, val content: String)
         editorDateKey = draft?.dateKey ?: dateKey
         // 编辑窗口按创建时间（allowedActions 由后端按 published_at 判定），而不是 work_date
         val existing = journals.firstOrNull { it.workDate == editorDateKey }
-        if (existing != null && "EDIT" !in existing.allowedActions) { publishError = "该日志不是当天创建，已不能修改"; return }
+        if (existing != null && "EDIT" !in existing.allowedActions) { showEditNotice("该日志不是当天创建，已不能修改"); return }
+        editNotice = null
         editingJournal = journals.firstOrNull { it.workDate == editorDateKey }
         entryDrafts = draft?.entries?.map { EntryDraft(it.entryId, it.content) }
             ?: editingJournal?.entries?.sortedBy { it.displayOrder }?.map { EntryDraft(it.entryId, it.content) }
@@ -1350,9 +1364,10 @@ private data class EntryDraft(val entryId: String?, val content: String)
         writing = true
     }
     fun switchEditorDate(dateKey: String) {
-        if (dateKey == editorDateKey) return
+        if (dateKey == editorDateKey) { editNotice = null; return }
         val existing = journals.firstOrNull { it.workDate == dateKey }
-        if (existing != null && "EDIT" !in existing.allowedActions) { publishError = "该日期日志不是当天创建，已不能修改"; return }
+        if (existing != null && "EDIT" !in existing.allowedActions) { showEditNotice("该日期日志不是当天创建，已不能修改"); return }
+        editNotice = null
         editorDateKey = dateKey
         editingJournal = journals.firstOrNull { it.workDate == dateKey }
         entryDrafts = editingJournal?.entries?.sortedBy { it.displayOrder }?.map { EntryDraft(it.entryId, it.content) } ?: listOf(EntryDraft(null, ""))
@@ -1552,7 +1567,7 @@ private data class EntryDraft(val entryId: String?, val content: String)
                             }
                         }
                     }
-                    publishError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)) }
+                    (publishError ?: editNotice)?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)) }
                     Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         OutlinedButton({ closeEditor() }, Modifier.weight(1f), enabled = !publishing, shape = RoundedCornerShape(14.dp), colors = ButtonDefaults.outlinedButtonColors(contentColor = Ink)) { Text("取消") }
                         Button(
@@ -1790,9 +1805,9 @@ private fun JournalDetailScreen(repo: JournalRepository, journalId: String, busi
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 JournalSection("创建时间") {
-                    val created = businessTimeLabel(j.publishedAt, businessTimezone)
+                    val created = com.pandora6ix.app.data.businessDateTimeLabel(j.publishedAt, businessTimezone)
                     Text(
-                        if (created.isNotBlank()) "${isoLabel(j.workDate)} · $created" else isoLabel(j.workDate),
+                        created.ifBlank { "未知" },
                         fontSize = 19.sp,
                         lineHeight = 30.sp,
                         fontWeight = FontWeight.Medium

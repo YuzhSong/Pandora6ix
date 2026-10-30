@@ -54,12 +54,15 @@ internal fun JournalEntryField(
         if (value.text != text) value = TextFieldValue(text)
     }
     LaunchedEffect(value, layout, focused, keyboardBottom) {
-        if (!focused) return@LaunchedEffect
-        val measured = layout ?: return@LaunchedEffect
-        if (measured.layoutInput.text.text != value.text) return@LaunchedEffect
         // 等待新行高度应用到外层滚动容器，避免在旧的最大偏移范围内滚动。
         withFrameNanos { }
-        val cursor = measured.getCursorRect(value.selection.end.coerceIn(0, value.text.length))
+        // 挂起期间输入法可能已更新正文；必须在恢复后读取同一时刻的排版与选区。
+        if (!focused) return@LaunchedEffect
+        val measured = layout ?: return@LaunchedEffect
+        val current = value
+        val offset = journalCursorOffset(measured.layoutInput.text.text, current.text, current.selection.end)
+            ?: return@LaunchedEffect
+        val cursor = measured.getCursorRect(offset)
         requester.bringIntoView(Rect(cursor.left, (cursor.top - margin).coerceAtLeast(0f), cursor.right + 1f, cursor.bottom + margin))
     }
 
