@@ -132,13 +132,30 @@ public class IdentityService
     public Map<String, Object> login(Contracts.Login command) {
         if (command.password().getBytes(StandardCharsets.UTF_8).length > 72)
             throw BusinessException.invalid("Passwords must fit the 72-byte BCrypt input bound.");
+        String domain = command.enterpriseDomain();
+        String loginName = command.loginName();
+        if (command.accountIdentifier() != null && !command.accountIdentifier().isBlank()) {
+            if (domain != null || loginName != null)
+                throw BusinessException.invalid("Use accountIdentifier or the legacy enterpriseDomain/loginName pair.");
+            int separator = command.accountIdentifier().lastIndexOf('@');
+            if (separator <= 0 || separator == command.accountIdentifier().length() - 1) {
+                passwords.matches(command.password(), dummyHash);
+                throw new BusinessException(401, "INVALID_CREDENTIALS", "Account identifier or credentials are invalid.");
+            }
+            loginName = command.accountIdentifier().substring(0, separator);
+            domain = command.accountIdentifier().substring(separator + 1);
+        }
+        if (domain == null || domain.isBlank() || loginName == null || loginName.isBlank()) {
+            passwords.matches(command.password(), dummyHash);
+            throw new BusinessException(401, "INVALID_CREDENTIALS", "Account identifier or credentials are invalid.");
+        }
         var user =
                 db.optional(
                         "SELECT u.* FROM app_user u JOIN enterprise e ON e.id=u.enterprise_id WHERE"
                                 + " e.login_domain=? AND e.status='ACTIVE' AND u.login_name=? AND"
                                 + " u.status='ACTIVE'",
-                        command.enterpriseDomain(),
-                        command.loginName());
+                        domain,
+                        loginName);
         boolean valid =
                 passwords.matches(
                         command.password(),
@@ -208,6 +225,18 @@ public class IdentityService
                         ? null
                         : view(db.entity("org_unit", actor.enterpriseId(), actor.orgUnitId())));
         user.put("department", department(actor));
+        // 直属上级展示名：供客户端"我的"页展示真实上级；未配置或上级已被删除时为 null
+        var supervisorId = user.get("supervisorUserId");
+        user.put(
+                "supervisorName",
+                supervisorId == null || supervisorId.toString().isBlank()
+                        ? null
+                        : db.optional(
+                                        "SELECT display_name FROM app_user WHERE enterprise_id=? AND id=?",
+                                        actor.enterpriseId(),
+                                        supervisorId.toString())
+                                .map(row -> str(row, "display_name"))
+                                .orElse(null));
         return user;
     }
 
@@ -224,6 +253,10 @@ public class IdentityService
 
     @Transactional
     public void logout(Actor actor) {
+        db.update("UPDATE push_device SET active=FALSE,updated_at=CURRENT_TIMESTAMP WHERE enterprise_id=? AND user_id=?",
+                actor.enterpriseId(), actor.id());
+        db.update("UPDATE notification_push_delivery SET status='CANCELLED' WHERE push_device_id IN (SELECT id FROM push_device WHERE enterprise_id=? AND user_id=?) AND status IN ('PENDING','SENDING')",
+                actor.enterpriseId(), actor.id());
         db.update("UPDATE auth_session SET revoked=TRUE WHERE token_hash=?", actor.tokenHash());
     }
 

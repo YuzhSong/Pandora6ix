@@ -117,6 +117,12 @@ def command_schemas():
                 required.append(field_name)
         schemas[match[1]] = obj(properties, required)
         schemas[match[1]]["additionalProperties"] = False
+    login = schemas.get("Login")
+    if login:
+        login["anyOf"] = [
+            {"required": ["accountIdentifier"]},
+            {"required": ["enterpriseDomain", "loginName"]},
+        ]
     return schemas
 
 
@@ -126,6 +132,7 @@ def read_schemas():
     assignment = obj({**versioned, "taskId": ID, "recipientUserId": ID,
         "executionStatus": {"type": "string", "enum": ["PENDING_APPROVAL", "ACTIVE", "AWAITING_ACCEPTANCE", "COMPLETED"]},
         "progressPercent": {"type": "integer", "minimum": 0, "maximum": 100},
+        "workStatus": {"type": "string", "enum": ["NOT_STARTED", "IN_PROGRESS", "COMPLETED"]}, "allowedWorkStatuses": array(STRING),
         "activatedAt": nullable(INSTANT), "completionSource": nullable({"type": "string", "enum": ["SELF", "CREATOR_ACCEPTANCE"]}),
         "completedByUserId": nullable(ID), "completedAt": nullable(INSTANT), "allowedActions": array(STRING)})
     progress = obj({"id": ID, "assignmentId": ID, "actorUserId": ID, "progressPercent": INTEGER, "note": nullable(STRING), "recordedAt": INSTANT})
@@ -135,8 +142,9 @@ def read_schemas():
         "priorityLevel": {"type": "integer", "minimum": 1, "maximum": 5}, "startDate": DATE, "endDate": DATE,
         "timeKind": java_type("TimeKind"), "startTime": nullable(STRING), "endTime": nullable(STRING), "reviewStatus": {"type": "string", "enum": ["PENDING", "APPROVED", "REJECTED"]},
         "primaryTagId": nullable(ID), "tags": array(ref("Tag")), "tagIds": array(ID), "displayColor": nullable(STRING), "createdAt": INSTANT,
-        "authorizedAssignments": array(ref("Assignment")), "allowedActions": array(STRING), "reviewId": nullable(ID),
-        "progressRecords": array(ref("ProgressRecord")), "completionRequests": array(ref("CompletionRequestView"))})
+        "authorizedAssignments": array(ref("Assignment")), "allowedActions": array(STRING), "reviewId": nullable(ID), "pendingEditReviewId": nullable(ID),
+        "progressRecords": array(ref("ProgressRecord")), "completionRequests": array(ref("CompletionRequestView")),
+        "seriesId": nullable(ID), "recurrenceLabel": nullable(STRING), "occurrenceCount": INTEGER, "occurrenceDate": nullable(DATE)})
     entry = obj({**versioned, "entryId": ID, "journalId": ID, "workLogId": ID, "workDate": DATE, "authorUserId": ID,
         "clientEntryKey": STRING, "content": STRING, "displayOrder": INTEGER, "recordedAt": INSTANT, "eligible": BOOLEAN})
     journal = obj({**versioned, "journalId": ID, "authorUserId": ID, "workDate": DATE, "publishedAt": INSTANT,
@@ -158,9 +166,9 @@ def read_schemas():
     stats = obj({"total": INTEGER, "completed": INTEGER, "uncompleted": INTEGER, "basis": {"type": "string", "const": "OWN_APPROVED_ASSIGNMENTS"}})
     journalDeleted = obj({"journalId": ID})
     tagDeleted = obj({"tagId": ID})
-    notification = obj({"id": ID, "kind": {"type": "string", "enum": ["NEW_TASK", "DEADLINE", "STATUS"]},
+    notification = obj({"id": ID, "kind": {"type": "string", "enum": ["NEW_TASK", "DEADLINE", "STATUS"]}, "eventType": STRING,
         "taskId": ID, "assignmentId": nullable(ID), "title": STRING, "body": STRING, "dedupeKey": STRING,
-        "dueAt": nullable(INSTANT), "createdAt": INSTANT, "readAt": nullable(INSTANT)})
+        "dueAt": nullable(INSTANT), "createdAt": INSTANT, "readAt": nullable(INSTANT), "resolved": BOOLEAN})
     reviewActor = obj({"id": ID, "displayName": nullable(STRING), "jobTitle": nullable(STRING)}, ("id", "displayName"))
     review = obj({**versioned, "reviewId": ID, "taskId": ID, "reviewerUserId": ID, "submittedByUserId": ID,
         "taskVersion": INTEGER, "currentTaskVersion": INTEGER, "attemptNo": INTEGER, "submittedAt": INSTANT,
@@ -168,16 +176,22 @@ def read_schemas():
         "decision": {"type": "string", "enum": ["PENDING", "APPROVED", "REJECTED"]},
         "reviewStatus": {"type": "string", "enum": ["PENDING", "APPROVED", "REJECTED"]},
         "decidedByUserId": nullable(ID), "decisionNote": nullable(STRING), "decidedAt": nullable(INSTANT),
+        "reviewKind": {"type": "string", "enum": ["CREATE", "EDIT"]}, "effectiveTaskReviewStatus": STRING,
         "isCurrent": BOOLEAN, "allowedActions": array({"type": "string", "enum": ["APPROVE", "REJECT"]}),
         # 展示名与职位：审批详情要显示"谁申请、谁执行"，只有 userId 无法呈现
         "submittedByName": nullable(STRING), "submittedByJobTitle": nullable(STRING),
         "reviewerName": nullable(STRING), "reviewerJobTitle": nullable(STRING),
         "recipients": array(reviewActor)})
     schemas = {"Tag": tag, "Assignment": assignment, "ProgressRecord": progress, "CompletionRequestView": completion, "Task": task,
+        "TaskScope": obj({"items": array(ref("Task"))}, ("items",)),
         "WorkEntry": entry, "Journal": journal, "Enterprise": enterprise, "OrgUnit": org, "User": user, "Profile": profile, "CompanyItem": item, "ImportantSelection": selection, "Statistics": stats,
         "JournalDeleted": journalDeleted, "TagDeleted": tagDeleted,
         "CredentialHandoffPage": obj({"items": array(obj({"personId": ID, "displayName": STRING, "loginName": STRING, "enterpriseDomain": STRING, "status": {"type": "string", "enum": ["AVAILABLE", "CHANGED", "EXPIRED", "UNAVAILABLE"]}, "initialPassword": {"type": "string", "description": "Only present for available temporary credentials."}, "expiresAt": INSTANT}, ("personId", "displayName", "loginName", "enterpriseDomain", "status"))), "nextCursor": {"type": "null"}}, ("items", "nextCursor")),
         "Notification": notification, "UnreadCount": obj({"unreadCount": INTEGER}),
+        "JournalDates": obj({"items": array(DATE), "businessToday": DATE}, ("items", "businessToday")),
+        "TaskReviewPendingCount": obj({"count": INTEGER}, ("count",)),
+        "PushDeviceRegistrationResult": obj({"installationId": STRING, "active": BOOLEAN}, ("installationId", "active")),
+        "AssignmentStatusResult": obj({"assignment": ref("Assignment"), "completionRequest": nullable(ref("CompletionRequestView"))}),
         "TaskReview": review, "ReviewDecisionResult": obj({"review": ref("TaskReview"), "task": ref("Task")}),
         "Recipient": obj({"id": ID, "displayName": STRING, "orgUnitId": nullable(ID), "jobTitle": nullable(STRING), "organizationName": nullable(STRING), "departmentId": nullable(ID), "departmentName": nullable(STRING), "relationship": STRING}),
         "LoginResult": obj({"accessToken": STRING, "tokenType": {"type": "string", "const": "Bearer"}, "expiresAt": INSTANT, "user": ref("Profile")}),
@@ -189,16 +203,16 @@ def read_schemas():
             "requestId": STRING, "timestamp": INSTANT, "status": INTEGER, "code": STRING, "message": STRING, "path": STRING}, ("error", "requestId"))}
     for name in ("Tag", "Task", "Journal", "WorkEntry", "CompanyItem", "OrgUnit", "User", "Recipient", "TaskReview", "Notification"):
         schemas[name + "Page"] = obj({"items": array(ref(name)), "nextCursor": nullable(STRING), "moreUrl": STRING}, ("items", "nextCursor"))
-    personnel_values = obj({"employmentStatus": STRING, "departureDate": nullable(DATE), "jobTitle": nullable(STRING), "orgUnitId": nullable(ID), "supervisorUserId": nullable(ID), "roles": array(STRING), "status": STRING})
-    schemas["PersonnelChangePage"] = obj({"items": array(obj({"id": ID, "userId": ID, "actorUserId": ID, "actorName": STRING, "kind": {"type": "string", "enum": ["DEPARTURE", "JOB_CHANGE"]}, "effectiveDate": DATE, "recordedAt": INSTANT, "beforeValues": personnel_values, "afterValues": personnel_values}))}, ("items",))
-    log_actor = obj({"id": nullable(ID), "displayName": STRING, "loginName": nullable(STRING)}, ("displayName",))
-    log_object = obj({"id": nullable(ID), "type": STRING, "label": STRING}, ("type", "label"))
+    personnel_values = obj({"version": nullable(INTEGER), "displayName": nullable(STRING), "loginName": nullable(STRING), "employmentStatus": nullable(STRING), "departureDate": nullable(DATE), "jobTitle": nullable(STRING), "orgUnitId": nullable(ID), "orgUnitName": nullable(STRING), "supervisorUserId": nullable(ID), "supervisorName": nullable(STRING), "roles": array(STRING), "status": nullable(STRING)})
+    schemas["PersonnelChangePage"] = obj({"items": array(obj({"id": ID, "userId": ID, "actorUserId": ID, "actorName": nullable(STRING), "actorLoginName": nullable(STRING), "kind": {"type": "string", "enum": ["DEPARTURE", "JOB_CHANGE"]}, "effectiveDate": DATE, "recordedAt": INSTANT, "beforeValues": personnel_values, "afterValues": personnel_values}))}, ("items",))
+    log_actor = obj({"id": nullable(ID), "displayName": nullable(STRING), "loginName": nullable(STRING)})
+    log_object = obj({"id": nullable(ID), "type": STRING, "label": nullable(STRING)}, ("type",))
     log_record = obj({"id": ID, "occurredAt": INSTANT, "actor": log_actor, "object": log_object, "module": STRING,
         "action": STRING, "source": STRING, "result": {"type": "string", "enum": ["SUCCESS", "FAILURE"]}, "summary": STRING},
         ("id", "occurredAt", "actor", "object", "module", "action", "source", "result", "summary"))
-    log_snapshot = nullable(obj({"version": INTEGER, "fields": array(obj({"key": STRING, "label": STRING, "value": nullable(STRING)}))}, ("version", "fields")))
+    log_snapshot = nullable(obj({"version": nullable(INTEGER), "fields": array(obj({"key": STRING, "label": STRING, "value": nullable(STRING)}))}, ("version", "fields")))
     log_detail = obj({**log_record, "requestId": nullable(STRING), "failureReason": nullable(STRING), "before": log_snapshot, "after": log_snapshot,
-        "versions": array(obj({"logId": ID, "version": INTEGER, "occurredAt": INSTANT, "actorName": STRING, "action": STRING}, ("logId", "version", "occurredAt", "actorName", "action")))},
+        "versions": array(obj({"logId": ID, "version": nullable(INTEGER), "occurredAt": INSTANT, "actorName": nullable(STRING), "action": STRING}, ("logId", "version", "occurredAt", "action")))},
         ("id", "occurredAt", "actor", "object", "module", "action", "source", "result", "summary", "requestId", "failureReason", "before", "after", "versions"))
     schemas["OperationLogPage"] = obj({"items": array(log_record), "nextCursor": nullable(STRING), "total": INTEGER, "snapshotToken": STRING}, ("items", "nextCursor", "total", "snapshotToken"))
     schemas["OperationLogDetail"] = log_detail
@@ -208,6 +222,8 @@ def read_schemas():
 
 
 RESPONSES = {
+    ("POST", "/push-devices"): "PushDeviceRegistrationResult",
+    ("DELETE", "/push-devices/{installationId}"): "PushDeviceRegistrationResult",
     ("POST", "/admin/users/{id}/manager-replacement"): "ManagerReplacementResult",
     ("POST", "/admin/users/{id}/departure"): "User",
     ("POST", "/admin/users/{id}/job-change"): "User",
@@ -223,11 +239,13 @@ RESPONSES = {
     ("POST", "/admin/users/{id}/password-reset"): "User",
     ("GET", "/tags"): "TagPage", ("POST", "/tags"): "Tag", ("PATCH", "/tags/{id}"): "Tag",
     ("GET", "/tasks/recipient-candidates"): "RecipientPage", ("GET", "/tasks"): "TaskPage", ("POST", "/tasks"): "Task", ("GET", "/tasks/{id}"): "Task", ("PATCH", "/tasks/{id}"): "Task",
-    ("POST", "/tasks/{id}/complete"): "Assignment", ("POST", "/task-assignments/{id}/progress-records"): "ProgressResult",
+    ("PATCH", "/task-assignments/{id}/status"): "AssignmentStatusResult",
+    ("GET", "/tasks/{id}/scope"): "TaskScope", ("POST", "/tasks/{id}/scoped-edit"): "Task", ("POST", "/tasks/{id}/scoped-status"): "Task",
+    ("POST", "/tasks/recurring"): "Task", ("POST", "/tasks/{id}/complete"): "Assignment", ("POST", "/task-assignments/{id}/progress-records"): "ProgressResult",
     ("POST", "/task-assignments/{id}/completion-requests"): "CompletionResult", ("POST", "/task-completion-requests/{id}/decision"): "CompletionResult",
     ("GET", "/task-reviews"): "TaskReviewPage", ("GET", "/task-reviews/{id}"): "TaskReview", ("POST", "/task-reviews/{id}/decision"): "ReviewDecisionResult",
-    ("GET", "/task-reviews/pending-count"): "UnreadCount",
-    ("GET", "/calendar"): "Calendar", ("GET", "/work-logs"): "JournalPage", ("POST", "/work-logs"): "Journal", ("GET", "/work-logs/{id}"): "Journal", ("PATCH", "/work-logs/{id}"): "Journal", ("DELETE", "/work-logs/{id}"): "JournalDeleted",
+    ("GET", "/task-reviews/pending-count"): "TaskReviewPendingCount",
+    ("GET", "/work-logs/dates"): "JournalDates", ("GET", "/calendar"): "Calendar", ("GET", "/work-logs"): "JournalPage", ("POST", "/work-logs"): "Journal", ("GET", "/work-logs/{id}"): "Journal", ("PATCH", "/work-logs/{id}"): "Journal", ("DELETE", "/work-logs/{id}"): "JournalDeleted",
     ("DELETE", "/tags/{id}"): "TagDeleted",
     ("GET", "/work-log-entries/{id}"): "WorkEntry", ("GET", "/me/important-entry-candidates"): "WorkEntryPage", ("GET", "/me/important-entries"): "ImportantSelection", ("PUT", "/me/important-entries"): "ImportantSelection",
     ("GET", "/company-important-items"): "CompanyItemPage", ("POST", "/company-important-items"): "CompanyItem", ("GET", "/company-important-items/{id}"): "CompanyItem", ("PATCH", "/company-important-items/{id}"): "CompanyItem",

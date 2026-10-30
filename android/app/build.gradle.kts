@@ -5,6 +5,10 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
+val jpushAppKey = providers.gradleProperty("JPUSH_APP_KEY")
+    .orElse(providers.environmentVariable("JPUSH_APP_KEY"))
+    .getOrElse("")
+
 android {
     namespace = "com.pandora6ix.app"
     compileSdk = 35
@@ -22,6 +26,8 @@ android {
         versionName = "0.1.0"
         // 云端后端基址；本地联调可在 debug 构建改为 http://10.0.2.2:8080/api/v1（模拟器访问开发机）
         buildConfigField("String", "API_BASE_URL", "\"https://www.rainycode.cn/api/v1\"")
+        buildConfigField("String", "JPUSH_APP_KEY", "\"$jpushAppKey\"")
+        manifestPlaceholders["JPUSH_APP_KEY"] = jpushAppKey
     }
 
     buildFeatures { compose = true; buildConfig = true }
@@ -48,6 +54,7 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.jpush)
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     testImplementation("junit:junit:4.13.2")

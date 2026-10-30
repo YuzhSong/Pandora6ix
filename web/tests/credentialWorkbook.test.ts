@@ -15,13 +15,13 @@ test('Excel handoff is a readable XLSX and preserves passwords and leading-zero 
   await workbook.xlsx.load(bytes)
   const sheet = workbook.getWorksheet('账号交付')!
   assert.equal(sheet.rowCount, 4)
-  assert.deepEqual([1, 2, 3, 4].map(column => sheet.getCell(1, column).value), ['姓名', '公司登录标识', '登录账号', '初始密码'])
-  assert.equal(sheet.getCell('C2').value, '00123')
-  assert.equal(sheet.getCell('D2').value, '001234567890')
-  assert.equal(sheet.getCell('D2').numFmt, '@')
-  assert.equal(sheet.getCell('C3').value, '=1+1')
-  assert.equal(sheet.getCell('D3').value, '=SUM(1,2)')
-  assert.equal(sheet.getCell('D4').value, '  密码<&>12345  ')
+  assert.deepEqual([1, 2, 3].map(column => sheet.getCell(1, column).value), ['姓名', '登录账号', '初始密码'])
+  assert.equal(sheet.getCell('B2').value, '00123@pandora')
+  assert.equal(sheet.getCell('C2').value, '001234567890')
+  assert.equal(sheet.getCell('C2').numFmt, '@')
+  assert.equal(sheet.getCell('B3').value, '=1+1@pandora')
+  assert.equal(sheet.getCell('C3').value, '=SUM(1,2)')
+  assert.equal(sheet.getCell('C4').value, '  密码<&>12345  ')
 })
 
 test('changed and expired employees never enter the Excel password handoff', async () => {
@@ -35,6 +35,6 @@ test('changed and expired employees never enter the Excel password handoff', asy
   await workbook.xlsx.load(bytes)
   const sheet = workbook.getWorksheet('账号交付')!
   assert.equal(sheet.rowCount, 2)
-  assert.equal(sheet.getCell('C2').value, 'staff')
-  assert.equal(sheet.getCell('D2').value, 'initial-12345')
+  assert.equal(sheet.getCell('B2').value, 'staff@pandora')
+  assert.equal(sheet.getCell('C2').value, 'initial-12345')
 })

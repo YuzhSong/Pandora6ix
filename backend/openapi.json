@@ -2828,6 +2828,109 @@
         }
       }
     },
+    "/work-logs/dates": {
+      "get": {
+        "operationId": "JournalController_dates",
+        "tags": [
+          "Journal"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Successful command/read; 201 task submission remains PENDING.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/JournalDates"
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/work-logs/{id}": {
       "get": {
         "operationId": "JournalController_detail",
@@ -4877,6 +4980,231 @@
         }
       }
     },
+    "/push-devices": {
+      "post": {
+        "operationId": "PushDeviceController_register",
+        "tags": [
+          "PushDevice"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Successful command/read; 201 task submission remains PENDING.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/PushDeviceRegistrationResult"
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PushDeviceRegistration"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/push-devices/{installationId}": {
+      "delete": {
+        "operationId": "PushDeviceController_deactivate",
+        "tags": [
+          "PushDevice"
+        ],
+        "parameters": [
+          {
+            "name": "installationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful command/read; 201 task submission remains PENDING.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/PushDeviceRegistrationResult"
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/tags": {
       "get": {
         "operationId": "TaskController_tags",
@@ -5998,6 +6326,500 @@
         }
       }
     },
+    "/tasks/recurring": {
+      "post": {
+        "operationId": "TaskController_createRecurring",
+        "tags": [
+          "Task"
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful command/read; 201 task submission remains PENDING.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Task"
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskCreate"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tasks/{id}/scope": {
+      "get": {
+        "operationId": "TaskController_scope",
+        "tags": [
+          "Task"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful command/read; 201 task submission remains PENDING.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/TaskScope"
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tasks/{id}/scoped-edit": {
+      "post": {
+        "operationId": "TaskController_scopedEdit",
+        "tags": [
+          "Task"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful command/read; 201 task submission remains PENDING.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Task"
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScopedEdit"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tasks/{id}/scoped-status": {
+      "post": {
+        "operationId": "TaskController_scopedStatus",
+        "tags": [
+          "Task"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful command/read; 201 task submission remains PENDING.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Task"
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScopedStatus"
+              }
+            }
+          }
+        }
+      }
+    },
     "/task-assignments/{id}/progress-records": {
       "post": {
         "operationId": "TaskController_progress",
@@ -6122,6 +6944,136 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/Progress"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/task-assignments/{id}/status": {
+      "patch": {
+        "operationId": "TaskController_workStatus",
+        "tags": [
+          "Task"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful command/read; 201 task submission remains PENDING.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/AssignmentStatusResult"
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssignmentStatus"
               }
             }
           }
@@ -6819,7 +7771,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/UnreadCount"
+                      "$ref": "#/components/schemas/TaskReviewPendingCount"
                     },
                     "requestId": {
                       "type": "string"
@@ -7165,17 +8117,38 @@
       "Login": {
         "type": "object",
         "properties": {
+          "accountIdentifier": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 257
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "enterpriseDomain": {
-            "type": "string",
-            "minLength": 1,
-            "pattern": "\\S",
-            "maxLength": 128
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "loginName": {
-            "type": "string",
-            "minLength": 1,
-            "pattern": "\\S",
-            "maxLength": 128
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "password": {
             "type": "string",
@@ -7186,9 +8159,42 @@
           }
         },
         "required": [
-          "enterpriseDomain",
-          "loginName",
           "password"
+        ],
+        "additionalProperties": false,
+        "anyOf": [
+          {
+            "required": [
+              "accountIdentifier"
+            ]
+          },
+          {
+            "required": [
+              "enterpriseDomain",
+              "loginName"
+            ]
+          }
+        ]
+      },
+      "PushDeviceRegistration": {
+        "type": "object",
+        "properties": {
+          "installationId": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "maxLength": 36
+          },
+          "registrationId": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "maxLength": 256
+          }
+        },
+        "required": [
+          "installationId",
+          "registrationId"
         ],
         "additionalProperties": false
       },
@@ -7803,6 +8809,41 @@
         ],
         "additionalProperties": false
       },
+      "Recurrence": {
+        "type": "object",
+        "properties": {
+          "frequency": {
+            "type": "string",
+            "pattern": "^(?:DAILY|WEEKLY|MONTHLY)$"
+          },
+          "interval": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "maximum": 365
+          },
+          "weekdays": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "maxItems": 7
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "frequency",
+          "interval"
+        ],
+        "additionalProperties": false
+      },
       "TaskCreate": {
         "type": "object",
         "properties": {
@@ -7907,6 +8948,16 @@
             "anyOf": [
               {
                 "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "recurrence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Recurrence"
               },
               {
                 "type": "null"
@@ -8036,10 +9087,156 @@
             "minimum": 0
           },
           "progressPercent": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0,
+                "maximum": 100
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "expectedVersion"
+        ],
+        "additionalProperties": false
+      },
+      "ScopeVersion": {
+        "type": "object",
+        "properties": {
+          "taskId": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S"
+          },
+          "taskVersion": {
             "type": "integer",
             "format": "int64",
-            "minimum": 0,
-            "maximum": 100
+            "minimum": 0
+          },
+          "assignmentId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "assignmentVersion": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "taskId",
+          "taskVersion"
+        ],
+        "additionalProperties": false
+      },
+      "ScopedEdit": {
+        "type": "object",
+        "properties": {
+          "scope": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^(?:SINGLE|THIS_AND_FUTURE)$"
+          },
+          "task": {
+            "$ref": "#/components/schemas/TaskPatch"
+          },
+          "versions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScopeVersion"
+            },
+            "minItems": 1,
+            "maxItems": 366
+          }
+        },
+        "required": [
+          "scope",
+          "task",
+          "versions"
+        ],
+        "additionalProperties": false
+      },
+      "ScopedStatus": {
+        "type": "object",
+        "properties": {
+          "scope": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^(?:SINGLE|THIS_AND_FUTURE)$"
+          },
+          "workStatus": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^(?:NOT_STARTED|IN_PROGRESS|COMPLETED)$"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "versions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScopeVersion"
+            },
+            "minItems": 1,
+            "maxItems": 366
+          }
+        },
+        "required": [
+          "scope",
+          "workStatus",
+          "versions"
+        ],
+        "additionalProperties": false
+      },
+      "AssignmentStatus": {
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "workStatus": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^(?:NOT_STARTED|IN_PROGRESS|COMPLETED)$"
           },
           "note": {
             "anyOf": [
@@ -8055,7 +9252,7 @@
         },
         "required": [
           "expectedVersion",
-          "progressPercent"
+          "workStatus"
         ],
         "additionalProperties": false
       },
@@ -8476,6 +9673,20 @@
             "minimum": 0,
             "maximum": 100
           },
+          "workStatus": {
+            "type": "string",
+            "enum": [
+              "NOT_STARTED",
+              "IN_PROGRESS",
+              "COMPLETED"
+            ]
+          },
+          "allowedWorkStatuses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "activatedAt": {
             "anyOf": [
               {
@@ -8789,6 +10000,17 @@
               }
             ]
           },
+          "pendingEditReviewId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "progressRecords": {
             "type": "array",
             "items": {
@@ -8800,8 +10022,58 @@
             "items": {
               "$ref": "#/components/schemas/CompletionRequestView"
             }
+          },
+          "seriesId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "recurrenceLabel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "occurrenceCount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "occurrenceDate": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
+      },
+      "TaskScope": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Task"
+            }
+          }
+        },
+        "required": [
+          "items"
+        ]
       },
       "WorkEntry": {
         "type": "object",
@@ -9420,6 +10692,9 @@
               "STATUS"
             ]
           },
+          "eventType": {
+            "type": "string"
+          },
           "taskId": {
             "type": "string",
             "format": "uuid"
@@ -9469,6 +10744,9 @@
                 "type": "null"
               }
             ]
+          },
+          "resolved": {
+            "type": "boolean"
           }
         }
       },
@@ -9478,6 +10756,71 @@
           "unreadCount": {
             "type": "integer",
             "format": "int64"
+          }
+        }
+      },
+      "JournalDates": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          "businessToday": {
+            "type": "string",
+            "format": "date"
+          }
+        },
+        "required": [
+          "items",
+          "businessToday"
+        ]
+      },
+      "TaskReviewPendingCount": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "required": [
+          "count"
+        ]
+      },
+      "PushDeviceRegistrationResult": {
+        "type": "object",
+        "properties": {
+          "installationId": {
+            "type": "string"
+          },
+          "active": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "installationId",
+          "active"
+        ]
+      },
+      "AssignmentStatusResult": {
+        "type": "object",
+        "properties": {
+          "assignment": {
+            "$ref": "#/components/schemas/Assignment"
+          },
+          "completionRequest": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CompletionRequestView"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -9575,6 +10918,16 @@
                 "type": "null"
               }
             ]
+          },
+          "reviewKind": {
+            "type": "string",
+            "enum": [
+              "CREATE",
+              "EDIT"
+            ]
+          },
+          "effectiveTaskReviewStatus": {
+            "type": "string"
           },
           "isCurrent": {
             "type": "boolean"
@@ -10202,7 +11555,24 @@
                   "format": "uuid"
                 },
                 "actorName": {
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "actorLoginName": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
                 "kind": {
                   "type": "string",
@@ -10222,8 +11592,46 @@
                 "beforeValues": {
                   "type": "object",
                   "properties": {
+                    "version": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "format": "int64"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "displayName": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "loginName": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "employmentStatus": {
-                      "type": "string"
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     },
                     "departureDate": {
                       "anyOf": [
@@ -10257,11 +11665,31 @@
                         }
                       ]
                     },
+                    "orgUnitName": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "supervisorUserId": {
                       "anyOf": [
                         {
                           "type": "string",
                           "format": "uuid"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "supervisorName": {
+                      "anyOf": [
+                        {
+                          "type": "string"
                         },
                         {
                           "type": "null"
@@ -10275,15 +11703,60 @@
                       }
                     },
                     "status": {
-                      "type": "string"
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   }
                 },
                 "afterValues": {
                   "type": "object",
                   "properties": {
+                    "version": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "format": "int64"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "displayName": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "loginName": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "employmentStatus": {
-                      "type": "string"
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     },
                     "departureDate": {
                       "anyOf": [
@@ -10317,11 +11790,31 @@
                         }
                       ]
                     },
+                    "orgUnitName": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "supervisorUserId": {
                       "anyOf": [
                         {
                           "type": "string",
                           "format": "uuid"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "supervisorName": {
+                      "anyOf": [
+                        {
+                          "type": "string"
                         },
                         {
                           "type": "null"
@@ -10335,7 +11828,14 @@
                       }
                     },
                     "status": {
-                      "type": "string"
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   }
                 }
@@ -10378,7 +11878,14 @@
                       ]
                     },
                     "displayName": {
-                      "type": "string"
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     },
                     "loginName": {
                       "anyOf": [
@@ -10390,10 +11897,7 @@
                         }
                       ]
                     }
-                  },
-                  "required": [
-                    "displayName"
-                  ]
+                  }
                 },
                 "object": {
                   "type": "object",
@@ -10413,12 +11917,18 @@
                       "type": "string"
                     },
                     "label": {
-                      "type": "string"
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
-                    "type",
-                    "label"
+                    "type"
                   ]
                 },
                 "module": {
@@ -10507,7 +12017,14 @@
                   ]
                 },
                 "displayName": {
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
                 "loginName": {
                   "anyOf": [
@@ -10519,10 +12036,7 @@
                     }
                   ]
                 }
-              },
-              "required": [
-                "displayName"
-              ]
+              }
             },
             "object": {
               "type": "object",
@@ -10542,12 +12056,18 @@
                   "type": "string"
                 },
                 "label": {
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 }
               },
               "required": [
-                "type",
-                "label"
+                "type"
               ]
             },
             "module": {
@@ -10607,8 +12127,15 @@
                 "type": "object",
                 "properties": {
                   "version": {
-                    "type": "integer",
-                    "format": "int64"
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "format": "int64"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   },
                   "fields": {
                     "type": "array",
@@ -10651,8 +12178,15 @@
                 "type": "object",
                 "properties": {
                   "version": {
-                    "type": "integer",
-                    "format": "int64"
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "format": "int64"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   },
                   "fields": {
                     "type": "array",
@@ -10699,15 +12233,29 @@
                   "format": "uuid"
                 },
                 "version": {
-                  "type": "integer",
-                  "format": "int64"
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "format": "int64"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
                 "occurredAt": {
                   "type": "string",
                   "format": "date-time"
                 },
                 "actorName": {
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
                 "action": {
                   "type": "string"
@@ -10717,7 +12265,6 @@
                 "logId",
                 "version",
                 "occurredAt",
-                "actorName",
                 "action"
               ]
             }

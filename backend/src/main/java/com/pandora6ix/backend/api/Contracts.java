@@ -14,9 +14,14 @@ public final class Contracts {
     private Contracts() {}
 
     public record Login(
-            @NotBlank @Size(max = 128) String enterpriseDomain,
-            @NotBlank @Size(max = 128) String loginName,
+            @Size(max = 257) String accountIdentifier,
+            @Size(max = 128) String enterpriseDomain,
+            @Size(max = 128) String loginName,
             @NotBlank @Size(max = 72) String password) {}
+
+    public record PushDeviceRegistration(
+            @NotBlank @Size(max = 36) String installationId,
+            @NotBlank @Size(max = 256) String registrationId) {}
 
     public record Password(
             @NotBlank String currentPassword,
@@ -102,6 +107,9 @@ public final class Contracts {
             @Size(min = 1, max = 64) String name,
             @Pattern(regexp = "#[0-9A-Fa-f]{6}") String colorHex) {}
 
+    public record Recurrence(@NotNull @Pattern(regexp = "DAILY|WEEKLY|MONTHLY") String frequency,
+            @NotNull @Min(1) @Max(365) Integer interval, @Size(max = 7) List<Integer> weekdays) {}
+
     public record TaskCreate(
             @NotNull TaskKind kind,
             @NotBlank @Size(max = 255) String title,
@@ -114,7 +122,15 @@ public final class Contracts {
             String endTime,
             @Size(max = 100) List<@NotBlank String> recipientIds,
             @Size(max = 100) List<@NotBlank String> tagIds,
-            String primaryTagId) {}
+            String primaryTagId,
+            @Valid Recurrence recurrence) {
+        public TaskCreate(TaskKind kind, String title, String description, Integer priorityLevel,
+                TimeKind timeKind, LocalDate startDate, LocalDate endDate, String startTime,
+                String endTime, List<String> recipientIds, List<String> tagIds, String primaryTagId) {
+            this(kind, title, description, priorityLevel, timeKind, startDate, endDate,
+                    startTime, endTime, recipientIds, tagIds, primaryTagId, null);
+        }
+    }
 
     public record TaskPatch(
             @NotNull @Min(0) Long expectedVersion,
@@ -131,8 +147,23 @@ public final class Contracts {
 
     public record Progress(
             @NotNull @Min(0) Long expectedVersion,
-            @NotNull @Min(0) @Max(100) Integer progressPercent,
+            @Min(0) @Max(100) Integer progressPercent,
             @Size(max = 20000) String note) {}
+
+    public record ScopeVersion(@NotBlank String taskId, @NotNull @Min(0) Long taskVersion,
+            String assignmentId, @Min(0) Long assignmentVersion) {}
+    public record ScopedEdit(@NotBlank @Pattern(regexp="SINGLE|THIS_AND_FUTURE") String scope,
+            @NotNull @Valid TaskPatch task,
+            @NotNull @Size(min=1,max=366) List<@Valid ScopeVersion> versions) {}
+    public record ScopedStatus(@NotBlank @Pattern(regexp="SINGLE|THIS_AND_FUTURE") String scope,
+            @NotBlank @Pattern(regexp="NOT_STARTED|IN_PROGRESS|COMPLETED") String workStatus,
+            @Size(max=20000) String note,
+            @NotNull @Size(min=1,max=366) List<@Valid ScopeVersion> versions) {}
+
+    public record AssignmentStatus(
+            @NotNull @Min(0) Long expectedVersion,
+            @NotBlank @Pattern(regexp="NOT_STARTED|IN_PROGRESS|COMPLETED") String workStatus,
+            @Size(max=20000) String note) {}
 
     public record Complete(@NotNull @Min(0) Long expectedAssignmentVersion) {}
 

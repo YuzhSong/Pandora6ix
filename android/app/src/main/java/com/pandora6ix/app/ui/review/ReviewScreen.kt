@@ -15,15 +15,20 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -36,6 +41,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -51,9 +57,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -68,6 +77,7 @@ import com.pandora6ix.app.data.businessDateTimeLabel
 import com.pandora6ix.app.data.TagDto
 import com.pandora6ix.app.data.TaskRepository
 import com.pandora6ix.app.data.TaskReviewDto
+import com.pandora6ix.app.data.reviewResultKey
 import com.pandora6ix.app.ui.calendar.tagHexColor
 import com.pandora6ix.app.ui.theme.CoralDark
 import com.pandora6ix.app.ui.theme.CreamDeep
@@ -95,34 +105,72 @@ import java.util.UUID
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ReviewScreen(taskRepo: TaskRepository, availableTags: List<TagDto>, businessTimezone: String? = null, userRepo: UserRepository? = null, onBack: () -> Unit) {
-    var scope by rememberSaveable { mutableStateOf("pending") }
-    var items by remember { mutableStateOf<List<TaskReviewDto>>(emptyList()) }
-    var nextCursor by remember { mutableStateOf<String?>(null) }
+fun ReviewScreen(taskRepo: TaskRepository, availableTags: List<TagDto>, businessTimezone: String? = null, userRepo: UserRepository? = null, canReview: Boolean = true, readResultKeys: Set<String> = emptySet(), refreshRevision: Int = 0, focusReviewId: String? = null, onResultRead: (TaskReviewDto) -> Unit = {}, onBack: () -> Unit) {
+    // 无审批权限时直接隐藏"待我审批"入口，仅展示自己提交的申请
+    var scope by rememberSaveable { mutableStateOf(if (canReview) "pending" else "created") }
+    var items by remember(scope) { mutableStateOf<List<TaskReviewDto>>(emptyList()) }
+    var nextCursor by remember(scope) { mutableStateOf<String?>(null) }
+    var loadedPageCount by remember(scope) { mutableStateOf(0) }
+    // 位于详情分支之外，进入详情时不会随 LazyColumn 一同销毁。
+    val listState = rememberSaveable(scope, saver = LazyListState.Saver) { LazyListState() }
     var loading by remember { mutableStateOf(true) }
     var loadError by remember { mutableStateOf<String?>(null) }
+    // 403 无权限：重试无意义，改为引导查看自己提交的申请
+    var loadDenied by remember { mutableStateOf(false) }
     var loadRetry by remember { mutableStateOf(0) }
     var selected by remember { mutableStateOf<TaskReviewDto?>(null) }
+    var loadGeneration by remember { mutableStateOf(0) }
     val uiScope = rememberCoroutineScope()
 
     fun load(append: Boolean, cursor: String? = null) {
+        val generation = ++loadGeneration
+        val requestedScope = scope
+        val pagesToRefresh = loadedPageCount.coerceAtLeast(1)
         loading = true; loadError = null
         uiScope.launch {
             try {
-                val page = taskRepo.reviews(scope, cursor = cursor)
-                items = if (append) items + page.items else page.items
-                nextCursor = page.nextCursor
+                val window = if (append) {
+                    val page = taskRepo.reviews(requestedScope, cursor = cursor)
+                    ReviewListWindow((items + page.items).distinctBy { it.id }, page.nextCursor, pagesToRefresh + 1)
+                } else {
+                    refreshReviewWindow(pagesToRefresh) { pageCursor ->
+                        taskRepo.reviews(requestedScope, cursor = pageCursor)
+                    }
+                }
+                if (generation != loadGeneration || requestedScope != scope) return@launch
+                items = window.items
+                nextCursor = window.nextCursor
+                loadedPageCount = window.pageCount
+                loadDenied = false
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: SessionExpiredException) {
                 // 401 已由全局回调处理
             } catch (e: Exception) {
-                loadError = (e as? ApiException)?.friendlyMessage() ?: "加载失败，请重试"
-                if (!append) items = emptyList()
+                if (generation != loadGeneration || requestedScope != scope) return@launch
+                val api = e as? ApiException
+                loadDenied = api?.httpStatus == 403
+                loadError = when {
+                    loadDenied -> "当前账号没有审批权限，无需处理审批，可查看自己提交的申请"
+                    api != null -> api.friendlyMessage()
+                    else -> "加载失败，请重试"
+                }
+                // 刷新中间页失败时保留完整的旧窗口；权限失效则隐藏旧内容。
+                if (loadDenied) { items = emptyList(); nextCursor = null; loadedPageCount = 0 }
             } finally {
-                loading = false
+                if (generation == loadGeneration) loading = false
             }
         }
     }
-    LaunchedEffect(scope, loadRetry) { load(append = false) }
+    LaunchedEffect(scope, loadRetry, refreshRevision, selected?.id) {
+        if (selected == null) load(append = false)
+    }
+    // 从消息进入：本页列表里能找到该条审批时，直接展开它的详情
+    LaunchedEffect(focusReviewId, items) {
+        val target = focusReviewId ?: return@LaunchedEffect
+        if (selected?.id == target) return@LaunchedEffect
+        items.firstOrNull { it.id == target }?.let { selected = it }
+    }
 
     selected?.let { review ->
         ReviewDetail(review, taskRepo, availableTags, businessTimezone, userRepo, onBack = { selected = null }, onChanged = { load(append = false) })
@@ -132,29 +180,42 @@ fun ReviewScreen(taskRepo: TaskRepository, availableTags: List<TagDto>, business
     // 背景与设置页一致（主题 dashboard 色），避免同一主题下不同页面底色深浅不一
     Column(Modifier.fillMaxSize().background(WarmDashboard)) {
         TopAppBar(
-            title = { Column { Text("审批中心", fontWeight = FontWeight.Bold); Text("任务申请与审批结果", fontSize = 12.sp, color = Ink.copy(alpha = .6f)) } },
+            title = { Text("审批中心", fontWeight = FontWeight.Bold, maxLines = 1) },
             navigationIcon = { IconButton(onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") } },
             colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
         )
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            QueueTab("待我审批", scope == "pending", Modifier.weight(1f)) { scope = "pending" }
+            if (canReview) QueueTab("待我审批", scope == "pending", Modifier.weight(1f)) { scope = "pending" }
             QueueTab("我提交的", scope == "created", Modifier.weight(1f)) { scope = "created" }
         }
         Box(Modifier.fillMaxSize()) {
             when {
                 loading && items.isEmpty() -> CircularProgressIndicator(Modifier.align(Alignment.Center).size(36.dp), color = WarmOrange)
-                loadError != null -> Column(Modifier.align(Alignment.Center).padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                loadError != null && items.isEmpty() -> Column(Modifier.align(Alignment.Center).padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(loadError!!, color = Ink.copy(alpha = .7f), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                     Spacer(Modifier.height(12.dp))
-                    OutlinedButton({ loadRetry++ }) { Text("重试") }
+                    if (loadDenied) OutlinedButton({ scope = "created" }) { Text("查看我提交的") }
+                    else OutlinedButton({ loadRetry++ }) { Text("重试") }
                 }
                 items.isEmpty() -> Text(
                     if (scope == "pending") "暂无待审批的申请" else "暂无提交的申请",
                     Modifier.align(Alignment.Center), color = Ink.copy(alpha = .5f)
                 )
-                else -> LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                else -> LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     items(items, key = { it.id }) { review ->
-                        ReviewCard(review, businessTimezone) { selected = review }
+                        val unread = scope == "created" && reviewResultKey(review)?.let { it !in readResultKeys } == true
+                        ReviewCard(review, businessTimezone, unread) {
+                            if (scope == "created") onResultRead(review)
+                            selected = review
+                        }
+                    }
+                    if (loadError != null) {
+                        item(key = "review-load-error") {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                                Text(loadError!!, color = Ink.copy(alpha = .7f))
+                                OutlinedButton({ loadRetry++ }, enabled = !loading) { Text("重试") }
+                            }
+                        }
                     }
                     nextCursor?.let { cursor ->
                         item {
@@ -183,17 +244,25 @@ private fun QueueTab(label: String, selected: Boolean, modifier: Modifier = Modi
 }
 
 @Composable
-private fun ReviewCard(review: TaskReviewDto, businessTimezone: String?, onOpen: () -> Unit) {
+private fun ReviewCard(review: TaskReviewDto, businessTimezone: String?, unread: Boolean = false, onOpen: () -> Unit) {
     val snapshot = parseSnapshot(review.submittedSnapshot)
     Card(Modifier.fillMaxWidth().clickable(onClick = onOpen), colors = CardDefaults.cardColors(containerColor = WarmCard), shape = RoundedCornerShape(16.dp)) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(snapshot.title.ifBlank { "未命名任务" }, Modifier.weight(1f), fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 DecisionBadge(review.decision)
+                if (unread) Text("新结果", color = WarmOrange, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("${kindLabel(snapshot.kind)} · 请求人 ${personName(review.submittedByName, review.submittedByUserId)}", fontSize = 12.sp, color = Ink.copy(alpha = .6f))
                 review.submittedAt?.let { Text(timeLabel(it, businessTimezone), fontSize = 12.sp, color = Ink.copy(alpha = .6f)) }
+            }
+            // 已有结果时直接展示审批人与结果时间，不用进详情才知道
+            if (review.decision != "PENDING") {
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("审批人 ${personName(review.reviewerName, review.reviewerUserId)}", fontSize = 12.sp, color = Ink.copy(alpha = .6f))
+                    review.decidedAt?.let { Text(timeLabel(it, businessTimezone), fontSize = 12.sp, color = Ink.copy(alpha = .6f)) }
+                }
             }
             if (review.decision != "PENDING" && review.decisionNote?.isNotBlank() == true) {
                 Text("批注：${review.decisionNote}", fontSize = 12.sp, color = Ink.copy(alpha = .6f), maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -208,6 +277,8 @@ private fun ReviewCard(review: TaskReviewDto, businessTimezone: String?, onOpen:
 private fun ReviewDetail(review: TaskReviewDto, taskRepo: TaskRepository, availableTags: List<TagDto>, businessTimezone: String?, userRepo: UserRepository?, onBack: () -> Unit, onChanged: () -> Unit) {
     var current by remember { mutableStateOf(review) }
     var comment by rememberSaveable { mutableStateOf("") }
+    // 批注输入条展开状态：点击批注入口后在键盘上方显示输入条（微信样式）
+    var commentOpen by rememberSaveable { mutableStateOf(false) }
     var submitting by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var idempotencyKey by remember { mutableStateOf(UUID.randomUUID().toString()) }
@@ -254,7 +325,7 @@ private fun ReviewDetail(review: TaskReviewDto, taskRepo: TaskRepository, availa
     // 背景与设置页一致（主题 dashboard 色）
     Column(Modifier.fillMaxSize().background(WarmDashboard)) {
         TopAppBar(
-            title = { Column { Text("审批详情", fontWeight = FontWeight.Bold); Text("第 ${current.attemptNo} 次提交 · ${timeLabel(current.submittedAt, businessTimezone)}", fontSize = 12.sp, color = Ink.copy(alpha = .6f)) } },
+            title = { Text("审批详情", fontWeight = FontWeight.Bold) },
             navigationIcon = { IconButton(onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") } },
             colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
         )
@@ -269,7 +340,6 @@ private fun ReviewDetail(review: TaskReviewDto, taskRepo: TaskRepository, availa
                         DecisionBadge(current.decision)
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        MetaChip(kindLabel(snapshot.kind))
                         val level = (snapshot.priorityLevel ?: 3).coerceIn(1, 5)
                         val (starColor, starText) = priorityMeta(level)
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -285,6 +355,7 @@ private fun ReviewDetail(review: TaskReviewDto, taskRepo: TaskRepository, availa
             // 时间：全天/指定时间、跨天日期范围
             item {
                 SectionCard("时间安排") {
+                    snapshot.recurrenceLabel?.let { InfoRow("重复安排", it) }
                     InfoRow("日期", dateRangeLabel(snapshot.startDate, snapshot.endDate))
                     InfoRow(
                         "时间",
@@ -301,7 +372,7 @@ private fun ReviewDetail(review: TaskReviewDto, taskRepo: TaskRepository, availa
                         current.submittedByJobTitle,
                         current.submittedByUserId,
                         userRepo,
-                        "第 ${current.attemptNo} 次提交 · ${timeLabel(current.submittedAt, businessTimezone)}"
+                        "提交时间：${timeLabel(current.submittedAt, businessTimezone)}"
                     )
                     PersonRow(
                         "审批人",
@@ -312,7 +383,7 @@ private fun ReviewDetail(review: TaskReviewDto, taskRepo: TaskRepository, availa
                         null
                     )
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("执行人", fontSize = 13.sp, color = Ink.copy(alpha = .6f))
+                        Text("执行人", fontSize = 13.sp, color = Ink)
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             executors.forEach { PersonChip(it, userRepo) }
                         }
@@ -355,14 +426,20 @@ private fun ReviewDetail(review: TaskReviewDto, taskRepo: TaskRepository, availa
             }
             if (canDecide) item {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OutlinedTextField(
-                        value = comment,
-                        onValueChange = { comment = it },
-                        Modifier.fillMaxWidth(),
-                        label = { Text("批注（驳回时建议填写）") },
-                        minLines = 2,
-                        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Ink.copy(alpha = .7f), unfocusedBorderColor = Ink.copy(alpha = .3f), focusedLabelColor = Ink, cursorColor = Ink)
-                    )
+                    // 批注入口：点击后在屏幕底部、键盘上方展开输入条（微信打字框样式）
+                    Row(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(CreamDeep).clickable { commentOpen = true }.padding(horizontal = 12.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            if (comment.isBlank()) "写批注（驳回时建议填写）" else "批注：$comment",
+                            Modifier.weight(1f), fontSize = 13.sp,
+                            color = if (comment.isBlank()) Ink.copy(alpha = .5f) else Ink,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Icon(Icons.Default.Edit, "编辑批注", Modifier.size(16.dp), tint = Ink.copy(alpha = .5f))
+                    }
                     if (error != null) Text(error!!, color = com.pandora6ix.app.ui.theme.CoralDark, fontSize = 13.sp)
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Button(
@@ -378,6 +455,27 @@ private fun ReviewDetail(review: TaskReviewDto, taskRepo: TaskRepository, availa
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = com.pandora6ix.app.ui.theme.CoralDark)
                         ) { Text("驳回") }
                     }
+                }
+            }
+        }
+        // 底部批注输入条：固定在键盘上方（adjustResize 已避让），最多 5 行、超出内部滚动，可完整查看已输入内容
+        if (canDecide && commentOpen) {
+            val keyboard = LocalSoftwareKeyboardController.current
+            val commentFocus = remember { FocusRequester() }
+            LaunchedEffect(commentOpen) { if (commentOpen) commentFocus.requestFocus() }
+            Surface(color = WarmCard, shadowElevation = 8.dp) {
+                // targetSdk 35 强制 edge-to-edge，adjustResize 不生效：必须用 imePadding 把输入条顶到键盘上方
+                Row(Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = comment,
+                        onValueChange = { comment = it },
+                        Modifier.weight(1f).focusRequester(commentFocus).heightIn(min = 44.dp, max = 168.dp),
+                        placeholder = { Text("输入批注（驳回时建议填写）") },
+                        minLines = 1,
+                        maxLines = 5,
+                        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Ink.copy(alpha = .7f), unfocusedBorderColor = Ink.copy(alpha = .3f), focusedLabelColor = Ink, cursorColor = Ink)
+                    )
+                    TextButton({ keyboard?.hide(); commentOpen = false }, Modifier.padding(bottom = 6.dp)) { Text("完成", color = Ink, fontWeight = FontWeight.Bold) }
                 }
             }
         }
@@ -447,43 +545,44 @@ private fun RemoteAvatar(userId: String, name: String, size: Dp, fontSize: TextU
     }
 }
 
-/** 人员行：头像 + 角色 + 姓名 + 职位 + 补充信息 */
+/** 人员行：角色标签（左对齐、与“执行人”同线）+ 头像 + 姓名 + 职位胶囊 + 补充信息 */
 @Composable
 private fun PersonRow(label: String, name: String, jobTitle: String?, userId: String, userRepo: UserRepository?, sub: String?) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        RemoteAvatar(userId, name, 38.dp, 16.sp, userRepo)
-        Column(Modifier.weight(1f)) {
-            Text(label, fontSize = 12.sp, color = Ink.copy(alpha = .55f))
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(name, fontSize = 14.sp, fontWeight = FontWeight.Medium, lineHeight = 19.sp)
-                jobTitle?.takeIf { it.isNotBlank() }?.let {
-                    Text(
-                        it,
-                        Modifier.clip(RoundedCornerShape(8.dp)).background(CreamDeep).padding(horizontal = 6.dp, vertical = 2.dp),
-                        fontSize = 11.sp,
-                        color = Ink.copy(alpha = .65f)
-                    )
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(label, fontSize = 13.sp, color = Ink)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            RemoteAvatar(userId, name, 38.dp, 16.sp, userRepo)
+            Column(Modifier.weight(1f)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(name, fontSize = 14.sp, fontWeight = FontWeight.Medium, lineHeight = 19.sp)
+                    jobTitle?.takeIf { it.isNotBlank() }?.let {
+                        Text(
+                            it,
+                            Modifier.clip(RoundedCornerShape(8.dp)).background(CreamDeep).padding(horizontal = 6.dp, vertical = 2.dp),
+                            fontSize = 11.sp,
+                            color = Ink.copy(alpha = .65f)
+                        )
+                    }
                 }
+                if (!sub.isNullOrBlank()) Text(sub, fontSize = 12.sp, color = Ink.copy(alpha = .5f))
             }
-            if (!sub.isNullOrBlank()) Text(sub, fontSize = 12.sp, color = Ink.copy(alpha = .5f))
         }
     }
 }
 
-/** 执行人胶囊：头像 + 姓名 + 职位，可多行排列 */
+/** 执行人：与请求人/审批人同行内格式一致（38dp 头像、14sp 姓名），身份职位用黄色小标签，无背景胶囊 */
 @Composable
 private fun PersonChip(actor: ReviewActorDto, userRepo: UserRepository?) {
     val name = personName(actor.displayName, actor.id)
     Row(
-        Modifier.clip(RoundedCornerShape(14.dp)).background(CreamDeep).padding(horizontal = 10.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        RemoteAvatar(actor.id, name, 26.dp, 12.sp, userRepo)
-        Column {
-            Text(name, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+        RemoteAvatar(actor.id, name, 38.dp, 16.sp, userRepo)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(name, fontSize = 14.sp, fontWeight = FontWeight.Medium, lineHeight = 19.sp)
             actor.jobTitle?.takeIf { it.isNotBlank() }?.let {
-                Text(it, fontSize = 11.sp, color = Ink.copy(alpha = .55f))
+                Text(it, Modifier.clip(RoundedCornerShape(8.dp)).background(CreamDeep).padding(horizontal = 6.dp, vertical = 2.dp), fontSize = 11.sp, color = Ink.copy(alpha = .65f))
             }
         }
     }
@@ -519,7 +618,8 @@ private fun parseSnapshot(snapshot: JsonObject?): SnapshotInfo {
         endTime = str("endTime"),
         recipientIds = strings("recipientIds"),
         tagIds = strings("tagIds"),
-        primaryTagId = str("primaryTagId")
+        primaryTagId = str("primaryTagId"),
+        recurrenceLabel = str("recurrenceLabel")
     )
 }
 
@@ -535,7 +635,8 @@ private data class SnapshotInfo(
     val endTime: String?,
     val recipientIds: List<String>,
     val tagIds: List<String>,
-    val primaryTagId: String?
+    val primaryTagId: String?,
+    val recurrenceLabel: String? = null
 )
 
 private fun kindLabel(kind: String?) = if (kind == "DELEGATED") "派发任务" else "个人任务"

@@ -2,6 +2,8 @@ package com.pandora6ix.app
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
 import android.provider.MediaStore
 import android.net.Uri
@@ -9,8 +11,13 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
 import android.widget.Toast
+import org.json.JSONObject
+import cn.jpush.android.api.JPushInterface
 import androidx.activity.ComponentActivity
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -19,6 +26,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ScrollState
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -44,14 +52,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
@@ -68,11 +80,16 @@ import com.pandora6ix.app.ui.calendar.*
 import com.pandora6ix.app.ui.review.ReviewScreen
 import com.pandora6ix.app.ui.task.ProgressSheet
 import com.pandora6ix.app.ui.tags.TagManageScreen
+import com.pandora6ix.app.ui.logs.JournalDatePickerDialog
+import com.pandora6ix.app.ui.logs.JournalEntryField
 import com.pandora6ix.app.ui.theme.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.receiveAsFlow
 import java.io.File
 import java.util.UUID
 
@@ -128,21 +145,80 @@ private fun decodeUriThumbnail(context: Context, uri: Uri, target: Int = 192) = 
 }.getOrNull()
 
 class MainActivity : ComponentActivity() {
+    private val notificationOpenEvents = Channel<String>(Channel.BUFFERED)
+    private val approvalPromptEvents = Channel<ApprovalPrompt>(Channel.BUFFERED)
+    private var approvalReceiver: android.content.BroadcastReceiver? = null
+
+    companion object {
+        @Volatile var isForeground = false
+            private set
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (BuildConfig.JPUSH_APP_KEY.isNotBlank()) {
+            JPushInterface.setDebugMode(BuildConfig.DEBUG)
+            JPushInterface.init(this)
+        }
+        capturePushIntent(intent)
         val session = SessionStore(this)
         val api = ApiClient(session)
         val auth = AuthRepository(api, session)
-        setContent { PandoraApp(session, api, auth) }
+        setContent { PandoraApp(session, api, auth, notificationOpenEvents.receiveAsFlow(), approvalPromptEvents.receiveAsFlow()) }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        isForeground = true
+        if (approvalReceiver != null) return
+        approvalReceiver = object : android.content.BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                val prompt = ApprovalPrompt.from(
+                    intent.getStringExtra(PandoraPushReceiver.EXTRA_NOTIFICATION_ID),
+                    intent.getStringExtra(PandoraPushReceiver.EXTRA_EVENT_TYPE)
+                ) ?: return
+                approvalPromptEvents.trySend(prompt)
+            }
+        }.also { receiver ->
+            ContextCompat.registerReceiver(
+                this,
+                receiver,
+                android.content.IntentFilter(PandoraPushReceiver.APPROVAL_ARRIVED),
+                ContextCompat.RECEIVER_NOT_EXPORTED
+            )
+        }
+    }
+
+    override fun onStop() {
+        isForeground = false
+        approvalReceiver?.let { unregisterReceiver(it) }
+        approvalReceiver = null
+        super.onStop()
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        capturePushIntent(intent)
+    }
+
+    private fun capturePushIntent(intent: android.content.Intent?) {
+        val direct = intent?.getStringExtra("notificationId")
+        val encoded = intent?.getStringExtra("cn.jpush.android.EXTRA")
+        val notificationId = direct ?: runCatching { JSONObject(encoded ?: "{}").optString("notificationId") }.getOrNull()
+        if (!notificationId.isNullOrBlank()) notificationOpenEvents.trySend(notificationId)
     }
 }
 
 private enum class Route { HOME, VIEW, LOGS, AI, ME }
 
 /** 任务操作面板覆盖的动作集合（进度/自完成/申请验收/验收决定），用于详情页入口判定 */
-private val TASK_ACTIONS = setOf("UPDATE_PROGRESS", "COMPLETE_PERSONAL", "REQUEST_COMPLETION", "DECIDE_COMPLETION")
+// 详情页"记录进度"入口的动作集：仅实际执行人可见；
+// 发起人的验收决策（DECIDE_COMPLETION）不触发该入口，避免发起人在视图页看到与己无关的"进度记录"
+private val PROGRESS_ENTRY_ACTIONS = setOf("UPDATE_PROGRESS", "COMPLETE_PERSONAL", "REQUEST_COMPLETION")
 private data class NavItem(val route: Route, val label: String, val icon: ImageVector)
-private data class HomePanelDef(val title: String, val items: List<String>)
+/** emptyText：该面板为空时的提示（四个面板语义不同，分别给出「暂无任务」「暂无日志」等） */
+private data class HomePanelDef(val title: String, val items: List<String>, val emptyText: String)
 
 /** 导图面板分页状态：items 为已加载条目；nextCursor 非空表示还有更多可加载 */
 private class HomePanelPager<T> {
@@ -160,10 +236,22 @@ private data class HomeDetail(
     val id: String? = null
 )
 
-/** 提醒轮询间隔（后台无消息服务，按固定间隔比对本人任务快照） */
-private const val REMINDER_POLL_MILLIS = 15L * 60L * 1000L
+/** 推送前台到达：服务端通知 id + SDK 通知栏 id（用于清掉那条系统通知） */
+private data class PushArrival(val notificationId: String, val notifyId: Int)
+
+/** 提醒轮询间隔（App 前台；退到后台暂停，回到前台立刻补一次检查） */
+private const val REMINDER_POLL_MILLIS = 10L * 1000L
 /** 截止时间提前量预设值（分钟）：1 / 2 / 6 / 12 / 24 小时 */
 private val REMINDER_LEAD_OPTIONS = listOf(60, 120, 360, 720, 1440)
+
+/** 服务端通知是否允许弹出提醒：kind 与设置中「通知提醒」三个子开关一一对应 */
+private fun NotificationDto.alertEnabled(newTask: Boolean, deadline: Boolean, statusChange: Boolean): Boolean =
+    when (kind) {
+        ReminderKind.NEW_TASK -> newTask
+        ReminderKind.DEADLINE -> deadline
+        ReminderKind.STATUS -> statusChange
+        else -> false
+    }
 
 /** 提前量展示：1440 → "24 小时"，90 → "1 小时 30 分钟"，45 → "45 分钟" */
 private fun leadLabel(minutes: Int): String {
@@ -176,7 +264,7 @@ private fun leadLabel(minutes: Int): String {
     }
 }
 
-/** 底部导航图标：待审批数 > 0 时在“我的”图标上挂数字角标（99+ 封顶） */
+/** 底部导航图标：待审批与未读结果在“我的”图标上挂数字角标（99+ 封顶） */
 @Composable
 private fun MeNavIcon(item: NavItem, badgeCount: Int) {
     if (item.route == Route.ME && badgeCount > 0) {
@@ -197,24 +285,37 @@ private fun cardBorderIfBlended(): BorderStroke? {
 }
 
 @Composable
-fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
+fun PandoraApp(
+    session: SessionStore,
+    api: ApiClient,
+    auth: AuthRepository,
+    notificationOpenEvents: Flow<String>,
+    approvalPromptEvents: Flow<ApprovalPrompt>
+) {
     PandoraTheme {
         var route by rememberSaveable { mutableStateOf(Route.HOME.name) }
         var modeName by rememberSaveable { mutableStateOf(CalendarMode.WEEK.name) }
         var dateKey by rememberSaveable { mutableStateOf(todayDate().let { "${it.year}-${it.month}-${it.day}" }) }
         var detail by rememberSaveable { mutableStateOf<String?>(null) }
         var homeDetail by remember { mutableStateOf<HomeDetail?>(null) }
+        // 日志详情：由日志卡片点开，按 journalId 读取整篇
+        var journalDetailId by remember { mutableStateOf<String?>(null) }
         var showSettings by rememberSaveable { mutableStateOf(false) }
         var showReviews by rememberSaveable { mutableStateOf(false) }
-        // 标签管理覆盖层（我的页进入）
+        var approvalPrompt by remember { mutableStateOf<ApprovalPrompt?>(null) }
+        // 从消息进入审批中心时定位到具体那条审批
+        var reviewFocusId by rememberSaveable { mutableStateOf<String?>(null) }
+        // 消息在抽屉之外被置为已读（如直接点开任务详情）后，用于刷新信封角标
+        var notificationReadRevision by remember { mutableIntStateOf(0) }
+        // 标签管理覆盖层（我的页进入，入口仅对有权限角色显示）
         var showTagManage by rememberSaveable { mutableStateOf(false) }
-        // 无权限打开标签管理的提示弹层
-        var showTagDenied by remember { mutableStateOf(false) }
         // 进度记录浮层：从任务详情进入，显示当前任务的执行关系
         var progressTaskId by remember { mutableStateOf<String?>(null) }
         var fontScale by rememberSaveable { mutableStateOf(1f) }
         var themeKey by rememberSaveable { mutableStateOf("warm") }
         var currentUser by remember { mutableStateOf<UserDto?>(null) }
+        // 子页面替换“我的”时仍保留滚动位置，退出登录或切换账号时重置。
+        val profileScrollState = rememberSaveable(currentUser?.id, saver = ScrollState.Saver) { ScrollState(0) }
         var authChecked by remember { mutableStateOf(false) }
         // 标签增改删权限：与服务端一致（仅 FOUNDER/DEPARTMENT_MANAGER）；未来接入 capabilities 后再细分
         val tagManager = currentUser?.capabilities?.createTags == true
@@ -239,16 +340,25 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
         // 通知提醒：偏好本地持久化（按账号隔离），提醒以页内弹窗为主、系统通知为辅
         val appContext = LocalContext.current
         val notifyPrefs = remember(currentUser?.id) { NotificationPrefs(appContext, currentUser?.id) }
+        val pushDeviceRepo = remember { PushDeviceRepository(appContext, api) }
+        val notificationRepo = remember { NotificationRepository(api) }
         var notifyMaster by remember(currentUser?.id) { mutableStateOf(notifyPrefs.master) }
         var notifyNewTask by remember(currentUser?.id) { mutableStateOf(notifyPrefs.newTask) }
         var notifyDeadline by remember(currentUser?.id) { mutableStateOf(notifyPrefs.deadline) }
         var notifyStatus by remember(currentUser?.id) { mutableStateOf(notifyPrefs.statusChange) }
         var notifyLeadMinutes by remember(currentUser?.id) { mutableIntStateOf(notifyPrefs.leadMinutes) }
+        var notificationPermissionRevision by rememberSaveable { mutableIntStateOf(0) }
         val reminderQueue = remember(currentUser?.id, notifyMaster) { mutableStateListOf<ReminderEvent>() }
-        // Android 13+ 需运行时申请通知权限；开启提醒时按需询问，被拒也不影响页内弹窗
-        val notifyPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+        // Android 13+ 需运行时申请通知权限；提醒默认开启，首次登录后询问一次，被拒也不影响页内弹窗
+        val notifyPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+            notifyPrefs.permissionRequested = true
+            notificationPermissionRevision++
+        }
         fun requestNotifyPermission() {
-            if (NotificationHelper.canPostNotifications(appContext)) return
+            if (NotificationHelper.canPostNotifications(appContext)) {
+                notificationPermissionRevision++
+                return
+            }
             if (NotificationHelper.needsRuntimePermission()) notifyPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
 
@@ -258,6 +368,72 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
             authChecked = true
         }
         // 任意带 token 请求返回 401：清理会话并回登录（切换到主线程更新状态）
+        var openedNotificationId by rememberSaveable { mutableStateOf<String?>(null) }
+        var notificationOpenSequence by rememberSaveable { mutableIntStateOf(0) }
+        // 待处理的「点推送进入」：首页消费后立刻清空，避免之后每次回到「导图」都自动拉开抽屉
+        var pendingPushNotificationId by rememberSaveable { mutableStateOf<String?>(null) }
+        // 推送前台到达事件：id 由 PandoraPushReceiver 广播过来，交给统一提醒队列处理
+        val pushArrivedEvents = remember { kotlinx.coroutines.channels.Channel<PushArrival>(kotlinx.coroutines.channels.Channel.UNLIMITED) }
+        // 会话内已处理过的通知 id：推送弹过的轮询不再重复弹，反之亦然
+        val announcedNotifications = remember(currentUser?.id) { java.util.Collections.synchronizedSet(mutableSetOf<String>()) }
+        LaunchedEffect(notificationOpenEvents) {
+            notificationOpenEvents.collect { id ->
+                openedNotificationId = id
+                notificationOpenSequence++
+                pendingPushNotificationId = id
+                route = Route.HOME.name
+                detail = null
+                homeDetail = null
+            }
+        }
+        LaunchedEffect(approvalPromptEvents, currentUser?.id, notifyMaster, notifyStatus) {
+            approvalPromptEvents.collect { prompt ->
+                if (currentUser == null || !notifyMaster || !notifyStatus) return@collect
+                // 两个 PR 共用去重记录；审批专用弹窗替换同一消息尚未确认的普通提醒。
+                if (claimApprovalPrompt(prompt.notificationId, announcedNotifications, reminderQueue)) approvalPrompt = prompt
+            }
+        }
+        DisposableEffect(appContext) {
+            val receiver = object : android.content.BroadcastReceiver() {
+                override fun onReceive(context: Context, intent: android.content.Intent) {
+                    if (intent.action == PandoraPushReceiver.MESSAGE_ARRIVED)
+                        intent.getStringExtra(PandoraPushReceiver.EXTRA_NOTIFICATION_ID)
+                            ?.let { id ->
+                                pushArrivedEvents.trySend(
+                                    PushArrival(id, intent.getIntExtra(PandoraPushReceiver.EXTRA_NOTIFY_ID, -1))
+                                )
+                            }
+                    else notificationPermissionRevision++
+                }
+            }
+            val filter = android.content.IntentFilter(PandoraPushReceiver.REGISTRATION_CHANGED).apply {
+                addAction(PandoraPushReceiver.MESSAGE_ARRIVED)
+            }
+            ContextCompat.registerReceiver(appContext, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+            onDispose { appContext.unregisterReceiver(receiver) }
+        }
+        LaunchedEffect(currentUser?.id, session.token, notifyMaster, notificationPermissionRevision) {
+            if (currentUser == null) return@LaunchedEffect
+            if (!notifyMaster || !NotificationHelper.canPostNotifications(appContext)) {
+                runCatching { pushDeviceRepo.deactivate() }
+                return@LaunchedEffect
+            }
+            if (BuildConfig.JPUSH_APP_KEY.isBlank()) return@LaunchedEffect
+            repeat(30) {
+                val registrationId = runCatching {
+                    withContext(Dispatchers.IO) { JPushInterface.getRegistrationID(appContext) }
+                }.getOrNull()
+                if (!registrationId.isNullOrBlank()) {
+                    try {
+                        pushDeviceRepo.register(registrationId)
+                        return@LaunchedEffect
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) { /* Retry a transient registration failure. */ }
+                }
+                kotlinx.coroutines.delay(2_000)
+            }
+        }
         DisposableEffect(api) {
             val main = Handler(Looper.getMainLooper())
             api.onSessionExpired = { main.post { currentUser = null; showSettings = false } }
@@ -277,20 +453,37 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
                 }
             }
         }
-        // 待我审批数量：审批中心入口角标 + 底部导航“我的”红点（仅审批能力用户加载；超过一页按 99+ 显示）
+        val reviewReads = remember(currentUser?.id) { ReviewResultReads(appContext, currentUser?.id ?: "anon") }
+        var readReviewKeys by remember(reviewReads) { mutableStateOf(reviewReads.keys()) }
+        var unreadReviewKeys by remember(reviewReads) { mutableStateOf(emptySet<String>()) }
+        var reviewRefreshRevision by remember(reviewReads) { mutableIntStateOf(0) }
+        // 两项独立刷新：查询失败保留上次成功结果。
         var pendingReviewCount by remember(currentUser?.id, currentUser?.capabilities?.reviewTasks) { mutableStateOf(0) }
-        // 登录后、切换页签、关闭审批中心（可能已批准/驳回）时刷新角标
+        val reviewBadgeCount = (pendingReviewCount + (unreadReviewKeys - readReviewKeys).size).coerceAtMost(99)
         LaunchedEffect(currentUser?.id, authChecked, currentUser?.capabilities?.reviewTasks, current, showReviews) {
-            pendingReviewCount = 0
-            if (currentUser != null && authChecked && currentUser?.capabilities?.reviewTasks == true) {
-                try {
-                    val page = taskRepo.reviews("pending", limit = 100)
-                    coroutineContext.ensureActive()
-                    pendingReviewCount = if (page.nextCursor != null) 99 else page.items.size
-                } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                    throw cancelled
-                } catch (_: Exception) {
-                    pendingReviewCount = 0
+            if (currentUser == null || !authChecked) return@LaunchedEffect
+            (appContext as ComponentActivity).lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                while (true) {
+                    if (currentUser?.capabilities?.reviewTasks == true) {
+                        try {
+                            val page = taskRepo.reviews("pending", limit = 100)
+                            coroutineContext.ensureActive()
+                            pendingReviewCount = if (page.nextCursor != null) 99 else page.items.size
+                        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                            throw cancelled
+                        } catch (_: Exception) { }
+                    }
+                    try {
+                        val keys = unreadReviewResults(reviewReads.keys()) { cursor ->
+                            taskRepo.reviews("created", cursor = cursor, limit = 100)
+                        }
+                        coroutineContext.ensureActive()
+                        unreadReviewKeys = keys
+                        reviewRefreshRevision++
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) { }
+                    kotlinx.coroutines.delay(30_000)
                 }
             }
         }
@@ -308,55 +501,115 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
             }
             runCatching { calendarRepo.statistics() }.getOrNull()?.let { statistics = it }
         }
-        // 提醒轮询：登录后按固定间隔比对本人任务快照，产出弹窗（+ 有权限时发系统通知）
-        LaunchedEffect(currentUser?.id, notifyMaster, notifyNewTask, notifyDeadline, notifyStatus, notifyLeadMinutes) {
+        // 提醒默认开启：首次登录后申请一次系统通知权限（Android 13+），被拒只失去系统通知，页内弹窗照常
+        LaunchedEffect(currentUser?.id, notifyMaster) {
+            if (currentUser == null || !notifyMaster || notifyPrefs.permissionRequested) return@LaunchedEffect
+            notifyPrefs.permissionRequested = true
+            requestNotifyPermission()
+        }
+        // 统一出口：轮询发现的新消息与推送前台到达的消息，都从这里发系统通知并入页内弹窗队列
+        fun announceNotification(n: NotificationDto) {
+            announcedNotifications.add(n.id)
+            NotificationHelper.notify(appContext, NotificationHelper.idOf(n.id), n.title, n.body)
+            reminderQueue.add(ReminderEvent(kind = n.kind, key = n.id, title = n.title, message = n.body))
+        }
+        // 提醒轮询：直接读服务端通知（消息一入库，下一轮就产出弹窗），不再依赖本地任务快照比对；
+        // repeatOnLifecycle(STARTED)：退到后台暂停轮询，回到前台立刻补一次检查
+        LaunchedEffect(currentUser?.id, notifyMaster, notifyNewTask, notifyDeadline, notifyStatus) {
             // 权限只在用户主动开启提醒时申请（见设置页），进入软件不打扰
             if (currentUser == null || !notifyMaster) return@LaunchedEffect
-            val reminderOwner = currentUser!!.id
             NotificationHelper.createChannel(appContext)
-            while (true) {
-                val events = runCatching {
-                    collectReminders(calendarRepo, notifyPrefs, currentUser?.businessTimezone)
-                }.getOrElse {
-                    if (it is kotlinx.coroutines.CancellationException) throw it
-                    emptyList()
+            // 本轮会话已登记的消息 id：首次只把现有消息作为基线，避免把历史消息一次性弹出来
+            var baselineReady = false
+            (appContext as ComponentActivity).lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                while (true) {
+                    val fresh = runCatching { notificationRepo.recent() }.getOrElse {
+                        if (it is kotlinx.coroutines.CancellationException) throw it
+                        emptyList()
+                    }
+                    coroutineContext.ensureActive()
+                    if (!baselineReady) {
+                        baselineReady = true
+                        announcedNotifications.addAll(fresh.map { it.id })
+                    } else {
+                        val pending = fresh.filter {
+                            it.readAt == null && it.id !in announcedNotifications &&
+                                it.alertEnabled(notifyNewTask, notifyDeadline, notifyStatus)
+                        }
+                        announcedNotifications.addAll(fresh.map { it.id })
+                        pending.forEach { n ->
+                            announceNotification(n)
+                        }
+                    }
+                    kotlinx.coroutines.delay(REMINDER_POLL_MILLIS)
                 }
-                kotlinx.coroutines.currentCoroutineContext().ensureActive()
-                if (currentUser?.id != reminderOwner || !notifyMaster) return@LaunchedEffect
-                events.forEach { event ->
-                    NotificationHelper.notify(appContext, NotificationHelper.idOf(event.key), event.title, event.message)
-                    reminderQueue.add(event)
-                }
-                kotlinx.coroutines.delay(REMINDER_POLL_MILLIS)
+            }
+        }
+        // 不论从消息进入还是自己点开：打开任务详情就把该任务的未读消息置为已读，并刷新信封角标
+        LaunchedEffect(detail, currentUser?.id) {
+            val taskId = detail ?: return@LaunchedEffect
+            runCatching {
+                notificationRepo.list()
+                    .filter { it.taskId == taskId && it.readAt == null }
+                    .forEach { notificationRepo.markRead(it.id) }
+            }
+            notificationReadRevision++
+        }
+        // 推送前台到达：不必等下一轮轮询，立刻按 id 取服务端这条消息弹出来
+        LaunchedEffect(pushArrivedEvents, notifyMaster, notifyNewTask, notifyDeadline, notifyStatus) {
+            for (arrival in pushArrivedEvents) {
+                // 前台收到推送：SDK 也会往通知栏塞一条，这里清掉，只保留页内弹窗
+                if (arrival.notifyId >= 0) runCatching { JPushInterface.clearNotificationById(appContext, arrival.notifyId) }
+                val id = arrival.notificationId
+                if (currentUser == null || !notifyMaster || id in announcedNotifications) continue
+                val n = runCatching { notificationRepo.recent() }.getOrNull()?.firstOrNull { it.id == id } ?: continue
+                // 请求期间审批广播可能已先展示该消息，不再重复入队。
+                if (id in announcedNotifications) continue
+                if (!n.alertEnabled(notifyNewTask, notifyDeadline, notifyStatus)) continue
+                announceNotification(n)
             }
         }
         // 视图页：按当前模式与日期加载真实任务；日/周/月走 /calendar，年视图按 /tasks 全年区间查询
         var calLoading by remember { mutableStateOf(false) }
         var calError by remember { mutableStateOf<String?>(null) }
+        // 非阻断提示（如权限自动切换），重载后仍保留，用户手动操作后清除
+        var calNotice by remember { mutableStateOf<String?>(null) }
         var calRetry by remember { mutableStateOf(0) }
-        // 年视图任务范围：mine=我的任务 / managed=我管理的 / created=我创建的
+        // 所有视图任务范围：mine=我的任务 / managed=我管理的 / created=我创建的
         var taskScope by rememberSaveable { mutableStateOf("mine") }
-        LaunchedEffect(current, modeName, dateKey, currentUser?.id, calRetry, taskScope) {
+        val calendarAnchor = calendarQueryDate(CalendarMode.valueOf(modeName), date)
+        LaunchedEffect(current, modeName, calendarAnchor, currentUser?.id, calRetry, taskScope) {
             if (current != Route.VIEW || currentUser == null) return@LaunchedEffect
             calLoading = true; calError = null
-            val anchor = "%04d-%02d-%02d".format(date.year, date.month, date.day)
+            val anchor = "%04d-%02d-%02d".format(calendarAnchor.year, calendarAnchor.month, calendarAnchor.day)
             try {
                 val loaded = when (CalendarMode.valueOf(modeName)) {
-                    CalendarMode.DAY -> calendarRepo.calendar("day", anchor).tasks
-                    CalendarMode.WEEK -> calendarRepo.calendar("week", anchor).tasks
-                    CalendarMode.MONTH -> calendarRepo.calendar("month", anchor).tasks
+                    CalendarMode.DAY -> calendarRepo.calendar("day", anchor, scope = taskScope).tasks
+                    CalendarMode.WEEK -> calendarRepo.calendar("week", anchor, scope = taskScope).tasks
+                    CalendarMode.MONTH -> calendarRepo.calendar("month", anchor, scope = taskScope).tasks
                     CalendarMode.YEAR -> calendarRepo.tasks(scope = taskScope, from = "%04d-01-01".format(date.year), to = "%04d-12-31".format(date.year)).items
                 }
+                coroutineContext.ensureActive()
                 taskItems.clear(); taskItems.addAll(loaded.map { it.toTaskItem() })
                 taskDtoById.clear(); taskDtoById.putAll(loaded.associateBy { it.id })
+                calNotice = null
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (e: SessionExpiredException) {
                 // 401 已由全局回调处理
             } catch (e: Exception) {
                 // 加载失败显示空视图与重试入口，不保留过期内容
-                calError = (e as? ApiException)?.friendlyMessage() ?: "加载失败，请重试"
+                val api = e as? ApiException
+                // 无权限查看当前范围（如"我管理的"）：给出具体提示并切回"我的任务"，重试无意义
+                if (api?.httpStatus == 403 && taskScope == "managed") {
+                    calNotice = "当前账号没有查看「我管理的」任务的权限，已切回「我的任务」"
+                    taskScope = "mine"
+                } else {
+                    calError = api?.friendlyMessage() ?: "加载失败，请重试"
+                }
                 taskItems.clear(); taskDtoById.clear()
             } finally {
-                calLoading = false
+                if (coroutineContext[kotlinx.coroutines.Job]?.isActive == true) calLoading = false
             }
         }
         // 创建入口由 /me.capabilities 驱动：个人/派发能力分别控制任务类型；具体命令仍由服务端校验
@@ -381,10 +634,11 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
                 route = Route.HOME.name; detail = null; homeDetail = null; showSettings = false; showReviews = false
             }
             else -> CompositionLocalProvider(LocalAppTheme provides theme, LocalDensity provides scaledDensity) {
-        Scaffold(containerColor = theme.background, bottomBar = { NavigationBar(containerColor = theme.backgroundDeep) { nav.forEach { item -> NavigationBarItem(selected = current == item.route, onClick = { route = item.route.name; detail = null; homeDetail = null; showSettings = false; showReviews = false; showTagManage = false; progressTaskId = null }, icon = { MeNavIcon(item, pendingReviewCount) }, label = { Text(item.label, fontSize = 11.sp) }, colors = NavigationBarItemDefaults.colors(selectedIconColor = WarmOrange, selectedTextColor = WarmOrange, indicatorColor = theme.backgroundDeep)) } } }) { padding ->
+        Scaffold(containerColor = theme.background, bottomBar = { NavigationBar(containerColor = theme.backgroundDeep) { nav.forEach { item -> NavigationBarItem(selected = current == item.route, onClick = { route = item.route.name; detail = null; homeDetail = null; journalDetailId = null; showSettings = false; showReviews = false; showTagManage = false; progressTaskId = null }, icon = { MeNavIcon(item, reviewBadgeCount) }, label = { Text(item.label, fontSize = 11.sp) }, colors = NavigationBarItemDefaults.colors(selectedIconColor = WarmOrange, selectedTextColor = WarmOrange, indicatorColor = theme.backgroundDeep)) } } }) { padding ->
             Surface(Modifier.padding(padding).fillMaxSize(), color = theme.background) {
                 when {
                     homeDetail != null -> HomeItemDetailScreen(dashboardRepo, homeDetail!!) { homeDetail = null }
+                    journalDetailId != null -> JournalDetailScreen(journalRepo, journalDetailId!!, currentUser?.businessTimezone) { journalDetailId = null }
                     showSettings -> SettingsScreen(
                         fontScale = fontScale,
                         onFontScaleChange = { fontScale = it },
@@ -408,7 +662,15 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
                         onLoggedOut = { currentUser = null },
                         onClose = { showSettings = false }
                     )
-                    showReviews -> ReviewScreen(taskRepo, serverTags, currentUser?.businessTimezone, userRepo) { showReviews = false }
+                    showReviews -> key(currentUser?.id) {
+                        ReviewScreen(taskRepo, serverTags, currentUser?.businessTimezone, userRepo,
+                            canReview = canReviewTasks, readResultKeys = readReviewKeys,
+                            refreshRevision = reviewRefreshRevision, focusReviewId = reviewFocusId,
+                            onResultRead = { review ->
+                                reviewReads.markRead(review)
+                                readReviewKeys = reviewReads.keys()
+                            }) { showReviews = false; reviewFocusId = null }
+                    }
                     showTagManage -> TagManageScreen(
                         tagRepo,
                         // 与服务端一致的权限：仅 FOUNDER/DEPARTMENT_MANAGER 可建/改/删；无权限者根本进不了此页
@@ -428,38 +690,56 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
                             } catch (_: Exception) { /* Existing detail remains available for retry. */ }
                         }
                         val dto = taskDtoById[detailId]
-                        DetailScreen(detailId, dto, serverTags, onBack = { detail = null; progressTaskId = null }, onRecordProgress = dto
-                            ?.takeIf { t -> t.authorizedAssignments.any { a -> a.allowedActions.any { it in TASK_ACTIONS } } }
-                            ?.let { { progressTaskId = detailId } })
-                        progressTaskId?.let { id -> taskDtoById[id]?.let { t ->
-                            ProgressSheet(t, taskRepo, onDismiss = { progressTaskId = null }, onChanged = { calRetry++ })
-                        } }
+                        DetailScreen(detailId, dto, serverTags, taskRepo, onBack = { detail = null }, onChanged = { calRetry++ }, businessTimezone = currentUser?.businessTimezone)
                     }
                     else -> AnimatedContent(current, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "page") { target ->
                         when (target) {
-                            Route.HOME -> HomeScreen(dashboardRepo, selectionRepo, onOpenHome = { homeDetail = it }, onOpenSettings = { showSettings = true })
-                            Route.VIEW -> CalendarScreen(CalendarMode.valueOf(modeName), date, taskItems, canCreatePersonal, canCreateDelegated, serverTags, taskRepo, { modeName = it.name }, { dateKey = "${it.year}-${it.month}-${it.day}" }, { calRetry++ }, { detail = it.id }, taskScope = taskScope, onTaskScopeChange = { taskScope = it }, businessTimezone = currentUser?.businessTimezone, loading = calLoading, error = calError, onRetry = { calRetry++ })
-                            Route.LOGS -> LogsScreen(journalRepo, serverTags.toList(), currentUser?.businessTimezone) { detail = it }
+                            Route.HOME -> HomeScreen(dashboardRepo, selectionRepo, notificationRepo, openedNotificationId, notificationOpenSequence, notificationReadRevision, pendingPushNotificationId = pendingPushNotificationId, onPushNotificationConsumed = { pendingPushNotificationId = null }, onDrawerClosed = { openedNotificationId = null }, onOpenHome = { homeDetail = it }, onOpenNotification = { item ->
+                                // 只有仍在「待我审批」队列里的审批申请才进审批中心并展开该条；
+                                // 已审批/驳回的消息（含「审批结果」）队列里查不到，直接看对应任务详情
+                                val awaitingReview = item.reviewId != null && item.eventType == "REVIEW_REQUEST" && !item.resolved
+                                if (awaitingReview) {
+                                    reviewFocusId = item.reviewId
+                                    showReviews = true
+                                } else if (item.taskId.isNotBlank()) detail = item.taskId
+                            })
+                            Route.VIEW -> CalendarScreen(CalendarMode.valueOf(modeName), date, taskItems, canCreatePersonal, canCreateDelegated, serverTags, taskRepo, { modeName = it.name }, { dateKey = "${it.year}-${it.month}-${it.day}" }, { calRetry++ }, { detail = it.id }, taskScope = taskScope, onTaskScopeChange = { taskScope = it; calNotice = null }, currentUser = currentUser, canReviewTasks = canReviewTasks, businessTimezone = currentUser?.businessTimezone, loading = calLoading, error = calError, onRetry = { calRetry++ }, notice = calNotice)
+                            Route.LOGS -> LogsScreen(journalRepo, serverTags.toList(), currentUser?.businessTimezone) { journalDetailId = it }
                             Route.AI -> AiMapScreen()
-                            Route.ME -> ProfileScreen(currentUser!!, statistics, notifyMaster, showReviewCenter, pendingReviewCount, userRepo, onOpenTagManage = { if (tagManager) showTagManage = true else showTagDenied = true }, onOpenReviews = { showReviews = true }, onOpenSettings = { showSettings = true })
+                            Route.ME -> ProfileScreen(currentUser!!, statistics, notifyMaster, showReviewCenter, reviewBadgeCount, tagManager, userRepo, scrollState = profileScrollState, onOpenTagManage = { showTagManage = true }, onOpenReviews = { showReviews = true }, onOpenSettings = { showSettings = true })
                         }
                     }
                 }
-        if (showTagDenied) AlertDialog(
-            onDismissRequest = { showTagDenied = false },
-            title = { Text("无权限", fontWeight = FontWeight.Bold) },
-            text = { Text("标签管理仅限创始人或部门负责人使用。") },
-            confirmButton = { TextButton({ showTagDenied = false }) { Text("知道了") } }
-        )
                 // 提醒弹窗：逐条展示，关闭后显示下一条
-                reminderQueue.firstOrNull()?.let { event ->
+                reminderQueue.firstOrNull()?.takeIf { approvalPrompt == null }?.let { event ->
                     ReminderDialog(event) { if (reminderQueue.isNotEmpty()) reminderQueue.removeAt(0) }
+                }
+                if (approvalPrompt != null && currentUser != null) {
+                    ApprovalPromptDialog(
+                        prompt = approvalPrompt!!,
+                        onReview = {
+                            approvalPrompt = null
+                            showReviews = true
+                        },
+                        onDismiss = { approvalPrompt = null }
+                    )
                 }
             }
         }
         }
         }
     }
+}
+
+@Composable
+private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("审批提醒") },
+        text = { Text(prompt.message) },
+        confirmButton = { TextButton(onClick = onReview) { Text("查看审批") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("稍后") } }
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -509,9 +789,20 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
     }
 }
 
-@Composable private fun HomeScreen(dashboardRepo: DashboardRepository, selectionRepo: SelectionRepository, onOpenHome: (HomeDetail) -> Unit, onOpenSettings: () -> Unit) {
+@Composable private fun HomeScreen(dashboardRepo: DashboardRepository, selectionRepo: SelectionRepository, notificationRepo: NotificationRepository, openedNotificationId: String?, notificationOpenSequence: Int, notificationReadRevision: Int, pendingPushNotificationId: String?, onPushNotificationConsumed: () -> Unit, onDrawerClosed: () -> Unit, onOpenHome: (HomeDetail) -> Unit, onOpenNotification: (NotificationDto) -> Unit) {
     var expandedPanel by rememberSaveable { mutableStateOf<String?>(null) }
     var notifications by rememberSaveable { mutableStateOf(false) }
+    // 只有「点推送进来」这一次会自动打开抽屉；消费后立刻清空挂在首页之外的待处理状态
+    LaunchedEffect(pendingPushNotificationId) {
+        if (pendingPushNotificationId == null) return@LaunchedEffect
+        notifications = true
+        onPushNotificationConsumed()
+    }
+    // 信封角标：未读消息数（99+ 封顶）；打开抽屉、关闭抽屉、收到推送打开、以及任何地方把消息置为已读时刷新
+    var unreadCount by remember { mutableStateOf(0) }
+    LaunchedEffect(notifications, notificationOpenSequence, notificationReadRevision) {
+        unreadCount = runCatching { notificationRepo.unreadCount() }.getOrDefault(0)
+    }
     var editingPersonal by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     var dashboard by remember { mutableStateOf<DashboardDto?>(null) }
@@ -576,10 +867,10 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
     LaunchedEffect(Unit) { loadDashboard() }
     val d = dashboard
     val panels = listOf(
-        HomePanelDef("公司十大重要事项", companyPager.items.map { it.title }),
-        HomePanelDef("公司十大派发任务", taskPager.items.map { it.title }),
-        HomePanelDef("个人十大重要事项", d?.personalImportantEntries?.entries?.map { it.content } ?: emptyList()),
-        HomePanelDef("个人日志", entryPager.items.map { it.content })
+        HomePanelDef("公司十大重要事项", companyPager.items.map { it.title }, "暂无公司重要事项"),
+        HomePanelDef("公司十大派发任务", taskPager.items.map { it.title }, "暂无任务"),
+        HomePanelDef("个人十大重要事项", d?.personalImportantEntries?.entries?.map { it.content } ?: emptyList(), "暂无个人重要事项"),
+        HomePanelDef("个人日志", entryPager.items.map { it.content }, "暂无日志")
     )
     val panelAccent = LocalAppTheme.current.accent
     fun openItem(panelIndex: Int, index: Int, text: String) {
@@ -592,15 +883,18 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
             3 -> { kind = "WORK_ENTRY"; id = entryPager.items.getOrNull(index)?.id }
             else -> { kind = null; id = null }
         }
+        // 进入详情前收起展开浮层，返回后不会叠着一层
+        expandedPanel = null
         onOpenHome(HomeDetail(panels[panelIndex].title, index, text, panelAccent, kind, id))
     }
     Box(Modifier.fillMaxSize().background(LocalAppTheme.current.dashboard)) {
       Column(Modifier.fillMaxSize().padding(horizontal = 10.dp)) {
         Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(todayDate().shortLabelWithWeekday(), fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            IconButton(onClick = { notifications = true }) { Surface(shape = RoundedCornerShape(50), color = CreamDeep) { Icon(Icons.Default.Email, "邮箱", Modifier.padding(9.dp), tint = Ink) } }
-            Spacer(Modifier.width(4.dp))
-            IconButton(onClick = onOpenSettings) { Surface(shape = RoundedCornerShape(50), color = CreamDeep) { Icon(Icons.Default.Settings, "设置", Modifier.padding(9.dp), tint = Ink) } }
+            // 与「我的」页红点同一实现：未读消息数角标（99+ 封顶）
+            BadgedBox(badge = { if (unreadCount > 0) Badge { Text(if (unreadCount >= 99) "99+" else "$unreadCount") } }) {
+                IconButton(onClick = { notifications = true }) { Surface(shape = RoundedCornerShape(50), color = CreamDeep) { Icon(Icons.Default.Email, "邮箱", Modifier.padding(9.dp), tint = Ink) } }
+            }
         }
         Box(Modifier.fillMaxWidth().weight(1f)) {
             when {
@@ -614,13 +908,16 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
                 }
                 else -> Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                HomePanel(panels[0], Modifier.weight(1f).fillMaxHeight(), onExpand = { expandedPanel = panels[0].title }, onItemClick = { i, t -> openItem(0, i, t) })
-                HomePanel(panels[1], Modifier.weight(1f).fillMaxHeight(), onExpand = { expandedPanel = panels[1].title }, onItemClick = { i, t -> openItem(1, i, t) })
+                HomePanel(panels[0], Modifier.weight(1f).fillMaxHeight(), loading = dashLoading, error = dashError, onRetry = { loadDashboard() }, onExpand = { expandedPanel = panels[0].title }, onItemClick = { i, t -> openItem(0, i, t) })
+                HomePanel(panels[1], Modifier.weight(1f).fillMaxHeight(), loading = dashLoading, error = dashError, onRetry = { loadDashboard() }, onExpand = { expandedPanel = panels[1].title }, onItemClick = { i, t -> openItem(1, i, t) })
             }
             Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 HomePanel(
                     panels[2],
                     Modifier.weight(1f).fillMaxHeight(),
+                    loading = dashLoading,
+                    error = dashError,
+                    onRetry = { loadDashboard() },
                     trailing = {
                         Box(
                             Modifier.size(26.dp).clip(CircleShape).background(WarmOrange.copy(alpha = .35f)).clickable { editingPersonal = true },
@@ -630,7 +927,7 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
                     onExpand = { expandedPanel = panels[2].title },
                     onItemClick = { i, t -> openItem(2, i, t) }
                 )
-                HomePanel(panels[3], Modifier.weight(1f).fillMaxHeight(), onExpand = { expandedPanel = panels[3].title }, onItemClick = { i, t -> openItem(3, i, t) })
+                HomePanel(panels[3], Modifier.weight(1f).fillMaxHeight(), loading = dashLoading, error = dashError, onRetry = { loadDashboard() }, onExpand = { expandedPanel = panels[3].title }, onItemClick = { i, t -> openItem(3, i, t) })
             }
                 }
             }
@@ -650,9 +947,13 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
                   Text("共 ${selected.items.size} 条", color = Ink.copy(alpha = .55f), fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp, bottom = 12.dp))
                   Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())) {
                       val list = selected.items
+                      // 展开后的每一条也可点击进入该事项详情（与面板内点击一致）
+                      val panelIndex = panels.indexOfFirst { it.title == selected.title }
                       list.forEachIndexed { i, item ->
                           Row(
-                              Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 10.dp),
+                              Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
+                                  .clickable { if (panelIndex >= 0) openItem(panelIndex, i, item) }
+                                  .padding(horizontal = 4.dp, vertical = 10.dp),
                               verticalAlignment = Alignment.CenterVertically
                           ) {
                               Box(Modifier.size(30.dp).clip(CircleShape).background(WarmOrange.copy(alpha = .25f)), contentAlignment = Alignment.Center) {
@@ -690,8 +991,8 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
           PersonalImportantEditor(repo = selectionRepo, onClose = { editingPersonal = false }, onSaved = { loadDashboard() })
       }
       if (notifications) {
-          Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .42f)).clickable { notifications = false; expandedPanel = null })
-          NotificationDrawer(onClose = { notifications = false })
+          Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .42f)).clickable { notifications = false; expandedPanel = null; onDrawerClosed() })
+          NotificationDrawer(notificationRepo, openedNotificationId, onClose = { notifications = false; onDrawerClosed() }, onOpen = { notifications = false; onDrawerClosed(); onOpenNotification(it) })
       }
     }
 }
@@ -700,6 +1001,9 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
     panel: HomePanelDef,
     modifier: Modifier,
     accent: Color = WarmOrange,
+    loading: Boolean = false,
+    error: String? = null,
+    onRetry: () -> Unit = {},
     trailing: @Composable RowScope.() -> Unit = {},
     onExpand: () -> Unit,
     onItemClick: (index: Int, text: String) -> Unit
@@ -723,23 +1027,47 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
                 trailing()
             }
             HorizontalDivider(Modifier.padding(top = 7.dp, bottom = 4.dp), color = accent.copy(alpha = .65f))
+            // 空 / 加载中 / 加载失败分别给出对应提示，而不是一片空白
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
-                list.forEachIndexed { i, text ->
-                    Row(
-                        Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
-                            .clickable { onItemClick(i, text) }
-                            .padding(horizontal = 6.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                when {
+                    loading && list.isEmpty() -> Column(
+                        Modifier.fillMaxWidth().padding(vertical = 14.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Text(
-                            "${i + 1}. $text",
-                            fontSize = 15.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f)
-                        )
+                        CircularProgressIndicator(color = accent, strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.height(8.dp))
+                        Text("加载中…", fontSize = 12.sp, color = Ink.copy(alpha = .6f))
                     }
-                    if (i < list.lastIndex) DashedDivider(accent)
+                    error != null && list.isEmpty() -> Column(
+                        Modifier.fillMaxWidth().padding(vertical = 14.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text("加载失败", fontSize = 13.sp, color = Ink.copy(alpha = .7f))
+                        Text("点击重试", fontSize = 12.sp, color = accent, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 6.dp).clickable(onClick = onRetry))
+                    }
+                    list.isEmpty() -> Column(
+                        Modifier.fillMaxWidth().padding(vertical = 18.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(panel.emptyText, fontSize = 13.sp, color = Ink.copy(alpha = .6f))
+                    }
+                    else -> list.forEachIndexed { i, text ->
+                        Row(
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
+                                .clickable { onItemClick(i, text) }
+                                .padding(horizontal = 6.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "${i + 1}. $text",
+                                fontSize = 15.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                        if (i < list.lastIndex) DashedDivider(accent)
+                    }
                 }
             }
             Row(
@@ -773,6 +1101,14 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
     var expectedVersion by remember { mutableStateOf(0L) }
     var saving by remember { mutableStateOf(false) }
     var saveError by remember { mutableStateOf<String?>(null) }
+    // 排序模式：隐藏候选区、长按正式事项拖动排序；「取消」恢复原顺序、「完成」应用新顺序
+    var sorting by remember { mutableStateOf(false) }
+    var showSortHint by remember { mutableStateOf(false) }
+    var orderBeforeSort by remember { mutableStateOf<List<WorkEntryDto>>(emptyList()) }
+    var draggingIndex by remember { mutableStateOf<Int?>(null) }
+    var dragOffset by remember { mutableStateOf(0f) }
+    val density = LocalDensity.current
+    val rowHeightPx = with(density) { 52.dp.toPx() }
     val scope = rememberCoroutineScope()
     val accent = WarmOrange
     fun load() {
@@ -794,6 +1130,20 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
     }
     LaunchedEffect(retry) { load() }
     val selectedIds = selected.map { it.entryId.ifBlank { it.id } }
+    // 已勾选的候选不再出现在候选区：打钩后即移入正式事项
+    val visibleCandidates = candidates.filter { (it.entryId.ifBlank { it.id }) !in selectedIds }
+    fun startSorting() {
+        orderBeforeSort = selected
+        draggingIndex = null
+        dragOffset = 0f
+        sorting = true
+    }
+    fun cancelSorting() {
+        selected = orderBeforeSort
+        sorting = false
+        draggingIndex = null
+        dragOffset = 0f
+    }
     fun toggle(entry: WorkEntryDto) {
         val id = entry.entryId.ifBlank { entry.id }
         if (id in selectedIds) selected = selected.filter { it.entryId.ifBlank { it.id } != id }
@@ -839,9 +1189,8 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
                     Spacer(Modifier.width(10.dp))
                     Column(Modifier.weight(1f)) {
                         Text("编辑 · 个人十大重要事项", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                        Text("共 ${selected.size}/10 · 候选打钩加入 · 保存后导图更新", color = Ink.copy(alpha = .6f), fontSize = 12.sp)
                     }
-                    Button({ save() }, enabled = !saving, colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = Ink), shape = RoundedCornerShape(12.dp)) { Text(if (saving) "保存中…" else "保存", fontWeight = FontWeight.Bold) }
+                    IconButton(onClose) { Icon(Icons.Default.Close, "关闭") }
                 }
                 Spacer(Modifier.height(10.dp))
                 when {
@@ -855,56 +1204,83 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
                         Button({ retry++ }, colors = ButtonDefaults.buttonColors(containerColor = ThemeButton, contentColor = OnThemeButton), shape = RoundedCornerShape(12.dp)) { Text("重试") }
                     }
                     else -> Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())) {
-                        if (selected.isEmpty()) {
-                            Text("暂无正式事项；可在下方候选中勾选，也可保存空选择（视为主动清空）。", color = Ink.copy(alpha = .55f), fontSize = 13.sp, modifier = Modifier.padding(vertical = 12.dp))
-                        }
+                        Text("正式事项", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        Spacer(Modifier.height(4.dp))
                         selected.forEachIndexed { i, item ->
-                            Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            val dragging = draggingIndex == i
+                            Row(
+                                Modifier.fillMaxWidth()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(if (dragging) accent.copy(alpha = .18f) else Color.Transparent)
+                                    // 排序模式下长按即可上下拖动换位
+                                    .then(
+                                        if (sorting) Modifier.pointerInput(i) {
+                                            detectDragGesturesAfterLongPress(
+                                                onDragStart = { draggingIndex = i; dragOffset = 0f },
+                                                onDragEnd = { draggingIndex = null; dragOffset = 0f },
+                                                onDragCancel = { draggingIndex = null; dragOffset = 0f },
+                                                onDrag = { change, dragAmount ->
+                                                    change.consume()
+                                                    dragOffset += dragAmount.y
+                                                    var from = draggingIndex ?: return@detectDragGesturesAfterLongPress
+                                                    while (dragOffset >= rowHeightPx && from < selected.lastIndex) {
+                                                        selected = selected.toMutableList().apply { add(from + 1, removeAt(from)) }
+                                                        dragOffset -= rowHeightPx
+                                                        draggingIndex = from + 1
+                                                        from += 1
+                                                    }
+                                                    from = draggingIndex ?: return@detectDragGesturesAfterLongPress
+                                                    while (dragOffset <= -rowHeightPx && from > 0) {
+                                                        selected = selected.toMutableList().apply { add(from - 1, removeAt(from)) }
+                                                        dragOffset += rowHeightPx
+                                                        draggingIndex = from - 1
+                                                        from -= 1
+                                                    }
+                                                }
+                                            )
+                                        } else Modifier
+                                    )
+                                    .padding(horizontal = 4.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
                                 Box(Modifier.size(26.dp).clip(CircleShape).background(accent.copy(alpha = .3f)), contentAlignment = Alignment.Center) {
                                     Text("${i + 1}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Ink)
                                 }
                                 Spacer(Modifier.width(8.dp))
                                 Column(Modifier.weight(1f)) {
                                     Text(item.content, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                                    Text(parseIsoDate(item.workDate)?.shortLabel() ?: item.workDate, fontSize = 11.sp, color = Ink.copy(alpha = .5f))
                                 }
-                                IconButton({ toggle(item) }, Modifier.size(34.dp)) {
+                                // 排序中不提供移出，避免与拖动冲突
+                                if (!sorting) IconButton({ toggle(item) }, Modifier.size(34.dp)) {
                                     Icon(Icons.Default.Close, "移出", Modifier.size(18.dp), tint = CoralDark)
                                 }
                             }
                             if (i < selected.lastIndex) DashedDivider(accent)
                         }
-                        // 分割线：上为正式事项，下为候选事项
-                        Spacer(Modifier.height(14.dp))
-                        DashedDivider(accent)
-                        Spacer(Modifier.height(10.dp))
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        // 排序模式下不显示候选区，只专注于正式事项排序
+                        if (!sorting) {
+                            // 分割线：上为正式事项，下为候选事项
+                            Spacer(Modifier.height(14.dp))
+                            DashedDivider(accent)
+                            Spacer(Modifier.height(10.dp))
                             Text("候选事项", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                            Spacer(Modifier.width(8.dp))
-                            Text("来自最近十个自然日日报", color = Ink.copy(alpha = .55f), fontSize = 12.sp, modifier = Modifier.weight(1f))
-                            Text("${candidates.size} 条", color = Ink.copy(alpha = .5f), fontSize = 12.sp)
+                            Spacer(Modifier.height(4.dp))
                         }
-                        Spacer(Modifier.height(4.dp))
-                        if (candidates.isEmpty()) {
-                            Text("最近十个自然日没有可勾选的日报条目。", color = Ink.copy(alpha = .55f), fontSize = 13.sp, modifier = Modifier.padding(vertical = 12.dp))
-                        }
-                        candidates.forEach { entry ->
-                            val id = entry.entryId.ifBlank { entry.id }
-                            val isSelected = id in selectedIds
-                            val canAdd = isSelected || selected.size < 10
+                        if (!sorting) visibleCandidates.forEach { entry ->
+                            val canAdd = selected.size < 10
                             Row(
                                 Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 7.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                // 勾选圆形：点击加入/移出正式事项
+                                // 勾选圆形：打钩即加入正式事项，并随即从候选区移除
                                 Box(
                                     Modifier.size(26.dp).clip(CircleShape)
-                                        .background(if (isSelected) accent else if (canAdd) accent.copy(alpha = .12f) else Color.Transparent)
-                                        .border(1.5.dp, if (isSelected || canAdd) accent else HairLine, CircleShape)
+                                        .background(if (canAdd) accent.copy(alpha = .12f) else Color.Transparent)
+                                        .border(1.5.dp, if (canAdd) accent else HairLine, CircleShape)
                                         .clickable(enabled = canAdd) { toggle(entry) },
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    if (isSelected) Icon(Icons.Default.Check, "已选", Modifier.size(16.dp), tint = Ink)
+                                    Icon(Icons.Default.Add, "加入正式事项", Modifier.size(16.dp), tint = if (canAdd) Ink else Ink.copy(alpha = .3f))
                                 }
                                 Spacer(Modifier.width(8.dp))
                                 Text(
@@ -914,20 +1290,53 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
                                     overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier.weight(1f)
                                 )
-                                Spacer(Modifier.width(8.dp))
-                                Text(parseIsoDate(entry.workDate)?.shortLabel() ?: entry.workDate, fontSize = 12.sp, color = Ink.copy(alpha = .5f))
                             }
-                        }
-                        if (selected.size >= 10 && candidates.isNotEmpty()) {
-                            Text("已达 10 条上限，移出正式事项后可继续勾选。", Modifier.fillMaxWidth().padding(top = 6.dp), textAlign = TextAlign.Center, color = Ink.copy(alpha = .55f), fontSize = 12.sp)
                         }
                     }
                 }
                 saveError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp)) }
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(8.dp))
+                // 左下：排序 / 取消；右下：保存 / 完成
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    // 排序与保存同宽同高（96×40），左右两角对称
+                    if (sorting) {
+                        TextButton(
+                            { cancelSorting() },
+                            Modifier.defaultMinSize(minWidth = 96.dp, minHeight = 40.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, accent)
+                        ) { Text("取消", color = Ink.copy(alpha = .65f)) }
+                    } else {
+                        TextButton(
+                            { showSortHint = true },
+                            Modifier.defaultMinSize(minWidth = 96.dp, minHeight = 40.dp),
+                            enabled = selected.size > 1,
+                            shape = RoundedCornerShape(12.dp),
+                            // 描边让它看起来像按钮，而不是一段可点的文字
+                            border = BorderStroke(1.dp, accent.copy(alpha = if (selected.size > 1) .9f else .3f))
+                        ) {
+                            Text("排序", color = if (selected.size > 1) Ink else Ink.copy(alpha = .35f))
+                        }
+                    }
+                    Spacer(Modifier.weight(1f))
+                    Button(
+                        { if (sorting) { sorting = false; draggingIndex = null; dragOffset = 0f } else save() },
+                        Modifier.defaultMinSize(minWidth = 96.dp, minHeight = 40.dp),
+                        enabled = !saving,
+                        colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = Ink),
+                        shape = RoundedCornerShape(12.dp)
+                    ) { Text(if (sorting) "完成" else if (saving) "保存中…" else "保存", fontWeight = FontWeight.Bold) }
+                }
             }
         }
     }
+    if (showSortHint) AlertDialog(
+        onDismissRequest = { showSortHint = false },
+        title = { Text("排序", fontWeight = FontWeight.Bold) },
+        text = { Text("长按正式事项即可自由排序。", color = Ink.copy(alpha = .8f)) },
+        confirmButton = { TextButton({ showSortHint = false; startSorting() }) { Text("确定", color = Ink, fontWeight = FontWeight.Bold) } },
+        dismissButton = { TextButton({ showSortHint = false }) { Text("取消", color = Ink.copy(alpha = .6f)) } }
+    )
 }
 
 @Composable private fun HomeItemDetailScreen(repo: DashboardRepository, detail: HomeDetail, onBack: () -> Unit) {
@@ -986,7 +1395,12 @@ fun PandoraApp(session: SessionStore, api: ApiClient, auth: AuthRepository) {
                             Text(error!!, color = MaterialTheme.colorScheme.error)
                             Button({ attempt++ }, colors = ButtonDefaults.buttonColors(containerColor = ThemeButton, contentColor = OnThemeButton), shape = RoundedCornerShape(12.dp)) { Text("重试") }
                         }
-                        else -> Text(content ?: detail.text, fontSize = 19.sp, lineHeight = 30.sp, fontWeight = FontWeight.Medium)
+                        else -> {
+                            // 详情正文前补上面板里的标题：面板只看到标题，点开后仍是「标题：全文」
+                            val text = content ?: detail.text
+                            val shown = if (detail.text.isNotBlank() && !text.startsWith(detail.text)) "${detail.text}：$text" else text
+                            Text(shown, fontSize = 19.sp, lineHeight = 30.sp, fontWeight = FontWeight.Medium)
+                        }
                     }
                 }
             }
@@ -1002,7 +1416,10 @@ private data class EntryDraft(val entryId: String?, val content: String)
 @Composable private fun LogsScreen(repo: JournalRepository, availableTags: List<TagDto>, businessTimezone: String?, onOpen: (String) -> Unit) {
     var expandedLogs by rememberSaveable { mutableStateOf(false) }
     var filterOpen by rememberSaveable { mutableStateOf(false) }
-    var historyFilter by rememberSaveable { mutableStateOf("全部日期") }
+    // null = 全部日期；否则为具体业务日期（iso），避免用展示文案做筛选键
+    var historyFilter by rememberSaveable { mutableStateOf<String?>(null) }
+    // 日期选择器着色用：全部有日志的日期
+    var loggedDates by remember { mutableStateOf<Set<String>>(emptySet()) }
     var journals by remember { mutableStateOf<List<JournalDto>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var loadError by remember { mutableStateOf<String?>(null) }
@@ -1012,6 +1429,19 @@ private data class EntryDraft(val entryId: String?, val content: String)
     var entryDrafts by remember { mutableStateOf(listOf(EntryDraft(null, ""))) }
     var publishing by remember { mutableStateOf(false) }
     var publishError by remember { mutableStateOf<String?>(null) }
+    var editNotice by remember { mutableStateOf<String?>(null) }
+    var editNoticeEvent by remember { mutableStateOf(0L) }
+    LaunchedEffect(editNoticeEvent) {
+        if (editNotice != null) {
+            kotlinx.coroutines.delay(2_000)
+            editNotice = null
+        }
+    }
+    LaunchedEffect(writing) { editNotice = null }
+    fun showEditNotice(message: String) {
+        editNotice = message
+        editNoticeEvent++
+    }
     var confirmExit by rememberSaveable { mutableStateOf(false) }
     // 编辑器业务日期（最近三日可选）；删除确认目标与错误
     var editorDateKey by rememberSaveable { mutableStateOf("") }
@@ -1049,6 +1479,8 @@ private data class EntryDraft(val entryId: String?, val content: String)
                 val from = "%04d-%02d-%02d".format(start.year, start.month, start.day)
                 val to = "%04d-%02d-%02d".format(t.year, t.month, t.day)
                 journals = repo.journals(from = from, to = to).items.sortedByDescending { it.workDate }
+                // 日期选择器需要全部历史日期（列表只取最近 31 天）
+                runCatching { repo.dates().items.toSet() }.getOrNull()?.let { loggedDates = it }
             } catch (e: SessionExpiredException) {
                 // 401 已由全局回调处理
             } catch (e: Exception) {
@@ -1059,16 +1491,26 @@ private data class EntryDraft(val entryId: String?, val content: String)
         }
     }
     LaunchedEffect(loadRetry) { loadJournals() }
+    // 日历可选 31 天以外的历史日期：列表里没有该日期时按日期单独取一次
+    LaunchedEffect(historyFilter) {
+        val key = historyFilter ?: return@LaunchedEffect
+        if (journals.any { it.workDate == key }) return@LaunchedEffect
+        runCatching { repo.journals(date = key).items }.getOrNull()?.let { extra ->
+            if (extra.isNotEmpty()) journals = (journals + extra).distinctBy { it.id }
+        }
+    }
     val todayJournal = journals.firstOrNull { it.workDate == todayIso() }
     fun dateLabel(iso: String): String = parseIsoDate(iso)?.shortLabel() ?: iso
-    val flatEntries = journals.flatMap { j -> j.entries.sortedBy { it.displayOrder }.map { j.workDate to it } }
-    val filteredEntries = if (historyFilter == "全部日期") flatEntries else flatEntries.filter { dateLabel(it.first) == historyFilter }
-    val filterOptions = listOf("全部日期") + journals.map { dateLabel(it.workDate) }.distinct()
+    // 按整篇日志出卡片：日期/标签/完成的工作与编辑删除在同一张卡片内，不再与上方重复
+    val filteredJournals = historyFilter?.let { key -> journals.filter { it.workDate == key } } ?: journals
     fun openEditor(dateKey: String) {
         if (businessTimezone.isNullOrBlank()) { publishError = "请管理员先配置公司业务时区"; return }
         val draft = savedJournalDraft?.takeIf { it.dateKey == dateKey && it.dateKey in threeDays().map(::isoOf) && (it.dateKey == todayIso() || journals.none { j -> j.workDate == it.dateKey }) }
         editorDateKey = draft?.dateKey ?: dateKey
-        if (editorDateKey != todayIso() && journals.any { it.workDate == editorDateKey }) { publishError = "补交日志提交后不能再次编辑"; return }
+        // 编辑窗口按创建时间（allowedActions 由后端按 published_at 判定），而不是 work_date
+        val existing = journals.firstOrNull { it.workDate == editorDateKey }
+        if (existing != null && "EDIT" !in existing.allowedActions) { showEditNotice("该日志不是当天创建，已不能修改"); return }
+        editNotice = null
         editingJournal = journals.firstOrNull { it.workDate == editorDateKey }
         entryDrafts = draft?.entries?.map { EntryDraft(it.entryId, it.content) }
             ?: editingJournal?.entries?.sortedBy { it.displayOrder }?.map { EntryDraft(it.entryId, it.content) }
@@ -1079,8 +1521,10 @@ private data class EntryDraft(val entryId: String?, val content: String)
         writing = true
     }
     fun switchEditorDate(dateKey: String) {
-        if (dateKey == editorDateKey) return
-        if (dateKey != todayIso() && journals.any { it.workDate == dateKey }) { publishError = "该日期已提交，不能再次编辑"; return }
+        if (dateKey == editorDateKey) { editNotice = null; return }
+        val existing = journals.firstOrNull { it.workDate == dateKey }
+        if (existing != null && "EDIT" !in existing.allowedActions) { showEditNotice("该日期日志不是当天创建，已不能修改"); return }
+        editNotice = null
         editorDateKey = dateKey
         editingJournal = journals.firstOrNull { it.workDate == dateKey }
         entryDrafts = editingJournal?.entries?.sortedBy { it.displayOrder }?.map { EntryDraft(it.entryId, it.content) } ?: listOf(EntryDraft(null, ""))
@@ -1091,7 +1535,7 @@ private data class EntryDraft(val entryId: String?, val content: String)
         if (entryDrafts.any { it.content.isNotBlank() }) confirmExit = true else writing = false
     }
     fun publish() {
-        if (editorDateKey !in threeDays().map(::isoOf) || (editorDateKey != todayIso() && editingJournal != null)) { publishError = "只能编辑今日的日志；昨天和前天仅可补交一次"; return }
+        if (editorDateKey !in threeDays().map(::isoOf) || (editingJournal != null && "EDIT" !in editingJournal!!.allowedActions)) { publishError = "只能补交昨天和前天的日志；日志仅在创建当天可修改"; return }
         val valid = entryDrafts.filter { it.content.isNotBlank() }
         // 从草稿列表移除的既有条目 = 删除（PATCH deleteEntryIds）；不在原条目上追加新条目代替删改
         val deleteIds = editingJournal?.entries
@@ -1102,6 +1546,8 @@ private data class EntryDraft(val entryId: String?, val content: String)
         if (valid.isEmpty() && editingJournal != null && deleteIds.size == editingJournal!!.entries.size) {
             publishError = "如需删除整篇日志，请使用日志卡片的删除按钮"; return
         }
+        // 标签必选：未选标签不允许发布日志
+        if (tags.isEmpty()) { publishError = "请至少选择一个标签"; return }
         publishing = true; publishError = null
         scope.launch {
             try {
@@ -1174,46 +1620,20 @@ private data class EntryDraft(val entryId: String?, val content: String)
     }
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-            PageHeader("日志")
+            // 「日志」与导图页左上角当日日期同高：导图日期行上 12dp + 48dp 图标行 → 文字中心 36dp；
+            // 行高与下方间距同步各加 14dp，「记录今日工作」与「日志」的距离保持不变
+            Row(Modifier.fillMaxWidth().height(58.dp).padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("日志", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            }
+            Spacer(Modifier.height(10.dp))
             LazyColumn(Modifier.fillMaxWidth().weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 16.dp)) {
                 // 主操作与视图页「回到今年」同为实心主题按钮
                 item { Button({ openEditor(todayIso()) }, Modifier.fillMaxWidth(), enabled = !publishing, colors = ButtonDefaults.buttonColors(containerColor = ThemeButton, contentColor = OnThemeButton), shape = RoundedCornerShape(14.dp)) { Icon(Icons.Default.Add, null); Spacer(Modifier.width(6.dp)); Text(if (todayJournal != null) "补充今日工作" else "记录今日工作") } }
                 item {
-                    // 最近三日：今日可改删，昨天和前天补交后只读
-                    val recent = journals.filter { it.workDate in threeDays().map { d -> isoOf(d) } }
-                    if (recent.isNotEmpty()) Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("今天可修改或删除 · 昨天和前天仅可补交一次", fontSize = 13.sp, color = Ink.copy(alpha = .55f))
-                        recent.forEach { j ->
-                            val editable = j.workDate == todayIso() && "EDIT" in j.allowedActions
-                            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = WarmCard), shape = RoundedCornerShape(14.dp)) {
-                                Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    Column(Modifier.weight(1f)) {
-                                        Text(dateLabel(j.workDate), fontWeight = FontWeight.SemiBold)
-                                        Text("${j.entries.size} 条 · " + if (editable) "可编辑/删除" else "已提交，仅可查看", fontSize = 12.sp, color = Ink.copy(alpha = .55f))
-                                        if (j.tags.isNotEmpty()) Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                            j.tags.forEach { t ->
-                                                Text(t.name, fontSize = 11.sp, color = Ink, maxLines = 1, modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(tagHexColor(t.colorHex)).padding(horizontal = 6.dp, vertical = 2.dp))
-                                            }
-                                        }
-                                    }
-                                    if (editable) {
-                                        TextButton({ openEditor(j.workDate) }, enabled = !publishing, contentPadding = PaddingValues(horizontal = 10.dp)) { Text("编辑", color = Ink) }
-                                        TextButton({ deleteError = null; deletingJournal = j }, enabled = !publishing, contentPadding = PaddingValues(horizontal = 10.dp)) { Text("删除", color = CoralDark) }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                item {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                        Box {
-                            Button({ filterOpen = true }, contentPadding = PaddingValues(horizontal = 12.dp), colors = ButtonDefaults.buttonColors(containerColor = CreamDeep, contentColor = Ink), shape = RoundedCornerShape(12.dp)) { Text(historyFilter); Icon(Icons.Default.ArrowDropDown, null) }
-                            DropdownMenu(filterOpen, { filterOpen = false }, containerColor = CreamDeep) {
-                                Column(Modifier.heightIn(max = 300.dp).verticalScroll(rememberScrollState())) {
-                                    filterOptions.forEach { option -> DropdownMenuItem({ Text(option) }, { historyFilter = option; filterOpen = false; expandedLogs = false }) }
-                                }
-                            }
+                        Button({ filterOpen = true }, contentPadding = PaddingValues(horizontal = 12.dp), colors = ButtonDefaults.buttonColors(containerColor = CreamDeep, contentColor = Ink), shape = RoundedCornerShape(12.dp)) {
+                            Text(historyFilter?.let { dateLabel(it) } ?: "全部日期")
+                            Icon(Icons.Default.ArrowDropDown, null)
                         }
                     }
                 }
@@ -1230,28 +1650,40 @@ private data class EntryDraft(val entryId: String?, val content: String)
                         Button({ loadRetry++ }, colors = ButtonDefaults.buttonColors(containerColor = ThemeButton, contentColor = OnThemeButton), shape = RoundedCornerShape(12.dp)) { Text("重试") }
                     }
                 }
-                items(if (expandedLogs) filteredEntries else filteredEntries.take(5)) { (workDate, entry) ->
-                    // recordedAt 是 UTC 时间戳，按公司业务时区换算后再展示，保证与现实时间一致
-                    val time = businessTimeLabel(entry.recordedAt, businessTimezone)
-                    val title = if (time.isBlank()) dateLabel(workDate) else "${dateLabel(workDate)} · $time"
-                    DetailCard(title, entry.content, Color.White) { onOpen("日志 · $title§${entry.content}") }
+                items(if (expandedLogs) filteredJournals else filteredJournals.take(5)) { j ->
+                    JournalCard(
+                        journal = j,
+                        businessTimezone = businessTimezone,
+                        enabled = !publishing,
+                        onEdit = { openEditor(j.workDate) },
+                        onDelete = { deleteError = null; deletingJournal = j },
+                        onOpen = { onOpen(j.journalId.ifBlank { j.id }) }
+                    )
                 }
-                if (filteredEntries.size > 5) item { TextButton({ expandedLogs = !expandedLogs }, Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.textButtonColors(containerColor = CreamDeep, contentColor = Ink)) { Text(if (expandedLogs) "收起" else "展开") } }
-                if (!loading && journals.isNotEmpty() && filteredEntries.isEmpty()) item { Text("所选日期暂无日志", color = Ink.copy(alpha = .6f)) }
+                if (filteredJournals.size > 5) item { TextButton({ expandedLogs = !expandedLogs }, Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.textButtonColors(containerColor = CreamDeep, contentColor = Ink)) { Text(if (expandedLogs) "收起" else "展开") } }
+                if (!loading && journals.isNotEmpty() && filteredJournals.isEmpty()) item { Text("所选日期暂无日志", color = Ink.copy(alpha = .6f)) }
                 if (!loading && journals.isEmpty() && loadError == null) item { Text("最近 30 天暂无日志，点击上方按钮记录今日工作。", color = Ink.copy(alpha = .6f)) }
             }
         }
+        if (filterOpen) JournalDatePickerDialog(
+            loggedDates = loggedDates,
+            today = todayIso(),
+            selected = historyFilter,
+            onSelect = { picked -> historyFilter = picked; filterOpen = false; expandedLogs = false },
+            onDismiss = { filterOpen = false }
+        )
         if (writing) Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .38f)).clickable { closeEditor() })
         if (writing) {
             androidx.activity.compose.BackHandler { closeEditor() }
             val imeVisible = WindowInsets.isImeVisible
-            Card(Modifier.align(Alignment.Center).imePadding().fillMaxWidth(.9f).fillMaxHeight(if (imeVisible) .92f else .8f).border(2.dp, CreamDeep, RoundedCornerShape(24.dp)).clickable { }, shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = WarmCard)) {
+            val journalFocusManager = LocalFocusManager.current
+            // 底部对齐 + 导航栏/键盘避让：弹窗直接落在键盘（或导航栏）上方，不再留出一段空白
+            Box(Modifier.fillMaxSize()) {
+            Card(Modifier.align(Alignment.BottomCenter).navigationBarsPadding().imePadding().fillMaxWidth(.9f).fillMaxHeight(if (imeVisible) .92f else .9f).border(2.dp, CreamDeep, RoundedCornerShape(24.dp)).clickable { }, shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = WarmCard)) {
                 Column(Modifier.fillMaxSize().padding(20.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) { Text(if (editingJournal != null) "编辑日志" else "记录日志", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f)); IconButton({ closeEditor() }) { Icon(Icons.Default.Close, "关闭") } }
-                    Text(if (editorDateKey == todayIso()) "今天的日志可在公司时区今日内修改或删除" else "补交日志仅可提交一次，提交后不能修改或删除", fontSize = 12.sp, color = Ink.copy(alpha = .6f))
-                    if (imeVisible) {
-                        Text(parseIsoDate(editorDateKey)?.shortLabelWithWeekday() ?: "", Modifier.padding(top = 2.dp, bottom = 8.dp), color = Ink.copy(alpha = .6f), fontSize = 13.sp)
-                    } else {
+                    // 日期、标签与工作条目共用滚动视口，保留键盘和导航栏避让。
+                    Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())) {
                         Text("· 日志日期", fontWeight = FontWeight.Bold)
                         Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             threeDays().forEach { d ->
@@ -1267,39 +1699,44 @@ private data class EntryDraft(val entryId: String?, val content: String)
                                 )
                             }
                         }
-                        val editorEditable = editingJournal == null || (editingJournal?.workDate == todayIso() && "EDIT" in editingJournal!!.allowedActions)
+                        val editorEditable = editingJournal == null || "EDIT" in editingJournal!!.allowedActions
                         if (!editorEditable) Text("补交日志已提交，不能再次修改。今日的日志可在今日内修改。", fontSize = 12.sp, color = Ink.copy(alpha = .55f))
-                        Text("· 标签（可多选，先选的为主）", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp, bottom = 6.dp))
+                        Text("· 标签（可多选，可切换主标签）", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp, bottom = 6.dp))
                         if (tags.isNotEmpty()) FlowRow(Modifier.fillMaxWidth().padding(vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             tags.forEach { name ->
                                 val tagColor = availableTags.firstOrNull { it.name == name }?.let { tagHexColor(it.colorHex) } ?: CreamDeep
                                 FilterChip(selected = true, onClick = { tags = tags - name }, label = { Text(name, fontSize = 13.sp) }, colors = FilterChipDefaults.filterChipColors(containerColor = tagColor, labelColor = Ink, selectedContainerColor = tagColor, selectedLabelColor = Ink))
                             }
                         }
-                        OutlinedButton({ showTagPicker = true }, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp), border = BorderStroke(1.dp, HairLine), colors = ButtonDefaults.outlinedButtonColors(contentColor = Ink)) { Icon(Icons.Default.Add, "选择标签", Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("选择标签", fontSize = 13.sp) }
+                        OutlinedButton({ journalFocusManager.clearFocus(force = true); showTagPicker = true }, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp), border = BorderStroke(1.dp, HairLine), colors = ButtonDefaults.outlinedButtonColors(contentColor = Ink)) { Icon(Icons.Default.Add, "选择标签", Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("选择标签", fontSize = 13.sp) }
                         Text("· 完成的工作", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp, bottom = 6.dp))
-                    }
-                    Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        entryDrafts.forEachIndexed { i, draft ->
-                            Row(verticalAlignment = Alignment.Top) {
-                                OutlinedTextField(draft.content, { value -> entryDrafts = entryDrafts.toMutableList().also { it[i] = draft.copy(content = value) } }, Modifier.weight(1f), placeholder = { Text(if (editingJournal == null) "第 ${i + 1} 条：记录完成的工作" else "第 ${i + 1} 条") }, colors = mutedColors, minLines = 2)
-                                if (editingJournal == null && entryDrafts.size > 1) IconButton({ entryDrafts = entryDrafts.filterIndexed { idx, _ -> idx != i } }, Modifier.size(40.dp)) { Icon(Icons.Default.Close, "删除此条", Modifier.size(16.dp)) }
+                        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            entryDrafts.forEachIndexed { i, draft ->
+                                Row(verticalAlignment = Alignment.Top) {
+                                    JournalEntryField(
+                                        text = draft.content,
+                                        onValueChange = { value -> entryDrafts = entryDrafts.toMutableList().also { it[i] = draft.copy(content = value) } },
+                                        colors = mutedColors,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    if (editingJournal == null && entryDrafts.size > 1) IconButton({ entryDrafts = entryDrafts.filterIndexed { idx, _ -> idx != i } }, Modifier.size(40.dp)) { Icon(Icons.Default.Close, "删除此条", Modifier.size(16.dp)) }
+                                }
                             }
                         }
-                        if (editingJournal == null) TextButton({ entryDrafts = entryDrafts + EntryDraft(null, "") }, enabled = !publishing) { Icon(Icons.Default.Add, null, Modifier.size(14.dp)); Spacer(Modifier.width(4.dp)); Text("添加一条", color = WarmOrange, fontWeight = FontWeight.Bold) }
                     }
-                    publishError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)) }
+                    (publishError ?: editNotice)?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)) }
                     Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        OutlinedButton({ closeEditor() }, Modifier.weight(1f), enabled = !publishing, colors = ButtonDefaults.outlinedButtonColors(contentColor = Ink)) { Text("取消") }
+                        OutlinedButton({ closeEditor() }, Modifier.weight(1f), enabled = !publishing, shape = RoundedCornerShape(14.dp), colors = ButtonDefaults.outlinedButtonColors(contentColor = Ink)) { Text("取消") }
                         Button(
                             { publish() },
                             Modifier.weight(1f),
-                            enabled = !publishing && (entryDrafts.any { it.content.isNotBlank() } || (editingJournal?.entries?.any { e -> entryDrafts.none { it.entryId == e.entryId } } == true)) && (editingJournal == null || (editingJournal?.workDate == todayIso() && "EDIT" in editingJournal!!.allowedActions)),
+                            enabled = !publishing && (entryDrafts.any { it.content.isNotBlank() } || (editingJournal?.entries?.any { e -> entryDrafts.none { it.entryId == e.entryId } } == true)) && (editingJournal == null || "EDIT" in editingJournal!!.allowedActions),
                             colors = ButtonDefaults.buttonColors(containerColor = ThemeButton, contentColor = OnThemeButton),
                             shape = RoundedCornerShape(14.dp)
                         ) { Text(if (publishing) "发布中…" else "发布") }
                     }
                 }
+            }
             }
         }
         if (confirmExit) AlertDialog(onDismissRequest = { confirmExit = false }, modifier = Modifier.border(2.dp, CreamDeep, RoundedCornerShape(28.dp)), shape = RoundedCornerShape(28.dp), containerColor = Color.White, titleContentColor = Ink, textContentColor = Ink.copy(alpha = .75f), title = { Text("放弃未保存内容？", fontWeight = FontWeight.Bold) }, text = { Text("退出后当前填写内容会被清空。") }, confirmButton = { TextButton({ confirmExit = false; entryDrafts = listOf(EntryDraft(null, "")); AppCache.deleteDraft(context, "journal_draft.json"); writing = false }, colors = ButtonDefaults.textButtonColors(contentColor = Ink)) { Text("放弃并退出") } }, dismissButton = { TextButton({ confirmExit = false }, colors = ButtonDefaults.textButtonColors(contentColor = Ink)) { Text("继续编辑") } })
@@ -1308,7 +1745,7 @@ private data class EntryDraft(val entryId: String?, val content: String)
         title = { Text("选择标签") },
         text = {
             Column {
-                Text("可多选；先选的为主标签。再次点击已选标签可取消。", fontSize = 12.sp, color = Ink.copy(alpha = .6f))
+                Text("可多选；点“设为主”可更换主标签。再次点击已选标签可取消。", fontSize = 12.sp, color = Ink.copy(alpha = .6f))
                 Spacer(Modifier.height(6.dp))
                 Column(Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())) {
                     if (availableTags.isEmpty()) Text("暂无标签，可在「我的 → 标签管理」中创建。", fontSize = 13.sp, color = Ink.copy(alpha = .5f))
@@ -1316,16 +1753,29 @@ private data class EntryDraft(val entryId: String?, val content: String)
                         val selected = tag.name in tags
                         val isPrimary = selected && tags.first() == tag.name
                         Row(
-                            Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { tags = if (selected) tags - tag.name else tags + tag.name }.padding(horizontal = 4.dp, vertical = 9.dp),
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { tags = if (selected) tags - tag.name else tags + tag.name }.padding(horizontal = 4.dp, vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Box(Modifier.size(14.dp).clip(CircleShape).background(tagHexColor(tag.colorHex)))
                             Spacer(Modifier.width(10.dp))
                             Text(tag.name, Modifier.weight(1f), fontSize = 15.sp)
-                            if (selected) {
-                                Text(if (isPrimary) "主标签" else "次标签", fontSize = 12.sp, color = Ink.copy(alpha = .6f))
-                                Spacer(Modifier.width(6.dp))
-                                Icon(Icons.Default.Check, "已选", Modifier.size(18.dp), tint = Ink)
+                            Box(Modifier.width(72.dp).height(40.dp), contentAlignment = Alignment.Center) {
+                                if (selected) {
+                                    if (isPrimary) {
+                                        Text("主标签", fontSize = 12.sp, color = Ink.copy(alpha = .6f))
+                                    } else {
+                                        TextButton(
+                                            { tags = listOf(tag.name) + (tags - tag.name) },
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentPadding = PaddingValues(0.dp),
+                                            colors = ButtonDefaults.textButtonColors(contentColor = Ink.copy(alpha = .65f))
+                                        ) { Text("设为主", fontSize = 12.sp) }
+                                    }
+                                }
+                            }
+                            Spacer(Modifier.width(6.dp))
+                            Box(Modifier.size(18.dp), contentAlignment = Alignment.Center) {
+                                if (selected) Icon(Icons.Default.Check, "已选", Modifier.size(18.dp), tint = Ink)
                             }
                         }
                     }
@@ -1371,17 +1821,224 @@ private data class EntryDraft(val entryId: String?, val content: String)
     }
 }
 
-@Composable private fun BoxScope.NotificationDrawer(onClose: () -> Unit) {
+/** 业务日期（YYYY-MM-DD）→ 展示文案 */
+private fun isoLabel(iso: String): String = parseIsoDate(iso)?.shortLabel() ?: iso
+
+/** 标签胶囊：底色为服务端 colorHex 的真实颜色；换行铺满，保证全部标签都看得见 */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TagChips(tags: List<TagDto>, primaryTagId: String?) {
+    FlowRow(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        tags.forEach { t ->
+            Text(
+                if (t.id == primaryTagId) "${t.name} · 主" else t.name,
+                fontSize = 11.sp,
+                color = Ink,
+                modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(tagHexColor(t.colorHex)).padding(horizontal = 7.dp, vertical = 3.dp)
+            )
+        }
+    }
+}
+
+/**
+ * 日志卡片：一篇日志一张 —— 日期与创建时间、标签、完成的工作，以及编辑/删除入口。
+ * 编辑与删除放在这张卡片里，不再另设「最近三日」区块，避免同一日期信息重复出现。
+ */
+@Composable
+private fun JournalCard(
+    journal: JournalDto,
+    businessTimezone: String?,
+    enabled: Boolean,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+    onOpen: () -> Unit
+) {
+    val editable = "EDIT" in journal.allowedActions
+    // publishedAt 是 UTC 时间戳，按公司业务时区换算，保证与现实时间一致
+    val created = businessTimeLabel(journal.publishedAt, businessTimezone)
+    Card(
+        Modifier.fillMaxWidth().clickable(onClick = onOpen),
+        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = .8f)),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(isoLabel(journal.workDate), fontWeight = FontWeight.Bold, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                if (created.isNotBlank()) Text(created, fontSize = 12.sp, color = Ink.copy(alpha = .6f))
+            }
+            if (journal.tags.isNotEmpty()) {
+                Spacer(Modifier.height(6.dp))
+                TagChips(journal.tags, journal.primaryTagId)
+            }
+            Spacer(Modifier.height(8.dp))
+            journal.entries.sortedBy { it.displayOrder }.forEachIndexed { i, entry ->
+                Text(
+                    entry.content,
+                    fontSize = 13.sp,
+                    color = Ink.copy(alpha = .8f),
+                    lineHeight = 20.sp,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (i < journal.entries.lastIndex) Spacer(Modifier.height(4.dp))
+            }
+            if (editable) {
+                // 编辑/删除居中放在工作内容下方
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 6.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(onEdit, enabled = enabled, contentPadding = PaddingValues(horizontal = 14.dp)) { Text("编辑", color = Ink) }
+                    TextButton(onDelete, enabled = enabled, contentPadding = PaddingValues(horizontal = 14.dp)) { Text("删除", color = CoralDark) }
+                }
+            }
+        }
+    }
+}
+
+/** 日志详情分区：小标题 + 主题卡片 */
+@Composable
+private fun JournalSection(title: String, content: @Composable ColumnScope.() -> Unit) {
+    Column(Modifier.fillMaxWidth()) {
+        Text("· $title", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+        Spacer(Modifier.height(6.dp))
+        Card(
+            Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = WarmCard)
+        ) {
+            Column(Modifier.fillMaxWidth().padding(14.dp), content = content)
+        }
+    }
+}
+
+/** 日志详情：创建时间 / 标签 / 完成的工作 三个分区 */
+@Composable
+private fun JournalDetailScreen(repo: JournalRepository, journalId: String, businessTimezone: String?, onBack: () -> Unit) {
+    androidx.activity.compose.BackHandler(onBack = onBack)
+    var journal by remember(journalId) { mutableStateOf<JournalDto?>(null) }
+    var loading by remember(journalId) { mutableStateOf(true) }
+    var error by remember(journalId) { mutableStateOf<String?>(null) }
+    var attempt by remember(journalId) { mutableStateOf(0) }
+    LaunchedEffect(journalId, attempt) {
+        loading = true; error = null
+        try {
+            journal = repo.journal(journalId)
+        } catch (e: SessionExpiredException) {
+            // 401 已由全局回调处理
+        } catch (e: Exception) {
+            error = (e as? ApiException)?.friendlyMessage() ?: "加载失败，请重试"
+        } finally {
+            loading = false
+        }
+    }
+    val j = journal
+    Column(Modifier.fillMaxSize().background(LocalAppTheme.current.dashboard)) {
+        // 抬头与导图片事项详情同为 PageHeader，两个详情界面的抬头高度一致
+        PageHeader("日志详情", onBack = onBack)
+        when {
+            loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = WarmOrange, strokeWidth = 3.dp)
+            }
+            error != null -> Column(
+                Modifier.fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Text(error!!, color = Ink.copy(alpha = .7f))
+                Spacer(Modifier.height(10.dp))
+                Button({ attempt++ }, colors = ButtonDefaults.buttonColors(containerColor = ThemeButton, contentColor = OnThemeButton), shape = RoundedCornerShape(12.dp)) { Text("重试") }
+            }
+            j == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text("日志不存在或已被删除。", color = Ink.copy(alpha = .7f))
+            }
+            else -> Column(
+                Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                JournalSection("创建时间") {
+                    val created = com.pandora6ix.app.data.businessDateTimeLabel(j.publishedAt, businessTimezone)
+                    Text(
+                        created.ifBlank { "未知" },
+                        fontSize = 19.sp,
+                        lineHeight = 30.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+                if (j.tags.isNotEmpty()) JournalSection("标签") { TagChips(j.tags, j.primaryTagId) }
+                JournalSection("完成的工作") {
+                    val entries = j.entries.sortedBy { it.displayOrder }
+                    entries.forEachIndexed { i, entry ->
+                        // 正文与导图片事项详情一致（19sp / 30sp 行高），日志详情更易读
+                        Text(entry.content, fontSize = 19.sp, lineHeight = 30.sp, fontWeight = FontWeight.Medium)
+                        if (i < entries.lastIndex) Spacer(Modifier.height(10.dp))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable private fun BoxScope.NotificationDrawer(repository: NotificationRepository, requestedId: String?, onClose: () -> Unit, onOpen: (NotificationDto) -> Unit) {
+    var records by remember { mutableStateOf<List<NotificationDto>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+    var loadError by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(repository) {
+        try {
+            records = repository.list()
+        } catch (_: Exception) {
+            loadError = "消息加载失败，请稍后重试"
+        } finally {
+            loading = false
+        }
+    }
+    // 点推送进 App 只做定位高亮，不自动置已读：未读标记统一在进入任务/审批详情时才消除
     Card(Modifier.align(Alignment.CenterEnd).fillMaxWidth(.75f).fillMaxHeight(), shape = RoundedCornerShape(0.dp), colors = CardDefaults.cardColors(containerColor = WarmCard), elevation = CardDefaults.cardElevation(14.dp)) {
         Column(Modifier.fillMaxSize().padding(18.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) { Text("消息", fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f)); IconButton(onClose) { Icon(Icons.Default.Close, "关闭") } }
-            Text("站内消息接口尚未开放", color = Ink.copy(alpha = .6f), fontSize = 13.sp, modifier = Modifier.padding(bottom = 12.dp))
-            Text("消息中心建设中。\n\n任务审核结果请在视图页的任务中查看。", color = Ink.copy(alpha = .55f), fontSize = 14.sp, lineHeight = 22.sp)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("消息", fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                IconButton(onClose) { Icon(Icons.Default.Close, "关闭") }
+            }
+            when {
+                loading -> Text("正在加载消息…", color = Ink.copy(alpha = .6f), modifier = Modifier.padding(vertical = 16.dp))
+                loadError != null -> Text(loadError!!, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(vertical = 16.dp))
+                records.isEmpty() -> Text("暂无消息", color = Ink.copy(alpha = .6f), modifier = Modifier.padding(vertical = 16.dp))
+                else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    items(records, key = { it.id }) { item ->
+                        // 未读主题色、已读白色；点推送进来的那条（requestedId）始终高亮，方便一眼找到
+                        Card(colors = CardDefaults.cardColors(containerColor = if (item.id == requestedId || item.readAt == null) CreamDeep else Color.White), shape = RoundedCornerShape(8.dp)) {
+                            Column(Modifier.fillMaxWidth().clickable {
+                                if (item.readAt == null) scope.launch {
+                                    if (runCatching { repository.markRead(item.id) }.isSuccess)
+                                        records = records.map { if (it.id == item.id) it.copy(readAt = "read") else it }
+                                }
+                                onOpen(item)
+                            }.padding(12.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(item.title, modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold, color = Ink)
+                                    val decided = item.eventType == "REVIEW_REQUEST" && item.resolved
+                                    if (decided) Text("已审批", color = Ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                                    else if (item.readAt == null) Text("未读", color = Ink, fontSize = 12.sp)
+                                }
+                                Spacer(Modifier.height(4.dp))
+                                Text(item.body, color = Ink, fontSize = 13.sp)
+                                Text(item.createdAt.replace('T', ' ').take(16), color = Ink, fontSize = 11.sp, modifier = Modifier.padding(top = 6.dp))
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
 @Composable private fun AiMapScreen() { Column(Modifier.fillMaxSize().padding(16.dp)) { PageHeader("AI地图"); Spacer(Modifier.height(48.dp)); Icon(Icons.Default.Info, null, Modifier.size(70.dp).align(Alignment.CenterHorizontally), tint = Coral); Text("AI 地图", Modifier.fillMaxWidth().padding(top = 18.dp), textAlign = TextAlign.Center, fontSize = 28.sp, fontWeight = FontWeight.Bold); Text("功能规划中", Modifier.fillMaxWidth().padding(top = 8.dp), textAlign = TextAlign.Center, color = Ink.copy(alpha = .6f)) } }
-@Composable private fun ProfileScreen(user: UserDto, statistics: StatisticsDto?, notificationsEnabled: Boolean, showReviewCenter: Boolean, pendingReviewCount: Int, userRepo: UserRepository, onOpenTagManage: () -> Unit, onOpenReviews: () -> Unit, onOpenSettings: () -> Unit) {
+@Composable private fun ProfileScreen(user: UserDto, statistics: StatisticsDto?, notificationsEnabled: Boolean, showReviewCenter: Boolean, pendingReviewCount: Int, canManageTags: Boolean, userRepo: UserRepository, scrollState: ScrollState, onOpenTagManage: () -> Unit, onOpenReviews: () -> Unit, onOpenSettings: () -> Unit) {
     val context = LocalContext.current
     val avatarScope = rememberCoroutineScope()
     val prefs = remember { context.getSharedPreferences("profile_avatar_" + SessionStore(context).ownerId, Context.MODE_PRIVATE) }
@@ -1456,7 +2113,7 @@ private data class EntryDraft(val entryId: String?, val content: String)
     val displayName = user.displayName.ifBlank { user.name }.ifBlank { "未命名" }
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         PageHeader("我的")
-        Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(scrollState).padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = WarmCard), shape = RoundedCornerShape(20.dp), border = cardBorderIfBlended()) {
                 Row(Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.size(64.dp).clickable { showAvatarMenu = true }) {
@@ -1531,25 +2188,29 @@ private data class EntryDraft(val entryId: String?, val content: String)
                         ProfileInfoRow("任务总数", "${st.total}")
                         ProfileInfoRow("已完成", "${st.completed}")
                         ProfileInfoRow("未完成", "${st.uncompleted}")
-                        Text("口径：本人已批准任务；进度 100% 不计为完成。", fontSize = 12.sp, color = Ink.copy(alpha = .5f))
                     }
                 }
             }
             Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = WarmCard), shape = RoundedCornerShape(20.dp), border = cardBorderIfBlended()) {
                 Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     Text("组织信息", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                    ProfileInfoRow("所属企业", user.enterprise?.name ?: "未设置")
+                    ProfileInfoRow("所属企业", user.enterprise?.name ?: "未分配")
                     DashedDivider(HairLine)
-                    ProfileInfoRow("所属部门", user.department ?: user.organization?.name ?: "未设置")
-                    ProfileInfoRow("当前角色", user.roles.joinToString("、").ifBlank { "未设置" })
-                    ProfileInfoRow("业务时区", user.businessTimezone ?: "未设置")
+                    ProfileInfoRow("所属部门", user.department ?: user.organization?.name ?: "未分配")
+                    DashedDivider(HairLine)
+                    // 角色显示中文；未分配直属上级时明确说明（数据来源 /me.supervisorUserId）
+                    ProfileInfoRow("当前角色", user.roles.joinToString("、") { roleLabel(it) }.ifBlank { "未分配" })
+                    ProfileInfoRow("直属上级", user.supervisorName?.takeIf { it.isNotBlank() } ?: "未配置（请联系管理员设置）")
                 }
             }
             SettingsCard {
-                SettingsRow(icon = Icons.Default.Label, title = "标签管理", onClick = onOpenTagManage) {
-                    Icon(Icons.Default.ChevronRight, null, Modifier.size(20.dp), tint = Ink.copy(alpha = .4f))
+                // 仅 FOUNDER/DEPARTMENT_MANAGER 可见标签管理入口
+                if (canManageTags) {
+                    SettingsRow(icon = Icons.Default.Label, title = "标签管理", onClick = onOpenTagManage) {
+                        Icon(Icons.Default.ChevronRight, null, Modifier.size(20.dp), tint = Ink.copy(alpha = .4f))
+                    }
+                    DashedDivider(HairLine)
                 }
-                DashedDivider(HairLine)
                 if (showReviewCenter) {
                     SettingsRow(icon = Icons.Default.FactCheck, title = "审批中心", onClick = onOpenReviews) {
                         if (pendingReviewCount > 0) {
@@ -1567,13 +2228,9 @@ private data class EntryDraft(val entryId: String?, val content: String)
                 SettingsRow(icon = Icons.Default.Tune, title = "全部设置", onClick = onOpenSettings) {
                     Icon(Icons.Default.ChevronRight, null, Modifier.size(20.dp), tint = Ink.copy(alpha = .4f))
                 }
-                DashedDivider(HairLine)
-                SettingsRow(icon = Icons.Default.Notifications, title = "消息通知", onClick = onOpenSettings) {
-                    Text(if (notificationsEnabled) "已开启" else "已关闭", color = Ink.copy(alpha = .55f), fontSize = 13.sp)
-                }
             }
             Text("关于 Pandora", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-            Text("Android 端正在接入真实后端\n个人资料来自真实接口，业务数据接入进行中。", color = Ink.copy(alpha = .6f), lineHeight = 22.sp)
+            Text("Pandora v0.1.0\n任务、审批与日志说明可在设置与各功能页查看；使用问题请联系管理员或通过管理团队反馈。", color = Ink.copy(alpha = .6f), lineHeight = 22.sp)
             Spacer(Modifier.height(16.dp))
         }
     }
@@ -1585,15 +2242,93 @@ private data class EntryDraft(val entryId: String?, val content: String)
         Text(value, Modifier.weight(1f), fontSize = 14.sp)
     }
 }
+
+/** 角色枚举中文化：与后端角色枚举一一对应（ADMIN/FOUNDER/DEPARTMENT_MANAGER/TEAM_LEAD/EMPLOYEE） */
+private fun roleLabel(role: String): String = when (role.uppercase()) {
+    "EMPLOYEE" -> "员工"
+    "TEAM_LEAD" -> "组长"
+    "DEPARTMENT_MANAGER" -> "部门主管"
+    "FOUNDER" -> "创始人"
+    "ADMIN" -> "管理员"
+    else -> role
+}
 @Composable private fun DetailCard(title: String, body: String, color: Color, maxLines: Int = 2, onClick: () -> Unit = {}) { Card(Modifier.fillMaxWidth().clickable(onClick = onClick), colors = CardDefaults.cardColors(containerColor = color.copy(alpha = .78f)), shape = RoundedCornerShape(16.dp)) { Column(Modifier.padding(14.dp)) { Text(title, fontWeight = FontWeight.Bold); Text(body, fontSize = 13.sp, color = Ink.copy(alpha = .75f), maxLines = maxLines, overflow = TextOverflow.Ellipsis) } } }
-@Composable private fun DetailScreen(title: String, dto: TaskDto?, availableTags: List<TagDto>, onBack: () -> Unit, onRecordProgress: (() -> Unit)? = null) {
+@Composable private fun DetailScreen(title: String, dto: TaskDto?, availableTags: List<TagDto>, taskRepo: TaskRepository, onBack: () -> Unit, onChanged: () -> Unit, businessTimezone: String? = null) {
     val isLog = title.startsWith("日志 · ")
     val logContent = if (isLog) title.substringAfter("§", "") else null
     val displayTitle = dto?.title ?: if (isLog) title.substringBefore("§") else title
     val item = dto?.toTaskItem()
     androidx.activity.compose.BackHandler(onBack = onBack)
+    val scope = rememberCoroutineScope()
+    // 任务说明弹窗：状态标签（已完成/未完成）+ 阶段性内容记录（不做百分比）
+    var showDescDialog by remember { mutableStateOf(false) }
+    // 可执行关系与更新权限：无权限时详情只做展示（只读状态与已有记录）
+    val ownerId = SessionStore(LocalContext.current).ownerId
+    val detailAssignment = dto?.authorizedAssignments?.firstOrNull { it.recipientUserId == ownerId }
+    val canUpdateTask = detailAssignment?.allowedActions?.any { it == "UPDATE_PROGRESS" || it == "COMPLETE_PERSONAL" || it == "REQUEST_COMPLETION" } == true ||
+        (dto?.seriesId != null && dto.kind == "PERSONAL" && dto.reviewStatus == "APPROVED" && detailAssignment != null)
+    var repeatStatus by remember { mutableStateOf<String?>(null) }
+    var editOpen by remember { mutableStateOf(false) }
+    var stageNote by remember { mutableStateOf("") }
+    var stageBusy by remember { mutableStateOf(false) }
+    var stageError by remember { mutableStateOf<String?>(null) }
+    val stageKeys = remember { mutableStateMapOf<String, String>() }
+    fun stageKey(action: String, id: String): String = stageKeys.getOrPut("$action:$id") { UUID.randomUUID().toString() }
+    fun markCompleted(assignment: AssignmentDto) {
+        if (dto?.seriesId != null) { repeatStatus = "COMPLETED"; return }
+        stageBusy = true; stageError = null
+        scope.launch {
+            try {
+                when {
+                    "COMPLETE_PERSONAL" in assignment.allowedActions ->
+                        taskRepo.completePersonalTask(dto!!.id, assignment.version, stageKey("complete", assignment.id))
+                    "REQUEST_COMPLETION" in assignment.allowedActions ->
+                        taskRepo.requestCompletion(assignment.id, assignment.version, stageNote.trim().ifBlank { null }, stageKey("request", assignment.id))
+                    else -> { stageError = "当前账号无权变更该任务状态"; stageBusy = false; return@launch }
+                }
+                stageNote = ""
+                onChanged(); stageBusy = false
+            } catch (e: ApiException) {
+                stageError = e.friendlyMessage()
+                if (e.httpStatus == 409) stageKeys["complete:${assignment.id}"] = UUID.randomUUID().toString()
+                stageBusy = false
+            } catch (e: Exception) {
+                stageError = "操作失败，请稍后重试"; stageBusy = false
+            }
+        }
+    }
+    fun recordStage(assignment: AssignmentDto) {
+        if (stageNote.isBlank()) { stageError = "请输入阶段性内容"; return }
+        stageBusy = true; stageError = null
+        scope.launch {
+            try {
+                // 服务端进度接口按百分比提交：这里不向用户暴露百分比，
+                // 已完成按 100 提交，其余保持执行关系当前值，仅追加阶段性文字记录
+                val percent = if (assignment.executionStatus == "COMPLETED") 100 else assignment.progressPercent
+                taskRepo.recordProgress(assignment.id, assignment.version, percent, stageNote.trim(), stageKey("progress", assignment.id))
+                stageNote = ""
+                onChanged(); stageBusy = false
+            } catch (e: ApiException) {
+                stageError = e.friendlyMessage()
+                if (e.httpStatus == 409) stageKeys["progress:${assignment.id}"] = UUID.randomUUID().toString()
+                stageBusy = false
+            } catch (e: Exception) {
+                stageError = "操作失败，请稍后重试"; stageBusy = false
+            }
+        }
+    }
+    if (editOpen && dto != null && item != null) TaskEntrySheet(
+        initialDate = item.start, canCreatePersonal = true, canCreateDelegated = false,
+        availableTags = availableTags, taskRepo = taskRepo, businessTimezone = businessTimezone,
+        onDismiss = { editOpen = false }, onCreated = { onChanged() }, editingTask = dto)
+    if (repeatStatus != null && dto != null) com.pandora6ix.app.ui.task.SeriesStatusEditor(
+        dto, taskRepo, repeatStatus!!, businessTimezone, stageNote.trim().ifBlank { null },
+        onDismiss = { repeatStatus = null }, onSaved = { repeatStatus = null; stageNote = ""; onChanged() })
     Column(Modifier.fillMaxSize()) {
-        PageHeader(displayTitle, null, onBack, actions = { onRecordProgress?.let { cb -> TextButton(cb) { Text("记录进度") } } })
+        PageHeader(displayTitle, null, onBack)
+        if (dto != null && dto.allowedActions.any { it == "EDIT_TASK" || it == "EDIT_PENDING" }) {
+            TextButton({ editOpen = true }, Modifier.fillMaxWidth()) { Text("编辑任务") }
+        }
         Column(Modifier.verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, top = 6.dp, bottom = 20.dp)) {
             if (dto != null && dto.tags.isNotEmpty()) {
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -1606,13 +2341,15 @@ private data class EntryDraft(val entryId: String?, val content: String)
             }
             if (!isLog) { Text("详情", fontSize = 24.sp, fontWeight = FontWeight.Bold); Spacer(Modifier.height(12.dp)) }
             if (dto != null && item != null) {
-                DetailCard("任务说明", dto.description?.takeIf { it.isNotBlank() } ?: "暂无备注", Color(0xFFE2E2E2), maxLines = 8)
+                // 任务说明可点开：弹窗内切换任务状态标签并记录阶段性内容；无更新权限时只写「点击查看」
+                DetailCard("任务说明", dto.description?.takeIf { it.isNotBlank() } ?: "暂无备注", CreamDeep, maxLines = 8) { showDescDialog = true }
                 Spacer(Modifier.height(10.dp))
-                DetailCard("时间节点", "${item.start.year}/${item.start.month}/${item.start.day}—${item.end.year}/${item.end.month}/${item.end.day}\n${taskTimeLabel(item)}", Color(0xFFE2E2E2))
+                DetailCard("时间节点", "${item.start.year}/${item.start.month}/${item.start.day}—${item.end.year}/${item.end.month}/${item.end.day}\n${taskTimeLabel(item)}", CreamDeep)
+                item.recurrenceLabel?.let { DetailCard("重复安排", it, CreamDeep) }
                 Spacer(Modifier.height(10.dp))
-                DetailCard("类型与状态", "${kindLabelOf(dto.kind)} · ${reviewStatusLabel(dto.reviewStatus)}", Color(0xFFE2E2E2))
+                DetailCard("类型与状态", "${kindLabelOf(dto.kind)} · ${reviewStatusLabel(dto.reviewStatus)}", CreamDeep)
                 Spacer(Modifier.height(10.dp))
-                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFFE2E2E2).copy(alpha = .78f)), shape = RoundedCornerShape(16.dp)) {
+                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = CreamDeep.copy(alpha = .78f)), shape = RoundedCornerShape(16.dp)) {
                     Column(Modifier.padding(14.dp)) {
                         Text("重要程度", fontWeight = FontWeight.Bold)
                         val stars = dto.priorityLevel.coerceIn(1, 5)
@@ -1627,7 +2364,7 @@ private data class EntryDraft(val entryId: String?, val content: String)
                 Text("执行情况", fontWeight = FontWeight.Bold)
                 if (dto.authorizedAssignments.isEmpty()) Text("暂无可见执行关系", color = Ink.copy(alpha = .6f), lineHeight = 22.sp)
                 dto.authorizedAssignments.forEachIndexed { i, a ->
-                    Text("${if (dto.authorizedAssignments.size > 1) "执行关系 ${i + 1} · " else ""}${executionStatusLabel(a.executionStatus)} · 进度 ${a.progressPercent}%", lineHeight = 22.sp)
+                    Text("${if (dto.authorizedAssignments.size > 1) "执行关系 ${i + 1} · " else ""}${executionStatusLabel(a.executionStatus)}", lineHeight = 22.sp)
                 }
             } else if (isLog) {
                 Text(logContent ?: "", color = Ink.copy(alpha = .75f), fontSize = 16.sp, lineHeight = 26.sp)
@@ -1635,6 +2372,112 @@ private data class EntryDraft(val entryId: String?, val content: String)
                 Text("任务不存在或已被移除。", color = Ink.copy(alpha = .75f), lineHeight = 24.sp)
             }
         }
+    }
+    // 任务说明弹窗：状态标签（已完成/未完成）+ 阶段性内容输入框（不做百分比），已有记录直接展示
+    if (showDescDialog && dto != null && item != null) {
+        val assignment = detailAssignment
+        val completed = assignment?.executionStatus == "COMPLETED"
+        val records = dto.progressRecords.filter { !it.note.isNullOrBlank() }.sortedByDescending { it.recordedAt }.take(5)
+        AlertDialog(
+            onDismissRequest = { if (!stageBusy) showDescDialog = false },
+            title = { Text(if (canUpdateTask) "任务说明与进度" else "任务说明", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    // 备注正文比「任务状态」等小标题更大，与其他详情界面的正文字号一致
+                    Text(dto.description?.takeIf { it.isNotBlank() } ?: "暂无备注", fontSize = 19.sp, lineHeight = 30.sp, fontWeight = FontWeight.Medium, color = Ink.copy(alpha = .85f))
+                    Spacer(Modifier.height(14.dp))
+                    Text("任务状态", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.height(6.dp))
+                    if (canUpdateTask) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilterChip(
+                                selected = completed,
+                                onClick = { if (!completed && assignment != null) markCompleted(assignment) },
+                                label = { Text("已完成") },
+                                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Mint, selectedLabelColor = Ink)
+                            )
+                            FilterChip(
+                                selected = !completed,
+                                onClick = { if (completed && dto.seriesId != null && dto.kind == "PERSONAL") repeatStatus = "NOT_STARTED" },
+                                label = { Text("未完成") },
+                                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = CreamDeep, selectedLabelColor = Ink)
+                            )
+                        }
+                    } else {
+                        // 无更新权限：只显示当前状态，沿用状态标签原本的色块样式（已完成薄荷、未完成米黄）
+                        Surface(shape = RoundedCornerShape(8.dp), color = if (completed) Mint else CreamDeep) {
+                            Text(
+                                if (completed) "已完成" else "未完成",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Ink,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(14.dp))
+                    Text("阶段性内容记录", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.height(6.dp))
+                    if (canUpdateTask) {
+                        OutlinedTextField(
+                            stageNote,
+                            { stageNote = it; stageError = null },
+                            Modifier.fillMaxWidth(),
+                            placeholder = { Text("记录目前已完成的阶段性内容…") },
+                            minLines = 3,
+                            maxLines = 5,
+                            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Ink.copy(alpha = .65f), unfocusedBorderColor = Ink.copy(alpha = .25f), cursorColor = Ink)
+                        )
+                        if (assignment != null && "UPDATE_PROGRESS" in assignment.allowedActions) {
+                            TextButton({ recordStage(assignment) }, enabled = !stageBusy && stageNote.isNotBlank()) { Text("保存记录", color = WarmOrange, fontWeight = FontWeight.Bold) }
+                        } else if (assignment != null) {
+                            Text("当前账号无记录进度的权限。", fontSize = 12.sp, color = Ink.copy(alpha = .5f), modifier = Modifier.padding(top = 4.dp))
+                        }
+                        stageError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
+                        if (stageBusy) Text("处理中…", fontSize = 12.sp, color = Ink.copy(alpha = .6f), modifier = Modifier.padding(top = 4.dp))
+                        if (records.isNotEmpty()) {
+                            Spacer(Modifier.height(10.dp))
+                            Text("已有记录", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            Spacer(Modifier.height(6.dp))
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                records.forEach { r ->
+                                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(CreamDeep).padding(10.dp)) {
+                                        Text(r.note!!, fontSize = 13.sp, lineHeight = 19.sp)
+                                        r.recordedAt?.let { Text(it.substring(0, minOf(16, it.length)).replace("T", " "), fontSize = 11.sp, color = Ink.copy(alpha = .55f)) }
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        // 无更新权限：沿用原来的文本框外观只读展示；无记录时框内直接显示「暂无内容」
+                        OutlinedTextField(
+                            if (records.isEmpty()) "暂无内容" else records.joinToString("\n\n") { it.note!! },
+                            {},
+                            Modifier.fillMaxWidth(),
+                            readOnly = true,
+                            minLines = 3,
+                            maxLines = 5,
+                            textStyle = TextStyle(color = Ink.copy(alpha = .6f), fontSize = 14.sp, lineHeight = 21.sp),
+                            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Ink.copy(alpha = .65f), unfocusedBorderColor = Ink.copy(alpha = .25f), cursorColor = Ink)
+                        )
+                        if (records.isNotEmpty()) {
+                            Spacer(Modifier.height(10.dp))
+                            Text("已有记录", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            Spacer(Modifier.height(6.dp))
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                records.forEach { r ->
+                                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(CreamDeep).padding(10.dp)) {
+                                        Text(r.note!!, fontSize = 13.sp, lineHeight = 19.sp)
+                                        r.recordedAt?.let { Text(it.substring(0, minOf(16, it.length)).replace("T", " "), fontSize = 11.sp, color = Ink.copy(alpha = .55f)) }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton({ if (!stageBusy) showDescDialog = false }) { Text("关闭", color = Ink) } }
+        )
     }
 }
 
@@ -1670,6 +2513,21 @@ private fun SettingsScreen(
     var toast by remember { mutableStateOf<String?>(null) }
     // 真实缓存清点：草稿（任务/日报未发布内容）+ 被替换的旧头像副本
     val context = LocalContext.current
+    // 系统通知权限状态（Android 13+）：应用内开关开启 ≠ 系统已授权，需如实提示
+    var notifGranted by remember {
+        mutableStateOf(Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED)
+    }
+    val notifPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        notifGranted = granted
+        if (granted) onNotificationsChange(true) else toast = "未授予系统通知权限，提醒不会展示"
+    }
+    val toggleMaster: () -> Unit = {
+        if (!notificationsEnabled && Build.VERSION.SDK_INT >= 33 && !notifGranted) {
+            notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            onNotificationsChange(!notificationsEnabled)
+        }
+    }
     val avatarPrefs = remember { context.getSharedPreferences("profile_avatar_" + SessionStore(context).ownerId, Context.MODE_PRIVATE) }
     var cacheVersion by remember { mutableStateOf(0) }
     val cacheItems = remember(cacheVersion) { AppCache.collect(context, avatarPrefs.getString("avatarPath", null)) }
@@ -1697,11 +2555,9 @@ private fun SettingsScreen(
                     DashedDivider(HairLine)
                     SettingsRow(
                         icon = Icons.Default.Lock,
-                        title = "修改密码",
+                        title = "修改登录密码",
                         onClick = { showPasswordDialog = true }
-                    ) {
-                        Text("已设置", color = Ink.copy(alpha = 0.55f), fontSize = 13.sp)
-                    }
+                    )
                     DashedDivider(HairLine)
                     SettingsRow(
                         icon = Icons.Default.Palette,
@@ -1718,14 +2574,26 @@ private fun SettingsScreen(
                     SettingsRow(
                         icon = Icons.Default.Notifications,
                         title = "通知提醒",
-                        subtitle = "默认关闭，开启后按下方分项提醒",
-                        onClick = { onNotificationsChange(!notificationsEnabled) }
+                        onClick = { toggleMaster() }
                     ) {
                         Switch(
                             checked = notificationsEnabled,
-                            onCheckedChange = onNotificationsChange,
+                            onCheckedChange = { toggleMaster() },
                             colors = pandoraSwitchColors()
                         )
+                    }
+                    // 系统未授权时如实提示并提供直达系统设置的入口
+                    if (notificationsEnabled && !notifGranted) {
+                        val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                        SettingsRow(
+                            icon = Icons.Default.Warning,
+                            title = "系统未授权通知",
+                            subtitle = "请在系统设置中允许通知，否则提醒不会展示",
+                            onClick = { context.startActivity(intent) }
+                        ) {
+                            Text("去设置", color = WarmOrange, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        }
+                        DashedDivider(HairLine)
                     }
                     // 总控关闭则全部静默：不展示分项
                     if (notificationsEnabled) {
@@ -1733,7 +2601,6 @@ private fun SettingsScreen(
                         SettingsRow(
                             icon = Icons.Default.Assignment,
                             title = "新任务提醒",
-                            subtitle = "你被派发了新任务，或个人任务批准生效时提醒",
                             onClick = { onNewTaskChange(!newTaskEnabled) }
                         ) {
                             ReminderSwitch(newTaskEnabled, onNewTaskChange)
@@ -1742,7 +2609,6 @@ private fun SettingsScreen(
                         SettingsRow(
                             icon = Icons.Default.Schedule,
                             title = "截止时间临近",
-                            subtitle = "任务截止前 ${leadLabel(leadMinutes)}提醒；已完成任务不再提醒",
                             onClick = { onDeadlineChange(!deadlineEnabled) }
                         ) {
                             ReminderSwitch(deadlineEnabled, onDeadlineChange)
@@ -1752,7 +2618,6 @@ private fun SettingsScreen(
                             SubValueRow(
                                 icon = Icons.Default.Timelapse,
                                 title = "提前提醒时间",
-                                subtitle = "截止前多久提醒，可自定义到分钟",
                                 value = leadLabel(leadMinutes),
                                 onClick = { showLeadDialog = true }
                             )
@@ -1761,7 +2626,6 @@ private fun SettingsScreen(
                         SettingsRow(
                             icon = Icons.Default.SyncAlt,
                             title = "任务状态变化",
-                            subtitle = "他人更新了你参与任务的进度或验收结果时提醒",
                             onClick = { onStatusChangeChange(!statusChangeEnabled) }
                         ) {
                             ReminderSwitch(statusChangeEnabled, onStatusChangeChange)
@@ -2097,18 +2961,13 @@ private fun SettingsRow(
     }
 }
 
-/** 通知提醒分项开关：与设置行统一的暖色开关 */
+/** 通知提醒分项开关：与全局开关同一套配色（关闭态中性灰边圈，不再有彩色描边） */
 @Composable
 private fun ReminderSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
     Switch(
         checked = checked,
         onCheckedChange = onCheckedChange,
-        colors = SwitchDefaults.colors(
-            checkedThumbColor = Cream,
-            checkedTrackColor = WarmOrange,
-            uncheckedThumbColor = Cream,
-            uncheckedTrackColor = Ink.copy(alpha = 0.25f)
-        )
+        colors = pandoraSwitchColors()
     )
 }
 
@@ -2123,19 +2982,18 @@ private fun fontScaleLabel(s: Float): String = when {
 private fun SubValueRow(
     icon: ImageVector,
     title: String,
-    subtitle: String,
     value: String,
     onClick: () -> Unit
 ) {
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(start = 50.dp, end = 14.dp, top = 8.dp, bottom = 8.dp),
+        // 紧凑子项：随「截止时间临近」开关收展，不再占据独立大行
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(start = 50.dp, end = 14.dp, top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(icon, null, Modifier.size(16.dp), tint = WarmOrange.copy(alpha = 0.65f))
+        Icon(icon, null, Modifier.size(14.dp), tint = WarmOrange.copy(alpha = 0.65f))
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
-            Text(title, fontSize = 14.sp, color = Ink)
-            Text(subtitle, fontSize = 12.sp, color = Ink.copy(alpha = 0.5f), lineHeight = 18.sp)
+            Text(title, fontSize = 13.sp, color = Ink)
         }
         Text(value, color = WarmOrange, fontSize = 13.sp)
         Spacer(Modifier.width(4.dp))

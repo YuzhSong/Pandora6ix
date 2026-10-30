@@ -40,6 +40,12 @@ public class JournalController {
         return journals.list(identity.current(), date, from, to, scope, cursor, limit);
     }
 
+    /** 有日志的日期集合（全部历史）：供客户端日期选择器着色与月份跳转 */
+    @GetMapping("/work-logs/dates")
+    public Object dates() {
+        return journals.dates(identity.current());
+    }
+
     @GetMapping("/work-logs/{id}")
     public Object detail(@PathVariable String id) {
         return journals.detail(identity.current(), id);

@@ -30,6 +30,7 @@ export type TagInput = Omit<Tag, 'id' | 'version'>
 export type CompanyItemInput = Pick<CompanyImportantItem, 'title' | 'content' | 'displayOrder'>
 
 export interface AdminRepository {
+  restoreAccount(personId: string, expectedVersion: number): Promise<AdminData>
   replaceManager(personId: string, successorId: string, expectedVersion: number, successorExpectedVersion: number, successorJobTitle: string, formerJobTitle: string): Promise<AdminData>
   departPerson(personId: string, departureDate: string, expectedVersion: number): Promise<AdminData>
   changePersonJob(personId: string, input: JobChangeInput, expectedVersion: number): Promise<AdminData>
@@ -49,7 +50,7 @@ export interface AdminRepository {
 }
 
 export interface JobChangeInput { jobTitle: string; orgUnitId: string; supervisorId: string | null; roles: Role[] }
-export interface PersonnelChange { id: string; actorName: string; recordedAt: string; effectiveDate: string; kind: 'DEPARTURE' | 'JOB_CHANGE'; beforeValues: Record<string, unknown>; afterValues: Record<string, unknown> }
+export interface PersonnelChange { id: string; actorName: string | null; actorLoginName: string | null; recordedAt: string; effectiveDate: string; kind: 'DEPARTURE' | 'JOB_CHANGE'; beforeValues: Record<string, unknown>; afterValues: Record<string, unknown> }
 
 export interface CredentialHandoff {
   personId: string; displayName: string; loginName: string; enterpriseDomain: string

@@ -29,8 +29,8 @@ test('departure snapshots show Chinese labels, states, dates and current directo
   const result = presentOperationComparison(before, after, data)
   assert.deepEqual(result.find(f => f.key === 'employmentStatus'), { key: 'employmentStatus', label: '在职状态', before: '在职', after: '已离职', changed: true, rawBefore: 'IN_SERVICE', rawAfter: 'DEPARTED' })
   assert.equal(result.find(f => f.key === 'departureDate')?.after, '2026年10月23日')
-  assert.equal(result.find(f => f.key === 'orgUnitId')?.after, '潘多拉科技 → 产品研发部')
-  assert.equal(result.find(f => f.key === 'supervisorUserId')?.after, '潘多拉科技 → 林知远（lin.zhiyuan）')
+  assert.equal(result.find(f => f.key === 'orgUnitId')?.after, '历史组织名称未记录')
+  assert.equal(result.find(f => f.key === 'supervisorUserId')?.after, '历史人员名称未记录')
   assert.equal(result.find(f => f.key === 'roles')?.after, '部门老总、员工')
   assert.equal(before.fields[0].value, 'IN_SERVICE')
 })
@@ -49,12 +49,12 @@ test('unavailable references keep raw changes distinct and never expose filtered
   assert.equal(presentOperationValue('roles', '["FOUNDER"]', data), '创始人')
 })
 
-test('placeholder zero versions are not presented as real history and valid initial zero is retained', () => {
+test('nullable unknown versions differ from valid initial zero', () => {
   const snapshot = { version: 0, fields: [] }
-  assert.equal(hasReportedSnapshotVersions({ before: snapshot, after: snapshot }), false)
+  assert.equal(hasReportedSnapshotVersions({ before: snapshot, after: snapshot }), true)
   assert.equal(hasReportedSnapshotVersions({ before: snapshot, after: { ...snapshot, version: 1 } }), true)
   const detail = { id: 'current', versions: [{ logId: 'current', version: 0 }, { logId: 'older', version: 0 }] } as OperationDetail
-  assert.deepEqual(reportedHistory(detail).map(version => version.logId), ['older'])
+  assert.deepEqual(reportedHistory(detail).map(version => version.logId), ['current', 'older'])
 })
 
 test('positions use historical roles once and organization references include department and team', () => {
@@ -67,9 +67,26 @@ test('positions use historical roles once and organization references include de
   assert.equal(result[0].before, '部门老总'); assert.equal(result[0].after, '员工')
   assert.equal(result[0].changed, true)
   assert.equal(operationOrganizationPath('org-web', data), '潘多拉科技 → 产品研发部 → Web 开发组')
-  assert.equal(presentOperationValue('recipientUserId', 'u-cy', data), '潘多拉科技 → 产品研发部 → Web 开发组 → 程瑶（cheng.yao）')
+  assert.equal(presentOperationValue('recipientUserId', 'u-cy', data), '历史人员名称未记录')
   assert.equal(presentOperationValue('jobTitle', '项目统筹', data), '该历史记录未提供业务角色')
   assert.equal(before.fields[0].value, '项目统筹')
   data.units.find(unit => unit.id === 'org-product')!.parentId = 'org-web'
   assert.match(operationOrganizationPath('org-web', data), /组织层级异常/)
+})
+
+
+test('captured organization and supervisor names survive directory changes', () => {
+  const data = createSeed()
+  const snapshot = { version: 0, fields: [
+    { key: 'orgUnitId', label: 'orgUnitId', value: 'org-web' },
+    { key: 'orgUnitName', label: 'orgUnitName', value: 'Recorded team' },
+    { key: 'supervisorUserId', label: 'supervisorUserId', value: 'u-cy' },
+    { key: 'supervisorName', label: 'supervisorName', value: 'Recorded supervisor' },
+  ] }
+  data.units.find(unit => unit.id === 'org-web')!.name = 'Renamed now'
+  const result = presentOperationComparison(snapshot, snapshot, data)
+  assert.equal(result.length, 2)
+  assert.equal(result.find(field => field.key === 'orgUnitId')?.after, 'Recorded team')
+  assert.equal(result.find(field => field.key === 'supervisorUserId')?.after, 'Recorded supervisor')
+  assert.equal(hasReportedSnapshotVersions({ before: { version: null, fields: [] }, after: null }), false)
 })

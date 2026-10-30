@@ -92,7 +92,11 @@ data class TaskDto(
     val allowedActions: List<String> = emptyList(),
     val reviewId: String? = null,
     val progressRecords: List<ProgressRecordDto> = emptyList(),
-    val completionRequests: List<CompletionRequestDto> = emptyList()
+    val completionRequests: List<CompletionRequestDto> = emptyList(),
+    val seriesId: String? = null,
+    val recurrenceLabel: String? = null,
+    val occurrenceCount: Int = 1,
+    val occurrenceDate: String? = null
 )
 
 @Serializable

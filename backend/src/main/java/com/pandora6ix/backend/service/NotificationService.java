@@ -42,6 +42,7 @@ public class NotificationService {
     }
 
     /** 去重写入一条提醒；同一用户同一 dedupeKey 只保留第一条 */
+    @Transactional
     public void emit(
             String enterpriseId,
             String userId,
@@ -52,6 +53,21 @@ public class NotificationService {
             String body,
             String dedupeKey,
             Instant dueAt) {
+        emit(enterpriseId, userId, kind, taskId, assignmentId, title, body, dedupeKey, dueAt, kind);
+    }
+
+    @Transactional
+    private void emit(
+            String enterpriseId,
+            String userId,
+            String kind,
+            String taskId,
+            String assignmentId,
+            String title,
+            String body,
+            String dedupeKey,
+            Instant dueAt,
+            String eventType) {
         if (userId == null || enterpriseId == null) return;
         var existing =
                 db.optional(
@@ -61,15 +77,17 @@ public class NotificationService {
                         userId,
                         dedupeKey);
         if (existing.isPresent()) return;
+        String notificationId = id();
         try {
             db.update(
                 "INSERT INTO"
-                    + " notification(id,enterprise_id,user_id,kind,task_id,assignment_id,title,body,dedupe_key,due_at)"
-                    + " VALUES(?,?,?,?,?,?,?,?,?,?)",
-                id(),
+                    + " notification(id,enterprise_id,user_id,kind,event_type,task_id,assignment_id,title,body,dedupe_key,due_at)"
+                    + " VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                notificationId,
                 enterpriseId,
                 userId,
                 kind,
+                eventType,
                 taskId,
                 assignmentId,
                 title,
@@ -79,7 +97,38 @@ public class NotificationService {
         } catch (DuplicateKeyException ex) {
             // A competing scan may insert after the existence check. Only ignore that event.
             if (count(enterpriseId, dedupeKey, userId) == 0) throw ex;
+            return;
         }
+        for (var device : db.rows("SELECT id FROM push_device WHERE enterprise_id=? AND user_id=? AND active=TRUE",
+                enterpriseId, userId))
+            db.update("INSERT INTO notification_push_delivery(id,enterprise_id,notification_id,push_device_id) VALUES(?,?,?,?)",
+                    id(), enterpriseId, notificationId, str(device, "id"));
+    }
+
+    public void reviewRequested(String enterpriseId, String reviewId, String taskId, String submitterId,
+                                String reviewerId, String taskTitle) {
+        // 正文带上提交人姓名：审批人一眼看到是谁申请审批（查不到姓名时退回原文案）
+        String submitter = displayName(enterpriseId, submitterId);
+        emit(enterpriseId, reviewerId, NEW_TASK, taskId, null, "审批申请",
+                (submitter == null || submitter.isBlank() ? "" : submitter) + "有一项任务等待你审批。点击查看详情。",
+                reviewId + "|REVIEW_REQUEST|" + reviewerId, null, "REVIEW_REQUEST");
+    }
+
+    private String displayName(String enterpriseId, String userId) {
+        if (enterpriseId == null || userId == null) return null;
+        return db.optional(
+                        "SELECT display_name FROM app_user WHERE enterprise_id=? AND id=?",
+                        enterpriseId,
+                        userId)
+                .map(row -> str(row, "display_name"))
+                .orElse(null);
+    }
+
+    public void reviewDecided(String enterpriseId, String reviewId, String taskId, String submitterId,
+                              String decision) {
+        String text = "APPROVED".equals(decision) ? "任务审批已通过。点击查看详情。" : "任务审批未通过。点击查看详情。";
+        emit(enterpriseId, submitterId, STATUS, taskId, null, "审批结果", text,
+                reviewId + "|REVIEW_RESULT|" + submitterId, null, "REVIEW_RESULT");
     }
 
     /** 审批批准并激活执行关系：为每位被激活的接收人生成新任务提醒 */
@@ -142,7 +191,7 @@ public class NotificationService {
                 a.enterpriseId() + ":" + a.id() + ":notifications",
                 List.of("created_at", "id"),
                 true,
-                row -> view(row));
+                row -> notificationView(row));
     }
 
     public Map<String, Object> unreadCount(IdentityService.Actor a) {
@@ -171,7 +220,31 @@ public class NotificationService {
                         + " AND read_at IS NULL",
                 a.enterpriseId(),
                 id);
-        return view(db.entity("notification", a.enterpriseId(), id));
+        return notificationView(db.entity("notification", a.enterpriseId(), id));
+    }
+
+    /** 提醒视图：审批类额外带 reviewId（客户端直达该条审批详情）；审批申请再算 resolved */
+    private Map<String, Object> notificationView(Map<String, Object> row) {
+        Map<String, Object> v = view(row);
+        String eventType = str(row, "event_type");
+        if (eventType == null || !eventType.startsWith("REVIEW_")) return v;
+        String key = str(row, "dedupe_key");
+        String reviewId = key == null || key.indexOf('|') < 0 ? key : key.substring(0, key.indexOf('|'));
+        v.put("reviewId", reviewId);
+        if (!"REVIEW_REQUEST".equals(eventType)) return v;
+        v.put("resolved", !reviewPending(str(row, "enterprise_id"), reviewId));
+        return v;
+    }
+
+    /** 审批申请对应的审批记录仍为 PENDING 才算「待我审批」；记录缺失视为已处理 */
+    private boolean reviewPending(String enterpriseId, String reviewId) {
+        if (enterpriseId == null || reviewId == null || reviewId.isBlank()) return false;
+        return db.optional(
+                        "SELECT decision FROM task_review WHERE enterprise_id=? AND id=?",
+                        enterpriseId,
+                        reviewId)
+                .map(row -> "PENDING".equals(str(row, "decision")))
+                .orElse(false);
     }
 
     /**

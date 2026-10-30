@@ -1,29 +1,26 @@
 # enterprise-tag-management Specification
 
 ## Purpose
-Define administrator maintenance of enterprise-wide named color tags with validated local storage, editing and conflict feedback.
+Define the separation between the removed Web administrator tag catalog and authorized enterprise-shared tag operations in business clients.
+
 ## Requirements
-### Requirement: Flat enterprise tag catalog
-The client SHALL list, search, add and edit enterprise tags with a nonempty name and a valid hexadecimal color, without building a parent-child tag hierarchy or treating tag creation as task approval authorization.
+### Requirement: No Web administrator tag destination
+The Web administration workspace SHALL expose no tag maintenance page and SHALL NOT load shared tags while loading administrator directory data. An ADMIN role alone SHALL NOT grant business tag maintenance authority. The earlier local-demo administrator tag catalog SHALL NOT be restored by specification synchronization.
 
-#### Scenario: Edit a tag color
-- **WHEN** an administrator changes a tag's name or color and saves valid input
-- **THEN** the catalog reflects that change after reload
+#### Scenario: Open an old tag-management URL
+- **WHEN** an administrator opens an obsolete tag destination
+- **THEN** the Web client returns to organization management without loading or changing shared tags
 
-#### Scenario: Invalid color
-- **WHEN** a tag color is not in #RRGGBB format
-- **THEN** saving is rejected with a validation message
+### Requirement: Enterprise-scoped business tag operations
+Business clients SHALL use the authenticated server tag catalog with enterprise-scoped IDs, nonempty names and valid hexadecimal colors. Creation and maintenance SHALL follow backend role checks for founders and department managers. The existing Android tag deletion command SHALL use backend reference cleanup; task and journal live tag references SHALL be removed and matching primary tags cleared without modifying historical JSON snapshots. No hierarchical tag parent model or disabling command SHALL be inferred.
 
-### Requirement: Respect pending lifecycle policy
-The client SHALL omit tag deletion and disabling operations until the historical-reference policy is confirmed.
+#### Scenario: Delete a tag from the business client
+- **WHEN** an authorized founder or department manager confirms removal of a tag in their enterprise
+- **THEN** the existing backend command removes that tag and its live task/journal references while preserving historical snapshots
 
-#### Scenario: Browse tag actions
-- **WHEN** an administrator browses the tag catalog
-- **THEN** name and color maintenance is available and deletion or disabling is unavailable
+### Requirement: Use actual mutation feedback
+Clients SHALL report backend validation, permission and version-conflict failures without claiming a successful local-demo save. An unsuccessful command SHALL retain actionable feedback rather than overwrite server-owned records.
 
-### Requirement: Detect stale resource edits
-Mutable demo resources SHALL reject an outdated expected version rather than overwrite newer edits.
-
-#### Scenario: Two tabs edit a tag
-- **WHEN** another tab has saved the tag after a form was opened
-- **THEN** the stale form save reports conflict and keeps its unsaved content
+#### Scenario: Permission rejected
+- **WHEN** a user without tag-maintenance authority attempts a tag mutation
+- **THEN** the command is rejected and the client does not claim success

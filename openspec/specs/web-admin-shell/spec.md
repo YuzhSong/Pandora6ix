@@ -18,10 +18,10 @@ The Web administration interface SHALL use the supplied App references’ warm y
 - **THEN** the same restrained accent identifies actions and selection while text, controls and feedback remain legible
 
 ### Requirement: Complete list feedback
-Tag and important-item searches SHALL provide a clear-search control and result count. Important items SHALL paginate long lists and reset pagination after search changes. Empty initial lists SHALL provide the existing creation action, while unmatched searches SHALL provide a filter-reset action.
+Important-item searches SHALL provide a clear-search control and result count, paginate long lists and reset pagination after search changes. Empty initial lists SHALL provide creation, while unmatched searches SHALL provide filter reset. Tags SHALL have no administration page.
 
 #### Scenario: Search has no match
-- **WHEN** a tag or important-item search has no matching records
+- **WHEN** an important-item search has no matching records
 - **THEN** the page shows zero results and allows clearing the search without creating or altering records
 
 ### Requirement: Avoid unchanged edits
@@ -46,7 +46,7 @@ The server-backed workspace SHALL protect external changes with expectedVersion,
 - **THEN** the save reports a conflict, preserves the draft and requires closing/reloading before editing the latest version
 
 ### Requirement: Administration workspace session
-The Web client SHALL authenticate through the backend and verify ADMIN authority from trusted user data before showing organization, personnel/roles, tags and company important items. Current company information SHALL remain in organization management; account and display settings SHALL use separate corner controls. Bearer credentials SHALL be tab-scoped, and expired/revoked sessions SHALL clear cached identity and return to login. Local directory/session records SHALL NOT impersonate backend identity. Successful logout SHALL revoke the current server session while retaining published data and account-scoped display preferences.
+The Web client SHALL authenticate through the backend and verify ADMIN authority before showing organization, personnel/roles and company important items. It SHALL expose no company creation, self-registration, tags, task, journal or business-statistics page. Company information SHALL remain in organization management; account/settings SHALL use corner controls. Credentials SHALL be tab-scoped; expired/revoked sessions SHALL clear identity. Logout SHALL revoke the session and retain data/preferences.
 
 #### Scenario: Enter and leave workspace
 - **WHEN** an administrator logs in and later confirms logout
@@ -55,6 +55,10 @@ The Web client SHALL authenticate through the backend and verify ADMIN authority
 #### Scenario: Rejected identity
 - **WHEN** the server reports a non-administrator or a revoked/expired credential
 - **THEN** the protected workspace is unavailable and prior-account cached records are not exposed
+
+#### Scenario: Removed destination
+- **WHEN** a user opens an old tag, journal, task or statistics hash
+- **THEN** the client returns to organization management without requesting business records
 
 ### Requirement: Uniform API transport feedback
 The client transport SHALL distinguish network failures, unauthenticated responses, version conflicts and server failures, accept documented JSON success responses and no-content responses, and preserve request identifiers for error diagnosis.
@@ -99,12 +103,36 @@ The primary navigation SHALL combine personnel and roles into one destination. T
 - **THEN** display preferences open independently from personal profile data
 
 ### Requirement: Load server-owned enterprise administration data
-The Web repository SHALL load the current enterprise, organizations, users/roles, shared tags and company items from documented backend APIs, retrieving every cursor page and mapping string IDs, versions and supervisor references. Writes SHALL use server-returned results and documented version/idempotency commands. Identity changes SHALL invalidate old in-flight snapshots. Missing network or invalid responses SHALL report failure rather than substitute demo data.
+The Web repository SHALL load the current enterprise, organizations, users/roles and company items from backend APIs, retrieving every cursor page and mapping string IDs, versions and supervisor references. It SHALL NOT load shared tags. Writes SHALL use server results and version/idempotency commands. Identity changes SHALL invalidate old snapshots. Invalid responses or network failures SHALL report failure without substituting demo data.
 
 #### Scenario: Directory exceeds a page
-- **WHEN** the server directory contains more than the first page of tags or users
+- **WHEN** the server directory contains more than the first page of users
 - **THEN** every cursor page is loaded without duplicate/repeated-cursor loops or a silent first-page limit
 
 #### Scenario: Identity changes during a write
 - **WHEN** identity is cleared while a server write is pending
 - **THEN** the former enterprise response cannot repopulate the new or logged-out workspace
+
+### Requirement: Generated initial personnel passwords
+Single and batch personnel creation SHALL generate independent random initial passwords satisfying the backend password policy. Generated values SHALL remain stable while editing or retrying a draft and SHALL be available through the existing successful account handoff. Unused blank rows SHALL NOT create accounts. Creation forms and CSV templates SHALL omit password fields; passwords SHALL appear only in successful account delivery.
+#### Scenario: Create multiple employees
+- **WHEN** an administrator fills two batch rows without passwords
+- **THEN** independent passwords are generated and delivered only for confirmed successful accounts
+
+### Requirement: Business role instead of duplicate job text
+Personnel creation SHALL offer 创始人, 部门老总, 团队长 and 员工 as business role choices, submit the corresponding roles, and validate organization kind and supervisor hierarchy. Personnel cards and profile editors SHALL omit redundant free text job titles and retain role badges. System administrator permission SHALL remain separate.
+#### Scenario: Select a team leader
+- **WHEN** an administrator selects 团队长 for a new person
+- **THEN** creation requires a team organization and valid superior and submits TEAM_LEAD
+
+#### Scenario: Download the CSV template
+- **WHEN** an administrator downloads the personnel import template
+- **THEN** it contains eight columns without initial passwords and imported rows receive generated passwords internally
+
+
+### Requirement: Company-qualified account login
+The Web login form SHALL collect accountIdentifier and password, with no separate company field. accountIdentifier SHALL use the exact login name followed by @ and the enterprise login domain. Successful login and invalid-destination fallback SHALL open organization management; refreshing an authenticated valid destination SHALL preserve that destination.
+
+#### Scenario: Login from an old personnel destination
+- **WHEN** an administrator signs in using admin@company and a valid password
+- **THEN** the client submits accountIdentifier and password and opens organization management without allowing company identities to mix

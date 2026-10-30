@@ -19,7 +19,9 @@ data class TaskDraftDto(
     val endMinute: Int,
     val priority: Int,
     val tags: List<String>,
-    val recipientIds: List<String>
+    val recipientIds: List<String>,
+    val recurrence: RecurrenceRule? = null,
+    val customRepeat: Boolean = false
 )
 
 /** 日报草稿（未发布的编辑器内容；entryId 非空表示修改既有条目） */

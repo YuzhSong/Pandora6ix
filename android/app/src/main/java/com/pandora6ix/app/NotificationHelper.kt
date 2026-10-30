@@ -3,7 +3,9 @@ package com.pandora6ix.app
 import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.app.NotificationCompat
@@ -14,6 +16,7 @@ import androidx.core.content.ContextCompat
 object NotificationHelper {
 
     const val CHANNEL_ID = "pandora_reminder"
+    const val APPROVAL_CHANNEL_ID = "pandora_approval"
     private const val CHANNEL_NAME = "任务提醒"
 
     fun createChannel(context: Context) {
@@ -21,6 +24,14 @@ object NotificationHelper {
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
         if (manager.getNotificationChannel(CHANNEL_ID) == null) {
             val channel = NotificationChannel(CHANNEL_ID, CHANNEL_NAME, NotificationManager.IMPORTANCE_DEFAULT)
+            manager.createNotificationChannel(channel)
+        }
+        if (manager.getNotificationChannel(APPROVAL_CHANNEL_ID) == null) {
+            val channel = NotificationChannel(APPROVAL_CHANNEL_ID, "审批通知", NotificationManager.IMPORTANCE_HIGH).apply {
+                description = "任务审批申请和审批结果"
+                enableVibration(true)
+                setSound(android.provider.Settings.System.DEFAULT_NOTIFICATION_URI, android.media.AudioAttributes.Builder().setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION).build())
+            }
             manager.createNotificationChannel(channel)
         }
     }
@@ -45,6 +56,28 @@ object NotificationHelper {
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setAutoCancel(true)
+            .build()
+        runCatching { NotificationManagerCompat.from(context).notify(id, notification) }
+    }
+
+    fun notifyApproval(context: Context, id: Int, title: String, text: String, notificationId: String?, eventType: String?) {
+        if (!canPostNotifications(context)) return
+        createChannel(context)
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            putExtra("notificationId", notificationId)
+            putExtra("eventType", eventType)
+        }
+        val pending = PendingIntent.getActivity(context, id, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val notification = NotificationCompat.Builder(context, APPROVAL_CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentTitle(title)
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+            .setAutoCancel(true)
+            .setContentIntent(pending)
             .build()
         runCatching { NotificationManagerCompat.from(context).notify(id, notification) }
     }
