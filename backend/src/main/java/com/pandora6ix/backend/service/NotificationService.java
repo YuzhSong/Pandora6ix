@@ -110,7 +110,7 @@ public class NotificationService {
         // 正文带上提交人姓名：审批人一眼看到是谁申请审批（查不到姓名时退回原文案）
         String submitter = displayName(enterpriseId, submitterId);
         emit(enterpriseId, reviewerId, NEW_TASK, taskId, null, "审批申请",
-                (submitter == null || submitter.isBlank() ? "" : submitter) + "有一项任务等待你审批。打开应用查看详情。",
+                (submitter == null || submitter.isBlank() ? "" : submitter) + "有一项任务等待你审批。点击查看详情。",
                 reviewId + "|REVIEW_REQUEST|" + reviewerId, null, "REVIEW_REQUEST");
     }
 
@@ -126,7 +126,7 @@ public class NotificationService {
 
     public void reviewDecided(String enterpriseId, String reviewId, String taskId, String submitterId,
                               String decision) {
-        String text = "APPROVED".equals(decision) ? "任务审批已通过。打开应用查看详情。" : "任务审批未通过。打开应用查看详情。";
+        String text = "APPROVED".equals(decision) ? "任务审批已通过。点击查看详情。" : "任务审批未通过。点击查看详情。";
         emit(enterpriseId, submitterId, STATUS, taskId, null, "审批结果", text,
                 reviewId + "|REVIEW_RESULT|" + submitterId, null, "REVIEW_RESULT");
     }
@@ -223,12 +223,15 @@ public class NotificationService {
         return notificationView(db.entity("notification", a.enterpriseId(), id));
     }
 
-    /** 提醒视图：审批申请额外带 resolved，客户端据此隐藏「查看待审批」并标记为「已审批」 */
+    /** 提醒视图：审批类额外带 reviewId（客户端直达该条审批详情）；审批申请再算 resolved */
     private Map<String, Object> notificationView(Map<String, Object> row) {
         Map<String, Object> v = view(row);
-        if (!"REVIEW_REQUEST".equals(str(row, "event_type"))) return v;
+        String eventType = str(row, "event_type");
+        if (eventType == null || !eventType.startsWith("REVIEW_")) return v;
         String key = str(row, "dedupe_key");
         String reviewId = key == null || key.indexOf('|') < 0 ? key : key.substring(0, key.indexOf('|'));
+        v.put("reviewId", reviewId);
+        if (!"REVIEW_REQUEST".equals(eventType)) return v;
         v.put("resolved", !reviewPending(str(row, "enterprise_id"), reviewId));
         return v;
     }

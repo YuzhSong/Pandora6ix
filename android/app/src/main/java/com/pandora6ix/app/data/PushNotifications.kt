@@ -29,6 +29,8 @@ data class NotificationDto(
     val dueAt: String? = null,
     val createdAt: String,
     val readAt: String? = null,
+    /** 审批类消息对应的审批记录 id：点击后直达该条审批详情 */
+    val reviewId: String? = null,
     /** 审批申请是否已被处理：服务端按 task_review.decision 判定，已审批/驳回为 true */
     val resolved: Boolean = false
 )
@@ -63,6 +65,12 @@ class PushDeviceRepository(context: Context, private val api: ApiClient) {
 class NotificationRepository(private val api: ApiClient) {
     suspend fun list(): List<NotificationDto> = api.get(
         "/notifications?limit=100",
+        NotificationPageDto.serializer()
+    ).items
+
+    /** 最新一页：列表按创建时间倒序，首即为最新；用于弹窗轮询，避免每次拉全量 */
+    suspend fun recent(limit: Int = 20): List<NotificationDto> = api.get(
+        "/notifications?limit=$limit",
         NotificationPageDto.serializer()
     ).items
 

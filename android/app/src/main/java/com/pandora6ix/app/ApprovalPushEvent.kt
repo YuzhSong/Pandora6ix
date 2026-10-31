@@ -1,5 +1,14 @@
 package com.pandora6ix.app
 
+import com.pandora6ix.app.data.ReminderEvent
+
+/** Coordinate the dedicated approval prompt and the unified notification queue after PR integration. */
+internal fun claimApprovalPrompt(id: String?, announced: MutableSet<String>, pending: MutableList<ReminderEvent>): Boolean {
+    if (id == null) return true
+    val replacesPending = pending.removeAll { it.key == id }
+    return announced.add(id) || replacesPending
+}
+
 data class ApprovalPrompt(
     val notificationId: String?,
     val eventType: String
