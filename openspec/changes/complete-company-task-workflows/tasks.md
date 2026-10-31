@@ -15,7 +15,7 @@
 - [x] 4.2 Verify distinct records, permissions and retry handling; commit item 4 locally.
 
 ## 5. Profile layout
-- [ ] 5.1 Move all settings above organization and remove About content; verify/build and commit item 5 locally.
+- [x] 5.1 Move all settings above organization and remove About content; verify/build and commit item 5 locally.
 
 ## 6. Shared custom avatars
 - [ ] 6.1 Diagnose and repair upload/persistence/cache/shared rendering including camera and relaunch.

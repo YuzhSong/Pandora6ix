@@ -2211,18 +2211,6 @@ private fun JournalDetailScreen(repo: JournalRepository, journalId: String, busi
                     }
                 }
             }
-            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = WarmCard), shape = RoundedCornerShape(20.dp), border = cardBorderIfBlended()) {
-                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Text("组织信息", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                    ProfileInfoRow("所属企业", user.enterprise?.name ?: "未分配")
-                    DashedDivider(HairLine)
-                    ProfileInfoRow("所属部门", user.department ?: user.organization?.name ?: "未分配")
-                    DashedDivider(HairLine)
-                    // 角色显示中文；未分配直属上级时明确说明（数据来源 /me.supervisorUserId）
-                    ProfileInfoRow("当前角色", user.roles.joinToString("、") { roleLabel(it) }.ifBlank { "未分配" })
-                    ProfileInfoRow("直属上级", user.supervisorName?.takeIf { it.isNotBlank() } ?: "未配置（请联系管理员设置）")
-                }
-            }
             SettingsCard {
                 // 仅 FOUNDER/DEPARTMENT_MANAGER 可见标签管理入口
                 if (canManageTags) {
@@ -2235,8 +2223,18 @@ private fun JournalDetailScreen(repo: JournalRepository, journalId: String, busi
                     Icon(Icons.Default.ChevronRight, null, Modifier.size(20.dp), tint = Ink.copy(alpha = .4f))
                 }
             }
-            Text("关于 Pandora", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-            Text("Pandora v0.1.0\n任务、审批与日志说明可在设置与各功能页查看；使用问题请联系管理员或通过管理团队反馈。", color = Ink.copy(alpha = .6f), lineHeight = 22.sp)
+            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = WarmCard), shape = RoundedCornerShape(20.dp), border = cardBorderIfBlended()) {
+                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Text("组织信息", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    ProfileInfoRow("所属企业", user.enterprise?.name ?: "未分配")
+                    DashedDivider(HairLine)
+                    ProfileInfoRow("所属部门", user.department ?: user.organization?.name ?: "未分配")
+                    DashedDivider(HairLine)
+                    // 角色显示中文；未分配直属上级时明确说明（数据来源 /me.supervisorUserId）
+                    ProfileInfoRow("当前角色", user.roles.joinToString("、") { roleLabel(it) }.ifBlank { "未分配" })
+                    ProfileInfoRow("直属上级", user.supervisorName?.takeIf { it.isNotBlank() } ?: "未配置（请联系管理员设置）")
+                }
+            }
             Spacer(Modifier.height(16.dp))
         }
     }

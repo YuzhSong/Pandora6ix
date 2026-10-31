@@ -37,3 +37,8 @@
 - Two Android tests cover snapshot field preservation, primary-tag order and rejection of another user's/non-rejected/EDIT/missing-snapshot input. Final Android assemble plus all 106 tests passed. Log: C:/Users/34755/AppData/Local/Temp/pandora-resubmit-android.log.
 - Backend rejectedPublicationCanBeCopiedToNewTaskWithoutChangingOldReview passed: distinct task/review IDs, duplicate retry returning the same new task, byte-equivalent old review data, preserved old rejected task/result, denied unrelated review read and successful new approval. Log: C:/Users/34755/AppData/Local/Temp/pandora-resubmit-backend.log.
 - UI flow has been source-reviewed and compiled; shared emulator editor activity prevents safe visual traversal at this point. No production resubmission was performed. Historical snapshots without a recurrence rule can only prefill their recorded occurrence content; no rule is guessed from a display label.
+
+## Item 5 — profile action ordering
+
+- ProfileScreen now composes personal information, approval entry, the settings group (including the existing authorized tag-management action), then organization information. Removed both About Pandora title and generated explanatory paragraph. Existing permissions, badges and callbacks are unchanged.
+- Source ordering and whitespace inspected; Android assembleDebug and all 106 unit tests passed. Log: C:/Users/34755/AppData/Local/Temp/pandora-profile-order.log. Strict OpenSpec validation passed. No new mirror test added for this pure layout move. Rendered verification remains in the final UI audit to avoid interrupting shared-emulator editing.
