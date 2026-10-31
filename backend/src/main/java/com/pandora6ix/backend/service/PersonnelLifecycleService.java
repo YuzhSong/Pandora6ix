@@ -60,7 +60,7 @@ public class PersonnelLifecycleService {
         if(!db.rows("SELECT id FROM app_user WHERE enterprise_id=? AND supervisor_user_id=? AND employment_status='IN_SERVICE'",a.enterpriseId(),id).isEmpty())
             throw new BusinessException(409,"DIRECT_REPORTS_REMAIN","Adjust direct reports before departure.");
         var before=snapshot(a,old);
-        var updated=directory.patchUser(a,id,new Contracts.UserPatch(c.expectedVersion(),str(old,"display_name"),str(old,"org_unit_id"),null,str(old,"job_title"),"DISABLED",roles(a,old),null,null,null,null));
+        var updated=directory.patchUserForLifecycle(a,id,new Contracts.UserPatch(c.expectedVersion(),str(old,"display_name"),str(old,"org_unit_id"),null,str(old,"job_title"),"DISABLED",roles(a,old),null,null,null,null));
         db.update("UPDATE app_user SET employment_status='DEPARTED',departure_date=? WHERE enterprise_id=? AND id=?",c.departureDate(),a.enterpriseId(),id);
         record(a,id,"DEPARTURE",c.departureDate(),before);
         operationLogs.record(a,id,"USER","PERSONNEL","DEPARTURE","WEB","办理离职",before,snapshot(a,db.entity("app_user",a.enterpriseId(),id)));
@@ -73,7 +73,7 @@ public class PersonnelLifecycleService {
         if(id.equals(a.id())) throw new BusinessException(409,"SELF_JOB_CHANGE_FORBIDDEN","Ask another administrator to adjust this account.");
         var before=snapshot(a,old);
         validateHierarchy(a,id,c.supervisorUserId(),c.roles());
-        var updated=directory.patchUser(a,id,new Contracts.UserPatch(c.expectedVersion(),str(old,"display_name"),c.orgUnitId(),c.supervisorUserId(),c.jobTitle(),str(old,"status"),c.roles(),null,null,null,null));
+        var updated=directory.patchUserForLifecycle(a,id,new Contracts.UserPatch(c.expectedVersion(),str(old,"display_name"),c.orgUnitId(),c.supervisorUserId(),c.jobTitle(),str(old,"status"),c.roles(),null,null,null,null));
         db.update("UPDATE auth_session SET revoked=TRUE WHERE enterprise_id=? AND user_id=?",a.enterpriseId(),id);
         record(a,id,"JOB_CHANGE",today(a),before);
         operationLogs.record(a,id,"USER","PERSONNEL","JOB_CHANGE","WEB","调整员工职位",before,snapshot(a,db.entity("app_user",a.enterpriseId(),id)));

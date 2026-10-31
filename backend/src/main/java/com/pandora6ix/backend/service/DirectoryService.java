@@ -312,6 +312,14 @@ public class DirectoryService {
     @Transactional
     public Map<String, Object> patchUser(
             IdentityService.Actor a, String id, Contracts.UserPatch c) {
+        return patchUser(a, id, c, true);
+    }
+
+    Map<String, Object> patchUserForLifecycle(IdentityService.Actor a, String id, Contracts.UserPatch c) {
+        return patchUser(a, id, c, false);
+    }
+
+    private Map<String, Object> patchUser(IdentityService.Actor a, String id, Contracts.UserPatch c, boolean auditAccount) {
         a.admin();
         lockEnterprise(a);
         var old = db.entity("app_user", a.enterpriseId(), id);
@@ -372,7 +380,7 @@ public class DirectoryService {
                     a.enterpriseId(),
                     id);
         var result = user(a, id);
-        operationLogs.record(a,id,"USER","ACCOUNT","UPDATE","WEB","修改账号",before,operationSnapshot(a,db.entity("app_user",a.enterpriseId(),id)));
+        if (auditAccount) operationLogs.record(a,id,"USER","ACCOUNT","UPDATE","WEB","修改账号",before,operationSnapshot(a,db.entity("app_user",a.enterpriseId(),id)));
         return result;
     }
 

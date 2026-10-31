@@ -369,10 +369,11 @@ class BusinessApiIntegrationTests {
         assertNotNull(operationPage.get("snapshotToken"));
         var operation=items(operationPage).getFirst();
         assertEquals("调整员工职位",operation.get("summary"));
+        assertEquals(0,items(request("GET","/admin/operation-logs?module=ACCOUNT&action=UPDATE",adminToken,null,200)).size());
         var detail=request("GET","/admin/operation-logs/"+operation.get("id"),adminToken,null,200);
         assertEquals(0,((Number)((Map<?,?>)detail.get("before")).get("version")).intValue());
         assertEquals(1,((Number)((Map<?,?>)detail.get("after")).get("version")).intValue());
-        assertEquals(3,((List<?>)detail.get("versions")).size());
+        assertEquals(2,((List<?>)detail.get("versions")).size());
         assertEquals(0,((Number)((Map<?,?>)((List<?>)detail.get("versions")).getFirst()).get("version")).intValue());
         String serializedOperation=json.writeValueAsString(detail);
         assertTrue(serializedOperation.contains("Team manager"));

@@ -26,6 +26,7 @@ test('current batch and individual delivery include only requested IDs with fres
   assert.ok(!credentialListText(accounts).includes('staff2'))
   const workbook = new ExcelJS.Workbook(); await workbook.xlsx.load(await credentialWorkbook(accounts))
   const sheet = workbook.getWorksheet('账号交付')!
+  assert.equal(sheet.getCell('D2').value, 'pandora'); assert.equal(sheet.getCell('E2').value, 'renamed');
   assert.equal(sheet.rowCount, 2); assert.equal(sheet.getCell('B2').value, 'renamed@pandora')
   assert.equal(sheet.getCell('C2').value, '=new-password'); assert.equal(sheet.getCell('C2').numFmt, '@')
 })

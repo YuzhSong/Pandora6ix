@@ -1,8 +1,17 @@
+import { pinyin } from 'pinyin-pro'
 import type { AdminData, Role } from './types.ts'
 import { roleLabels } from './types.ts'
 
 export const businessRoles: Role[] = ['FOUNDER', 'DEPARTMENT_MANAGER', 'TEAM_LEAD', 'EMPLOYEE']
 export const businessRoleOptions = businessRoles.map(value => ({ value, label: roleLabels[value] }))
+export function generateLoginName(name: string, people: readonly { loginName: string }[]): string {
+  const existing = new Set(people.map(person => person.loginName.trim().toLowerCase()))
+  const base = pinyin(name.trim(), { toneType: 'none', surname: 'head', v: true }).toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 120)
+  if (!base) return ''
+  let candidate = base, suffix = 2
+  while (existing.has(candidate)) candidate = `${base}${suffix++}`
+  return candidate
+}
 export function personnelRole(value: string): Role {
   const aliases: Record<string, Role> = { 部门负责人: 'DEPARTMENT_MANAGER', 团队负责人: 'TEAM_LEAD', 普通员工: 'EMPLOYEE' }
   const role = businessRoleOptions.find(option => option.value === value || option.label === value)?.value ?? (Object.hasOwn(aliases, value) ? aliases[value] : undefined)
@@ -16,7 +25,7 @@ export function validateRoleOrganization(data: AdminData, role: Role, org: strin
 }
 
 export function generateInitialPassword(): string {
-  const groups = ['ABCDEFGHJKLMNPQRSTUVWXYZ', 'abcdefghijkmnopqrstuvwxyz', '23456789', '!@#$%*-_']
+  const groups = ['0123456789']
   const alphabet = groups.join('')
   function random(max: number) {
     const bytes = new Uint8Array(1), limit = 256 - 256 % max
@@ -24,7 +33,7 @@ export function generateInitialPassword(): string {
     return bytes[0] % max
   }
   const chars = groups.map(group => group[random(group.length)])
-  while (chars.length < 16) chars.push(alphabet[random(alphabet.length)])
+  while (chars.length < 12) chars.push(alphabet[random(alphabet.length)])
   for (let i = chars.length - 1; i > 0; i--) { const j = random(i + 1); [chars[i], chars[j]] = [chars[j], chars[i]] }
   return chars.join('')
 }

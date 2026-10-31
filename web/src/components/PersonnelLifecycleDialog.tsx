@@ -1,3 +1,4 @@
+import { personnelHistoryFields, personnelHistoryValue, followingOrganization } from '../data/personnelHistory.ts'
 import { supervisorOptionLabel } from '../data/personnelDisplay.ts'
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
@@ -16,7 +17,7 @@ import { ValidatedForm } from './ValidatedForm.tsx'
 export type PersonnelAction = 'departure' | 'job' | 'history' | 'replacement'
 export function PersonnelLifecycleDialog({ person, action, continuation, data, onClose, onSaved }: { person: Person; action: PersonnelAction; continuation?: 'job' | 'departure'; data: AdminData; onClose: () => void; onSaved: (data: AdminData) => void }) {
   const dialog = useRef<HTMLDialogElement>(null), submitting = useRef(false)
-  const [jobTitle] = useState(person.jobTitle), [org, setOrg] = useState(person.orgUnitId), [supervisor, setSupervisor] = useState(person.supervisorId ?? ''), [roles, setRoles] = useState<Role[]>(person.roles)
+  const [org, setOrg] = useState(person.orgUnitId), [supervisor, setSupervisor] = useState(person.supervisorId ?? ''), [roles, setRoles] = useState<Role[]>(person.roles)
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: data.enterprise.businessTimezone || 'UTC', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
   const [date, setDate] = useState(today), [error, setError] = useState(''), [busy, setBusy] = useState(false), [blocked, setBlocked] = useState(false)
   const [history, setHistory] = useState<PersonnelChange[] | null>(null)
@@ -47,22 +48,15 @@ export function PersonnelLifecycleDialog({ person, action, continuation, data, o
     if (action === 'replacement' && !successors.some(p => p.id === successorId)) { setError('请选择接任负责人。'); return }
     submitting.current = true; setBusy(true)
     try {
-      const next = action === 'replacement' ? await adminRepository.replaceManager(person.id, successorId, person.version, successors.find(p => p.id === successorId)!.version, successorTitle, formerTitle) : action === 'departure' ? await adminRepository.departPerson(person.id, date, person.version) : await adminRepository.changePersonJob(person.id, { jobTitle, orgUnitId: org, supervisorId: effectiveSupervisor || null, roles }, person.version)
+      const next = action === 'replacement' ? await adminRepository.replaceManager(person.id, successorId, person.version, successors.find(p => p.id === successorId)!.version, successorTitle, formerTitle) : action === 'departure' ? await adminRepository.departPerson(person.id, date, person.version) : await adminRepository.changePersonJob(person.id, { jobTitle: roles.length === person.roles.length && roles.every(role => person.roles.includes(role)) ? person.jobTitle : roles.filter(role => role !== 'ADMIN').map(role => roleLabels[role]).join('、'), orgUnitId: org, supervisorId: effectiveSupervisor || null, roles }, person.version)
       onSaved(next)
     } catch (reason) {
       setError(errorMessage(reason))
       if (!(reason instanceof ApiError) || ![400, 422].includes(reason.status)) setBlocked(true)
     } finally { submitting.current = false; setBusy(false) }
   }
-  function showValue(key: string, value: unknown, snapshot?: Record<string, unknown>) {
-    if (key === 'roles' && Array.isArray(value)) return value.map(role => roleLabels[role as Role] ?? role).join('、')
-    if (key === 'orgUnitId') return value ? snapshot?.orgUnitName as string ?? '历史组织名称未记录' : '未分配'
-    if (key === 'supervisorUserId') return value ? snapshot?.supervisorName as string ?? '历史人员名称未记录' : '未设置'
-    if (key === 'employmentStatus') return value === 'DEPARTED' ? '已离职' : '在职'
-    if (key === 'status') return value === 'DISABLED' ? '已停用' : '已启用'
-    return typeof value === 'string' && value ? value : '—'
-  }
-  const fieldLabels: Record<string, string> = { displayName: '姓名', loginName: '登录账号', jobTitle: '职位', roles: '角色', orgUnitId: '所属组织', supervisorUserId: '直属上级', employmentStatus: '在职状态', departureDate: '离职日期', status: '账号状态' }
+  const showValue = (key: string, _value: unknown, snapshot: Record<string, unknown> = {}) => personnelHistoryValue(data, key, snapshot)
+  const fieldLabels = personnelHistoryFields
   const orderedHistory = [...(history ?? [])].sort((a, b) => Date.parse(a.recordedAt) - Date.parse(b.recordedAt))
   let jobChangeNumber = 0
   return <dialog ref={dialog} className={`editor-dialog credential-tools-dialog${action === 'history' ? ' personnel-history-dialog' : ''}`} aria-label={title} onCancel={event => { event.preventDefault(); if (!busy) onClose() }}>
@@ -72,14 +66,14 @@ export function PersonnelLifecycleDialog({ person, action, continuation, data, o
         {action === 'replacement' && continuation && <div className="handover-guidance"><strong>第 1 步：交接负责人 → 第 2 步：{continuation === 'departure' ? '办理离职' : '岗位调整'}</strong><p>请先选择接任负责人。交接成功后，将继续为 {person.displayName} {continuation === 'departure' ? '办理离职' : '调整岗位'}。</p></div>}
         {action === 'replacement' && !successors.length && <p className="error-message" role="alert">暂无符合条件的接任人员，请先新增员工或调整人员岗位。</p>}
         {action === 'departure' && <><label>离职日期<input type="date" value={date} max={today} required disabled={busy || blocked} onChange={event => setDate(event.target.value)} /></label>{departureError && <p className="error-message" role="alert">{departureError}</p>}</>}
-        {action === 'replacement' && <fieldset disabled={busy || blocked}><label>接任负责人<Select label="接任负责人" value={successorId} options={[{ value: '', label: '请选择' }, ...successors.map(p => ({ value: p.id, label: `${p.displayName}（${p.loginName}）` }))]} onChange={setSuccessorId} required /></label><dl className="info-list"><div><dt>负责组织</dt><dd>{data.units.find(unit => unit.id === person.orgUnitId)?.name ?? '未分配'}</dd></div><div><dt>接任角色</dt><dd>{roleLabels[managerRole(person) ?? 'EMPLOYEE']}</dd></div><div><dt>原负责人角色</dt><dd>{person.roles.includes('ADMIN') ? '系统管理员、普通员工' : '普通员工'}</dd></div><div><dt>调整直属下属</dt><dd>{reports.filter(p => p.id !== successorId).map(p => p.displayName).join('、') || '无'}</dd></div></dl></fieldset>}
-        {action === 'job' && <fieldset disabled={busy || blocked}><label>所属组织<Select label="调整所属组织" value={org} options={[{ value: '', label: '未分配' }, ...organizationFilterOptions(data.units)]} onChange={setOrg} /></label><div className="lifecycle-roles" role="group" aria-label="岗位角色">{(Object.keys(roleLabels) as Role[]).map(role => <label key={role}><input type="checkbox" checked={roles.includes(role)} onChange={event => setRoles(current => event.target.checked ? [...current, role] : current.filter(value => value !== role))} />{roleLabels[role]}</label>)}</div>{canHaveSupervisor(roles) && <label>直属上级<Select label="调整直属上级" popupMinWidth={380} value={supervisor} options={[{ value: '', label: '未设置' }, ...(supervisor && !candidates.some(p => p.id === supervisor) ? [{ value: supervisor, label: '原上级（请重新选择）' }] : []), ...candidates.map(p => ({ value: p.id, label: supervisorOptionLabel(data, p) }))]} onChange={setSupervisor} /></label>}</fieldset>}
+        {action === 'replacement' && <fieldset disabled={busy || blocked}><label>接任负责人<Select label="接任负责人" popupMinWidth={420} value={successorId} options={[{ value: '', label: '请选择' }, ...successors.map(p => ({ value: p.id, label: supervisorOptionLabel(data, p) }))]} onChange={setSuccessorId} required /></label><dl className="info-list"><div><dt>负责组织</dt><dd>{data.units.find(unit => unit.id === person.orgUnitId)?.name ?? '未分配'}</dd></div><div><dt>接任角色</dt><dd>{roleLabels[managerRole(person) ?? 'EMPLOYEE']}</dd></div><div><dt>原负责人角色</dt><dd>{person.roles.includes('ADMIN') ? '系统管理员、普通员工' : '普通员工'}</dd></div><div><dt>调整直属下属</dt><dd>{reports.filter(p => p.id !== successorId).map(p => p.displayName).join('、') || '无'}</dd></div></dl></fieldset>}
+        {action === 'job' && <fieldset disabled={busy || blocked}><label>所属组织<Select label="调整所属组织" value={org} options={[{ value: '', label: '未分配' }, ...organizationFilterOptions(data.units)]} onChange={setOrg} /></label><div className="lifecycle-roles" role="group" aria-label="岗位角色">{(Object.keys(roleLabels) as Role[]).map(role => <label key={role}><input type="checkbox" checked={roles.includes(role)} onChange={event => { const nextRoles = event.target.checked ? [...roles, role] : roles.filter(value => value !== role); setRoles(nextRoles); const nextOrg = followingOrganization(data, nextRoles, supervisor); if (nextOrg) setOrg(nextOrg) }} />{roleLabels[role]}</label>)}</div>{canHaveSupervisor(roles) && <label>直属上级<Select label="调整直属上级" popupMinWidth={380} value={supervisor} options={[{ value: '', label: '未设置' }, ...(supervisor && !candidates.some(p => p.id === supervisor) ? [{ value: supervisor, label: '原上级（请重新选择）' }] : []), ...candidates.map(p => ({ value: p.id, label: supervisorOptionLabel(data, p) }))]} onChange={value => { setSupervisor(value); const next = followingOrganization(data, roles, value); if (next) setOrg(next) }} /></label>}</fieldset>}
         {action === 'history' && <>{!history && !error && <p role="status">正在加载…</p>}{history?.length === 0 && <p className="quiet-empty">暂无变动记录</p>}<ol className="personnel-timeline">{orderedHistory.map((change, index) => <li className="personnel-change" key={change.id}>
           <span className="personnel-event-number">{index + 1}</span>
           <h3>{change.kind === 'DEPARTURE' ? '办理离职' : `第 ${++jobChangeNumber} 次岗位调整`}</h3>
           {change.kind === 'JOB_CHANGE' && change.beforeValues.orgUnitId !== change.afterValues.orgUnitId && <p className="personnel-transfer-summary">{showValue('orgUnitId', change.beforeValues.orgUnitId, change.beforeValues)} <span aria-label="调至">→</span> {showValue('orgUnitId', change.afterValues.orgUnitId, change.afterValues)}</p>}
-          <p className="personnel-event-meta">操作人：{change.actorName ?? '历史操作者（未记录）'} · {new Date(change.recordedAt).toLocaleString('zh-CN')} · 生效日期：{change.effectiveDate}</p>
-          <table className="personnel-change-table"><thead><tr><th scope="col">变动项目</th><th scope="col">{change.kind === 'DEPARTURE' ? '离职前' : '调整前'}</th><th scope="col">{change.kind === 'DEPARTURE' ? '离职后' : '调整后'}</th></tr></thead><tbody>{Object.entries(fieldLabels).filter(([key]) => JSON.stringify(change.beforeValues[key]) !== JSON.stringify(change.afterValues[key])).map(([key, label]) => <tr key={key}><th scope="row">{label}</th><td>{showValue(key, change.beforeValues[key], change.beforeValues)}</td><td>{showValue(key, change.afterValues[key], change.afterValues)}</td></tr>)}</tbody></table>
+          <p className="personnel-event-meta">操作人：{change.actorName ?? change.actorLoginName ?? '当时未保存操作人姓名'} · {new Date(change.recordedAt).toLocaleString('zh-CN')} · 生效日期：{change.effectiveDate}</p>
+          <table className="personnel-change-table"><thead><tr><th scope="col">变动项目</th><th scope="col">{change.kind === 'DEPARTURE' ? '离职前' : '调整前'}</th><th scope="col">{change.kind === 'DEPARTURE' ? '离职后' : '调整后'}</th></tr></thead><tbody>{Object.entries(fieldLabels).map(([key, label]) => <tr key={key}><th scope="row">{label}</th><td>{showValue(key, change.beforeValues[key], change.beforeValues)}</td><td>{showValue(key, change.afterValues[key], change.afterValues)}</td></tr>)}</tbody></table>
         </li>)}</ol></>}
         {error && <p className="error-message" role="alert">{error}{blocked ? ' 请关闭并刷新资料后核对。' : ''}</p>}
       </div>

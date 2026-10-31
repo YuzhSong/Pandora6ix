@@ -10,7 +10,7 @@ export function accountIdentifier(account: AccountLogin): string {
 export function accountLoginText(account: AccountLogin, initialPassword?: string): string {
   return [
     `登录账号：${accountIdentifier(account)}`,
-    ...(initialPassword === undefined ? [] : [`初始密码：${initialPassword}`]),
+    ...(initialPassword === undefined ? [] : [...(account.enterpriseDomain ? [`企业域：${account.enterpriseDomain}`] : []), `登录名：${account.loginName}`, `初始密码：${initialPassword}`]),
   ].join('\n')
 }
 
