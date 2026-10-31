@@ -95,6 +95,7 @@ data class TaskReviewDto(
     val attemptNo: Long = 0,
     val submittedAt: String? = null,
     val submittedSnapshot: JsonObject? = null,
+    val reviewKind: String = "CREATE",
     val decision: String = "PENDING",
     val reviewStatus: String = "PENDING",
     val decisionNote: String? = null,

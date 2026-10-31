@@ -69,6 +69,12 @@ import com.pandora6ix.app.data.ReviewActorDto
 import com.pandora6ix.app.data.UserRepository
 import com.pandora6ix.app.ui.components.RemoteAvatar
 import com.pandora6ix.app.data.businessDateTimeLabel
+import com.pandora6ix.app.data.UserDto
+import com.pandora6ix.app.data.TaskDraftDto
+import com.pandora6ix.app.data.rejectedTaskDraft
+import com.pandora6ix.app.mock.DemoDate
+import com.pandora6ix.app.ui.calendar.TaskEntrySheet
+import java.time.LocalDate
 import com.pandora6ix.app.data.TagDto
 import com.pandora6ix.app.data.TaskRepository
 import com.pandora6ix.app.data.TaskReviewDto
@@ -100,7 +106,7 @@ import java.util.UUID
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ReviewScreen(taskRepo: TaskRepository, availableTags: List<TagDto>, businessTimezone: String? = null, userRepo: UserRepository? = null, canReview: Boolean = true, readResultKeys: Set<String> = emptySet(), refreshRevision: Int = 0, focusReviewId: String? = null, onResultRead: (TaskReviewDto) -> Unit = {}, onBack: () -> Unit) {
+fun ReviewScreen(taskRepo: TaskRepository, availableTags: List<TagDto>, businessTimezone: String? = null, userRepo: UserRepository? = null, canReview: Boolean = true, readResultKeys: Set<String> = emptySet(), refreshRevision: Int = 0, focusReviewId: String? = null, onResultRead: (TaskReviewDto) -> Unit = {}, currentUser: UserDto? = null, onBack: () -> Unit) {
     // 无审批权限时直接隐藏"待我审批"入口，仅展示自己提交的申请
     var scope by rememberSaveable { mutableStateOf(if (canReview) "pending" else "created") }
     var items by remember(scope) { mutableStateOf<List<TaskReviewDto>>(emptyList()) }
@@ -168,7 +174,7 @@ fun ReviewScreen(taskRepo: TaskRepository, availableTags: List<TagDto>, business
     }
 
     selected?.let { review ->
-        ReviewDetail(review, taskRepo, availableTags, businessTimezone, userRepo, onBack = { selected = null }, onChanged = { load(append = false) })
+        ReviewDetail(review, taskRepo, availableTags, businessTimezone, userRepo, currentUser, onBack = { selected = null }, onChanged = { load(append = false) })
         return
     }
 
@@ -269,7 +275,7 @@ private fun ReviewCard(review: TaskReviewDto, businessTimezone: String?, unread:
 /** 详情：快照字段 + 审批操作。409 后重读最新 review；成功后回调刷新队列 */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-private fun ReviewDetail(review: TaskReviewDto, taskRepo: TaskRepository, availableTags: List<TagDto>, businessTimezone: String?, userRepo: UserRepository?, onBack: () -> Unit, onChanged: () -> Unit) {
+private fun ReviewDetail(review: TaskReviewDto, taskRepo: TaskRepository, availableTags: List<TagDto>, businessTimezone: String?, userRepo: UserRepository?, currentUser: UserDto?, onBack: () -> Unit, onChanged: () -> Unit) {
     var current by remember { mutableStateOf(review) }
     var comment by rememberSaveable { mutableStateOf("") }
     // 批注输入条展开状态：点击批注入口后在键盘上方显示输入条（微信样式）
@@ -280,6 +286,19 @@ private fun ReviewDetail(review: TaskReviewDto, taskRepo: TaskRepository, availa
     var confirmAction by remember { mutableStateOf<String?>(null) }
     var doneMessage by remember { mutableStateOf<String?>(null) }
     val uiScope = rememberCoroutineScope()
+    var resubmitDraft by remember(current.id) { mutableStateOf<TaskDraftDto?>(null) }
+    resubmitDraft?.let { draft ->
+        val date = LocalDate.parse(draft.startKey)
+        TaskEntrySheet(initialDate = DemoDate(date.year, date.monthValue, date.dayOfMonth),
+            canCreatePersonal = currentUser?.capabilities?.createPersonalTasks == true,
+            canCreateDelegated = currentUser?.capabilities?.createDelegatedTasks == true,
+            availableTags = availableTags, taskRepo = taskRepo, businessTimezone = businessTimezone,
+            currentUser = currentUser, newTaskDraft = draft, draftKey = "resubmit_${current.id}.json",
+            onDismiss = { resubmitDraft = null }, onCreated = {
+                resubmitDraft = null
+                doneMessage = "已提交新的任务，原驳回记录已保留"
+            })
+    }
     val snapshot = parseSnapshot(current.submittedSnapshot)
     val canDecide = current.decision == "PENDING" && current.allowedActions.isNotEmpty()
     val stale = current.taskVersion in 1L until current.currentTaskVersion
@@ -288,6 +307,7 @@ private fun ReviewDetail(review: TaskReviewDto, taskRepo: TaskRepository, availa
         uiScope.launch {
             try {
                 current = taskRepo.review(current.id)
+                error = null
             } catch (_: SessionExpiredException) {
             } catch (_: Exception) { }
         }
@@ -417,6 +437,20 @@ private fun ReviewDetail(review: TaskReviewDto, taskRepo: TaskRepository, availa
                     InfoRow("审批人", personName(current.reviewerName, current.reviewerUserId))
                     current.decisionNote?.takeIf { it.isNotBlank() }?.let { InfoRow("批注", it) }
                     current.decidedAt?.let { InfoRow("决定时间", timeLabel(it, businessTimezone)) }
+                    if (current.decision == "REJECTED" && current.reviewKind == "CREATE" &&
+                        currentUser?.id == current.submittedByUserId &&
+                        (currentUser.capabilities.createPersonalTasks || currentUser.capabilities.createDelegatedTasks)) {
+                        Button({
+                            runCatching { rejectedTaskDraft(current, currentUser.id, availableTags) }
+                                .onSuccess { resubmitDraft = it; error = null }
+                                .onFailure { error = "原申请内容不完整，请刷新后重试" }
+                        }) { Text("重新编辑并发布") }
+                        error?.let {
+                            Text(it, color = CoralDark, fontSize = 13.sp)
+                            TextButton({ refresh() }) { Text("重新加载申请") }
+                        }
+                    }
+
                 }
             }
             if (canDecide) item {

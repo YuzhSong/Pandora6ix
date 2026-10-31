@@ -11,8 +11,8 @@
 - [x] 3.2 Verify complete acceptance/rejection lifecycle and commit item 3 locally.
 
 ## 4. Rejected publication resubmission
-- [ ] 4.1 Prefill a new task from rejected submission below approval result without overwriting history.
-- [ ] 4.2 Verify distinct records, permissions and retry handling; commit item 4 locally.
+- [x] 4.1 Prefill a new task from rejected submission below approval result without overwriting history.
+- [x] 4.2 Verify distinct records, permissions and retry handling; commit item 4 locally.
 
 ## 5. Profile layout
 - [ ] 5.1 Move all settings above organization and remove About content; verify/build and commit item 5 locally.

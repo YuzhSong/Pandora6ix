@@ -63,7 +63,7 @@ internal fun tagHexColor(hex: String): Color =
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
-fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateDelegated: Boolean, availableTags: List<TagDto>, taskRepo: TaskRepository, businessTimezone: String? = null, currentUser: UserDto? = null, onDismiss: () -> Unit, onCreated: (TaskDto) -> Unit, editingTask: TaskDto? = null) {
+fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateDelegated: Boolean, availableTags: List<TagDto>, taskRepo: TaskRepository, businessTimezone: String? = null, currentUser: UserDto? = null, onDismiss: () -> Unit, onCreated: (TaskDto) -> Unit, editingTask: TaskDto? = null, newTaskDraft: TaskDraftDto? = null, draftKey: String = "task_draft.json") {
     val context = LocalContext.current
     val density = LocalDensity.current
     val candidateGap = with(density) { 8.dp.roundToPx() }
@@ -79,7 +79,7 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
             parseHhMm(editingTask.startTime) ?: 0, parseHhMm(editingTask.endTime) ?: 60,
             editingTask.priorityLevel, editingTask.tags.sortedBy { if (it.id == editingTask.primaryTagId) 0 else 1 }.map { it.name }, editingTask.authorizedAssignments.map { it.recipientUserId }, companyWide = editingTask.companyWide)
         else
-        AppCache.readDraft(context, "task_draft.json")?.let { s -> runCatching { AppCache.json.decodeFromString<TaskDraftDto>(s) }.getOrNull() }
+        AppCache.readDraft(context, draftKey)?.let { s -> runCatching { AppCache.json.decodeFromString<TaskDraftDto>(s) }.getOrNull() } ?: newTaskDraft
     }
     var title by rememberSaveable { mutableStateOf(savedDraft?.title ?: "") }
     var note by rememberSaveable { mutableStateOf(savedDraft?.note ?: "") }
@@ -166,7 +166,7 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
     LaunchedEffect(kind, title, note, allDay, startKey, endKey, startMinute, endMinute, priority, tags, selectedRecipientIds, repeatRule, customRepeat, companyWide) {
         if (editingTask != null) return@LaunchedEffect
         val draft = TaskDraftDto(kind, title, note, allDay, startKey, endKey, startMinute, endMinute, priority, tags, selectedRecipientIds, repeatRule, customRepeat, companyWide)
-        AppCache.writeDraft(context, "task_draft.json", AppCache.json.encodeToString(TaskDraftDto.serializer(), draft))
+        AppCache.writeDraft(context, draftKey, AppCache.json.encodeToString(TaskDraftDto.serializer(), draft))
     }
     var showTagPicker by rememberSaveable { mutableStateOf(false) }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
@@ -250,7 +250,7 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
                     ),
                     idempotencyKey
                 )
-                AppCache.deleteDraft(context, "task_draft.json")
+                AppCache.deleteDraft(context, draftKey)
             } catch (e: ApiException) {
                 error = e.friendlyMessage()
             } catch (e: Exception) {
@@ -395,7 +395,7 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
             Button(onClick = { submit() }, Modifier.fillMaxWidth().padding(vertical = 12.dp), enabled = !submitting, colors = ButtonDefaults.buttonColors(containerColor = ThemeButton, contentColor = OnThemeButton)) { Text(if (submitting) "保存中…" else if (editingTask != null) "保存" else "提交审批") }
         }
     }
-    if (confirmExit) AlertDialog(onDismissRequest = { confirmExit = false; sheetScope.launch { sheetState.show() } }, title = { Text("放弃未保存的任务？") }, text = { Text("关闭后，本次填写的内容会清空。") }, confirmButton = { TextButton({ confirmExit = false; AppCache.deleteDraft(context, "task_draft.json"); onDismiss() }) { Text("放弃") } }, dismissButton = { TextButton({ confirmExit = false; sheetScope.launch { sheetState.show() } }) { Text("继续填写") } })
+    if (confirmExit) AlertDialog(onDismissRequest = { confirmExit = false; sheetScope.launch { sheetState.show() } }, title = { Text("放弃未保存的任务？") }, text = { Text("关闭后，本次填写的内容会清空。") }, confirmButton = { TextButton({ confirmExit = false; AppCache.deleteDraft(context, draftKey); onDismiss() }) { Text("放弃") } }, dismissButton = { TextButton({ confirmExit = false; sheetScope.launch { sheetState.show() } }) { Text("继续填写") } })
     timePickTarget?.let { target ->
         TimeWheelDialog(
             initialMinute = if (target == "start") startMinute else endMinute,

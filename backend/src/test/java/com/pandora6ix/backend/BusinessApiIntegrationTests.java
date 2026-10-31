@@ -2893,6 +2893,28 @@ class BusinessApiIntegrationTests {
     }
 
     @Test
+    void rejectedPublicationCanBeCopiedToNewTaskWithoutChangingOldReview() throws Exception {
+        var first=createTask(employeeToken,"PERSONAL",List.of(employee));
+        reviewDecision(leadToken,first,"REJECT");
+        String oldId=str(first,"id"), reviewId=str(first,"reviewId");
+        var originalReview=request("GET","/task-reviews/"+reviewId,employeeToken,null,200);
+        var command=taskBody("PERSONAL",List.of(employee),List.of(),null);
+        command.put("title","Corrected new task");
+        String key=UUID.randomUUID().toString();
+        var replacement=request("POST","/tasks",employeeToken,command,201,"Idempotency-Key",key);
+        assertNotEquals(oldId,replacement.get("id"));
+        assertNotEquals(reviewId,replacement.get("reviewId"));
+        assertEquals("PENDING",replacement.get("reviewStatus"));
+        assertEquals(replacement.get("id"),request("POST","/tasks",employeeToken,command,201,"Idempotency-Key",key).get("id"));
+        assertEquals(originalReview,request("GET","/task-reviews/"+reviewId,employeeToken,null,200));
+        assertEquals("REJECTED",request("GET","/tasks/"+oldId,employeeToken,null,200).get("reviewStatus"));
+        request("GET","/task-reviews/"+reviewId,peerToken,null,404);
+        reviewDecision(leadToken,replacement,"APPROVE");
+        assertEquals("APPROVED",request("GET","/tasks/"+replacement.get("id"),employeeToken,null,200).get("reviewStatus"));
+        assertEquals("REJECTED",request("GET","/task-reviews/"+reviewId,employeeToken,null,200).get("decision"));
+    }
+
+    @Test
     void taskKindEditUsesProposedRecipientsAndCompanyPublicationStaysRestricted() throws Exception {
         var task=createTask(leadToken,"PERSONAL",List.of(lead));
         reviewDecision(managerToken,task,"APPROVE");

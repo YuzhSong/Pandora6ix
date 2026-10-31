@@ -679,7 +679,7 @@ fun PandoraApp(
                     )
                     showReviews -> key(currentUser?.id) {
                         ReviewScreen(taskRepo, serverTags, currentUser?.businessTimezone, userRepo,
-                            canReview = canReviewTasks, readResultKeys = readReviewKeys,
+                            canReview = canReviewTasks, readResultKeys = readReviewKeys, currentUser = currentUser,
                             refreshRevision = reviewRefreshRevision, focusReviewId = reviewFocusId,
                             onResultRead = { review ->
                                 reviewReads.markRead(review)
