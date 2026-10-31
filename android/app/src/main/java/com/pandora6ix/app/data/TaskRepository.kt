@@ -20,13 +20,15 @@ data class TaskCreateDto(
     val recipientIds: List<String>? = null,
     val tagIds: List<String>? = null,
     val primaryTagId: String? = null,
-    val recurrence: RecurrenceRule? = null
+    val recurrence: RecurrenceRule? = null,
+    val companyWide: Boolean = false
 )
 
 @Serializable
 data class TaskPatchDto(val expectedVersion: Long, val title: String, val description: String?,
     val priorityLevel: Int, val timeKind: String, val startDate: String, val endDate: String,
-    val startTime: String?, val endTime: String?, val tagIds: List<String>, val primaryTagId: String?)
+    val startTime: String?, val endTime: String?, val tagIds: List<String>, val primaryTagId: String?,
+    val recipientIds: List<String>? = null, val kind: String? = null, val companyWide: Boolean? = null)
 @Serializable
 data class TaskScopeDto(val items: List<TaskDto> = emptyList())
 @Serializable
@@ -93,6 +95,7 @@ data class TaskReviewDto(
     val attemptNo: Long = 0,
     val submittedAt: String? = null,
     val submittedSnapshot: JsonObject? = null,
+    val reviewKind: String = "CREATE",
     val decision: String = "PENDING",
     val reviewStatus: String = "PENDING",
     val decisionNote: String? = null,

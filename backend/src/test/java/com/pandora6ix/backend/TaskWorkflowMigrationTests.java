@@ -22,8 +22,14 @@ class TaskWorkflowMigrationTests {
             sql.executeUpdate("INSERT INTO task(id,enterprise_id,creator_user_id,task_kind,title,priority_level,start_date,end_date,time_kind) VALUES('pending','company','user','PERSONAL','Pending task',3,CURRENT_DATE,CURRENT_DATE,'ALL_DAY')");
             sql.executeUpdate("INSERT INTO task_assignment(id,enterprise_id,task_id,recipient_user_id) VALUES('waiting','company','pending','user')");
         }
-        assertEquals(3, Flyway.configure().dataSource(url, "sa", "").load().migrate().migrationsExecuted);
+        assertEquals(5, Flyway.configure().dataSource(url, "sa", "").load().migrate().migrationsExecuted);
         try (var connection = DriverManager.getConnection(url, "sa", ""); var sql = connection.createStatement()) {
+            try (var row = sql.executeQuery("SELECT company_wide FROM task WHERE id='task'")) {
+                assertTrue(row.next()); assertFalse(row.getBoolean(1));
+            }
+            try (var row = sql.executeQuery("SELECT current_member FROM task_assignment WHERE id='done'")) {
+                assertTrue(row.next()); assertTrue(row.getBoolean(1));
+            }
             try (var row = sql.executeQuery("SELECT review_kind,submitted_snapshot FROM task_review WHERE id='review'")) {
                 assertTrue(row.next()); assertEquals("CREATE", row.getString(1)); assertEquals("{}", row.getString(2));
             }

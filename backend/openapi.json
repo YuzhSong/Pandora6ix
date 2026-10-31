@@ -9084,6 +9084,16 @@
                 "type": "null"
               }
             ]
+          },
+          "companyWide": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -9182,6 +9192,47 @@
             "anyOf": [
               {
                 "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "recipientIds": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "\\S"
+                },
+                "minItems": 1,
+                "maxItems": 100
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "PERSONAL",
+                  "DELEGATED"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "companyWide": {
+            "anyOf": [
+              {
+                "type": "boolean"
               },
               {
                 "type": "null"
@@ -9780,6 +9831,16 @@
             "type": "string",
             "format": "uuid"
           },
+          "recipientName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "executionStatus": {
             "type": "string",
             "enum": [
@@ -9987,6 +10048,9 @@
           "taskId": {
             "type": "string",
             "format": "uuid"
+          },
+          "companyWide": {
+            "type": "boolean"
           },
           "creatorUserId": {
             "type": "string",

@@ -63,7 +63,7 @@ internal fun tagHexColor(hex: String): Color =
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
-fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateDelegated: Boolean, availableTags: List<TagDto>, taskRepo: TaskRepository, businessTimezone: String? = null, currentUser: UserDto? = null, onDismiss: () -> Unit, onCreated: (TaskDto) -> Unit, editingTask: TaskDto? = null) {
+fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateDelegated: Boolean, availableTags: List<TagDto>, taskRepo: TaskRepository, businessTimezone: String? = null, currentUser: UserDto? = null, onDismiss: () -> Unit, onCreated: (TaskDto) -> Unit, editingTask: TaskDto? = null, newTaskDraft: TaskDraftDto? = null, draftKey: String = "task_draft.json") {
     val context = LocalContext.current
     val density = LocalDensity.current
     val candidateGap = with(density) { 8.dp.roundToPx() }
@@ -77,9 +77,9 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
         if (editingTask != null) TaskDraftDto(editingTask.kind, editingTask.title, editingTask.description.orEmpty(),
             editingTask.timeKind == "ALL_DAY", editingTask.startDate, editingTask.endDate,
             parseHhMm(editingTask.startTime) ?: 0, parseHhMm(editingTask.endTime) ?: 60,
-            editingTask.priorityLevel, editingTask.tags.map { it.name }, editingTask.authorizedAssignments.map { it.recipientUserId })
+            editingTask.priorityLevel, editingTask.tags.sortedBy { if (it.id == editingTask.primaryTagId) 0 else 1 }.map { it.name }, editingTask.authorizedAssignments.map { it.recipientUserId }, companyWide = editingTask.companyWide)
         else
-        AppCache.readDraft(context, "task_draft.json")?.let { s -> runCatching { AppCache.json.decodeFromString<TaskDraftDto>(s) }.getOrNull() }
+        AppCache.readDraft(context, draftKey)?.let { s -> runCatching { AppCache.json.decodeFromString<TaskDraftDto>(s) }.getOrNull() } ?: newTaskDraft
     }
     var title by rememberSaveable { mutableStateOf(savedDraft?.title ?: "") }
     var note by rememberSaveable { mutableStateOf(savedDraft?.note ?: "") }
@@ -110,12 +110,36 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
         mutableStateOf(if (canDelegate) savedDraft?.recipientIds ?: listOf() else listOfNotNull(selfRecipient?.id))
     }
     // 任务类型由接收人推导，不再由按钮区分：仅本人且有个人任务能力 → 个人任务，否则派发任务
-    val kind = editingTask?.kind ?: when {
+    var companyWide by rememberSaveable { mutableStateOf(savedDraft?.companyWide == true) }
+    val kind = when {
         selectedRecipientIds.size == 1 && selectedRecipientIds.first() == selfRecipient?.id && canCreatePersonal -> "PERSONAL"
         else -> "DELEGATED"
     }
     var candidates by remember { mutableStateOf<List<RecipientDto>>(emptyList()) }
-    val candidateNames = remember { mutableStateMapOf<String, String>() }
+    val candidateNames = remember { mutableStateMapOf<String, String>().apply {
+        editingTask?.authorizedAssignments?.forEach { assignment ->
+            assignment.recipientName?.takeIf { it.isNotBlank() }?.let { put(assignment.recipientUserId, it) }
+        }
+    } }
+    var namesLoading by remember { mutableStateOf(false) }
+    var namesFailed by remember { mutableStateOf(false) }
+    var namesRetry by remember { mutableIntStateOf(0) }
+    LaunchedEffect(selectedRecipientIds, namesRetry) {
+        if (!canDelegate || selectedRecipientIds.all { !candidateNames[it].isNullOrBlank() }) return@LaunchedEffect
+        namesLoading = true; namesFailed = false
+        try {
+            var cursor: String? = null
+            val seen = mutableSetOf<String>()
+            do {
+                val result = taskRepo.recipientCandidatePage(cursor = cursor, limit = 100)
+                candidateNames.putAll(result.items.filter { it.displayName.isNotBlank() }.associate { it.id to it.displayName })
+                cursor = result.nextCursor
+                check(cursor == null || seen.add(cursor))
+            } while (cursor != null && selectedRecipientIds.any { candidateNames[it].isNullOrBlank() })
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) { namesFailed = true }
+        finally { namesLoading = false }
+    }
     // 本人姓名来自登录资料（displayName → name → loginName），无需等候选接口加载即可显示真实姓名
     selfRecipient?.takeIf { it.displayName.isNotBlank() }?.let { candidateNames.putIfAbsent(it.id, it.displayName) }
     var recipientQuery by remember { mutableStateOf("") }
@@ -128,6 +152,7 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
     var submitting by remember { mutableStateOf(false) }
     var createdTask by remember { mutableStateOf<TaskDto?>(null) }
     val idempotencyKey = remember { UUID.randomUUID().toString() }
+    val editKeys = remember { mutableMapOf<String, String>() }
     LaunchedEffect(candidateOpen, selectedRecipientIds) {
         if (candidateOpen) {
             withFrameNanos { }
@@ -161,10 +186,10 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
     }
     var tags by rememberSaveable { mutableStateOf(savedDraft?.tags ?: listOf<String>()) }
     // 草稿实时落盘（缓存目录）：提交成功或明确放弃时清除
-    LaunchedEffect(kind, title, note, allDay, startKey, endKey, startMinute, endMinute, priority, tags, selectedRecipientIds, repeatRule, customRepeat) {
+    LaunchedEffect(kind, title, note, allDay, startKey, endKey, startMinute, endMinute, priority, tags, selectedRecipientIds, repeatRule, customRepeat, companyWide) {
         if (editingTask != null) return@LaunchedEffect
-        val draft = TaskDraftDto(kind, title, note, allDay, startKey, endKey, startMinute, endMinute, priority, tags, selectedRecipientIds, repeatRule, customRepeat)
-        AppCache.writeDraft(context, "task_draft.json", AppCache.json.encodeToString(TaskDraftDto.serializer(), draft))
+        val draft = TaskDraftDto(kind, title, note, allDay, startKey, endKey, startMinute, endMinute, priority, tags, selectedRecipientIds, repeatRule, customRepeat, companyWide)
+        AppCache.writeDraft(context, draftKey, AppCache.json.encodeToString(TaskDraftDto.serializer(), draft))
     }
     var showTagPicker by rememberSaveable { mutableStateOf(false) }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
@@ -173,8 +198,8 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
     var timePickTarget by rememberSaveable { mutableStateOf<String?>(null) }
     var datePickTarget by rememberSaveable { mutableStateOf<String?>(null) }
     // 进入弹层时的状态快照：退出时仅在实际改动（相对进入时）才提示保存，草稿恢复的未修改内容不算改动
-    val initialState = remember { listOf(kind, title, note, startKey, endKey, allDay, startMinute, endMinute, priority, tags, selectedRecipientIds, repeatRule, customRepeat) }
-    val dirty = listOf(kind, title, note, startKey, endKey, allDay, startMinute, endMinute, priority, tags, selectedRecipientIds, repeatRule, customRepeat) != initialState
+    val initialState = remember { listOf(kind, title, note, startKey, endKey, allDay, startMinute, endMinute, priority, tags, selectedRecipientIds, repeatRule, customRepeat, companyWide) }
+    val dirty = listOf(kind, title, note, startKey, endKey, allDay, startMinute, endMinute, priority, tags, selectedRecipientIds, repeatRule, customRepeat, companyWide) != initialState
     val latestDirty by rememberUpdatedState(dirty)
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true, confirmValueChange = { value ->
         if (value == SheetValue.Hidden && latestDirty) { confirmExit = true; false } else true
@@ -197,12 +222,12 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
     fun pickTime(target: String) { timePickTarget = target }
     fun nameOf(id: String): String = candidateNames[id]?.ifBlank { null }
         ?: selfRecipient?.takeIf { it.id == id }?.displayName?.ifBlank { null }
-        ?: "成员 ${id.takeLast(4)}"
+        ?: if (namesLoading) "加载姓名…" else "姓名暂不可用"
     /** 提交创建：POST /tasks（非幂等，携带 Idempotency-Key；失败重试复用同一键） */
     fun submit(editScope: String? = null) {
         error = when {
             title.isBlank() -> "请填写任务名称"
-            editingTask == null && selectedRecipientIds.isEmpty() -> "请至少选择一位接收人"
+            selectedRecipientIds.isEmpty() -> "请至少选择一位接收人"
             editingTask != null && editVersions == null -> if (editLoadError) "加载失败，请关闭后重试" else "正在加载任务"
             repeating && repeatPreview?.isFailure == true -> repeatPreview.exceptionOrNull()?.message ?: "重复规则无效"
             repeating && !allDay && endMinute <= startMinute -> "每次的结束时间须晚于开始时间（同一天）"
@@ -223,8 +248,9 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
                     val command = TaskPatchDto(editingTask.version, title.trim(), note.trim().ifBlank { null }, priority,
                         if (allDay) "ALL_DAY" else "TIMED", startKey.date().let { "%04d-%02d-%02d".format(it.year,it.month,it.day) },
                         endKey.date().let { "%04d-%02d-%02d".format(it.year,it.month,it.day) },
-                        if (allDay) null else minuteLabel(startMinute), if (allDay) null else minuteLabel(endMinute), tagIds, tagIds.firstOrNull())
-                    val updated = taskRepo.scopedEdit(editingTask.id, ScopedEditDto(editScope ?: "SINGLE", command, editVersions!!), UUID.randomUUID().toString())
+                        if (allDay) null else minuteLabel(startMinute), if (allDay) null else minuteLabel(endMinute), tagIds, tagIds.firstOrNull(), selectedRecipientIds, kind, companyWide && kind == "DELEGATED")
+                    val request = ScopedEditDto(editScope ?: "SINGLE", command, editVersions!!)
+                    val updated = taskRepo.scopedEdit(editingTask.id, request, editKeys.getOrPut(request.toString()) { UUID.randomUUID().toString() })
                     onCreated(updated); onDismiss()
                     return@launch
                 }
@@ -242,11 +268,12 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
                         recipientIds = if (kind == "DELEGATED") selectedRecipientIds else null,
                         tagIds = tagIds.ifEmpty { null },
                         primaryTagId = tagIds.firstOrNull(),
-                        recurrence = repeatRule
+                        recurrence = repeatRule,
+                        companyWide = companyWide && kind == "DELEGATED"
                     ),
                     idempotencyKey
                 )
-                AppCache.deleteDraft(context, "task_draft.json")
+                AppCache.deleteDraft(context, draftKey)
             } catch (e: ApiException) {
                 error = e.friendlyMessage()
             } catch (e: Exception) {
@@ -256,13 +283,19 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
             }
         }
     }
-    ModalBottomSheet(onDismissRequest = requestClose, sheetState = sheetState, containerColor = Cream) {
+    ModalBottomSheet(onDismissRequest = requestClose, sheetState = sheetState, containerColor = Color.White) {
         Column(Modifier.fillMaxWidth().fillMaxHeight(.88f).padding(horizontal = 20.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(if (editingTask == null) "添加任务" else "编辑任务", fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                 IconButton(requestClose) { Icon(Icons.Default.Close, "关闭任务填写") }
             }
             Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (currentUser?.roles?.contains("FOUNDER") == true && kind == "DELEGATED") {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text("全公司可见", Modifier.weight(1f))
+                        Switch(companyWide, { companyWide = it }, colors = com.pandora6ix.app.ui.theme.pandoraSwitchColors())
+                    }
+                }
                 OutlinedTextField(title, { title = it; error = null }, Modifier.fillMaxWidth(), label = { Text("任务名称（必填）") }, placeholder = { Text("我计划做…") }, singleLine = true, colors = fieldColors)
                 OutlinedTextField(note, { note = it }, Modifier.fillMaxWidth().heightIn(min = 112.dp), label = { Text("备注 / 简介（选填）") }, colors = fieldColors, minLines = 3)
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -313,17 +346,18 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
                 Text("标签", fontWeight = FontWeight.SemiBold)
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     tags.forEachIndexed { i, name ->
-                        val tagColor = availableTags.firstOrNull { it.name == name }?.let { tagHexColor(it.colorHex) } ?: Ink
+                        val tagColor = availableTags.firstOrNull { it.name == name }?.let { androidx.compose.ui.graphics.lerp(tagHexColor(it.colorHex), Ink, .10f) } ?: Ink
                         if (i == 0) {
-                            Button({ tags = tags - name }, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp), colors = ButtonDefaults.buttonColors(containerColor = tagColor, contentColor = Ink)) { Text("$name · 主", fontSize = 13.sp) }
+                            Button({ tags = tags - name }, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), colors = ButtonDefaults.buttonColors(containerColor = tagColor, contentColor = Ink)) { Text("$name · 主", fontSize = 13.sp) }
                         } else {
-                            OutlinedButton({ tags = tags - name }, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp), border = BorderStroke(1.dp, tagColor), colors = ButtonDefaults.outlinedButtonColors(contentColor = Ink)) { Text(name, fontSize = 13.sp) }
+                            OutlinedButton({ tags = tags - name }, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), colors = ButtonDefaults.outlinedButtonColors(containerColor = tagColor, contentColor = Ink)) { Text(name, fontSize = 13.sp) }
                         }
                     }
                     OutlinedButton({ showTagPicker = true }, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp), border = BorderStroke(1.dp, HairLine), colors = ButtonDefaults.outlinedButtonColors(contentColor = Ink)) { Icon(Icons.Default.Add, "选择标签", Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("选择标签", fontSize = 13.sp) }
                 }
-                if (editingTask == null) {
+                run {
                 Text("接收人", fontWeight = FontWeight.SemiBold)
+                if (namesFailed) TextButton({ namesRetry++ }) { Text("姓名加载失败，重试", color = ThemeButton) }
                 if (selectedRecipientIds.isNotEmpty()) FlowRow(Modifier.fillMaxWidth().padding(vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     selectedRecipientIds.forEach { id ->
                         if (canDelegate) {
@@ -385,7 +419,7 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
             Button(onClick = { submit() }, Modifier.fillMaxWidth().padding(vertical = 12.dp), enabled = !submitting, colors = ButtonDefaults.buttonColors(containerColor = ThemeButton, contentColor = OnThemeButton)) { Text(if (submitting) "保存中…" else if (editingTask != null) "保存" else "提交审批") }
         }
     }
-    if (confirmExit) AlertDialog(onDismissRequest = { confirmExit = false; sheetScope.launch { sheetState.show() } }, title = { Text("放弃未保存的任务？") }, text = { Text("关闭后，本次填写的内容会清空。") }, confirmButton = { TextButton({ confirmExit = false; AppCache.deleteDraft(context, "task_draft.json"); onDismiss() }) { Text("放弃") } }, dismissButton = { TextButton({ confirmExit = false; sheetScope.launch { sheetState.show() } }) { Text("继续填写") } })
+    if (confirmExit) AlertDialog(onDismissRequest = { confirmExit = false; sheetScope.launch { sheetState.show() } }, title = { Text("放弃未保存的任务？") }, text = { Text("关闭后，本次填写的内容会清空。") }, confirmButton = { TextButton({ confirmExit = false; AppCache.deleteDraft(context, draftKey); onDismiss() }) { Text("放弃") } }, dismissButton = { TextButton({ confirmExit = false; sheetScope.launch { sheetState.show() } }) { Text("继续填写") } })
     timePickTarget?.let { target ->
         TimeWheelDialog(
             initialMinute = if (target == "start") startMinute else endMinute,
@@ -422,7 +456,7 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
                             Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { tags = if (selected) tags - tag.name else tags + tag.name }.padding(horizontal = 4.dp, vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Box(Modifier.size(14.dp).clip(CircleShape).background(tagHexColor(tag.colorHex)))
+                            Box(Modifier.size(22.dp).clip(CircleShape).background(androidx.compose.ui.graphics.lerp(tagHexColor(tag.colorHex), Ink, .10f)).border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape))
                             Spacer(Modifier.width(10.dp))
                             Text(tag.name, Modifier.weight(1f), fontSize = 15.sp)
                             Box(Modifier.width(72.dp).height(40.dp), contentAlignment = Alignment.Center) {

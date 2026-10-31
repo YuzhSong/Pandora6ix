@@ -1,0 +1,40 @@
+﻿file,line,color_arguments
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,814,"containerColor = ThemeButton, contentColor = OnThemeButton"
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,930,"containerColor = ThemeButton, contentColor = OnThemeButton"
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1231,"containerColor = ThemeButton, contentColor = OnThemeButton"
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1353,"containerColor = accent, contentColor = Ink"
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1423,"containerColor = ThemeButton, contentColor = OnThemeButton"
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1658,"containerColor = ThemeButton, contentColor = OnThemeButton"
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1661,"containerColor = CreamDeep, contentColor = Ink"
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1677,"containerColor = ThemeButton, contentColor = OnThemeButton"
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1691,"containerColor = CreamDeep, contentColor = Ink"
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1739,contentColor = Ink
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1757,contentColor = Ink
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1762,"containerColor = ThemeButton, contentColor = OnThemeButton"
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1770,contentColor = Ink
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1770,contentColor = Ink
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1799,contentColor = Ink.copy(alpha = .65f)
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1844,contentColor = CoralDark
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1846,contentColor = Ink
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1987,"containerColor = ThemeButton, contentColor = OnThemeButton"
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2500,containerColor = ThemeButton
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,109,contentColor = Ink
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,118,contentColor = Ink
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,227,"containerColor = ThemeButton, contentColor = OnThemeButton"
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,245,"containerColor = ThemeButton, contentColor = OnThemeButton"
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,210,contentColor = Ink
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,351,"containerColor = tagColor, contentColor = Ink"
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,353,"containerColor = tagColor, contentColor = Ink"
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,356,contentColor = Ink
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,419,"containerColor = ThemeButton, contentColor = OnThemeButton"
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,471,contentColor = Ink.copy(alpha = .65f)
+android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,484,"containerColor = MintDeep, contentColor = Color.White"
+android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,490,contentColor = com.pandora6ix.app.ui.theme.CoralDark
+android/app/src/main/java/com/pandora6ix/app/ui/tags/TagManageScreen.kt,121,"containerColor = ThemeButton, contentColor = OnThemeButton"
+android/app/src/main/java/com/pandora6ix/app/ui/tags/TagManageScreen.kt,185,contentColor = com.pandora6ix.app.ui.theme.CoralDark
+android/app/src/main/java/com/pandora6ix/app/ui/tags/TagManageScreen.kt,187,contentColor = Ink
+android/app/src/main/java/com/pandora6ix/app/ui/tags/TagManageScreen.kt,230,contentColor = Ink
+android/app/src/main/java/com/pandora6ix/app/ui/tags/TagManageScreen.kt,234,"containerColor = ThemeButton, contentColor = OnThemeButton"
+android/app/src/main/java/com/pandora6ix/app/ui/task/ProgressSheet.kt,240,"containerColor = MintDeep, contentColor = Color.White"
+android/app/src/main/java/com/pandora6ix/app/ui/task/ProgressSheet.kt,259,"containerColor = MintDeep, contentColor = Color.White"
+android/app/src/main/java/com/pandora6ix/app/ui/task/ProgressSheet.kt,260,contentColor = CoralDark

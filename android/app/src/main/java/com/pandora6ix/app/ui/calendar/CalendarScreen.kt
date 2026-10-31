@@ -553,7 +553,7 @@ private fun Modifier.calendarGuides(): Modifier = drawBehind {
         ModalBottomSheet(
             onDismissRequest = { selection = null },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-            containerColor = WarmCard
+            containerColor = Color.White
         ) {
             Text("选择任务", Modifier.padding(horizontal = 20.dp), fontSize = 20.sp, fontWeight = FontWeight.Bold)
             Text("${date.year}年${date.month}月${date.day}日 · ${minuteLabel(minute)} · ${candidates.size} 项任务",

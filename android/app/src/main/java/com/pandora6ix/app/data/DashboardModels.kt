@@ -42,7 +42,8 @@ data class AssignmentDto(
     val completionSource: String? = null,
     val completedByUserId: String? = null,
     val completedAt: String? = null,
-    val allowedActions: List<String> = emptyList()
+    val allowedActions: List<String> = emptyList(),
+    val recipientName: String? = null
 )
 
 @Serializable
@@ -98,7 +99,9 @@ data class TaskDto(
     val seriesId: String? = null,
     val recurrenceLabel: String? = null,
     val occurrenceCount: Int = 1,
-    val occurrenceDate: String? = null
+    val occurrenceDate: String? = null,
+    val companyWide: Boolean = false,
+    val pendingEditReviewId: String? = null
 )
 
 @Serializable

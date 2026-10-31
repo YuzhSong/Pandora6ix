@@ -25,3 +25,12 @@
 - 最新5份主文档与本索引共6份Markdown；目录及.gitkeep不删除，既有OpenSpec历史记录不改写。
 - 整理记录：[consolidate-latest-design-documents](../openspec/changes/archive/2026-10-27-consolidate-latest-design-documents/proposal.md)；业务确认依据：[reconcile-confirmed-requirements-1009](../openspec/changes/archive/2026-10-27-reconcile-confirmed-requirements-1009/proposal.md)。
 - 后续业务实现另建OpenSpec并评审。PR由非作者审核；合并并验证后才归档，本次不自动合并dev/main。
+
+## Android UI 审计与规范（2026-10-31）
+
+- [全量审计报告](UI_AUDIT_REPORT.md)：当前代码证据、静态数量与验证边界。
+- [Android UI Design System](ANDROID_UI_DESIGN_SYSTEM.md)：后续UI开发的颜色、排版、间距、栅格及组件契约。
+- [UI统一化改造路线](UI_REFACTOR_ROADMAP.md)：P0/P1/P2顺序与验收矩阵；尚未批量实施。
+- [静态数据](ui-audit-data/summary.json)，重建命令：`python docs/tools/android_ui_inventory.py`。
+
+本节是现有业务基线之上的视觉规范；不据此新增业务或改变权限。上文2026-10-09工程状态是历史记录，不代表当前实现状态。

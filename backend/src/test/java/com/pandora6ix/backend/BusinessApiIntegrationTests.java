@@ -133,7 +133,7 @@ class BusinessApiIntegrationTests {
         return request("POST","/tasks/recurring",token,body,201,"Idempotency-Key",UUID.randomUUID().toString());
     }
 
-    @Test void recurringScopedEditsPreservePastAndDoNotCreateNewApprovals() throws Exception {
+    @Test void recurringScopedEditsPreservePastAndRequireNewApprovals() throws Exception {
         var first=recurringFixture(employeeToken);
         request("POST","/task-reviews/"+first.get("reviewId")+"/decision",leadToken,fields("expectedVersion",0,"decision","APPROVE"),200);
         var rows=recurringScopeRows(employeeToken,str(first,"id")).stream().sorted(Comparator.comparing(t->t.get("startDate").toString())).toList();
@@ -142,9 +142,12 @@ class BusinessApiIntegrationTests {
                 "timeKind","ALL_DAY","startDate",selected.get("startDate"),"endDate",selected.get("endDate"),"tagIds",List.of());
         request("POST","/tasks/"+selected.get("id")+"/scoped-edit",employeeToken,
                 fields("scope","THIS_AND_FUTURE","task",command,"versions",recurringVersions(rows)),200,"Idempotency-Key",UUID.randomUUID().toString());
+        var editReviews=db.rows("SELECT id FROM task_review WHERE enterprise_id=? AND review_kind='EDIT'",enterprise);
+        assertEquals(2,editReviews.size());
+        for(var review:editReviews) request("POST","/task-reviews/"+review.get("id")+"/decision",leadToken,fields("expectedVersion",0,"decision","APPROVE"),200);
         var updated=db.rows("SELECT title,start_date,occurrence_date FROM task WHERE enterprise_id=? AND series_id=? ORDER BY occurrence_date",enterprise,first.get("seriesId"));
         assertEquals("Task",updated.get(0).get("title")); assertEquals("Edited future",updated.get(1).get("title")); assertEquals("Edited future",updated.get(2).get("title"));
-        assertEquals(1,db.rows("SELECT id FROM task_review WHERE enterprise_id=?",enterprise).size());
+        assertEquals(3,db.rows("SELECT id FROM task_review WHERE enterprise_id=?",enterprise).size());
         var stale=fields("scope","THIS_AND_FUTURE","task",command,"versions",recurringVersions(rows));
         request("POST","/tasks/"+selected.get("id")+"/scoped-edit",employeeToken,stale,409,"Idempotency-Key",UUID.randomUUID().toString());
         request("POST","/tasks/"+selected.get("id")+"/scoped-edit",peerToken,stale,404,"Idempotency-Key",UUID.randomUUID().toString());
@@ -1890,12 +1893,18 @@ class BusinessApiIntegrationTests {
 
     @Test
     void avatarUploadsAndServesRealImageBytes() throws Exception {
-        String payload = "iVBORw0KGgo=";
+        String payload = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aHZkAAAAASUVORK5CYII=";
         String dataUrl = "data:image/png;base64," + payload;
         request("PUT", "/users/" + employee + "/avatar", employeeToken, fields("dataUrl", dataUrl), 204);
         var stored = rawBytes("GET", "/users/" + employee + "/avatar", employeeToken);
         assertEquals(200, stored.status());
         assertArrayEquals(Base64.getDecoder().decode(payload), Base64.getDecoder().decode(stored.body()));
+        assertEquals(dataUrl,db.entity("app_user",enterprise,employee).get("avatar_image"));
+        var managerRead=rawBytes("GET","/users/"+employee+"/avatar",managerToken);
+        assertEquals(200,managerRead.status());
+        assertArrayEquals(Base64.getDecoder().decode(payload),Base64.getDecoder().decode(managerRead.body()));
+        var freshSession=rawBytes("GET","/users/"+employee+"/avatar",session(employee));
+        assertArrayEquals(Base64.getDecoder().decode(payload),Base64.getDecoder().decode(freshSession.body()));
         // 未设置头像返回 404，客户端回退到姓名首字而不是占位假图
         assertEquals(404, rawBytes("GET", "/users/" + manager + "/avatar", employeeToken).status());
         // 他人头像可读取（审批详情要显示请求人/执行人真实头像），但不能代改
@@ -2887,6 +2896,131 @@ class BusinessApiIntegrationTests {
         request("PATCH", "/tags/"+tag.get("id"), adminToken, fields("expectedVersion", 0, "name", "No"), 403);
         request("DELETE", "/tags/"+tag.get("id"), adminToken, null, 403);
         assertEquals(false, ((Map<?,?>)request("GET", "/me", adminToken, null, 200).get("capabilities")).get("createTags"));
+    }
+
+    @Test
+    void rejectedPublicationCanBeCopiedToNewTaskWithoutChangingOldReview() throws Exception {
+        var first=createTask(employeeToken,"PERSONAL",List.of(employee));
+        reviewDecision(leadToken,first,"REJECT");
+        String oldId=str(first,"id"), reviewId=str(first,"reviewId");
+        var originalReview=request("GET","/task-reviews/"+reviewId,employeeToken,null,200);
+        var command=taskBody("PERSONAL",List.of(employee),List.of(),null);
+        command.put("title","Corrected new task");
+        String key=UUID.randomUUID().toString();
+        var replacement=request("POST","/tasks",employeeToken,command,201,"Idempotency-Key",key);
+        assertNotEquals(oldId,replacement.get("id"));
+        assertNotEquals(reviewId,replacement.get("reviewId"));
+        assertEquals("PENDING",replacement.get("reviewStatus"));
+        assertEquals(replacement.get("id"),request("POST","/tasks",employeeToken,command,201,"Idempotency-Key",key).get("id"));
+        assertEquals(originalReview,request("GET","/task-reviews/"+reviewId,employeeToken,null,200));
+        assertEquals("REJECTED",request("GET","/tasks/"+oldId,employeeToken,null,200).get("reviewStatus"));
+        request("GET","/task-reviews/"+reviewId,peerToken,null,404);
+        reviewDecision(leadToken,replacement,"APPROVE");
+        assertEquals("APPROVED",request("GET","/tasks/"+replacement.get("id"),employeeToken,null,200).get("reviewStatus"));
+        assertEquals("REJECTED",request("GET","/task-reviews/"+reviewId,employeeToken,null,200).get("decision"));
+    }
+
+    @Test
+    void taskKindEditUsesProposedRecipientsAndCompanyPublicationStaysRestricted() throws Exception {
+        var task=createTask(leadToken,"PERSONAL",List.of(lead));
+        reviewDecision(managerToken,task,"APPROVE");
+        String id=str(task,"id");
+        var before=request("GET","/tasks/"+id,leadToken,null,200);
+        var change=revision(((Number)before.get("version")).longValue(),"Converted delegation");
+        change.put("kind","DELEGATED"); change.put("recipientIds",List.of(peer));
+        change.put("companyWide",true);
+        request("PATCH","/tasks/"+id,leadToken,change,403);
+        change.put("companyWide",false);
+        var pending=request("PATCH","/tasks/"+id,leadToken,change,200);
+        assertEquals("PERSONAL",pending.get("kind"));
+        request("POST","/task-reviews/"+pending.get("pendingEditReviewId")+"/decision",managerToken,fields("expectedVersion",0,"decision","APPROVE"),200);
+        var changed=request("GET","/tasks/"+id,leadToken,null,200);
+        assertEquals("DELEGATED",changed.get("kind"));
+        assertEquals("Converted delegation",changed.get("title"));
+        assertEquals(false,changed.get("companyWide"));
+        request("GET","/tasks/"+id,peerToken,null,200);
+    }
+
+    @Test
+    void participantEditWaitsForApprovalAndPreservesRetiredHistory() throws Exception {
+        var task = createTask(leadToken, "DELEGATED", List.of(employee));
+        reviewDecision(managerToken, task, "APPROVE");
+        String id = str(task,"id");
+        var before = request("GET","/tasks/"+id,leadToken,null,200);
+        assertEquals("employee", ((Map<?,?>)((List<?>)before.get("authorizedAssignments")).getFirst()).get("recipientName"));
+        String oldAssignment = assignment(id,employee);
+        var change = revision(((Number)before.get("version")).longValue(),"Changed delegation");
+        change.put("recipientIds",List.of(peer));
+        var proposed = request("PATCH","/tasks/"+id,leadToken,change,200);
+        assertEquals(before.get("title"),proposed.get("title"));
+        assertEquals(true,db.entity("task_assignment",enterprise,oldAssignment).get("current_member"));
+        String review = str(proposed,"pendingEditReviewId");
+        request("POST","/task-reviews/"+review+"/decision",managerToken,fields("expectedVersion",0,"decision","APPROVE"),200);
+        var changed = request("GET","/tasks/"+id,leadToken,null,200);
+        assertEquals("Changed delegation",changed.get("title"));
+        assertEquals(false,db.entity("task_assignment",enterprise,oldAssignment).get("current_member"));
+        request("PATCH","/task-assignments/"+oldAssignment+"/status",employeeToken,
+                fields("expectedVersion",db.entity("task_assignment",enterprise,oldAssignment).get("version"),"workStatus","IN_PROGRESS"),404);
+        request("GET","/tasks/"+id,employeeToken,null,404);
+        request("GET","/tasks/"+id,peerToken,null,200);
+        assertEquals("ACTIVE",db.entity("task_assignment",enterprise,assignment(id,peer)).get("execution_status"));
+        assertEquals("APPROVED",request("GET","/task-reviews/"+review,leadToken,null,200).get("decision"));
+    }
+
+    @Test
+    void repeatedEditsRequireSuperiorApprovalBeforeChangingOccurrences() throws Exception {
+        var first=recurringFixture(employeeToken);
+        request("POST","/task-reviews/"+first.get("reviewId")+"/decision",leadToken,fields("expectedVersion",0,"decision","APPROVE"),200);
+        var rows=recurringScopeRows(employeeToken,str(first,"id"));
+        var selected=rows.stream().filter(t->t.get("id").equals(first.get("id"))).findFirst().orElseThrow();
+        var change=revision(((Number)selected.get("version")).longValue(),"Proposed repeated edit");
+        change.put("startDate",selected.get("startDate")); change.put("endDate",selected.get("endDate"));
+        request("POST","/tasks/"+first.get("id")+"/scoped-edit",employeeToken,
+                fields("scope","THIS_AND_FUTURE","task",change,"versions",recurringVersions(rows)),200);
+        assertEquals(selected.get("title"),request("GET","/tasks/"+first.get("id"),employeeToken,null,200).get("title"));
+        var edits=db.rows("SELECT * FROM task_review WHERE enterprise_id=? AND review_kind='EDIT' AND task_id IN (SELECT id FROM task WHERE enterprise_id=? AND series_id=?)",enterprise,enterprise,first.get("seriesId"));
+        assertEquals(rows.size(),edits.size());
+        for(var edit:edits) request("POST","/task-reviews/"+edit.get("id")+"/decision",leadToken,fields("expectedVersion",0,"decision","APPROVE"),200);
+        assertEquals("Proposed repeated edit",request("GET","/tasks/"+first.get("id"),employeeToken,null,200).get("title"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void companyPanelContainsOnlyExplicitPublicTasksAndDoesNotGrantActions() throws Exception {
+        var privateTask = createTask(founderToken, "DELEGATED", List.of(employee));
+        var body = taskBody("DELEGATED", List.of(employee), List.of(), null);
+        body.put("companyWide", true);
+        var publicTask = request("POST", "/tasks", founderToken, body, 201);
+        String publicId = str(publicTask, "id");
+        for (String token : List.of(employeeToken, peerToken, leadToken, managerToken, founderToken)) {
+            var panel = (Map<String,Object>) request("GET", "/dashboard", token, null, 200).get("companyTasks");
+            assertEquals(List.of(publicId), items(panel).stream().map(t -> t.get("id")).toList());
+        }
+        var read = request("GET", "/tasks/" + publicId, peerToken, null, 200);
+        assertEquals(true, read.get("companyWide"));
+        assertEquals(List.of(), read.get("allowedActions"));
+        assertEquals(List.of(), read.get("authorizedAssignments"));
+        request("GET", "/tasks/" + privateTask.get("id"), peerToken, null, 404);
+        request("POST", "/tasks", leadToken, body, 403);
+        body.put("kind", "PERSONAL");
+        request("POST", "/tasks", founderToken, body, 403);
+        var other = request("POST", "/admin/enterprise-initializations", null,
+                fields("loginDomain", "public-other-" + UUID.randomUUID(), "name", "Other", "businessTimezone", "Asia/Shanghai",
+                        "adminLoginName", "admin", "adminPassword", PASSWORD, "adminDisplayName", "Other admin"),
+                201, "X-Bootstrap-Token", "integration-tests-only-bootstrap");
+        String otherAdminToken = str(request("POST", "/auth/login", null, fields("accountIdentifier", "admin@" + other.get("loginDomain"), "password", PASSWORD), 200), "accessToken");
+        var otherFounder = request("POST", "/admin/users", otherAdminToken,
+                fields("loginName", "founder", "password", PASSWORD, "displayName", "Other founder",
+                        "orgUnitId", other.get("rootOrgUnitId"), "roles", List.of("FOUNDER"),
+                        "gender", "MALE", "idNumber", "11010119900101001X", "phoneNumber", "13800000000"), 201);
+        String otherToken = str(request("POST", "/auth/login", null, fields("accountIdentifier", "founder@" + other.get("loginDomain"), "password", PASSWORD), 200), "accessToken");
+        request("GET", "/tasks/" + publicId, otherToken, null, 404);
+        var otherPanel = (Map<String,Object>) request("GET", "/dashboard", otherToken, null, 200).get("companyTasks");
+        assertTrue(items(otherPanel).isEmpty());
+        db.update("UPDATE task SET review_status='REJECTED' WHERE enterprise_id=? AND id=?", enterprise, publicId);
+        var panel = (Map<String,Object>) request("GET", "/dashboard", peerToken, null, 200).get("companyTasks");
+        assertTrue(items(panel).isEmpty());
+        request("GET", "/tasks/" + publicId, peerToken, null, 404);
     }
 
     @Test
