@@ -47,6 +47,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -79,6 +80,7 @@ import com.pandora6ix.app.mock.*
 import com.pandora6ix.app.ui.calendar.*
 import com.pandora6ix.app.ui.review.ReviewScreen
 import com.pandora6ix.app.ui.task.ProgressSheet
+import com.pandora6ix.app.ui.summary.TaskSummaryFlow
 import com.pandora6ix.app.ui.tags.TagManageScreen
 import com.pandora6ix.app.ui.logs.JournalDatePickerDialog
 import com.pandora6ix.app.ui.logs.JournalEntryField
@@ -314,6 +316,8 @@ fun PandoraApp(
         var fontScale by rememberSaveable { mutableStateOf(1f) }
         var themeKey by rememberSaveable { mutableStateOf("warm") }
         var currentUser by remember { mutableStateOf<UserDto?>(null) }
+        var showTaskSummary by rememberSaveable(currentUser?.id) { mutableStateOf(false) }
+        val calendarUiState = key(currentUser?.id) { rememberSaveableStateHolder() }
         // 子页面替换“我的”时仍保留滚动位置，退出登录或切换账号时重置。
         val profileScrollState = rememberSaveable(currentUser?.id, saver = ScrollState.Saver) { ScrollState(0) }
         var authChecked by remember { mutableStateOf(false) }
@@ -384,6 +388,7 @@ fun PandoraApp(
                 route = Route.HOME.name
                 detail = null
                 homeDetail = null
+                showTaskSummary = false
             }
         }
         LaunchedEffect(approvalPromptEvents, currentUser?.id, notifyMaster, notifyStatus) {
@@ -443,7 +448,7 @@ fun PandoraApp(
         val journalRepo = remember { JournalRepository(api) }
         val selectionRepo = remember { SelectionRepository(api) }
         val taskRepo = remember { TaskRepository(api) }
-        val userRepo = remember { UserRepository(api) }
+        val userRepo = remember(currentUser?.id) { UserRepository(api) }
         val tagRepo = remember { TagRepository(api) }
         val appScope = rememberCoroutineScope()
         fun refreshTags() {
@@ -634,11 +639,21 @@ fun PandoraApp(
                 route = Route.HOME.name; detail = null; homeDetail = null; showSettings = false; showReviews = false
             }
             else -> CompositionLocalProvider(LocalAppTheme provides theme, LocalDensity provides scaledDensity) {
-        Scaffold(containerColor = theme.background, bottomBar = { NavigationBar(containerColor = theme.backgroundDeep) { nav.forEach { item -> NavigationBarItem(selected = current == item.route, onClick = { route = item.route.name; detail = null; homeDetail = null; journalDetailId = null; showSettings = false; showReviews = false; showTagManage = false; progressTaskId = null }, icon = { MeNavIcon(item, reviewBadgeCount) }, label = { Text(item.label, fontSize = 11.sp) }, colors = NavigationBarItemDefaults.colors(selectedIconColor = WarmOrange, selectedTextColor = WarmOrange, indicatorColor = theme.backgroundDeep)) } } }) { padding ->
+        Scaffold(containerColor = theme.background, bottomBar = { NavigationBar(containerColor = theme.backgroundDeep) { nav.forEach { item -> NavigationBarItem(selected = current == item.route, onClick = { route = item.route.name; detail = null; homeDetail = null; journalDetailId = null; showSettings = false; showReviews = false; showTagManage = false; progressTaskId = null; showTaskSummary = false }, icon = { MeNavIcon(item, reviewBadgeCount) }, label = { Text(item.label, fontSize = 11.sp) }, colors = NavigationBarItemDefaults.colors(selectedIconColor = WarmOrange, selectedTextColor = WarmOrange, indicatorColor = theme.backgroundDeep)) } } }) { padding ->
             Surface(Modifier.padding(padding).fillMaxSize(), color = theme.background) {
                 when {
                     homeDetail != null -> HomeItemDetailScreen(dashboardRepo, homeDetail!!) { homeDetail = null }
                     journalDetailId != null -> JournalDetailScreen(journalRepo, journalDetailId!!, currentUser?.businessTimezone) { journalDetailId = null }
+                    showTaskSummary -> key(currentUser!!.id) {
+                        TaskSummaryFlow(
+                            currentUser!!, calendarRepo, taskRepo, journalRepo, userRepo,
+                            taskDetail = { id, onBack, onChanged ->
+                                SummaryTaskDetail(id, taskRepo, serverTags, currentUser?.businessTimezone, onBack) { onChanged(); calRetry++ }
+                            },
+                            journalDetail = { id, onBack -> JournalDetailScreen(journalRepo, id, currentUser?.businessTimezone, onBack) },
+                            onClose = { showTaskSummary = false }
+                        )
+                    }
                     showSettings -> SettingsScreen(
                         fontScale = fontScale,
                         onFontScaleChange = { fontScale = it },
@@ -703,7 +718,7 @@ fun PandoraApp(
                                     showReviews = true
                                 } else if (item.taskId.isNotBlank()) detail = item.taskId
                             })
-                            Route.VIEW -> CalendarScreen(CalendarMode.valueOf(modeName), date, taskItems, canCreatePersonal, canCreateDelegated, serverTags, taskRepo, { modeName = it.name }, { dateKey = "${it.year}-${it.month}-${it.day}" }, { calRetry++ }, { detail = it.id }, taskScope = taskScope, onTaskScopeChange = { taskScope = it; calNotice = null }, currentUser = currentUser, canReviewTasks = canReviewTasks, businessTimezone = currentUser?.businessTimezone, loading = calLoading, error = calError, onRetry = { calRetry++ }, notice = calNotice)
+                            Route.VIEW -> calendarUiState.SaveableStateProvider("calendar") { CalendarScreen(CalendarMode.valueOf(modeName), date, taskItems, canCreatePersonal, canCreateDelegated, serverTags, taskRepo, { modeName = it.name }, { dateKey = "${it.year}-${it.month}-${it.day}" }, { calRetry++ }, { detail = it.id }, taskScope = taskScope, onTaskScopeChange = { taskScope = it; calNotice = null }, currentUser = currentUser, canReviewTasks = canReviewTasks, businessTimezone = currentUser?.businessTimezone, loading = calLoading, error = calError, onRetry = { calRetry++ }, notice = calNotice, onOpenSummary = { showTaskSummary = true }) }
                             Route.LOGS -> LogsScreen(journalRepo, serverTags.toList(), currentUser?.businessTimezone) { journalDetailId = it }
                             Route.AI -> AiMapScreen()
                             Route.ME -> ProfileScreen(currentUser!!, statistics, notifyMaster, showReviewCenter, reviewBadgeCount, tagManager, userRepo, scrollState = profileScrollState, onOpenTagManage = { showTagManage = true }, onOpenReviews = { showReviews = true }, onOpenSettings = { showSettings = true })
@@ -2253,6 +2268,39 @@ private fun roleLabel(role: String): String = when (role.uppercase()) {
     else -> role
 }
 @Composable private fun DetailCard(title: String, body: String, color: Color, maxLines: Int = 2, onClick: () -> Unit = {}) { Card(Modifier.fillMaxWidth().clickable(onClick = onClick), colors = CardDefaults.cardColors(containerColor = color.copy(alpha = .78f)), shape = RoundedCornerShape(16.dp)) { Column(Modifier.padding(14.dp)) { Text(title, fontWeight = FontWeight.Bold); Text(body, fontSize = 13.sp, color = Ink.copy(alpha = .75f), maxLines = maxLines, overflow = TextOverflow.Ellipsis) } } }
+/** Summary uses the same full task detail, with explicit loading/error before enabling actions. */
+@Composable
+private fun SummaryTaskDetail(id: String, repo: TaskRepository, tags: List<TagDto>, businessTimezone: String?, onBack: () -> Unit, onChanged: () -> Unit) {
+    var task by remember(id) { mutableStateOf<TaskDto?>(null) }
+    var loading by remember(id) { mutableStateOf(true) }
+    var error by remember(id) { mutableStateOf<String?>(null) }
+    var revision by remember(id) { mutableIntStateOf(0) }
+    LaunchedEffect(id, revision) {
+        loading = true
+        error = null
+        try {
+            task = repo.task(id)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (e: Exception) {
+            error = (e as? ApiException)?.friendlyMessage() ?: "加载失败，请重试"
+        } finally { loading = false }
+    }
+    when {
+        loading || error != null -> Column(Modifier.fillMaxSize()) {
+            PageHeader("任务详情", onBack = onBack)
+            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (loading) CircularProgressIndicator(color = ThemeButton)
+                else {
+                    Text(error!!, color = MaterialTheme.colorScheme.error)
+                    TextButton({ revision++ }) { Text("重试", color = ThemeButton) }
+                }
+            }
+        }
+        else -> DetailScreen(id, task, tags, repo, onBack, onChanged = { revision++; onChanged() }, businessTimezone = businessTimezone)
+    }
+}
+
 @Composable private fun DetailScreen(title: String, dto: TaskDto?, availableTags: List<TagDto>, taskRepo: TaskRepository, onBack: () -> Unit, onChanged: () -> Unit, businessTimezone: String? = null) {
     val isLog = title.startsWith("日志 · ")
     val logContent = if (isLog) title.substringAfter("§", "") else null

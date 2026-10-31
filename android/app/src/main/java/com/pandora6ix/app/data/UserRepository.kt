@@ -5,6 +5,7 @@ import android.graphics.BitmapFactory
 import android.util.Base64
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.serializer
@@ -26,14 +27,20 @@ class UserRepository(private val api: ApiClient) {
 
     private val cache = HashMap<String, Bitmap?>()
     private val lock = Mutex()
+    private val avatarLocks = HashMap<String, Mutex>()
 
     suspend fun avatar(userId: String): Bitmap? {
         if (userId.isBlank()) return null
-        lock.withLock { if (cache.containsKey(userId)) return cache[userId] }
-        val bytes = runCatching { api.getBytes("/users/$userId/avatar") }.getOrNull()
-        val bitmap = bytes?.let { runCatching { BitmapFactory.decodeByteArray(it, 0, it.size) }.getOrNull() }
-        lock.withLock { cache[userId] = bitmap }
-        return bitmap
+        val avatarLock = lock.withLock { avatarLocks.getOrPut(userId) { Mutex() } }
+        return avatarLock.withLock {
+            lock.withLock { if (cache.containsKey(userId)) return cache[userId] }
+            val bytes = try { api.getBytes("/users/$userId/avatar") }
+                catch (cancelled: CancellationException) { throw cancelled }
+                catch (_: Exception) { return@withLock null }
+            val bitmap = bytes?.let { runCatching { BitmapFactory.decodeByteArray(it, 0, it.size) }.getOrNull() }
+            lock.withLock { cache[userId] = bitmap }
+            bitmap
+        }
     }
 
     /** 上传头像：压缩到 256px、JPEG 质量 82，再编码为 data URL */

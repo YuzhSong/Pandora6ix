@@ -35,6 +35,8 @@ data class AssignmentDto(
     val taskId: String = "",
     val recipientUserId: String = "",
     val executionStatus: String = "",
+    /** Optional current backend field; executionStatus continues to drive completion authorization. */
+    val workStatus: String? = null,
     val progressPercent: Int = 0,
     val activatedAt: String? = null,
     val completionSource: String? = null,
