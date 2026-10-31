@@ -1,3 +1,4 @@
+import { followingOrganization } from './personnelHistory.ts'
 import type { AdminData, AdminRepository, PersonInput } from './types.ts'
 import type { CreatedAccountReceipt } from './accountHandoff.ts'
 import { errorMessage } from '../api/feedback.ts'
@@ -5,7 +6,7 @@ import { validatePersonnelProfile } from './personnelProfile.ts'
 import { validatePassword } from '../api/auth.ts'
 import { organizationFilterOptions } from './organizationHierarchy.ts'
 import { canHaveSupervisor, reportingError } from './supervisors.ts'
-import { generateInitialPassword, personnelRole, populatedPersonnelRow, preparePersonnelRow, validateRoleOrganization } from './personnelCreation.ts'
+import { generateLoginName, generateInitialPassword, personnelRole, populatedPersonnelRow, preparePersonnelRow, validateRoleOrganization } from './personnelCreation.ts'
 import { roleLabels } from './types.ts'
 
 export const bulkPersonnelHeaders = ['姓名', '登录账号', '性别', '身份证号', '电话号码', '业务角色', '所属组织', '直属上级账号']
@@ -54,7 +55,7 @@ export function previewBulkPersonnel(text: string, data: AdminData): BulkPersonn
       const [rawName, rawLogin, rawGender, rawIdentity, rawPhone, rawJob, rawOrganization, rawSupervisor] = entry
       const initialPassword = generateInitialPassword()
       const role = personnelRole(rawJob.trim())
-      const displayName = rawName.trim(), loginName = rawLogin.trim(), jobTitle = roleLabels[role]
+      const displayName = rawName.trim(), loginName = rawLogin.trim() || generateLoginName(displayName, Array.from(loginNames, loginName => ({ loginName }))), jobTitle = roleLabels[role]
       if (!displayName || displayName.length > 128 || !loginName || loginName.length > 128 || jobTitle.length > 128) throw new Error('姓名/账号必填，姓名、账号和职位最多 128 字符')
       if (loginNames.has(loginName.toLowerCase())) throw new Error('登录账号在现有人员或导入文件中重复')
       loginNames.add(loginName.toLowerCase())
@@ -68,10 +69,11 @@ export function previewBulkPersonnel(text: string, data: AdminData): BulkPersonn
       const supervisorLogin = canHaveSupervisor([role]) ? rawSupervisor.trim() : ''
       const supervisor = data.people.find(person => person.loginName === supervisorLogin)
       if (supervisorLogin && !supervisor) throw new Error('直属上级账号不存在，请先创建并配置负责人角色')
-      validateRoleOrganization(data, role, matches[0]?.value ?? '')
+      const orgUnitId = matches[0]?.value ?? followingOrganization(data, [role], supervisor?.id ?? '') ?? ''
+      validateRoleOrganization(data, role, orgUnitId)
       const reporting = reportingError(data.people, undefined, [role], supervisor?.id ?? '')
       if (reporting) throw new Error(reporting)
-      rows.push({ rowNumber, initialPassword, input: { displayName, loginName, jobTitle, orgUnitId: matches[0]?.value ?? '', supervisorId: supervisor?.id ?? null, roles: [role], ...profile } })
+      rows.push({ rowNumber, initialPassword, input: { displayName, loginName, jobTitle, orgUnitId, supervisorId: supervisor?.id ?? null, roles: [role], ...profile } })
     } catch (error) { errors.push(`第 ${rowNumber} 行：${error instanceof Error ? error.message : '资料不符合要求'}`) }
   })
   return { rows, errors }

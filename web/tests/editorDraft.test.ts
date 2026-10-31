@@ -2,6 +2,23 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createEditorDraft } from '../src/data/editorDraft.ts'
 import { createSeed } from '../src/data/seed.ts'
+import { generateLoginName } from '../src/data/personnelCreation.ts'
+
+test('new person starts without an account until name entry; existing account is preserved', () => {
+  const data = createSeed()
+  assert.equal(createEditorDraft({ kind: 'person' }, data).loginName, '')
+  const person = data.people[0]
+  assert.equal(createEditorDraft({ kind: 'person', item: person }, data).loginName, person.loginName)
+})
+
+test('name pinyin handles surnames, latin names, empty input and collisions', () => {
+  assert.equal(generateLoginName('沈予宁', []), 'shenyuning')
+  assert.equal(generateLoginName('单明', []), 'shanming')
+  assert.equal(generateLoginName('吕明', []), 'lvming')
+  assert.equal(generateLoginName(' Alice Smith ', []), 'alicesmith')
+  assert.equal(generateLoginName('', []), '')
+  assert.equal(generateLoginName('小明', [{ loginName: 'XIAOMING' }, { loginName: 'xiaoming2' }]), 'xiaoming3')
+})
 
 test('selected department proposes a team; selected company proposes a department', () => {
   const data = createSeed()

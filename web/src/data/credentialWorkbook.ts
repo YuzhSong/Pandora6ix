@@ -10,14 +10,16 @@ export async function credentialWorkbook(accounts: readonly CreatedAccountReceip
     { header: '姓名', width: 20 },
     { header: '登录账号', width: 44 },
     { header: '初始密码', width: 36 },
+    { header: '企业域', width: 24 },
+    { header: '登录名', width: 32 },
   ]
-  for (const account of accounts) sheet.addRow([account.displayName, accountIdentifier(account), account.initialPassword])
+  for (const account of accounts) sheet.addRow([account.displayName, accountIdentifier(account), account.initialPassword, account.enterpriseDomain ?? '', account.loginName])
   sheet.eachRow(row => {
     row.height = 24
     row.eachCell(cell => { cell.numFmt = '@'; cell.alignment = { vertical: 'middle', wrapText: true } })
   })
   sheet.getRow(1).font = { bold: true, color: { argb: 'FF3C3B31' } }
   sheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF0B6' } }
-  sheet.autoFilter = { from: 'A1', to: `C${sheet.rowCount}` }
+  sheet.autoFilter = { from: 'A1', to: `E${sheet.rowCount}` }
   return new Uint8Array(await workbook.xlsx.writeBuffer())
 }

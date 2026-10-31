@@ -28,7 +28,7 @@ test('CSV template, BOM, quoted commas/newlines and escaped quotes prevalidate w
   assert.deepEqual(result.errors, []); assert.equal(result.rows[0].input.displayName, '名字,带"引号"\n换行')
   assert.equal(result.rows[0].input.gender, 'MALE'); assert.deepEqual(result.rows[0].input.roles, ['EMPLOYEE'])
   assert.equal(result.rows[0].input.idNumber, '000000200001010001'); assert.equal(result.rows[0].input.phoneNumber, '00000000001')
-  assert.equal(result.rows[0].initialPassword.length, 16)
+  assert.equal(result.rows[0].initialPassword.length, 12)
   assert.ok(!bulkPersonnelHeaders.includes('初始密码'))
   assert.equal(bulkPersonnelHeaders.length, 8)
 })
@@ -75,7 +75,7 @@ test('eight-column CSV imports generate hidden passwords and retain invalid fiel
   const data = createSeed(), department = data.units.find(unit => unit.kind === 'DEPARTMENT')!
   const row = line().split(','); row[2] = 'FEMALE'; row[6] = department.name
   const imported = importPersonnelTable(header + '\n' + row.join(','), data)
-  assert.equal(imported[0][2].length, 16); assert.equal(imported[0][3], '女'); assert.equal(imported[0][7], department.id)
+  assert.equal(imported[0][2].length, 12); assert.equal(imported[0][3], '女'); assert.equal(imported[0][7], department.id)
   assert.deepEqual(previewPersonnelTable(imported, data).errors, [])
   row[2] = '未知'; row[3] = ''; row[6] = '不存在的组织'; row[7] = 'missing-manager'
   const correction = importPersonnelTable(header + '\n' + row.join(','), data)

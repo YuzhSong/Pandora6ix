@@ -1,10 +1,11 @@
+import { followingOrganization } from '../data/personnelHistory.ts'
 import { supervisorOptionLabel } from '../data/personnelDisplay.ts'
 import { Select } from './Select.tsx'
 import type { AdminData } from '../data/types.ts'
 import { bulkPersonnelHeaders } from '../data/bulkPersonnel.ts'
 import { organizationFilterOptions } from '../data/organizationHierarchy.ts'
 import { canHaveSupervisor, supervisorCandidates } from '../data/supervisors.ts'
-import { businessRoleOptions, personnelRole, preparePersonnelRow } from '../data/personnelCreation.ts'
+import { businessRoleOptions, generateLoginName, personnelRole, preparePersonnelRow } from '../data/personnelCreation.ts'
 
 export function BulkPersonnelGrid({ rows, data, onChange }: { rows: string[][]; data: AdminData; onChange: (rows: string[][]) => void }) {
   const organizations = organizationFilterOptions(data.units)
@@ -12,6 +13,9 @@ export function BulkPersonnelGrid({ rows, data, onChange }: { rows: string[][]; 
     onChange(rows.map((cells, index) => {
       if (index !== row) return cells
       const next = cells.map((cell, offset) => offset === column ? value : cell)
+      const accounts = [...data.people, ...rows.filter((_, i) => i !== row).map(item => ({ loginName: item[1] }))]
+      if (column === 0 && (!cells[1] || cells[1] === generateLoginName(cells[0], accounts))) next[1] = generateLoginName(value, accounts)
+      if (column === 8 && businessRoleOptions.some(option => option.value === next[6] || option.label === next[6] || !next[6])) { const org = followingOrganization(data, [personnelRole(next[6])], data.people.find(person => person.loginName === value)?.id ?? ''); if (org) next[7] = org }
       if (column === 6 && !canHaveSupervisor([personnelRole(value)])) next[8] = ''
       return preparePersonnelRow(next)
     }))

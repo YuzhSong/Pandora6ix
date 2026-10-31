@@ -10,8 +10,8 @@ test('generated passwords meet policy, differ per person and remain stable durin
   assert.equal(new Set(passwords).size, 100)
   for (const password of passwords) {
     validatePassword(password)
-    assert.equal(password.length, 16)
-    assert.match(password, /[A-Z]/); assert.match(password, /[a-z]/); assert.match(password, /[0-9]/); assert.match(password, /[!@#$%*_-]/)
+    assert.equal(password.length, 12)
+    assert.match(password, /^[0-9]{12}$/)
   }
   const row = preparePersonnelRow(['新员工', '', '', '', '', '', '', '', ''])
   assert.equal(preparePersonnelRow([...row.slice(0, 1), 'account', ...row.slice(2)])[2], row[2])
@@ -53,4 +53,26 @@ test('imported founder rows cannot retain an invisible supervisor', () => {
   const checked = previewPersonnelTable(imported, data)
   assert.deepEqual(checked.errors, [])
   assert.equal(checked.rows[0].input.supervisorId, null)
+})
+
+test('batch employee without organization inherits supervisor organization, explicit organization wins', () => {
+  const data = createSeed(), supervisor = data.people.find(p => p.roles.includes('TEAM_LEAD'))!
+  const row = ['新人', 'inherit-org-user', '', '男', '000000200001010001', '00000000001', '员工', '', supervisor.loginName]
+  const inferred = previewPersonnelTable([row], data)
+  assert.deepEqual(inferred.errors, [])
+  assert.equal(inferred.rows[0].input.orgUnitId, supervisor.orgUnitId)
+  row[7] = data.units.find(unit => unit.kind === 'COMPANY')!.id
+  const explicit = previewPersonnelTable([row], data)
+  assert.deepEqual(explicit.errors, [])
+  assert.equal(explicit.rows[0].input.orgUnitId, row[7])
+})
+
+test('bulk missing accounts use pinyin and avoid existing and earlier rows', () => {
+  const data = createSeed(), supervisor = data.people.find(p => p.roles.includes('TEAM_LEAD'))!
+  data.people[0].loginName = 'XIAOMING'
+  const row = ['小明', '', '', '男', '000000200001010001', '00000000001', '员工', '', supervisor.loginName]
+  const checked = previewPersonnelTable([row, [...row]], data)
+  assert.deepEqual(checked.errors, [])
+  assert.deepEqual(checked.rows.map(item => item.input.loginName), ['xiaoming2', 'xiaoming3'])
+  for (const item of checked.rows) assert.match(item.initialPassword, /^[0-9]{12}$/)
 })

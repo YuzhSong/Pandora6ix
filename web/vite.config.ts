@@ -9,5 +9,5 @@ export default defineConfig(({ mode }) => {
     process.env.BACKEND_PROXY_TARGET || env.BACKEND_PROXY_TARGET || 'http://127.0.0.1:8080',
     process.env.BACKEND_HEALTH_PATH || env.BACKEND_HEALTH_PATH || '/health',
   )
-  return { plugins: [react()], server: { proxy } }
+  return { plugins: [react()], optimizeDeps: { include: ['exceljs'] }, server: { proxy } }
 })

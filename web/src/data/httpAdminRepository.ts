@@ -130,7 +130,7 @@ export function createHttpAdminRepository(client: ReturnType<typeof createApiCli
       checkPersonnelWrite()
       return write(`/admin/users/${encodeURIComponent(personId)}/job-change`, { expectedVersion, jobTitle: input.jobTitle, roles: input.roles, orgUnitId: input.orgUnitId || null, supervisorUserId: input.supervisorId }, value => {
         const result = person(value)
-        if (result.id !== personId || result.employmentStatus === 'DEPARTED') throw invalid()
+        if (result.id !== personId || result.employmentStatus === 'DEPARTED' || result.orgUnitId !== input.orgUnitId || result.supervisorId !== input.supervisorId || result.version !== expectedVersion + 1 || JSON.stringify([...result.roles].sort()) !== JSON.stringify([...input.roles].sort())) { uncertainPersonnelWrite = true; throw new Error('服务器返回的岗位与提交内容不一致，请刷新并核对组织、上级和角色，勿重复提交。') }
         return result
       }, (data, value) => { data.people = replace(data.people, value) }, false)
     },
