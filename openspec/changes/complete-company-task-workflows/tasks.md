@@ -22,7 +22,7 @@
 - [x] 6.2 Verify backend storage and other-user reads plus Android display; commit item 6 locally.
 
 ## 7. Theme persistence
-- [ ] 7.1 Persist and restore per-account theme, verify full restart/account isolation and commit item 7 locally.
+- [x] 7.1 Persist and restore per-account theme, verify full restart/account isolation and commit item 7 locally.
 
 ## 8. Final verification
 - [ ] 8.1 Audit all seven requirements, run relevant checks and strict OpenSpec validation; report seven commits and any verified deployment limits.

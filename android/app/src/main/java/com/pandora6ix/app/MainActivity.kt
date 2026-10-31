@@ -316,8 +316,16 @@ fun PandoraApp(
         // 进度记录浮层：从任务详情进入，显示当前任务的执行关系
         var progressTaskId by remember { mutableStateOf<String?>(null) }
         var fontScale by rememberSaveable { mutableStateOf(1f) }
-        var themeKey by rememberSaveable { mutableStateOf("warm") }
         var currentUser by remember { mutableStateOf<UserDto?>(null) }
+        val appearanceContext = LocalContext.current
+        val themePreferences = remember(appearanceContext) {
+            val prefs = appearanceContext.getSharedPreferences("pandora_appearance", Context.MODE_PRIVATE)
+            ThemePreferences({ key -> prefs.getString(key, null) },
+                { key, value -> prefs.edit().putString(key, value).apply() }, appThemes.map { it.key }.toSet())
+        }
+        val themeOwner = currentUser?.id ?: session.ownerId
+        var themeKey by remember(themeOwner) { mutableStateOf(themePreferences.theme(themeOwner)) }
+
         var showTaskSummary by rememberSaveable(currentUser?.id) { mutableStateOf(false) }
         val calendarUiState = key(currentUser?.id) { rememberSaveableStateHolder() }
         // 子页面替换“我的”时仍保留滚动位置，退出登录或切换账号时重置。
@@ -674,7 +682,9 @@ fun PandoraApp(
                         leadMinutes = notifyLeadMinutes,
                         onLeadMinutesChange = { notifyLeadMinutes = it; notifyPrefs.leadMinutes = it },
                         themeKey = themeKey,
-                        onThemeChange = { themeKey = it },
+                        onThemeChange = { selected ->
+                            themeOwner?.let { owner -> themePreferences.select(owner, selected); themeKey = selected }
+                        },
                         auth = auth,
                         onLoggedOut = { currentUser = null },
                         onClose = { showSettings = false }
