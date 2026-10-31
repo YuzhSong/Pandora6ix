@@ -24,6 +24,7 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // 云端后端基址；本地联调可在 debug 构建改为 http://10.0.2.2:8080/api/v1（模拟器访问开发机）
         buildConfigField("String", "API_BASE_URL", "\"https://www.rainycode.cn/api/v1\"")
         buildConfigField("String", "JPUSH_APP_KEY", "\"$jpushAppKey\"")
@@ -31,6 +32,16 @@ android {
     }
 
     buildFeatures { compose = true; buildConfig = true }
+
+    // Instrumentation owns a disposable app, never the user's installed debug app.
+    buildTypes {
+        create("avatarQa") {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".avatarqa"
+            matchingFallbacks += "debug"
+        }
+    }
+    testBuildType = "avatarQa"
 
     packaging {
         resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" }
@@ -58,4 +69,8 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     testImplementation("junit:junit:4.13.2")
+    androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    add("avatarQaImplementation", libs.androidx.compose.ui.test.manifest)
 }

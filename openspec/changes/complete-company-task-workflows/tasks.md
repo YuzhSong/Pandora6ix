@@ -25,7 +25,7 @@
 - [x] 7.1 Persist and restore per-account theme, verify full restart/account isolation and commit item 7 locally.
 
 ## 8. Final verification
-- [ ] 8.1 Audit all seven requirements, run relevant checks and strict OpenSpec validation; report seven commits and any verified deployment limits.
+- [x] 8.1 Audit all seven requirements, run relevant checks and strict OpenSpec validation; report seven commits and any verified deployment limits.
 
 ## 9. Confirmed UI follow-up
 - [x] 9.1 Resolve existing recipient names on editor open, with authorized server projection and legacy compatibility.

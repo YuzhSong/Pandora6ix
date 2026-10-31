@@ -14,7 +14,7 @@
 - Details now use a white segmented information panel with top-right edit and a separate execution panel. Real current-user capabilities are passed through both calendar and summary entry points.
 - TaskPatch supports proposed recipientIds. V15 current_member retains removed assignments and history; reads and direct assignment mutations reject retired membership. Approval validates proposed recipients against the creator's current management scope.
 - Repeated range editing submits superior-reviewed proposals per occurrence instead of applying changes immediately. Current occurrence versions and date anchors remain checked.
-- Android assemble and 104 existing unit tests passed for the initial layout/recipient edits. A subsequent small pending-edit status display still needs a final build.
+- Android assemble and 104 existing unit tests passed for the initial layout/recipient edits. The subsequent pending-edit indicator is included in the final passing build recorded below.
 - Two new integration flows passed, then seven focused new/existing approval regression tests passed with zero failures. Logs: C:/Users/34755/AppData/Local/Temp/pandora-edit-backend.log and pandora-edit-regressions.log.
 - Title, description, time/date, priority, tags/primary tag, recipients, derived personal/delegated kind and founder publication visibility now submit through the complete form. Existing primary-tag ordering is retained. Repeated occurrences support single/future time/content changes through the established range form; creation recurrence-pattern controls remain creation-only, rather than silently accepting unapplied changes.
 - Repeated-edit regression expectations now require superior approval. Sixteen edit-related integration tests passed, covering new participant/kind changes, publication denial, range approvals, unchanged effective content, rejection, stale versions and approval races. A further focused test confirms a retired member cannot directly PATCH its old assignment even with the current version. Logs: pandora-edit-regressions.log (16 passed) and pandora-edit-retired.log (1 passed).
@@ -28,7 +28,7 @@
 - Existing backend and repository APIs already implement the acceptance state machine; reused them without adding a business endpoint.
 - Android assembleDebug and testDebugUnitTest passed (104 tests). Log: C:/Users/34755/AppData/Local/Temp/pandora-completion-android.log.
 - Five integration lifecycle tests passed: realDelegatedApprovalAndPerRecipientAcceptanceDoNotCompleteOtherRecipients, delegatedCompletionRequiresCreatorAcceptancePerRecipient, rejectedAcceptanceReactivatesAssignmentWithoutRewritingHistory, progressAndAcceptanceNotifyCreatorAndRecipientWithoutDuplicates and textProgressAndWorkStatusPreserveSuperiorAcceptance. They verify authorized per-recipient acceptance, rejection/reactivation/history, unauthorized and repeated decisions, and notification deduplication. Log: C:/Users/34755/AppData/Local/Temp/pandora-completion-backend.log.
-- Latest APK installed. Visual traversal was interrupted by concurrent editor activity on the shared emulator; stopped navigation rather than changing the user's form. Buttons are source-reviewed and compiled, but their rendered state has not yet been inspected. No real production acceptance/rejection was performed; lifecycle mutations were tested in the isolated integration database.
+- Latest APK installed. Initial traversal failed because the UI harness could reuse a stale dump; this was subsequently corrected. The rendered per-recipient acceptance buttons and real names were inspected in inline-execution-names-final.png. No real production acceptance/rejection was performed; lifecycle mutations were tested in the isolated integration database.
 
 ## Item 4 — rejected publication resubmission
 
@@ -36,12 +36,12 @@
 - The form uses the new-task creation path with a new idempotency key and a review-specific resubmit draft file. It neither PATCHes the old task nor overwrites the regular task draft. Missing/malformed snapshots show an actionable error and review reload. Current backend recipient/tag and deadline checks still apply at publication.
 - Two Android tests cover snapshot field preservation, primary-tag order and rejection of another user's/non-rejected/EDIT/missing-snapshot input. Final Android assemble plus all 106 tests passed. Log: C:/Users/34755/AppData/Local/Temp/pandora-resubmit-android.log.
 - Backend rejectedPublicationCanBeCopiedToNewTaskWithoutChangingOldReview passed: distinct task/review IDs, duplicate retry returning the same new task, byte-equivalent old review data, preserved old rejected task/result, denied unrelated review read and successful new approval. Log: C:/Users/34755/AppData/Local/Temp/pandora-resubmit-backend.log.
-- UI flow has been source-reviewed and compiled; shared emulator editor activity prevents safe visual traversal at this point. No production resubmission was performed. Historical snapshots without a recurrence rule can only prefill their recorded occurrence content; no rule is guessed from a display label.
+- The rendered rejected-result action and prefilled new-task form were subsequently inspected (rejected-result-resubmit-followup.png and rejected-prefilled-form-followup.png). No production resubmission was performed. Historical snapshots without a recurrence rule can only prefill their recorded occurrence content; no rule is guessed from a display label.
 
 ## Item 5 — profile action ordering
 
 - ProfileScreen now composes personal information, approval entry, the settings group (including the existing authorized tag-management action), then organization information. Removed both About Pandora title and generated explanatory paragraph. Existing permissions, badges and callbacks are unchanged.
-- Source ordering and whitespace inspected; Android assembleDebug and all 106 unit tests passed. Log: C:/Users/34755/AppData/Local/Temp/pandora-profile-order.log. Strict OpenSpec validation passed. No new mirror test added for this pure layout move. Rendered verification remains in the final UI audit to avoid interrupting shared-emulator editing.
+- Source ordering and whitespace inspected; Android assembleDebug and all 106 unit tests passed. Log: C:/Users/34755/AppData/Local/Temp/pandora-profile-order.log. Strict OpenSpec validation passed. No new mirror test added for this pure layout move. Rendered ordering was subsequently checked in profile-order-verified.png.
 
 ## Item 6 — shared persistent avatars
 
@@ -70,3 +70,38 @@
 - Harness correction: startup uiautomator failures could leave an old XML file, explaining some earlier aborted traversals attributed to concurrent activity. The local helper now deletes its own old dump and retries until a fresh parseable tree is available. Earlier failed traversals are not counted as successful checks. Subsequent execution-name checks used fresh dumps.
 - Valid local screenshots under C:/Users/34755/AppData/Local/Pandora/summary-panels-20261031/: recipient-names-followup.png, white-tag-picker-followup.png, white-time-picker-followup.png, inline-execution-names-final.png, review-center-followup.png, review-submitted-followup.png, review-detail-followup.png. Also verified the rejected-result resubmission button opens a prefilled new-task form and closed without publishing: rejected-result-resubmit-followup.png and rejected-prefilled-form-followup.png.
 - Latest APK installed for testing. Backend changes remain local and were not deployed to the cloud. No production task acceptance, edit or resubmission was executed.
+
+## Final requirement-by-requirement audit — 2026-10-31
+
+Previous goal turn produced the completed UI audit documentation and local commit; this continuation adds device-level avatar evidence and completes integration housekeeping.
+
+| Requirement | Authoritative evidence | Result |
+|---|---|---|
+| Remove prior related self-created branches | Verified complete-history bundle with 12 refs, and git show-ref confirms all 12 task/integration refs absent | Done; other historical project worktrees preserved |
+| Android-syz PR merged to dev | GitHub REST PR 46: closed, merged=true, merge SHA 47361b8c6351e5dba5fcbc8f1a98346c2a455d77; user authorized review exception | Done |
+| backend-syz updated from remote dev | Fresh git fetch; origin/dev is the merge SHA above; merge-base --is-ancestor succeeds | Done; no new branch |
+| 1. Company panel public scope | ed31828; V14/default-private, founder-only publication; companyPanelContainsOnlyExplicitPublicTasksAndDoesNotGrantActions | Done, isolated enterprise/role tests |
+| 2. Full editable task information and approval | e4141e9; TaskPatch/TaskEntrySheet fields, current-member history, proposal-before-effective updates, single/future occurrence review tests, white information/execution panels | Done; recurrence-rule creation is not silently presented as an editable occurrence field |
+| 3. Per-recipient completion review | 9cac0ad; five lifecycle tests, matching pending requests/version/actions; actual rendered acceptance/rejection controls inspected | Done |
+| 4. New publication from rejected result | f290017; immutable snapshot prefill, distinct task/review IDs, retry idempotency and unchanged old result tested; rendered prefilled form inspected | Done |
+| 5. Profile ordering and About removal | 315485e; ProfileScreen order and profile-order-verified.png | Done |
+| 6. Persistent shared photos | 7277fbc; existing avatar_image persistence and manager/fresh-session byte reads tested; actual Android transport/decoder/Compose/cache refresh test added | Done; system camera/gallery picker itself is not automated |
+| 7. Theme restoration | 23fbb0c; account-separated preferences tests, real force-stop/relaunch mint comparison, warm restored | Done |
+| Separate local commit per numbered task before next | git log confirms the seven SHAs above in order | Done; no backend branch push or merge requested |
+| Merge housekeeping | Real OpenSpec CLI archived the three PR46 changes and synced main specs; strict validation passes | Done, local archival commit |
+
+### Device avatar regression
+
+`AvatarDeviceTest.uploadRefreshAndFreshReaderRenderTheSharedPhoto` uses an isolated host fixture, actual Android JPEG compression and Bitmap decoding, and actual Compose pixel assertions. It verifies 512x320 scaling to 256x160; a separately authenticated reader; immediate upload revision/cache replacement; already-visible independent reader refresh after the 30-second positive-cache TTL; and bytes read by a new repository. It writes no production avatar, task, journal or credentials. Real backend storage/authorization remain independently verified by integration tests; the fixture does not purport to validate server authorization.
+
+### Test-runner side effect and correction
+
+The initial connectedDebugAndroidTest runner passed but its default UTP cleanup uninstalled the real debug app. UTP logs confirm uninstall_after_test=true. This cleared local session/preferences/drafts; there was no app-data backup to restore the original session. The app was reinstalled, and the prior known warm theme is the default. The user must log in again; local drafts are not claimed recovered. The user was informed as soon as the side effect was confirmed. Remote business data and avatars were never changed.
+
+The retained regression is now wired exclusively to disposable avatarQa (application ID com.pandora6ix.app.avatarqa, label Pandora Avatar QA). This prevents UTP cleanup from removing the real app. Fixture sessions live in the test APK, are cleared in finally, and the temporary fixture service is stopped after testing. Run instructions are in android/test-tools/README.md.
+
+### Delivery and validation boundary
+
+Android assemble/unit tests: 110 passed; backend full package: 148 passed; web: 153 passed and production build passed (existing large-chunk advisory only). OpenAPI includes 69 operations. Final device-test outcome and package-preservation check are appended after the isolated run completes. All backend tests use isolated test storage. Camera/gallery chooser UI and the full global UI matrix are not claimed tested. The seven backend/Android functional commits and subsequent fixes remain local on backend-syz; production backend deployment is outside this request and has not occurred. New UI Design System is documentation only and has not been bulk applied.
+
+Final isolated run: `:app:assembleDebug :app:testDebugUnitTest :app:connectedAvatarQaAndroidTest` passed (110 unit tests + 1 device regression, 0 failures). Log: C:/Users/34755/AppData/Local/Temp/pandora-avatar-device-test.log. After cleanup, `pm list packages pandora` contains only com.pandora6ix.app; real app installation remains, disposable QA and test APKs are removed. Real MainActivity was relaunched to the login screen. No claim is made that its cleared original session/drafts were restored. OpenAPI 69 operations, workflow and all three synced specs validate strictly.
