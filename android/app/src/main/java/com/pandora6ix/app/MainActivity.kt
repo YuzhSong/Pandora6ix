@@ -2337,6 +2337,22 @@ private fun SummaryTaskDetail(id: String, repo: TaskRepository, tags: List<TagDt
             }
         }
     }
+    fun decideCompletion(request: CompletionRequestDto, decision: String) {
+        if (stageBusy) return
+        stageBusy = true; stageError = null
+        scope.launch {
+            try {
+                taskRepo.decideCompletion(requestId = request.id, decision = decision, expectedVersion = request.version,
+                    idempotencyKey = stageKey("decision:$decision", request.id))
+                onChanged()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+            } catch (error: ApiException) {
+                stageError = error.friendlyMessage()
+                if (error.httpStatus == 409) onChanged()
+            } catch (_: Exception) { stageError = "操作失败，请重试"
+            } finally { stageBusy = false }
+        }
+    }
     fun recordStage(assignment: AssignmentDto) {
         if (stageNote.isBlank()) { stageError = "请输入阶段性内容"; return }
         stageBusy = true; stageError = null
@@ -2406,7 +2422,19 @@ private fun SummaryTaskDetail(id: String, repo: TaskRepository, tags: List<TagDt
                         dto.authorizedAssignments.forEachIndexed { i, assignment ->
                             if (i > 0) HorizontalDivider(color = HairLine)
                             Text("执行人 ${i + 1} · ${executionStatusLabel(assignment.executionStatus)}", lineHeight = 22.sp)
+                            val pending = dto.completionRequests.lastOrNull { it.assignmentId == assignment.id && it.decision == "PENDING" }
+                            if ("DECIDE_COMPLETION" in assignment.allowedActions && pending != null) {
+                                pending.submittedNote?.takeIf { it.isNotBlank() }?.let { Text(it, lineHeight = 22.sp) }
+                                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    Button({ decideCompletion(pending, "ACCEPT") }, enabled = !stageBusy,
+                                        colors = ButtonDefaults.buttonColors(containerColor = ThemeButton)) { Text("验收通过") }
+                                    OutlinedButton({ decideCompletion(pending, "REJECT") }, enabled = !stageBusy) { Text("不通过") }
+                                }
+                            }
+
                         }
+                        stageError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp) }
+                        if (stageBusy) LinearProgressIndicator(Modifier.fillMaxWidth(), color = ThemeButton)
                         TextButton({ showDescDialog = true }) { Text(if (canUpdateTask) "更新执行进度" else "查看执行记录", color = ThemeButton) }
                     }
                 }

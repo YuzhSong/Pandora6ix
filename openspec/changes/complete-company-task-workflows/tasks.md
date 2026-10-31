@@ -7,8 +7,8 @@
 - [x] 2.2 Verify edit/approval/conflict flows, build and commit item 2 locally.
 
 ## 3. Completion acceptance
-- [ ] 3.1 Connect authorized acceptance/rejection controls and refreshed execution data.
-- [ ] 3.2 Verify complete acceptance/rejection lifecycle and commit item 3 locally.
+- [x] 3.1 Connect authorized acceptance/rejection controls and refreshed execution data.
+- [x] 3.2 Verify complete acceptance/rejection lifecycle and commit item 3 locally.
 
 ## 4. Rejected publication resubmission
 - [ ] 4.1 Prefill a new task from rejected submission below approval result without overwriting history.
