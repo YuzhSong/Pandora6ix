@@ -1893,12 +1893,18 @@ class BusinessApiIntegrationTests {
 
     @Test
     void avatarUploadsAndServesRealImageBytes() throws Exception {
-        String payload = "iVBORw0KGgo=";
+        String payload = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aHZkAAAAASUVORK5CYII=";
         String dataUrl = "data:image/png;base64," + payload;
         request("PUT", "/users/" + employee + "/avatar", employeeToken, fields("dataUrl", dataUrl), 204);
         var stored = rawBytes("GET", "/users/" + employee + "/avatar", employeeToken);
         assertEquals(200, stored.status());
         assertArrayEquals(Base64.getDecoder().decode(payload), Base64.getDecoder().decode(stored.body()));
+        assertEquals(dataUrl,db.entity("app_user",enterprise,employee).get("avatar_image"));
+        var managerRead=rawBytes("GET","/users/"+employee+"/avatar",managerToken);
+        assertEquals(200,managerRead.status());
+        assertArrayEquals(Base64.getDecoder().decode(payload),Base64.getDecoder().decode(managerRead.body()));
+        var freshSession=rawBytes("GET","/users/"+employee+"/avatar",session(employee));
+        assertArrayEquals(Base64.getDecoder().decode(payload),Base64.getDecoder().decode(freshSession.body()));
         // 未设置头像返回 404，客户端回退到姓名首字而不是占位假图
         assertEquals(404, rawBytes("GET", "/users/" + manager + "/avatar", employeeToken).status());
         // 他人头像可读取（审批详情要显示请求人/执行人真实头像），但不能代改

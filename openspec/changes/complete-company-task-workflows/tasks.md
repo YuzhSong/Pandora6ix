@@ -18,8 +18,8 @@
 - [x] 5.1 Move all settings above organization and remove About content; verify/build and commit item 5 locally.
 
 ## 6. Shared custom avatars
-- [ ] 6.1 Diagnose and repair upload/persistence/cache/shared rendering including camera and relaunch.
-- [ ] 6.2 Verify backend storage and other-user reads plus Android display; commit item 6 locally.
+- [x] 6.1 Diagnose and repair upload/persistence/cache/shared rendering including camera and relaunch.
+- [x] 6.2 Verify backend storage and other-user reads plus Android display; commit item 6 locally.
 
 ## 7. Theme persistence
 - [ ] 7.1 Persist and restore per-account theme, verify full restart/account isolation and commit item 7 locally.

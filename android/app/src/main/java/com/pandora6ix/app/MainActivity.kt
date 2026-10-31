@@ -1,5 +1,6 @@
 package com.pandora6ix.app
 
+import com.pandora6ix.app.ui.components.RemoteAvatar
 import android.Manifest
 import android.content.Context
 import android.content.Intent
@@ -56,6 +57,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.asImageBitmap
@@ -640,17 +642,17 @@ fun PandoraApp(
             Surface(Modifier.padding(padding).fillMaxSize(), color = theme.background) {
                 when {
                     homeDetail?.kind == "TASK" && homeDetail?.id != null -> SummaryTaskDetail(
-                        homeDetail!!.id!!, taskRepo, serverTags, currentUser?.businessTimezone, currentUser,
+                        homeDetail!!.id!!, taskRepo, serverTags, currentUser?.businessTimezone, currentUser, userRepo,
                         onBack = { homeDetail = null }, onChanged = { calRetry++ })
                     homeDetail != null -> HomeItemDetailScreen(dashboardRepo, homeDetail!!) { homeDetail = null }
-                    journalDetailId != null -> JournalDetailScreen(journalRepo, journalDetailId!!, currentUser?.businessTimezone) { journalDetailId = null }
+                    journalDetailId != null -> JournalDetailScreen(journalRepo, journalDetailId!!, currentUser?.businessTimezone, currentUser, userRepo) { journalDetailId = null }
                     showTaskSummary -> key(currentUser!!.id) {
                         TaskSummaryFlow(
                             currentUser!!, calendarRepo, taskRepo, journalRepo, userRepo,
                             taskDetail = { id, onBack, onChanged ->
-                                SummaryTaskDetail(id, taskRepo, serverTags, currentUser?.businessTimezone, currentUser, onBack) { onChanged(); calRetry++ }
+                                SummaryTaskDetail(id, taskRepo, serverTags, currentUser?.businessTimezone, currentUser, userRepo, onBack) { onChanged(); calRetry++ }
                             },
-                            journalDetail = { id, onBack -> JournalDetailScreen(journalRepo, id, currentUser?.businessTimezone, onBack) },
+                            journalDetail = { id, onBack -> JournalDetailScreen(journalRepo, id, currentUser?.businessTimezone, currentUser, userRepo, onBack) },
                             onClose = { showTaskSummary = false }
                         )
                     }
@@ -705,7 +707,7 @@ fun PandoraApp(
                             } catch (_: Exception) { /* Existing detail remains available for retry. */ }
                         }
                         val dto = taskDtoById[detailId]
-                        DetailScreen(detailId, dto, serverTags, taskRepo, onBack = { detail = null }, onChanged = { calRetry++ }, businessTimezone = currentUser?.businessTimezone, currentUser = currentUser)
+                        DetailScreen(detailId, dto, serverTags, taskRepo, onBack = { detail = null }, onChanged = { calRetry++ }, businessTimezone = currentUser?.businessTimezone, currentUser = currentUser, userRepo = userRepo)
                     }
                     else -> AnimatedContent(current, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "page") { target ->
                         when (target) {
@@ -719,7 +721,7 @@ fun PandoraApp(
                                 } else if (item.taskId.isNotBlank()) detail = item.taskId
                             })
                             Route.VIEW -> calendarUiState.SaveableStateProvider("calendar") { CalendarScreen(CalendarMode.valueOf(modeName), date, taskItems, canCreatePersonal, canCreateDelegated, serverTags, taskRepo, { modeName = it.name }, { dateKey = "${it.year}-${it.month}-${it.day}" }, { calRetry++ }, { detail = it.id }, taskScope = taskScope, onTaskScopeChange = { taskScope = it; calNotice = null }, currentUser = currentUser, canReviewTasks = canReviewTasks, businessTimezone = currentUser?.businessTimezone, loading = calLoading, error = calError, onRetry = { calRetry++ }, notice = calNotice, onOpenSummary = { showTaskSummary = true }) }
-                            Route.LOGS -> LogsScreen(journalRepo, serverTags.toList(), currentUser?.businessTimezone) { journalDetailId = it }
+                            Route.LOGS -> LogsScreen(journalRepo, serverTags.toList(), currentUser?.businessTimezone, currentUser, userRepo) { journalDetailId = it }
                             Route.AI -> AiMapScreen()
                             Route.ME -> ProfileScreen(currentUser!!, notifyMaster, showReviewCenter, reviewBadgeCount, tagManager, userRepo, scrollState = profileScrollState, onOpenTagManage = { showTagManage = true }, onOpenReviews = { showReviews = true }, onOpenSettings = { showSettings = true })
                         }
@@ -1428,7 +1430,7 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
 private data class EntryDraft(val entryId: String?, val content: String)
 
 @OptIn(ExperimentalLayoutApi::class)
-@Composable private fun LogsScreen(repo: JournalRepository, availableTags: List<TagDto>, businessTimezone: String?, onOpen: (String) -> Unit) {
+@Composable private fun LogsScreen(repo: JournalRepository, availableTags: List<TagDto>, businessTimezone: String?, currentUser: UserDto?, userRepo: UserRepository, onOpen: (String) -> Unit) {
     var expandedLogs by rememberSaveable { mutableStateOf(false) }
     var filterOpen by rememberSaveable { mutableStateOf(false) }
     // null = 全部日期；否则为具体业务日期（iso），避免用展示文案做筛选键
@@ -1667,6 +1669,7 @@ private data class EntryDraft(val entryId: String?, val content: String)
                 }
                 items(if (expandedLogs) filteredJournals else filteredJournals.take(5)) { j ->
                     JournalCard(
+                        currentUser = currentUser, userRepo = userRepo,
                         journal = j,
                         businessTimezone = businessTimezone,
                         enabled = !publishing,
@@ -1866,6 +1869,8 @@ private fun TagChips(tags: List<TagDto>, primaryTagId: String?) {
 @Composable
 private fun JournalCard(
     journal: JournalDto,
+    currentUser: UserDto?,
+    userRepo: UserRepository,
     businessTimezone: String?,
     enabled: Boolean,
     onEdit: () -> Unit,
@@ -1882,6 +1887,8 @@ private fun JournalCard(
     ) {
         Column(Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                RemoteAvatar(journal.authorUserId, currentUser?.displayName.orEmpty(), 32.dp, 14.sp, userRepo)
+                Spacer(Modifier.width(10.dp))
                 Text(isoLabel(journal.workDate), fontWeight = FontWeight.Bold, fontSize = 15.sp, modifier = Modifier.weight(1f))
                 if (created.isNotBlank()) Text(created, fontSize = 12.sp, color = Ink.copy(alpha = .6f))
             }
@@ -1934,7 +1941,7 @@ private fun JournalSection(title: String, content: @Composable ColumnScope.() ->
 
 /** 日志详情：创建时间 / 标签 / 完成的工作 三个分区 */
 @Composable
-private fun JournalDetailScreen(repo: JournalRepository, journalId: String, businessTimezone: String?, onBack: () -> Unit) {
+private fun JournalDetailScreen(repo: JournalRepository, journalId: String, businessTimezone: String?, currentUser: UserDto?, userRepo: UserRepository, onBack: () -> Unit) {
     androidx.activity.compose.BackHandler(onBack = onBack)
     var journal by remember(journalId) { mutableStateOf<JournalDto?>(null) }
     var loading by remember(journalId) { mutableStateOf(true) }
@@ -1976,6 +1983,11 @@ private fun JournalDetailScreen(repo: JournalRepository, journalId: String, busi
                 Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    val authorName = if (j.authorUserId == currentUser?.id) currentUser.displayName.ifBlank { currentUser.name } else "成员 ${j.authorUserId.takeLast(4)}"
+                    RemoteAvatar(j.authorUserId, authorName, 40.dp, 17.sp, userRepo)
+                    Text(authorName, fontWeight = FontWeight.SemiBold)
+                }
                 JournalSection("创建时间") {
                     val created = com.pandora6ix.app.data.businessDateTimeLabel(j.publishedAt, businessTimezone)
                     Text(
@@ -2056,10 +2068,10 @@ private fun JournalDetailScreen(repo: JournalRepository, journalId: String, busi
 @Composable private fun ProfileScreen(user: UserDto, notificationsEnabled: Boolean, showReviewCenter: Boolean, pendingReviewCount: Int, canManageTags: Boolean, userRepo: UserRepository, scrollState: ScrollState, onOpenTagManage: () -> Unit, onOpenReviews: () -> Unit, onOpenSettings: () -> Unit) {
     val context = LocalContext.current
     val avatarScope = rememberCoroutineScope()
-    val prefs = remember { context.getSharedPreferences("profile_avatar_" + SessionStore(context).ownerId, Context.MODE_PRIVATE) }
-    var avatarType by remember { mutableStateOf(prefs.getString("avatarType", "color") ?: "color") }
-    var avatarColorIndex by remember { mutableStateOf(prefs.getInt("avatarColor", 0)) }
-    var avatarPath by remember { mutableStateOf(prefs.getString("avatarPath", "") ?: "") }
+    val prefs = remember(user.id) { context.getSharedPreferences("profile_avatar_" + user.id, Context.MODE_PRIVATE) }
+    var avatarType by remember(user.id) { mutableStateOf(prefs.getString("avatarType", "color") ?: "color") }
+    var avatarColorIndex by remember(user.id) { mutableStateOf(prefs.getInt("avatarColor", 0)) }
+    var avatarPath by remember(user.id) { mutableStateOf(prefs.getString("avatarPath", "") ?: "") }
     var showAvatarMenu by remember { mutableStateOf(false) }
     var showAvatarPalette by remember { mutableStateOf(false) }
     fun saveAvatar(type: String, colorIndex: Int = avatarColorIndex, path: String = avatarPath) {
@@ -2074,8 +2086,27 @@ private fun JournalDetailScreen(repo: JournalRepository, journalId: String, busi
                 Toast.makeText(context, "头像上传失败，请重试", Toast.LENGTH_SHORT).show()
                 return@launch
             }
-            runCatching { userRepo.uploadAvatar(user.id, bitmap) }
-                .onFailure { Toast.makeText(context, "头像上传失败，本地已生效", Toast.LENGTH_SHORT).show() }
+            try { userRepo.uploadAvatar(user.id, bitmap) }
+            catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (_: Exception) { Toast.makeText(context, "头像未同步，请重新选择后重试", Toast.LENGTH_SHORT).show() }
+        }
+    }
+    fun syncDefaultAvatar(colorIndex: Int) {
+        val bitmap = android.graphics.Bitmap.createBitmap(256, 256, android.graphics.Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(bitmap)
+        canvas.drawColor(AvatarPalette[colorIndex].toArgb())
+        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.WHITE
+            textSize = 100f
+            textAlign = android.graphics.Paint.Align.CENTER
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+        }
+        val name = user.displayName.ifBlank { user.name }.take(1).ifBlank { "我" }
+        canvas.drawText(name, 128f, 128f - (paint.ascent() + paint.descent()) / 2, paint)
+        avatarScope.launch {
+            try { userRepo.uploadAvatar(user.id, bitmap) }
+            catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (_: Exception) { Toast.makeText(context, "头像未同步，请重新选择后重试", Toast.LENGTH_SHORT).show() }
         }
     }
     fun importImage(uri: Uri?) {
@@ -2111,7 +2142,10 @@ private fun JournalDetailScreen(repo: JournalRepository, journalId: String, busi
     fun pickFromGallery() { galleryPermission.launch(photoPerms()) }
     var cameraFile by remember { mutableStateOf<File?>(null) }
     val takePicture = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
-        if (ok) cameraFile?.let { saveAvatar("photo", path = it.absolutePath) }
+        if (ok) cameraFile?.let {
+            saveAvatar("photo", path = it.absolutePath)
+            uploadAvatarFile(Uri.fromFile(it))
+        }
     }
     fun capturePhoto() {
         runCatching {
@@ -2132,7 +2166,9 @@ private fun JournalDetailScreen(repo: JournalRepository, journalId: String, busi
             Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = WarmCard), shape = RoundedCornerShape(20.dp), border = cardBorderIfBlended()) {
                 Row(Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.size(64.dp).clickable { showAvatarMenu = true }) {
-                        AvatarView(avatarType, avatarColorIndex, avatarPath, displayName, 64.dp)
+                        RemoteAvatar(user.id, displayName, 64.dp, 23.sp, userRepo) {
+                            AvatarView(avatarType, avatarColorIndex, avatarPath, displayName, 64.dp)
+                        }
                         Box(Modifier.size(20.dp).align(Alignment.BottomEnd).clip(CircleShape).background(Ink), contentAlignment = Alignment.Center) {
                             Icon(Icons.Default.PhotoCamera, "更换头像", Modifier.size(12.dp), tint = Color.White)
                         }
@@ -2163,7 +2199,7 @@ private fun JournalDetailScreen(repo: JournalRepository, journalId: String, busi
                             Box(
                                 Modifier.size(52.dp).clip(CircleShape).background(AvatarPalette[i])
                                     .border(2.dp, if (avatarType == "color" && avatarColorIndex == i) Ink else Color.Transparent, CircleShape)
-                                    .clickable { saveAvatar("color", colorIndex = i); showAvatarPalette = false },
+                                    .clickable { saveAvatar("color", colorIndex = i); syncDefaultAvatar(i); showAvatarPalette = false },
                                 contentAlignment = Alignment.Center
                             ) { Text(displayName.take(1), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 20.sp) }
                         }
@@ -2259,7 +2295,7 @@ private fun roleLabel(role: String): String = when (role.uppercase()) {
 @Composable private fun DetailCard(title: String, body: String, color: Color, maxLines: Int = 2, onClick: () -> Unit = {}) { Card(Modifier.fillMaxWidth().clickable(onClick = onClick), colors = CardDefaults.cardColors(containerColor = color.copy(alpha = .78f)), shape = RoundedCornerShape(16.dp)) { Column(Modifier.padding(14.dp)) { Text(title, fontWeight = FontWeight.Bold); Text(body, fontSize = 13.sp, color = Ink.copy(alpha = .75f), maxLines = maxLines, overflow = TextOverflow.Ellipsis) } } }
 /** Summary uses the same full task detail, with explicit loading/error before enabling actions. */
 @Composable
-private fun SummaryTaskDetail(id: String, repo: TaskRepository, tags: List<TagDto>, businessTimezone: String?, currentUser: UserDto?, onBack: () -> Unit, onChanged: () -> Unit) {
+private fun SummaryTaskDetail(id: String, repo: TaskRepository, tags: List<TagDto>, businessTimezone: String?, currentUser: UserDto?, userRepo: UserRepository, onBack: () -> Unit, onChanged: () -> Unit) {
     var task by remember(id) { mutableStateOf<TaskDto?>(null) }
     var loading by remember(id) { mutableStateOf(true) }
     var error by remember(id) { mutableStateOf<String?>(null) }
@@ -2286,12 +2322,12 @@ private fun SummaryTaskDetail(id: String, repo: TaskRepository, tags: List<TagDt
                 }
             }
         }
-        else -> DetailScreen(id, task, tags, repo, onBack, onChanged = { revision++; onChanged() }, businessTimezone = businessTimezone, currentUser = currentUser)
+        else -> DetailScreen(id, task, tags, repo, onBack, onChanged = { revision++; onChanged() }, businessTimezone = businessTimezone, currentUser = currentUser, userRepo = userRepo)
     }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
-@Composable private fun DetailScreen(title: String, dto: TaskDto?, availableTags: List<TagDto>, taskRepo: TaskRepository, onBack: () -> Unit, onChanged: () -> Unit, businessTimezone: String? = null, currentUser: UserDto? = null) {
+@Composable private fun DetailScreen(title: String, dto: TaskDto?, availableTags: List<TagDto>, taskRepo: TaskRepository, onBack: () -> Unit, onChanged: () -> Unit, businessTimezone: String? = null, currentUser: UserDto? = null, userRepo: UserRepository? = null) {
     val isLog = title.startsWith("日志 · ")
     val logContent = if (isLog) title.substringAfter("§", "") else null
     val displayTitle = dto?.title ?: if (isLog) title.substringBefore("§") else title
@@ -2419,7 +2455,12 @@ private fun SummaryTaskDetail(id: String, repo: TaskRepository, tags: List<TagDt
                         if (dto.authorizedAssignments.isEmpty()) Text("暂无可见执行关系", color = Ink.copy(alpha = .7f))
                         dto.authorizedAssignments.forEachIndexed { i, assignment ->
                             if (i > 0) HorizontalDivider(color = HairLine)
-                            Text("执行人 ${i + 1} · ${executionStatusLabel(assignment.executionStatus)}", lineHeight = 22.sp)
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                val name = if (assignment.recipientUserId == currentUser?.id) currentUser.displayName.ifBlank { currentUser.name } else "成员 ${assignment.recipientUserId.takeLast(4)}"
+                                RemoteAvatar(assignment.recipientUserId, name, 32.dp, 14.sp, userRepo)
+                                Text("$name · ${executionStatusLabel(assignment.executionStatus)}", lineHeight = 22.sp)
+                            }
+
                             val pending = dto.completionRequests.lastOrNull { it.assignmentId == assignment.id && it.decision == "PENDING" }
                             if ("DECIDE_COMPLETION" in assignment.allowedActions && pending != null) {
                                 pending.submittedNote?.takeIf { it.isNotBlank() }?.let { Text(it, lineHeight = 22.sp) }
