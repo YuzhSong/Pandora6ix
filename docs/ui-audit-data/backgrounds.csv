@@ -1,0 +1,123 @@
+﻿file,line,role,expression
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,110,background,"AvatarPalette[avatarColorIndex.coerceIn(0, AvatarPalette.size - 1)]"
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,636,background,theme.background
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,785,background,Cream
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,917,background,LocalAppTheme.current.dashboard
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,950,background,WarmOrange.copy(alpha = .35f)
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,965,background,Color.Black.copy(alpha = .42f)
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,969,background,WarmOrange
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,986,background,WarmOrange.copy(alpha = .25f)
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1017,background,Color.Black.copy(alpha = .42f)
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1021,background,Color.Black.copy(alpha = .42f)
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1215,background,accent
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1241,background,if (dragging) accent.copy(alpha = .18f) else Color.Transparent
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1273,background,accent.copy(alpha = .3f)
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1305,background,if (canAdd) accent.copy(alpha = .12f) else Color.Transparent
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1398,background,LocalAppTheme.current.dashboard
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1411,background,detail.accent.copy(alpha = .3f)
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1703,background,Color.Black.copy(alpha = .38f)
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1722,background,if (selected) WarmOrange else CreamDeep
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1787,background,tagHexColor(tag.colorHex)
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1869,background,tagHexColor(t.colorHex)
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1973,background,LocalAppTheme.current.dashboard
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2182,background,Ink
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2210,background,AvatarPalette[i]
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2233,background,CreamDeep
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2252,background,CoralDark
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2466,background,tagHexColor(tag.colorHex)
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2608,background,LocalAppTheme.current.dashboard
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2904,background,t.background
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,3015,background,tint.copy(alpha = 0.14f)
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,649,containerColor,theme.background
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,649,containerColor,theme.backgroundDeep
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,774,containerColor,Color.Transparent
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,814,containerColor,ThemeButton
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,930,containerColor,ThemeButton
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,966,containerColor,Color.White
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1042,containerColor,WarmCard
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1210,containerColor,WarmCard
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1231,containerColor,ThemeButton
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1353,containerColor,accent
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1406,containerColor,WarmCard
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1423,containerColor,ThemeButton
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1658,containerColor,ThemeButton
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1661,containerColor,CreamDeep
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1677,containerColor,ThemeButton
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1691,containerColor,CreamDeep
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1710,containerColor,Color.White
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1736,containerColor,tagColor
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1762,containerColor,ThemeButton
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1770,containerColor,Color.White
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1895,containerColor,Color.White.copy(alpha = .8f)
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1945,containerColor,WarmCard
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1987,containerColor,ThemeButton
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2039,containerColor,WarmCard
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2052,containerColor,if (item.id == requestedId || item.readAt == null) CreamDeep else Color.White
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2176,containerColor,WarmCard
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2272,containerColor,WarmCard
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2305,containerColor,color.copy(alpha = .78f)
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2500,containerColor,ThemeButton
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2730,containerColor,Ink.copy(alpha = 0.88f)
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2992,containerColor,WarmCard
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,145,background,if (selected) WarmOrange else WarmCard
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,167,background,chipBg
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,218,background,Cream.copy(alpha = .45f)
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,224,background,Cream.copy(alpha = .45f)
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,261,background,tagHexColor(tag.colorHex)
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,281,background,if (date == today) CreamDeep else Color.Transparent
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,422,background,if (date == today) Peach else Color.Transparent
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,432,background,taskColor(segment.task)
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,518,background,WarmCard.copy(alpha = 1f)
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,518,background,taskColor(task)
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,568,background,WarmCard.copy(alpha = 1f)
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,568,background,taskColor(candidate)
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,600,background,WarmCard
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,600,background,taskColor(task)
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,748,background,WarmCard
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,227,containerColor,ThemeButton
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,232,containerColor,WarmOrange
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,245,containerColor,ThemeButton
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,556,containerColor,Color.White
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/DateWheelDialog.kt,90,background,CreamDeep
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,383,background,CreamDeep
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,459,background,"androidx.compose.ui.graphics.lerp(tagHexColor(tag.colorHex), Ink, .10f)"
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,286,containerColor,Color.White
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,351,containerColor,tagColor
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,353,containerColor,tagColor
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,364,containerColor,Color.Transparent
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,419,containerColor,ThemeButton
+android/app/src/main/java/com/pandora6ix/app/ui/components/RemoteAvatar.kt,41,background,WarmOrange.copy(alpha = .18f)
+android/app/src/main/java/com/pandora6ix/app/ui/logs/JournalDatePicker.kt,206,background,WarmCard
+android/app/src/main/java/com/pandora6ix/app/ui/logs/JournalDatePicker.kt,269,background,if (iso == selected) WarmOrange.copy(alpha = .22f) else Color.Transparent
+android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,187,background,LocalAppTheme.current.background
+android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,245,background,if (selected) WarmOrange else WarmCard
+android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,346,background,LocalAppTheme.current.background
+android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,421,background,tagHexColor(tag.colorHex)
+android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,466,background,Cream
+android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,563,background,Cream
+android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,581,background,Cream
+android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,605,background,Cream
+android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,618,background,bg
+android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,191,containerColor,Color.Transparent
+android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,255,containerColor,WarmCard
+android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,350,containerColor,Color.Transparent
+android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,484,containerColor,MintDeep
+android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,546,containerColor,WarmCard
+android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,290,background,LocalAppTheme.current.backgroundDeep.copy(alpha = .25f)
+android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,392,background,bg
+android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,397,background,tagHexColor(tag.colorHex).copy(alpha = .35f)
+android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,401,background,CreamDeep
+android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,223,containerColor,MaterialTheme.colorScheme.surface
+android/app/src/main/java/com/pandora6ix/app/ui/tags/TagManageScreen.kt,106,background,WarmCard
+android/app/src/main/java/com/pandora6ix/app/ui/tags/TagManageScreen.kt,109,background,tagHexColor(tag.colorHex)
+android/app/src/main/java/com/pandora6ix/app/ui/tags/TagManageScreen.kt,215,background,color
+android/app/src/main/java/com/pandora6ix/app/ui/tags/TagManageScreen.kt,225,background,TagColorPalette[colorIndex]
+android/app/src/main/java/com/pandora6ix/app/ui/tags/TagManageScreen.kt,92,containerColor,Color.Transparent
+android/app/src/main/java/com/pandora6ix/app/ui/tags/TagManageScreen.kt,121,containerColor,ThemeButton
+android/app/src/main/java/com/pandora6ix/app/ui/tags/TagManageScreen.kt,234,containerColor,ThemeButton
+android/app/src/main/java/com/pandora6ix/app/ui/task/ProgressSheet.kt,173,background,CreamDeep
+android/app/src/main/java/com/pandora6ix/app/ui/task/ProgressSheet.kt,214,background,Mint.copy(alpha = .45f)
+android/app/src/main/java/com/pandora6ix/app/ui/task/ProgressSheet.kt,256,background,CreamDeep
+android/app/src/main/java/com/pandora6ix/app/ui/task/ProgressSheet.kt,101,containerColor,Color.White
+android/app/src/main/java/com/pandora6ix/app/ui/task/ProgressSheet.kt,240,containerColor,MintDeep
+android/app/src/main/java/com/pandora6ix/app/ui/task/ProgressSheet.kt,259,containerColor,MintDeep
