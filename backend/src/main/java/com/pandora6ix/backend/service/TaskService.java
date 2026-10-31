@@ -116,6 +116,28 @@ public class TaskService
 
     @Transactional
     public Map<String, Object> create(IdentityService.Actor a, Contracts.TaskCreate c) {
+        if (c.recurrence() == null) return createOne(a, c, null, null, true);
+        a.business();
+        var dates = RecurrenceDates.generate(c.startDate(), c.endDate(), c.recurrence());
+        var minutes = time(c.timeKind(), c.startDate(), c.startDate(), c.startTime(), c.endTime());
+        var zone = identity.zone(a);
+        for (var date : dates) {
+            var due = date.atTime(minutes == null ? LocalTime.MAX : LocalTime.of(minutes[1] / 60, minutes[1] % 60)).atZone(zone).toInstant();
+            if (!due.isAfter(Instant.now())) throw BusinessException.invalid("重复任务中存在已过截止时间的日期，请调整开始日期。");
+        }
+        String series = id(), label = RecurrenceDates.label(c.startDate(), c.endDate(), c.recurrence());
+        Map<String, Object> first = null;
+        for (var date : dates) {
+            var occurrence = new Contracts.TaskCreate(c.kind(), c.title(), c.description(), c.priorityLevel(),
+                    c.timeKind(), date, date, c.startTime(), c.endTime(), c.recipientIds(), c.tagIds(), c.primaryTagId());
+            var result = createOne(a, occurrence, series, label, first == null);
+            if (first == null) first = result;
+        }
+        first.put("occurrenceCount", dates.size());
+        return first;
+    }
+
+    private Map<String, Object> createOne(IdentityService.Actor a, Contracts.TaskCreate c, String series, String recurrenceLabel, boolean submitReview) {
         a.business();
         identity.zone(a);
         var minutes = time(c.timeKind(), c.startDate(), c.endDate(), c.startTime(), c.endTime());
@@ -176,6 +198,8 @@ public class TaskService
                 minutes == null ? null : minutes[1],
                 c.primaryTagId());
         tags.replace(a, "task_tag", "task_id", task, tagIds);
+        if (series != null) db.update("UPDATE task SET series_id=?,recurrence_label=?,occurrence_date=? WHERE enterprise_id=? AND id=?",
+                series, recurrenceLabel, c.startDate(), a.enterpriseId(), task);
         for (String recipient : recipients)
             db.update(
                     "INSERT INTO task_assignment(id,enterprise_id,task_id,recipient_user_id)"
@@ -222,7 +246,9 @@ public class TaskService
                         tagIds,
                         "primaryTagId",
                         c.primaryTagId());
-        if (!founder)
+        snapshot.put("seriesId", series);
+        snapshot.put("recurrenceLabel", recurrenceLabel);
+        if (!founder && submitReview)
             db.update(
                     "INSERT INTO"
                         + " task_review(id,enterprise_id,task_id,reviewer_user_id,submitted_by_user_id,task_version,submitted_snapshot)"
@@ -233,12 +259,12 @@ public class TaskService
                     supervisor,
                     a.id(),
                     json.writeValueAsString(snapshot));
-        if (!founder)
+        if (!founder && submitReview)
             notifications.reviewRequested(a.enterpriseId(), review, task, a.id(), supervisor, c.title());
         audit.record(a,task,"TASK","TASK","CREATE","新增任务",null,audit.task(a,task));
         var result = detail(a, task);
         result.put("taskId", task);
-        if (!founder) result.put("reviewId", review);
+        if (!founder && submitReview) result.put("reviewId", review);
         return result;
     }
 
@@ -316,7 +342,7 @@ public class TaskService
         v.put("authorizedAssignments", allowed);
         Set<String> actions = new LinkedHashSet<>();
         if (a.id().equals(task.get("creator_user_id"))
-                && "PENDING".equals(task.get("review_status"))) actions.add("EDIT_PENDING");
+                && task.get("series_id") == null && "PENDING".equals(task.get("review_status"))) actions.add("EDIT_PENDING");
         if (a.id().equals(task.get("creator_user_id")) && "APPROVED".equals(task.get("review_status"))) actions.add("EDIT_TASK");
         for (var r : assignments) actions.addAll(assignmentActions(a, task, r));
         v.put("allowedActions", List.copyOf(actions));
@@ -512,6 +538,7 @@ public class TaskService
     public Map<String, Object> patch(IdentityService.Actor a, String id, Contracts.TaskPatch c) {
         a.business();
         var task=db.lock("task",a.enterpriseId(),id);
+        if (task.get("series_id") != null) throw BusinessException.invalid("重复任务请使用范围编辑。");
         if(!a.id().equals(task.get("creator_user_id"))) throw BusinessException.missing();
         if(number(task,"version")!=c.expectedVersion()) checkVersion(0);
         boolean effective="APPROVED".equals(task.get("review_status"));
@@ -525,6 +552,8 @@ public class TaskService
         var snapshot=fields("kind",task.get("task_kind"),"title",c.title(),"description",c.description(),"priorityLevel",c.priorityLevel(),
                 "timeKind",c.timeKind(),"startDate",c.startDate(),"endDate",c.endDate(),"startTime",c.startTime(),"endTime",c.endTime(),
                 "recipientIds",recipients,"tagIds",tagIds,"primaryTagId",c.primaryTagId());
+        snapshot.put("seriesId", task.get("series_id"));
+        snapshot.put("recurrenceLabel", task.get("recurrence_label"));
         var auditBefore=audit.task(a,id);
         if(a.has("FOUNDER")) {
             applyContent(a,id,snapshot,c.expectedVersion());
@@ -564,6 +593,76 @@ public class TaskService
         checkVersion(db.update("UPDATE task SET title=?,description=?,priority_level=?,start_date=?,end_date=?,time_kind=?,start_minute=?,end_minute=?,primary_tag_id=?,version=version+1 WHERE enterprise_id=? AND id=? AND version=?",
                 content.get("title"),content.get("description"),content.get("priorityLevel"),start,end,kind.name(),minutes==null?null:minutes[0],minutes==null?null:minutes[1],content.get("primaryTagId"),a.enterpriseId(),id,expectedVersion));
         tags.replace(a,"task_tag","task_id",id,tagIds);
+    }
+
+    private List<Map<String,Object>> scopeTargets(IdentityService.Actor a,String id,String scope,boolean lock) {
+        detail(a,id);
+        var selected=db.entity("task",a.enterpriseId(),id);
+        if("SINGLE".equals(scope)) return List.of(lock?db.lock("task",a.enterpriseId(),id):selected);
+        if(!"THIS_AND_FUTURE".equals(scope)||selected.get("series_id")==null) throw BusinessException.invalid("无有效重复任务范围。");
+        return db.rows("SELECT * FROM task WHERE enterprise_id=? AND series_id=? AND occurrence_date>=? ORDER BY id"+(lock?" FOR UPDATE":""),
+                a.enterpriseId(),selected.get("series_id"),selected.get("occurrence_date"));
+    }
+
+    public Map<String,Object> scopeSnapshot(IdentityService.Actor a,String id) {
+        var selected=db.entity("task",a.enterpriseId(),id);
+        return fields("items",scopeTargets(a,id,selected.get("series_id")==null?"SINGLE":"THIS_AND_FUTURE",false).stream()
+                .map(t->detail(a,str(t,"id"))).toList());
+    }
+
+    private Contracts.ScopeVersion scopeVersion(List<Contracts.ScopeVersion> versions,Map<String,Object> task) {
+        var matches=versions.stream().filter(v->Objects.equals(v.taskId(),task.get("id"))).toList();
+        if(matches.size()!=1 || !Objects.equals(matches.getFirst().taskVersion(),number(task,"version"))) checkVersion(0);
+        return matches.getFirst();
+    }
+
+    @Transactional
+    public Map<String,Object> scopedEdit(IdentityService.Actor a,String id,Contracts.ScopedEdit c) {
+        a.business();
+        var targets=scopeTargets(a,id,c.scope(),true);
+        var selected=targets.stream().filter(t->id.equals(t.get("id"))).findFirst().orElseThrow();
+        if(!Objects.equals(c.task().expectedVersion(),number(selected,"version"))) checkVersion(0);
+        if(selected.get("series_id")==null) return patch(a,id,c.task());
+        long shift=java.time.temporal.ChronoUnit.DAYS.between(LocalDate.parse(selected.get("start_date").toString()),c.task().startDate());
+        long length=java.time.temporal.ChronoUnit.DAYS.between(c.task().startDate(),c.task().endDate());
+        for(var task:targets) {
+            scopeVersion(c.versions(),task);
+            if(!a.id().equals(task.get("creator_user_id"))) throw BusinessException.missing();
+            if(!"APPROVED".equals(task.get("review_status"))) throw BusinessException.policy("重复任务须先完成创建审批。");
+            var recipients=assignments(a,str(task,"id")).stream().map(r->str(r,"recipient_user_id")).toList();
+            if("DELEGATED".equals(task.get("task_kind"))&&!scope.taskRecipients(a,recipients).containsAll(recipients))
+                throw BusinessException.forbidden();
+            var start=LocalDate.parse(task.get("start_date").toString()).plusDays(shift);
+            var content=fields("title",c.task().title(),"description",c.task().description(),"priorityLevel",c.task().priorityLevel(),
+                    "timeKind",c.task().timeKind(),"startDate",start,"endDate",start.plusDays(length),"startTime",c.task().startTime(),
+                    "endTime",c.task().endTime(),"tagIds",c.task().tagIds(),"primaryTagId",c.task().primaryTagId());
+            var old=audit.task(a,str(task,"id"));
+            applyContent(a,str(task,"id"),content,number(task,"version"));
+            audit.record(a,str(task,"id"),"TASK","TASK","UPDATE","修改重复任务",old,audit.task(a,str(task,"id")));
+        }
+        return detail(a,id);
+    }
+
+    @Transactional
+    public Map<String,Object> scopedStatus(IdentityService.Actor a,String id,Contracts.ScopedStatus c) {
+        a.business();
+        var targets=scopeTargets(a,id,c.scope(),true);
+        for(var task:targets) {
+            var version=scopeVersion(c.versions(),task);
+            var assignment=db.optional("SELECT * FROM task_assignment WHERE enterprise_id=? AND task_id=? AND recipient_user_id=? FOR UPDATE",a.enterpriseId(),task.get("id"),a.id())
+                    .orElseThrow(BusinessException::missing);
+            if(!Objects.equals(version.assignmentId(),assignment.get("id")) || !Objects.equals(version.assignmentVersion(),number(assignment,"version"))) checkVersion(0);
+            if(!"APPROVED".equals(task.get("review_status"))) throw BusinessException.policy("An approved task is required.");
+            String state="COMPLETED".equals(assignment.get("execution_status"))?"COMPLETED":str(assignment,"work_status");
+            if(c.workStatus().equals(state)) continue;
+            if("COMPLETED".equals(assignment.get("execution_status")) && task.get("series_id")!=null && "PERSONAL".equals(task.get("task_kind"))) {
+                var old=audit.assignment(a,str(assignment,"id"));
+                checkVersion(db.update("UPDATE task_assignment SET execution_status='ACTIVE',work_status=?,progress_percent=0,completion_source=NULL,completed_by_user_id=NULL,completed_at=NULL,version=version+1 WHERE enterprise_id=? AND id=? AND version=?",
+                        c.workStatus(),a.enterpriseId(),assignment.get("id"),assignment.get("version")));
+                audit.record(a,str(assignment,"id"),"TASK_ASSIGNMENT","TASK","PROGRESS","更新重复任务状态",old,audit.assignment(a,str(assignment,"id")));
+            } else setWorkStatus(a,str(assignment,"id"),new Contracts.AssignmentStatus(number(assignment,"version"),c.workStatus(),c.note()));
+        }
+        return detail(a,id);
     }
 
     private void active(Map<String, Object> task, Map<String, Object> assignment) {

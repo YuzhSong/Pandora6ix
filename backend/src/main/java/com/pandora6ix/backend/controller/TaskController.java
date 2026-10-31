@@ -84,6 +84,32 @@ public class TaskController {
         return idempotency.execute(a, "POST /tasks", key, c, () -> tasks.create(a, c));
     }
 
+    @PostMapping("/tasks/recurring")
+    @ResponseStatus(HttpStatus.CREATED)
+    public Object createRecurring(@Valid @RequestBody Contracts.TaskCreate c,
+            @RequestHeader(value = "Idempotency-Key", required = false) String key) {
+        if (c.recurrence() == null) throw com.pandora6ix.backend.api.BusinessException.invalid("重复规则不能为空。");
+        var a = identity.current();
+        return idempotency.execute(a, "POST /tasks/recurring", key, c, () -> tasks.create(a, c));
+    }
+
+    @GetMapping("/tasks/{id}/scope")
+    public Object scope(@PathVariable String id) { return tasks.scopeSnapshot(identity.current(),id); }
+
+    @PostMapping("/tasks/{id}/scoped-edit")
+    public Object scopedEdit(@PathVariable String id,@Valid @RequestBody Contracts.ScopedEdit c,
+            @RequestHeader(value="Idempotency-Key",required=false) String key) {
+        var a=identity.current();
+        return idempotency.execute(a,"POST /tasks/"+id+"/scoped-edit",key,c,()->tasks.scopedEdit(a,id,c));
+    }
+
+    @PostMapping("/tasks/{id}/scoped-status")
+    public Object scopedStatus(@PathVariable String id,@Valid @RequestBody Contracts.ScopedStatus c,
+            @RequestHeader(value="Idempotency-Key",required=false) String key) {
+        var a=identity.current();
+        return idempotency.execute(a,"POST /tasks/"+id+"/scoped-status",key,c,()->tasks.scopedStatus(a,id,c));
+    }
+
     @PatchMapping("/tasks/{id}")
     public Object patch(@PathVariable String id, @Valid @RequestBody Contracts.TaskPatch c) {
         return tasks.patch(identity.current(), id, c);

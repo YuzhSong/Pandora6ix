@@ -51,6 +51,41 @@ fun packTaskRows(tasks: List<TaskItem>, dates: List<DemoDate>): List<List<TaskSe
 }
 
 fun isAllDay(task: TaskItem) = task.startMinute == null || task.endMinute == null
+
+fun coversFullDay(task: TaskItem, date: DemoDate): Boolean {
+    val range = timelineTimeRangeOnDate(task, date) ?: return false
+    return !range.isEmpty() && range.first == 0 && range.last >= 1438
+}
+
+fun weekCardTasksOnDate(tasks: List<TaskItem>, date: DemoDate): List<TaskItem> =
+    weekTasksOnDate(tasks, date).filterNot { coversFullDay(it, date) }
+
+fun weekAllDayRows(tasks: List<TaskItem>, dates: List<DemoDate>): List<List<TaskSegment>> {
+    if (dates.isEmpty()) return emptyList()
+    val rows = mutableListOf<MutableList<TaskSegment>>()
+    tasks.filter { it.start <= dates.last() && it.end >= dates.first() }
+        .sortedWith(compareBy<TaskItem> { it.start }
+            .thenByDescending { daysBetween(it.start, it.end) }.thenBy { it.id })
+        .forEach { task ->
+            val fullDays = dates.indices.filter { coversFullDay(task, dates[it]) }
+            if (fullDays.isEmpty()) return@forEach
+            val segment = TaskSegment(task, fullDays.first(), fullDays.last())
+            val row = rows.firstOrNull { lane -> lane.none { segment.first <= it.last && segment.last >= it.first } }
+                ?: mutableListOf<TaskSegment>().also { rows.add(it) }
+            row.add(segment)
+        }
+    return rows.map { it.toList() }
+}
+
+/** 周视图使用任务原始起点与总时长排序，不使用当天裁剪后的区间。 */
+fun weekTasksOnDate(tasks: List<TaskItem>, date: DemoDate): List<TaskItem> =
+    tasks.filter { timelineTimeRangeOnDate(it, date)?.isEmpty() == false }
+        .sortedWith(compareBy<TaskItem> { it.start }
+            .thenBy { if (isAllDay(it)) 0 else it.startMinute!! }
+            .thenByDescending {
+                if (isAllDay(it)) (daysBetween(it.start, it.end).toLong() + 1) * 1440
+                else daysBetween(it.start, it.end).toLong() * 1440 + it.endMinute!! - it.startMinute!!
+            }.thenBy { it.id })
 // 日/周视图将全天任务映射为整日高度，不修改原任务时间数据。
 fun timelineTimeRangeOnDate(task: TaskItem, date: DemoDate): IntRange? =
     if (isAllDay(task)) {
@@ -65,7 +100,36 @@ fun timeRangeOnDate(task: TaskItem, date: DemoDate): IntRange? {
     return from until until
 }
 
-data class TimedTaskPlacement(val task: TaskItem, val range: IntRange, val depth: Int)
+data class TimedTaskPlacement(val task: TaskItem, val range: IntRange, val depth: Int, val columnCount: Int = 1)
+
+/** 日视图：每个相交区间组等宽分列，已结束的列可供后续任务复用。 */
+fun parallelTimedTasks(tasks: List<TaskItem>, date: DemoDate): List<TimedTaskPlacement> {
+    val entries = tasks.mapNotNull { task ->
+        timelineTimeRangeOnDate(task, date)?.takeUnless { it.isEmpty() }?.let { TimedTaskPlacement(task, it, 0) }
+    }.sortedWith(compareBy<TimedTaskPlacement> { it.range.first }
+        .thenByDescending { it.range.last }.thenBy { it.task.id })
+    val result = mutableListOf<TimedTaskPlacement>()
+    val group = mutableListOf<TimedTaskPlacement>()
+    val columnEnds = mutableListOf<Int>()
+    var groupEnd = -1
+    fun flushGroup() {
+        result.addAll(group.map { it.copy(columnCount = columnEnds.size) })
+        group.clear()
+        columnEnds.clear()
+    }
+    entries.forEach { entry ->
+        if (entry.range.first > groupEnd) flushGroup()
+        var column = columnEnds.indexOfFirst { it < entry.range.first }
+        if (column < 0) {
+            column = columnEnds.size
+            columnEnds.add(entry.range.last)
+        } else columnEnds[column] = entry.range.last
+        group.add(entry.copy(depth = column))
+        groupEnd = maxOf(groupEnd, entry.range.last)
+    }
+    flushGroup()
+    return result
+}
 
 fun timelineTasksAt(tasks: List<TaskItem>, date: DemoDate, minute: Int): List<TaskItem> =
     if (minute !in 0 until 1440) emptyList() else staggerTimedTasks(tasks, date)

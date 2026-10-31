@@ -76,6 +76,10 @@ fun ProgressSheet(task: TaskDto, taskRepo: TaskRepository, onDismiss: () -> Unit
     val keys = remember { mutableStateMapOf<String, String>() }
     val uiScope = rememberCoroutineScope()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var repeatStatus by remember { mutableStateOf<String?>(null) }
+    var repeatNote by remember { mutableStateOf<String?>(null) }
+    var repeatSaved by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var repeatCancelled by remember { mutableStateOf<(() -> Unit)?>(null) }
 
     fun keyFor(action: String, id: String): String = keys.getOrPut("$action:$id") { UUID.randomUUID().toString() }
 
@@ -91,6 +95,9 @@ fun ProgressSheet(task: TaskDto, taskRepo: TaskRepository, onDismiss: () -> Unit
         }
     }
 
+    if (repeatStatus != null) SeriesStatusEditor(current, taskRepo, repeatStatus!!, note = repeatNote,
+        onDismiss = { repeatStatus = null; repeatCancelled?.invoke() },
+        onSaved = { repeatStatus = null; repeatSaved?.invoke(); refresh() })
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState, containerColor = WarmCard) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -120,7 +127,9 @@ fun ProgressSheet(task: TaskDto, taskRepo: TaskRepository, onDismiss: () -> Unit
                             if (e.httpStatus == 409) { keys["progress:${assignment.id}"] = UUID.randomUUID().toString(); refresh() }
                         } catch (e: Exception) { onError("操作失败，请稍后重试") }
                     } },
-                    onComplete = { onDone, onError -> uiScope.launch {
+                    onComplete = { onDone, onError -> if (current.seriesId != null) {
+                        repeatNote = null; repeatSaved = { onChanged(); onDone() }; repeatCancelled = { onError("") }; repeatStatus = "COMPLETED"
+                    } else uiScope.launch {
                         try {
                             taskRepo.completePersonalTask(current.id, assignment.version, keyFor("complete", assignment.id))
                             keys["complete:${assignment.id}"] = UUID.randomUUID().toString()
@@ -131,7 +140,9 @@ fun ProgressSheet(task: TaskDto, taskRepo: TaskRepository, onDismiss: () -> Unit
                             if (e.httpStatus == 409) { keys["complete:${assignment.id}"] = UUID.randomUUID().toString(); refresh() }
                         } catch (e: Exception) { onError("操作失败，请稍后重试") }
                     } },
-                    onRequest = { note, onDone, onError -> uiScope.launch {
+                    onRequest = { note, onDone, onError -> if (current.seriesId != null) {
+                        repeatNote = note; repeatSaved = { onChanged(); onDone() }; repeatCancelled = { onError("") }; repeatStatus = "COMPLETED"
+                    } else uiScope.launch {
                         try {
                             taskRepo.requestCompletion(assignment.id, assignment.version, note.ifBlank { null }, keyFor("request", assignment.id))
                             keys["request:${assignment.id}"] = UUID.randomUUID().toString()
@@ -198,7 +209,7 @@ private fun AssignmentActions(
             else -> "已记录"
         }
     }
-    fun fail(msg: String) { error = msg; busy = false; confirm = null; rejectRequest = null }
+    fun fail(msg: String) { error = msg.takeIf { it.isNotBlank() }; busy = false; confirm = null; rejectRequest = null }
 
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Mint.copy(alpha = .45f)).padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -261,7 +272,6 @@ private fun AssignmentActions(
         AlertDialog(
             onDismissRequest = { if (!busy) confirm = null },
             title = { Text(if (action == "complete") "确认完成任务？" else "提交验收申请？") },
-            text = { Text(if (action == "complete") "完成后不可撤回，将计入本人已完成统计。" else "创建者确认前任务保持进行中；确认通过后计入统计。") },
             confirmButton = {
                 if (!busy) TextButton({
                     confirm = null

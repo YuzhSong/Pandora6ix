@@ -244,6 +244,10 @@ public class TaskReviewService {
         if (!a.id().equals(before.get("reviewer_user_id")) || a.businessRank() >= 3)
             throw BusinessException.missing();
         // Task edits use the same first lock, preventing an old snapshot from winning a race.
+        var previewTask = db.entity("task", a.enterpriseId(), str(before, "task_id"));
+        if (previewTask.get("series_id") != null && "CREATE".equals(before.get("review_kind"))) {
+            return decideSeries(a, before, c);
+        }
         var task = db.lock("task", a.enterpriseId(), str(before, "task_id"));
         var auditBefore=audit.task(a,str(task,"id"));
         var review = db.lock("task_review", a.enterpriseId(), id);
@@ -293,5 +297,32 @@ public class TaskReviewService {
         }
         audit.record(a,str(task,"id"),"TASK","TASK",approve?"APPROVE":"REJECT","审批任务",auditBefore,audit.task(a,str(task,"id")));
         return fields("review", detail(a, id), "task", tasks.detail(a, str(task, "id")));
+    }
+
+    private Map<String,Object> decideSeries(IdentityService.Actor a,Map<String,Object> before,Contracts.ReviewDecision c) {
+        var head = db.entity("task",a.enterpriseId(),str(before,"task_id"));
+        var group = db.rows("SELECT * FROM task WHERE enterprise_id=? AND series_id=? ORDER BY id FOR UPDATE",a.enterpriseId(),head.get("series_id"));
+        var review = db.lock("task_review",a.enterpriseId(),str(before,"id"));
+        if(number(review,"version")!=c.expectedVersion()) checkVersion(0);
+        for(var task:group) {
+            if(!"PENDING".equals(task.get("review_status")) || !validContext(a,review,task))
+                throw new BusinessException(409,"REVIEW_CONTEXT_CHANGED","The series approval context changed.");
+        }
+        if(!pending(review,head)) throw new BusinessException(409,"REVIEW_NOT_PENDING","Review is no longer pending.");
+        boolean approve="APPROVE".equals(c.decision());
+        for(var task:group) {
+            var old=audit.task(a,str(task,"id"));
+            checkVersion(db.update("UPDATE task SET review_status=?,version=version+1 WHERE enterprise_id=? AND id=? AND version=?",
+                    approve?"APPROVED":"REJECTED",a.enterpriseId(),task.get("id"),task.get("version")));
+            if(approve) {
+                db.update("UPDATE task_assignment SET execution_status='ACTIVE',activated_at=CURRENT_TIMESTAMP,version=version+1 WHERE enterprise_id=? AND task_id=? AND execution_status='PENDING_APPROVAL'",a.enterpriseId(),task.get("id"));
+                notifications.taskApproved(a.enterpriseId(),str(task,"id"),str(task,"title"));
+            }
+            db.update("UPDATE task_review SET decision=?,decided_by_user_id=?,decision_note=?,decided_at=CURRENT_TIMESTAMP,version=version+1 WHERE enterprise_id=? AND task_id=? AND review_kind='CREATE' AND decision='PENDING'",
+                    approve?"APPROVED":"REJECTED",a.id(),c.comment(),a.enterpriseId(),task.get("id"));
+            audit.record(a,str(task,"id"),"TASK","TASK",approve?"APPROVE":"REJECT","审批重复任务",old,audit.task(a,str(task,"id")));
+        }
+        notifications.reviewDecided(a.enterpriseId(),str(review,"id"),str(head,"id"),str(review,"submitted_by_user_id"),approve?"APPROVED":"REJECTED");
+        return fields("review",detail(a,str(review,"id")),"task",tasks.detail(a,str(head,"id")));
     }
 }
