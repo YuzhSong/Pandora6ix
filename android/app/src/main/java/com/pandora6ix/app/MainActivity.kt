@@ -47,6 +47,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -79,6 +80,7 @@ import com.pandora6ix.app.mock.*
 import com.pandora6ix.app.ui.calendar.*
 import com.pandora6ix.app.ui.review.ReviewScreen
 import com.pandora6ix.app.ui.task.ProgressSheet
+import com.pandora6ix.app.ui.summary.TaskSummaryFlow
 import com.pandora6ix.app.ui.tags.TagManageScreen
 import com.pandora6ix.app.ui.logs.JournalDatePickerDialog
 import com.pandora6ix.app.ui.logs.JournalEntryField
@@ -314,6 +316,8 @@ fun PandoraApp(
         var fontScale by rememberSaveable { mutableStateOf(1f) }
         var themeKey by rememberSaveable { mutableStateOf("warm") }
         var currentUser by remember { mutableStateOf<UserDto?>(null) }
+        var showTaskSummary by rememberSaveable(currentUser?.id) { mutableStateOf(false) }
+        val calendarUiState = key(currentUser?.id) { rememberSaveableStateHolder() }
         // 子页面替换“我的”时仍保留滚动位置，退出登录或切换账号时重置。
         val profileScrollState = rememberSaveable(currentUser?.id, saver = ScrollState.Saver) { ScrollState(0) }
         var authChecked by remember { mutableStateOf(false) }
@@ -384,6 +388,7 @@ fun PandoraApp(
                 route = Route.HOME.name
                 detail = null
                 homeDetail = null
+                showTaskSummary = false
             }
         }
         LaunchedEffect(approvalPromptEvents, currentUser?.id, notifyMaster, notifyStatus) {
@@ -443,7 +448,7 @@ fun PandoraApp(
         val journalRepo = remember { JournalRepository(api) }
         val selectionRepo = remember { SelectionRepository(api) }
         val taskRepo = remember { TaskRepository(api) }
-        val userRepo = remember { UserRepository(api) }
+        val userRepo = remember(currentUser?.id) { UserRepository(api) }
         val tagRepo = remember { TagRepository(api) }
         val appScope = rememberCoroutineScope()
         fun refreshTags() {
@@ -487,19 +492,16 @@ fun PandoraApp(
                 }
             }
         }
-        // 登录后加载企业标签目录与本人统计
-        var statistics by remember { mutableStateOf<StatisticsDto?>(null) }
+        // 登录后加载企业标签目录
         LaunchedEffect(currentUser?.id) {
             taskItems.clear()
             taskDtoById.clear()
             serverTags.clear()
-            statistics = null
             progressTaskId = null
             if (currentUser == null) return@LaunchedEffect
             runCatching { calendarRepo.tags() }.getOrNull()?.let { list ->
                 serverTags.clear(); serverTags.addAll(list)
             }
-            runCatching { calendarRepo.statistics() }.getOrNull()?.let { statistics = it }
         }
         // 提醒默认开启：首次登录后申请一次系统通知权限（Android 13+），被拒只失去系统通知，页内弹窗照常
         LaunchedEffect(currentUser?.id, notifyMaster) {
@@ -634,11 +636,21 @@ fun PandoraApp(
                 route = Route.HOME.name; detail = null; homeDetail = null; showSettings = false; showReviews = false
             }
             else -> CompositionLocalProvider(LocalAppTheme provides theme, LocalDensity provides scaledDensity) {
-        Scaffold(containerColor = theme.background, bottomBar = { NavigationBar(containerColor = theme.backgroundDeep) { nav.forEach { item -> NavigationBarItem(selected = current == item.route, onClick = { route = item.route.name; detail = null; homeDetail = null; journalDetailId = null; showSettings = false; showReviews = false; showTagManage = false; progressTaskId = null }, icon = { MeNavIcon(item, reviewBadgeCount) }, label = { Text(item.label, fontSize = 11.sp) }, colors = NavigationBarItemDefaults.colors(selectedIconColor = WarmOrange, selectedTextColor = WarmOrange, indicatorColor = theme.backgroundDeep)) } } }) { padding ->
+        Scaffold(containerColor = theme.background, bottomBar = { NavigationBar(containerColor = theme.backgroundDeep) { nav.forEach { item -> NavigationBarItem(selected = current == item.route, onClick = { route = item.route.name; detail = null; homeDetail = null; journalDetailId = null; showSettings = false; showReviews = false; showTagManage = false; progressTaskId = null; showTaskSummary = false }, icon = { MeNavIcon(item, reviewBadgeCount) }, label = { Text(item.label, fontSize = 11.sp) }, colors = NavigationBarItemDefaults.colors(selectedIconColor = WarmOrange, selectedTextColor = WarmOrange, indicatorColor = theme.backgroundDeep)) } } }) { padding ->
             Surface(Modifier.padding(padding).fillMaxSize(), color = theme.background) {
                 when {
                     homeDetail != null -> HomeItemDetailScreen(dashboardRepo, homeDetail!!) { homeDetail = null }
                     journalDetailId != null -> JournalDetailScreen(journalRepo, journalDetailId!!, currentUser?.businessTimezone) { journalDetailId = null }
+                    showTaskSummary -> key(currentUser!!.id) {
+                        TaskSummaryFlow(
+                            currentUser!!, calendarRepo, taskRepo, journalRepo, userRepo,
+                            taskDetail = { id, onBack, onChanged ->
+                                SummaryTaskDetail(id, taskRepo, serverTags, currentUser?.businessTimezone, onBack) { onChanged(); calRetry++ }
+                            },
+                            journalDetail = { id, onBack -> JournalDetailScreen(journalRepo, id, currentUser?.businessTimezone, onBack) },
+                            onClose = { showTaskSummary = false }
+                        )
+                    }
                     showSettings -> SettingsScreen(
                         fontScale = fontScale,
                         onFontScaleChange = { fontScale = it },
@@ -703,10 +715,10 @@ fun PandoraApp(
                                     showReviews = true
                                 } else if (item.taskId.isNotBlank()) detail = item.taskId
                             })
-                            Route.VIEW -> CalendarScreen(CalendarMode.valueOf(modeName), date, taskItems, canCreatePersonal, canCreateDelegated, serverTags, taskRepo, { modeName = it.name }, { dateKey = "${it.year}-${it.month}-${it.day}" }, { calRetry++ }, { detail = it.id }, taskScope = taskScope, onTaskScopeChange = { taskScope = it; calNotice = null }, currentUser = currentUser, canReviewTasks = canReviewTasks, businessTimezone = currentUser?.businessTimezone, loading = calLoading, error = calError, onRetry = { calRetry++ }, notice = calNotice)
+                            Route.VIEW -> calendarUiState.SaveableStateProvider("calendar") { CalendarScreen(CalendarMode.valueOf(modeName), date, taskItems, canCreatePersonal, canCreateDelegated, serverTags, taskRepo, { modeName = it.name }, { dateKey = "${it.year}-${it.month}-${it.day}" }, { calRetry++ }, { detail = it.id }, taskScope = taskScope, onTaskScopeChange = { taskScope = it; calNotice = null }, currentUser = currentUser, canReviewTasks = canReviewTasks, businessTimezone = currentUser?.businessTimezone, loading = calLoading, error = calError, onRetry = { calRetry++ }, notice = calNotice, onOpenSummary = { showTaskSummary = true }) }
                             Route.LOGS -> LogsScreen(journalRepo, serverTags.toList(), currentUser?.businessTimezone) { journalDetailId = it }
                             Route.AI -> AiMapScreen()
-                            Route.ME -> ProfileScreen(currentUser!!, statistics, notifyMaster, showReviewCenter, reviewBadgeCount, tagManager, userRepo, scrollState = profileScrollState, onOpenTagManage = { showTagManage = true }, onOpenReviews = { showReviews = true }, onOpenSettings = { showSettings = true })
+                            Route.ME -> ProfileScreen(currentUser!!, notifyMaster, showReviewCenter, reviewBadgeCount, tagManager, userRepo, scrollState = profileScrollState, onOpenTagManage = { showTagManage = true }, onOpenReviews = { showReviews = true }, onOpenSettings = { showSettings = true })
                         }
                     }
                 }
@@ -2038,7 +2050,7 @@ private fun JournalDetailScreen(repo: JournalRepository, journalId: String, busi
     }
 }
 @Composable private fun AiMapScreen() { Column(Modifier.fillMaxSize().padding(16.dp)) { PageHeader("AI地图"); Spacer(Modifier.height(48.dp)); Icon(Icons.Default.Info, null, Modifier.size(70.dp).align(Alignment.CenterHorizontally), tint = Coral); Text("AI 地图", Modifier.fillMaxWidth().padding(top = 18.dp), textAlign = TextAlign.Center, fontSize = 28.sp, fontWeight = FontWeight.Bold); Text("功能规划中", Modifier.fillMaxWidth().padding(top = 8.dp), textAlign = TextAlign.Center, color = Ink.copy(alpha = .6f)) } }
-@Composable private fun ProfileScreen(user: UserDto, statistics: StatisticsDto?, notificationsEnabled: Boolean, showReviewCenter: Boolean, pendingReviewCount: Int, canManageTags: Boolean, userRepo: UserRepository, scrollState: ScrollState, onOpenTagManage: () -> Unit, onOpenReviews: () -> Unit, onOpenSettings: () -> Unit) {
+@Composable private fun ProfileScreen(user: UserDto, notificationsEnabled: Boolean, showReviewCenter: Boolean, pendingReviewCount: Int, canManageTags: Boolean, userRepo: UserRepository, scrollState: ScrollState, onOpenTagManage: () -> Unit, onOpenReviews: () -> Unit, onOpenSettings: () -> Unit) {
     val context = LocalContext.current
     val avatarScope = rememberCoroutineScope()
     val prefs = remember { context.getSharedPreferences("profile_avatar_" + SessionStore(context).ownerId, Context.MODE_PRIVATE) }
@@ -2181,13 +2193,18 @@ private fun JournalDetailScreen(repo: JournalRepository, journalId: String, busi
                 },
                 confirmButton = { TextButton({ showGallery = false }) { Text("关闭") } }
             )
-            statistics?.let { st ->
-                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = WarmCard), shape = RoundedCornerShape(20.dp), border = cardBorderIfBlended()) {
-                    Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                        Text("任务统计", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                        ProfileInfoRow("任务总数", "${st.total}")
-                        ProfileInfoRow("已完成", "${st.completed}")
-                        ProfileInfoRow("未完成", "${st.uncompleted}")
+            if (showReviewCenter) {
+                SettingsCard {
+                    SettingsRow(icon = Icons.Default.FactCheck, title = "审批中心", onClick = onOpenReviews) {
+                        if (pendingReviewCount > 0) {
+                            Text(
+                                if (pendingReviewCount >= 99) "99+" else "$pendingReviewCount",
+                                fontSize = 11.sp, color = Color.White, fontWeight = FontWeight.Bold,
+                                modifier = Modifier.clip(CircleShape).background(CoralDark).padding(horizontal = 7.dp, vertical = 2.dp)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                        }
+                        Icon(Icons.Default.ChevronRight, null, Modifier.size(20.dp), tint = Ink.copy(alpha = .4f))
                     }
                 }
             }
@@ -2207,20 +2224,6 @@ private fun JournalDetailScreen(repo: JournalRepository, journalId: String, busi
                 // 仅 FOUNDER/DEPARTMENT_MANAGER 可见标签管理入口
                 if (canManageTags) {
                     SettingsRow(icon = Icons.Default.Label, title = "标签管理", onClick = onOpenTagManage) {
-                        Icon(Icons.Default.ChevronRight, null, Modifier.size(20.dp), tint = Ink.copy(alpha = .4f))
-                    }
-                    DashedDivider(HairLine)
-                }
-                if (showReviewCenter) {
-                    SettingsRow(icon = Icons.Default.FactCheck, title = "审批中心", onClick = onOpenReviews) {
-                        if (pendingReviewCount > 0) {
-                            Text(
-                                if (pendingReviewCount >= 99) "99+" else "$pendingReviewCount",
-                                fontSize = 11.sp, color = Color.White, fontWeight = FontWeight.Bold,
-                                modifier = Modifier.clip(CircleShape).background(CoralDark).padding(horizontal = 7.dp, vertical = 2.dp)
-                            )
-                            Spacer(Modifier.width(6.dp))
-                        }
                         Icon(Icons.Default.ChevronRight, null, Modifier.size(20.dp), tint = Ink.copy(alpha = .4f))
                     }
                     DashedDivider(HairLine)
@@ -2253,6 +2256,39 @@ private fun roleLabel(role: String): String = when (role.uppercase()) {
     else -> role
 }
 @Composable private fun DetailCard(title: String, body: String, color: Color, maxLines: Int = 2, onClick: () -> Unit = {}) { Card(Modifier.fillMaxWidth().clickable(onClick = onClick), colors = CardDefaults.cardColors(containerColor = color.copy(alpha = .78f)), shape = RoundedCornerShape(16.dp)) { Column(Modifier.padding(14.dp)) { Text(title, fontWeight = FontWeight.Bold); Text(body, fontSize = 13.sp, color = Ink.copy(alpha = .75f), maxLines = maxLines, overflow = TextOverflow.Ellipsis) } } }
+/** Summary uses the same full task detail, with explicit loading/error before enabling actions. */
+@Composable
+private fun SummaryTaskDetail(id: String, repo: TaskRepository, tags: List<TagDto>, businessTimezone: String?, onBack: () -> Unit, onChanged: () -> Unit) {
+    var task by remember(id) { mutableStateOf<TaskDto?>(null) }
+    var loading by remember(id) { mutableStateOf(true) }
+    var error by remember(id) { mutableStateOf<String?>(null) }
+    var revision by remember(id) { mutableIntStateOf(0) }
+    LaunchedEffect(id, revision) {
+        loading = true
+        error = null
+        try {
+            task = repo.task(id)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (e: Exception) {
+            error = (e as? ApiException)?.friendlyMessage() ?: "加载失败，请重试"
+        } finally { loading = false }
+    }
+    when {
+        loading || error != null -> Column(Modifier.fillMaxSize()) {
+            PageHeader("任务详情", onBack = onBack)
+            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (loading) CircularProgressIndicator(color = ThemeButton)
+                else {
+                    Text(error!!, color = MaterialTheme.colorScheme.error)
+                    TextButton({ revision++ }) { Text("重试", color = ThemeButton) }
+                }
+            }
+        }
+        else -> DetailScreen(id, task, tags, repo, onBack, onChanged = { revision++; onChanged() }, businessTimezone = businessTimezone)
+    }
+}
+
 @Composable private fun DetailScreen(title: String, dto: TaskDto?, availableTags: List<TagDto>, taskRepo: TaskRepository, onBack: () -> Unit, onChanged: () -> Unit, businessTimezone: String? = null) {
     val isLog = title.startsWith("日志 · ")
     val logContent = if (isLog) title.substringAfter("§", "") else null

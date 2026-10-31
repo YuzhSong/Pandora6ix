@@ -1,7 +1,5 @@
 package com.pandora6ix.app.ui.review
 
-import android.graphics.Bitmap
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -60,19 +58,16 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pandora6ix.app.data.ApiException
 import com.pandora6ix.app.data.SessionExpiredException
 import com.pandora6ix.app.data.ReviewActorDto
 import com.pandora6ix.app.data.UserRepository
+import com.pandora6ix.app.ui.components.RemoteAvatar
 import com.pandora6ix.app.data.businessDateTimeLabel
 import com.pandora6ix.app.data.TagDto
 import com.pandora6ix.app.data.TaskRepository
@@ -527,21 +522,6 @@ private fun InfoRow(label: String, value: String) {
 private fun MetaChip(text: String) {
     Box(Modifier.clip(RoundedCornerShape(10.dp)).background(CreamDeep).padding(horizontal = 10.dp, vertical = 4.dp)) {
         Text(text, fontSize = 12.sp, color = Ink.copy(alpha = .8f))
-    }
-}
-
-/** 真实头像：优先服务端头像，未设置或加载失败回退姓名首字（不是占位假数据） */
-@Composable
-private fun RemoteAvatar(userId: String, name: String, size: Dp, fontSize: TextUnit, userRepo: UserRepository?) {
-    var photo by remember(userId) { mutableStateOf<Bitmap?>(null) }
-    if (userRepo != null && userId.isNotBlank()) {
-        LaunchedEffect(userId) {
-            photo = runCatching { userRepo.avatar(userId) }.getOrNull()
-        }
-    }
-    Box(Modifier.size(size).clip(CircleShape).background(WarmOrange.copy(alpha = .18f)), contentAlignment = Alignment.Center) {
-        if (photo != null) Image(photo!!.asImageBitmap(), "$name 的头像", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-        else Text(name.take(1), fontSize = fontSize, fontWeight = FontWeight.Bold, color = WarmOrange)
     }
 }
 

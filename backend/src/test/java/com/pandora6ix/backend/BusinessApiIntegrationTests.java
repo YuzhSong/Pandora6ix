@@ -2890,6 +2890,60 @@ class BusinessApiIntegrationTests {
     }
 
     @Test
+    void memberContactReturnsOnlyRealTelephoneAndReflectsUpdates() throws Exception {
+        String path = "/users/" + employee + "/contact";
+        var contact = request("GET", path, managerToken, null, 200);
+        assertEquals(Set.of("id", "phoneNumber"), contact.keySet());
+        assertEquals(employee, contact.get("id"));
+        assertEquals("+86 13800000000", contact.get("phoneNumber"));
+        assertEquals(contact, request("GET", path, leadToken, null, 200));
+        assertEquals(contact, request("GET", path, founderToken, null, 200));
+        var response = mvc.perform(MockMvcRequestBuilders.get("/api/v1" + path)
+                .header("Authorization", "Bearer " + managerToken)).andReturn().getResponse();
+        assertEquals(200, response.getStatus());
+        assertTrue(response.getHeaders("Cache-Control").stream().anyMatch(value -> value.contains("no-store")));
+        db.update("UPDATE app_user SET phone_number=NULL WHERE enterprise_id=? AND id=?", enterprise, employee);
+        var empty = request("GET", path, managerToken, null, 200);
+        assertTrue(empty.containsKey("phoneNumber"));
+        assertNull(empty.get("phoneNumber"));
+        db.update("UPDATE app_user SET phone_number=? WHERE enterprise_id=? AND id=?", "021-87654321", enterprise, employee);
+        assertEquals("021-87654321", request("GET", path, managerToken, null, 200).get("phoneNumber"));
+    }
+
+    @Test
+    void memberContactRejectsNonManagersAndUnavailableMembers() throws Exception {
+        String path = "/users/" + employee + "/contact";
+        request("GET", path, null, null, 401);
+        for (String token : List.of(employeeToken, peerToken, adminToken))
+            request("GET", path, token, null, 403);
+        request("GET", "/users/" + founder + "/contact", managerToken, null, 404);
+        request("GET", "/users/" + manager + "/contact", leadToken, null, 404);
+        request("GET", "/users/" + manager + "/contact", managerToken, null, 404);
+        request("GET", "/users/" + UUID.randomUUID() + "/contact", managerToken, null, 404);
+        String otherDepartment = createOrg("Other department", "DEPARTMENT", root);
+        String outsider = createUser("outsider", otherDepartment, founder, List.of("EMPLOYEE"));
+        request("GET", "/users/" + outsider + "/contact", managerToken, null, 404);
+        db.update("UPDATE app_user SET status='DISABLED' WHERE enterprise_id=? AND id=?", enterprise, employee);
+        request("GET", path, managerToken, null, 404);
+        var other = request("POST", "/admin/enterprise-initializations", null,
+                fields("loginDomain", "contact-other-" + UUID.randomUUID(), "name", "Other enterprise",
+                        "adminLoginName", "admin", "adminPassword", PASSWORD, "adminDisplayName", "Other admin"),
+                201, "X-Bootstrap-Token", "integration-tests-only-bootstrap");
+        request("GET", "/users/" + other.get("adminUserId") + "/contact", founderToken, null, 404);
+    }
+
+    @Test
+    void memberContactRechecksScopeAfterOrganizationChange() throws Exception {
+        String path = "/users/" + employee + "/contact";
+        request("GET", path, managerToken, null, 200);
+        String otherDepartment = createOrg("Moved department", "DEPARTMENT", root);
+        db.update("UPDATE app_user SET org_unit_id=? WHERE enterprise_id=? AND id=?", otherDepartment, enterprise, employee);
+        request("GET", path, managerToken, null, 404);
+        request("GET", path, leadToken, null, 404);
+        request("GET", path, founderToken, null, 200);
+    }
+
+    @Test
     void recipientCandidatesExposeStableDepartmentMetadataWithoutPersonnelSecrets() throws Exception {
         var candidates = items(request("GET", "/tasks/recipient-candidates?limit=1", managerToken, null, 200));
         assertEquals(1, candidates.size());

@@ -174,17 +174,22 @@ data class CompletionResultDto(
  */
 class TaskRepository(private val api: ApiClient) {
 
-    suspend fun recipientCandidates(q: String? = null, limit: Int = 50): RecipientPageDto {
-        val values = mutableListOf<RecipientDto>()
-        val seen = mutableSetOf<String>()
-        var cursor: String? = null
-        do {
+    /** Bounded candidate page for team browsing; the server enforces management scope. */
+    suspend fun recipientCandidatePage(q: String? = null, cursor: String? = null, limit: Int = 20): RecipientPageDto {
         val query = buildString {
             append("/tasks/recipient-candidates?limit=").append(limit.coerceIn(1, 100))
             q?.takeIf { it.isNotBlank() }?.let { append("&q=").append(URLEncoder.encode(it, "UTF-8")) }
             cursor?.let { append("&cursor=").append(URLEncoder.encode(it, "UTF-8")) }
         }
-        val page = api.get(query, RecipientPageDto.serializer())
+        return api.get(query, RecipientPageDto.serializer())
+    }
+
+    suspend fun recipientCandidates(q: String? = null, limit: Int = 50): RecipientPageDto {
+        val values = mutableListOf<RecipientDto>()
+        val seen = mutableSetOf<String>()
+        var cursor: String? = null
+        do {
+        val page = recipientCandidatePage(q, cursor, limit)
         values.addAll(page.items)
         cursor = page.nextCursor
         check(cursor == null || seen.add(cursor)) { "Repeated recipient cursor" }

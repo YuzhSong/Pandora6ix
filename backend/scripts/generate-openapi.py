@@ -194,6 +194,7 @@ def read_schemas():
         "AssignmentStatusResult": obj({"assignment": ref("Assignment"), "completionRequest": nullable(ref("CompletionRequestView"))}),
         "TaskReview": review, "ReviewDecisionResult": obj({"review": ref("TaskReview"), "task": ref("Task")}),
         "Recipient": obj({"id": ID, "displayName": STRING, "orgUnitId": nullable(ID), "jobTitle": nullable(STRING), "organizationName": nullable(STRING), "departmentId": nullable(ID), "departmentName": nullable(STRING), "relationship": STRING}),
+        "MemberContact": obj({"id": ID, "phoneNumber": nullable(STRING)}, ("id", "phoneNumber")),
         "LoginResult": obj({"accessToken": STRING, "tokenType": {"type": "string", "const": "Bearer"}, "expiresAt": INSTANT, "user": ref("Profile")}),
         "ProgressResult": obj({"record": ref("ProgressRecord"), "assignment": ref("Assignment")}),
         "CompletionResult": obj({"request": ref("CompletionRequestView"), "assignment": ref("Assignment")}),
@@ -222,6 +223,7 @@ def read_schemas():
 
 
 RESPONSES = {
+    ("GET", "/users/{id}/contact"): "MemberContact",
     ("POST", "/push-devices"): "PushDeviceRegistrationResult",
     ("DELETE", "/push-devices/{installationId}"): "PushDeviceRegistrationResult",
     ("POST", "/admin/users/{id}/manager-replacement"): "ManagerReplacementResult",
@@ -316,6 +318,9 @@ def generate():
             if (verb, path) == ("GET", "/admin/credential-handoffs"):
                 success["headers"] = {"Cache-Control": {"description": "no-store, private", "schema": STRING}}
                 operation["description"] = "Company ADMIN only. Returns temporary credentials only while available; employee-selected passwords are never returned."
+            if (verb, path) == ("GET", "/users/{id}/contact"):
+                success["headers"] = {"Cache-Control": {"description": "no-store", "schema": STRING}}
+                operation["description"] = "Business managers only. Read the telephone of one active member in the caller's existing enterprise and management scope. Unavailable members use uniform 404. Candidate lists never expose phone numbers."
             for error in errors:
                 operation["responses"][str(error)] = {"description": "Structured error; unavailable private objects use uniform 404.", "content": {"application/json": {"schema": ref("Error")}}}
             document["paths"].setdefault(path, {})[verb.lower()] = operation

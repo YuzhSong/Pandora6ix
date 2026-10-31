@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -71,7 +72,8 @@ fun CalendarScreen(
     loading: Boolean = false,
     error: String? = null,
     onRetry: () -> Unit = {},
-    notice: String? = null
+    notice: String? = null,
+    onOpenSummary: () -> Unit = {}
 ) {
     var menu by rememberSaveable { mutableStateOf(false) }
     var adding by rememberSaveable { mutableStateOf(false) }
@@ -85,8 +87,8 @@ fun CalendarScreen(
     val today = todayDate()
     // 月视图消费定位信号；年视图用导航版本直接重建目标网格，避免旧布局参与跳转。
     var gridJumpTarget by remember { mutableStateOf<DemoDate?>(null) }
-    var monthAnchorYear by remember { mutableIntStateOf(cursor.year) }
-    var yearNavigationVersion by remember { mutableIntStateOf(0) }
+    var monthAnchorYear by rememberSaveable { mutableIntStateOf(cursor.year) }
+    var yearNavigationVersion by rememberSaveable { mutableIntStateOf(0) }
     fun jumpToDate(date: DemoDate) {
         if (mode == CalendarMode.MONTH) monthAnchorYear = date.year
         if (mode == CalendarMode.YEAR) yearNavigationVersion++
@@ -102,7 +104,7 @@ fun CalendarScreen(
     }
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
-            Row(Modifier.fillMaxWidth().height(44.dp).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box {
                     TextButton({ menu = true }, colors = ButtonDefaults.textButtonColors(contentColor = Ink)) {
                         Text(mode.label, fontSize = 20.sp, fontWeight = FontWeight.Bold)
@@ -111,6 +113,12 @@ fun CalendarScreen(
                     DropdownMenu(menu, { menu = false }) {
                         CalendarMode.entries.forEach { option -> DropdownMenuItem({ Text(option.label) }, { menu = false; onChangeModeRecenter(option) }) }
                     }
+                }
+                Spacer(Modifier.weight(1f))
+                TextButton(onOpenSummary, colors = ButtonDefaults.textButtonColors(contentColor = Ink)) {
+                    Icon(Icons.Default.Checklist, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("任务汇总")
                 }
             }
             val weekStart = mondayOfWeek(cursor)
@@ -705,14 +713,17 @@ private fun Modifier.swipeNavigate(mode: CalendarMode, onAdvance: (Boolean) -> U
     onSelectDate: (DemoDate) -> Unit,
     onSelectMonth: (DemoDate) -> Unit
 ) {
-    var window by remember { mutableStateOf(YearGridWindow(cursor.year, cursor.month)) }
+    var window by rememberSaveable(stateSaver = listSaver(
+        save = { listOf(it.anchorYear, it.initialMonth, it.scrollOffset) },
+        restore = { YearGridWindow(it[0], it[1], it[2]) }
+    )) { mutableStateOf(YearGridWindow(cursor.year, cursor.month)) }
     val taskSnapshot = tasks.toList()
     val currentCursor by rememberUpdatedState(cursor)
     val reportYear by rememberUpdatedState(onYearChange)
     key(window) {
         val activeWindow = window
-        // 不恢复其他窗口的滚动状态；当前 cursor 已由上层保存。
-        val state = remember { LazyGridState(activeWindow.initialIndex, activeWindow.scrollOffset) }
+        // 显式日期导航由父级 key 重建窗口；二级页面返回则恢复当前窗口的精确滚动位置。
+        val state = rememberSaveable(saver = LazyGridState.Saver) { LazyGridState(activeWindow.initialIndex, activeWindow.scrollOffset) }
         LaunchedEffect(state) {
             snapshotFlow { state.layoutInfo.visibleItemsInfo.firstOrNull()?.index }
                 .collect { index ->
