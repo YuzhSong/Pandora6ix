@@ -274,7 +274,7 @@ public class TaskService
 
     private List<Map<String, Object>> assignments(IdentityService.Actor a, String task) {
         return db.rows(
-                "SELECT * FROM task_assignment WHERE enterprise_id=? AND task_id=? AND current_member=TRUE ORDER BY id",
+                "SELECT x.*,u.display_name AS recipient_name FROM task_assignment x JOIN app_user u ON u.enterprise_id=x.enterprise_id AND u.id=x.recipient_user_id WHERE x.enterprise_id=? AND x.task_id=? AND x.current_member=TRUE ORDER BY x.id",
                 a.enterpriseId(),
                 task);
     }

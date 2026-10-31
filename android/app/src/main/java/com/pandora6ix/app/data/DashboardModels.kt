@@ -42,7 +42,8 @@ data class AssignmentDto(
     val completionSource: String? = null,
     val completedByUserId: String? = null,
     val completedAt: String? = null,
-    val allowedActions: List<String> = emptyList()
+    val allowedActions: List<String> = emptyList(),
+    val recipientName: String? = null
 )
 
 @Serializable

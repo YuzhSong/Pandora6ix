@@ -131,7 +131,7 @@ def command_schemas():
 def read_schemas():
     versioned = {"id": ID, "version": INTEGER}
     tag = obj({**versioned, "name": STRING, "colorHex": STRING, "creatorUserId": ID})
-    assignment = obj({**versioned, "taskId": ID, "recipientUserId": ID,
+    assignment = obj({**versioned, "taskId": ID, "recipientUserId": ID, "recipientName": nullable(STRING),
         "executionStatus": {"type": "string", "enum": ["PENDING_APPROVAL", "ACTIVE", "AWAITING_ACCEPTANCE", "COMPLETED"]},
         "progressPercent": {"type": "integer", "minimum": 0, "maximum": 100},
         "workStatus": {"type": "string", "enum": ["NOT_STARTED", "IN_PROGRESS", "COMPLETED"]}, "allowedWorkStatuses": array(STRING),

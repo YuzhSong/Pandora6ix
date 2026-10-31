@@ -9831,6 +9831,16 @@
             "type": "string",
             "format": "uuid"
           },
+          "recipientName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "executionStatus": {
             "type": "string",
             "enum": [

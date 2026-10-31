@@ -1,5 +1,6 @@
 package com.pandora6ix.app.ui.review
 
+import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -87,6 +88,10 @@ import com.pandora6ix.app.ui.theme.Mint
 import com.pandora6ix.app.ui.theme.MintDeep
 import com.pandora6ix.app.ui.theme.Peach
 import com.pandora6ix.app.ui.theme.WarmCard
+import com.pandora6ix.app.ui.theme.LocalAppTheme
+import com.pandora6ix.app.ui.theme.Cream
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.material3.MaterialTheme
 import com.pandora6ix.app.ui.theme.WarmDashboard
 import com.pandora6ix.app.ui.theme.WarmOrange
 import com.pandora6ix.app.ui.theme.priorityMeta
@@ -179,7 +184,7 @@ fun ReviewScreen(taskRepo: TaskRepository, availableTags: List<TagDto>, business
     }
 
     // 背景与设置页一致（主题 dashboard 色），避免同一主题下不同页面底色深浅不一
-    Column(Modifier.fillMaxSize().background(WarmDashboard)) {
+    Column(Modifier.fillMaxSize().background(LocalAppTheme.current.background)) {
         TopAppBar(
             title = { Text("审批中心", fontWeight = FontWeight.Bold, maxLines = 1) },
             navigationIcon = { IconButton(onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") } },
@@ -247,7 +252,7 @@ private fun QueueTab(label: String, selected: Boolean, modifier: Modifier = Modi
 @Composable
 private fun ReviewCard(review: TaskReviewDto, businessTimezone: String?, unread: Boolean = false, onOpen: () -> Unit) {
     val snapshot = parseSnapshot(review.submittedSnapshot)
-    Card(Modifier.fillMaxWidth().clickable(onClick = onOpen), colors = CardDefaults.cardColors(containerColor = WarmCard), shape = RoundedCornerShape(16.dp)) {
+    Card(Modifier.fillMaxWidth().clickable(onClick = onOpen), colors = CardDefaults.cardColors(containerColor = WarmCard), shape = RoundedCornerShape(16.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(snapshot.title.ifBlank { "未命名任务" }, Modifier.weight(1f), fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -338,13 +343,13 @@ private fun ReviewDetail(review: TaskReviewDto, taskRepo: TaskRepository, availa
 
     androidx.activity.compose.BackHandler(onBack = onBack)
     // 背景与设置页一致（主题 dashboard 色）
-    Column(Modifier.fillMaxSize().background(WarmDashboard)) {
+    Column(Modifier.fillMaxSize().background(LocalAppTheme.current.background)) {
         TopAppBar(
             title = { Text("审批详情", fontWeight = FontWeight.Bold) },
             navigationIcon = { IconButton(onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") } },
             colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
         )
-        val tagNames = snapshot.tagIds.mapNotNull { id -> availableTags.firstOrNull { it.id == id } }
+        val tagNames = snapshot.tagIds.sortedBy { if (it == snapshot.primaryTagId) 0 else 1 }.mapNotNull { id -> availableTags.firstOrNull { it.id == id } }
         val executors = executorActors(current, snapshot)
         LazyColumn(Modifier.fillMaxSize().weight(1f), contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             // 概览：标题 + 决策 + 类型/重要程度 + 说明
@@ -414,6 +419,7 @@ private fun ReviewDetail(review: TaskReviewDto, taskRepo: TaskRepository, availa
                                 "${tag.name}${if (tag.id == snapshot.primaryTagId) " · 主" else ""}",
                                 Modifier.clip(RoundedCornerShape(10.dp))
                                     .background(tagHexColor(tag.colorHex))
+                                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(10.dp))
                                     .padding(horizontal = 10.dp, vertical = 4.dp),
                                 fontSize = 12.sp,
                                 color = Ink
@@ -457,7 +463,7 @@ private fun ReviewDetail(review: TaskReviewDto, taskRepo: TaskRepository, availa
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     // 批注入口：点击后在屏幕底部、键盘上方展开输入条（微信打字框样式）
                     Row(
-                        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(CreamDeep).clickable { commentOpen = true }.padding(horizontal = 12.dp, vertical = 14.dp),
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Cream).clickable { commentOpen = true }.padding(horizontal = 12.dp, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
@@ -537,7 +543,7 @@ private fun ReviewDetail(review: TaskReviewDto, taskRepo: TaskRepository, availa
 private fun SectionCard(title: String, content: @Composable ColumnScope.() -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(title, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Ink.copy(alpha = .5f))
-        Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = WarmCard), shape = RoundedCornerShape(16.dp)) {
+        Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = WarmCard), shape = RoundedCornerShape(16.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp), content = content)
         }
     }
@@ -554,7 +560,7 @@ private fun InfoRow(label: String, value: String) {
 /** 文字小标签：类型等次要信息 */
 @Composable
 private fun MetaChip(text: String) {
-    Box(Modifier.clip(RoundedCornerShape(10.dp)).background(CreamDeep).padding(horizontal = 10.dp, vertical = 4.dp)) {
+    Box(Modifier.clip(RoundedCornerShape(10.dp)).background(Cream).padding(horizontal = 10.dp, vertical = 4.dp)) {
         Text(text, fontSize = 12.sp, color = Ink.copy(alpha = .8f))
     }
 }
@@ -572,7 +578,7 @@ private fun PersonRow(label: String, name: String, jobTitle: String?, userId: St
                     jobTitle?.takeIf { it.isNotBlank() }?.let {
                         Text(
                             it,
-                            Modifier.clip(RoundedCornerShape(8.dp)).background(CreamDeep).padding(horizontal = 6.dp, vertical = 2.dp),
+                            Modifier.clip(RoundedCornerShape(8.dp)).background(Cream).padding(horizontal = 6.dp, vertical = 2.dp),
                             fontSize = 11.sp,
                             color = Ink.copy(alpha = .65f)
                         )
@@ -596,7 +602,7 @@ private fun PersonChip(actor: ReviewActorDto, userRepo: UserRepository?) {
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(name, fontSize = 14.sp, fontWeight = FontWeight.Medium, lineHeight = 19.sp)
             actor.jobTitle?.takeIf { it.isNotBlank() }?.let {
-                Text(it, Modifier.clip(RoundedCornerShape(8.dp)).background(CreamDeep).padding(horizontal = 6.dp, vertical = 2.dp), fontSize = 11.sp, color = Ink.copy(alpha = .65f))
+                Text(it, Modifier.clip(RoundedCornerShape(8.dp)).background(Cream).padding(horizontal = 6.dp, vertical = 2.dp), fontSize = 11.sp, color = Ink.copy(alpha = .65f))
             }
         }
     }

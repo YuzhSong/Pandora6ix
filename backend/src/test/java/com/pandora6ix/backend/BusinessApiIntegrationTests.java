@@ -2947,6 +2947,7 @@ class BusinessApiIntegrationTests {
         reviewDecision(managerToken, task, "APPROVE");
         String id = str(task,"id");
         var before = request("GET","/tasks/"+id,leadToken,null,200);
+        assertEquals("employee", ((Map<?,?>)((List<?>)before.get("authorizedAssignments")).getFirst()).get("recipientName"));
         String oldAssignment = assignment(id,employee);
         var change = revision(((Number)before.get("version")).longValue(),"Changed delegation");
         change.put("recipientIds",List.of(peer));

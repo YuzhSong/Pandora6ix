@@ -963,7 +963,7 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
       val selected = panels.firstOrNull { it.title == expandedPanel }
       if (selected != null) {
           Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .42f)).clickable { expandedPanel = null })
-          Card(Modifier.align(Alignment.Center).fillMaxWidth(.9f).fillMaxHeight(.82f).clickable { }, shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = WarmCard), elevation = CardDefaults.cardElevation(10.dp)) {
+          Card(Modifier.align(Alignment.Center).fillMaxWidth(.9f).fillMaxHeight(.82f).clickable { }, shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = Color.White), elevation = CardDefaults.cardElevation(10.dp)) {
               Column(Modifier.fillMaxSize().padding(20.dp)) {
                   Row(verticalAlignment = Alignment.CenterVertically) {
                       Box(Modifier.size(10.dp).clip(CircleShape).background(WarmOrange))
@@ -1707,7 +1707,7 @@ private data class EntryDraft(val entryId: String?, val content: String)
             val journalFocusManager = LocalFocusManager.current
             // 底部对齐 + 导航栏/键盘避让：弹窗直接落在键盘（或导航栏）上方，不再留出一段空白
             Box(Modifier.fillMaxSize()) {
-            Card(Modifier.align(Alignment.BottomCenter).navigationBarsPadding().imePadding().fillMaxWidth(.9f).fillMaxHeight(if (imeVisible) .92f else .9f).border(2.dp, CreamDeep, RoundedCornerShape(24.dp)).clickable { }, shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = WarmCard)) {
+            Card(Modifier.align(Alignment.BottomCenter).navigationBarsPadding().imePadding().fillMaxWidth(.9f).fillMaxHeight(if (imeVisible) .92f else .9f).border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(24.dp)).clickable { }, shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
                 Column(Modifier.fillMaxSize().padding(20.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) { Text(if (editingJournal != null) "编辑日志" else "记录日志", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f)); IconButton({ closeEditor() }) { Icon(Icons.Default.Close, "关闭") } }
                     // 日期、标签与工作条目共用滚动视口，保留键盘和导航栏避让。
@@ -2345,10 +2345,31 @@ private fun SummaryTaskDetail(id: String, repo: TaskRepository, tags: List<TagDt
     androidx.activity.compose.BackHandler(onBack = onBack)
     val scope = rememberCoroutineScope()
     // 任务说明弹窗：状态标签（已完成/未完成）+ 阶段性内容记录（不做百分比）
-    var showDescDialog by remember { mutableStateOf(false) }
     // 可执行关系与更新权限：无权限时详情只做展示（只读状态与已有记录）
     val ownerId = SessionStore(LocalContext.current).ownerId
     val detailAssignment = dto?.authorizedAssignments?.firstOrNull { it.recipientUserId == ownerId }
+    val executionNames = remember(dto?.id, dto?.version) { mutableStateMapOf<String,String>().apply {
+        dto?.authorizedAssignments?.forEach { assignment ->
+            assignment.recipientName?.takeIf { it.isNotBlank() }?.let { put(assignment.recipientUserId, it) }
+        }
+        currentUser?.let { put(it.id, it.displayName.ifBlank { it.name }) }
+    } }
+    LaunchedEffect(dto?.id, dto?.version, currentUser?.id) {
+        val ids = dto?.authorizedAssignments?.map { it.recipientUserId }.orEmpty()
+        if (currentUser?.capabilities?.manage != true || ids.all { !executionNames[it].isNullOrBlank() }) return@LaunchedEffect
+        try {
+            var cursor: String? = null
+            val seen = mutableSetOf<String>()
+            do {
+                val result = taskRepo.recipientCandidatePage(cursor = cursor, limit = 100)
+                executionNames.putAll(result.items.filter { it.displayName.isNotBlank() }.associate { it.id to it.displayName })
+                cursor = result.nextCursor
+                check(cursor == null || seen.add(cursor))
+            } while (cursor != null && ids.any { executionNames[it].isNullOrBlank() })
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+        catch (_: Exception) { /* The authorized detail remains usable if legacy name lookup fails. */ }
+    }
+
     val canUpdateTask = detailAssignment?.allowedActions?.any { it == "UPDATE_PROGRESS" || it == "COMPLETE_PERSONAL" || it == "REQUEST_COMPLETION" } == true ||
         (dto?.seriesId != null && dto.kind == "PERSONAL" && dto.reviewStatus == "APPROVED" && detailAssignment != null)
     var repeatStatus by remember { mutableStateOf<String?>(null) }
@@ -2440,9 +2461,9 @@ private fun SummaryTaskDetail(id: String, repo: TaskRepository, tags: List<TagDt
                         if (dto.pendingEditReviewId != null) Text("修改待上级审批", color = ThemeButton, fontSize = 13.sp)
                         if (dto.tags.isNotEmpty()) {
                             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                dto.tags.forEach { tag ->
+                                dto.tags.sortedBy { if (it.id == dto.primaryTagId) 0 else 1 }.forEach { tag ->
                                     Text(if (tag.id == dto.primaryTagId) "${tag.name} · 主" else tag.name,
-                                        Modifier.clip(RoundedCornerShape(8.dp)).background(CreamDeep).padding(horizontal = 8.dp, vertical = 4.dp), fontSize = 12.sp)
+                                        Modifier.clip(RoundedCornerShape(8.dp)).background(tagHexColor(tag.colorHex)).border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(8.dp)).padding(horizontal = 8.dp, vertical = 4.dp), fontSize = 12.sp)
                                 }
                             }
                         }
@@ -2466,7 +2487,7 @@ private fun SummaryTaskDetail(id: String, repo: TaskRepository, tags: List<TagDt
                         dto.authorizedAssignments.forEachIndexed { i, assignment ->
                             if (i > 0) HorizontalDivider(color = HairLine)
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                val name = if (assignment.recipientUserId == currentUser?.id) currentUser.displayName.ifBlank { currentUser.name } else "成员 ${assignment.recipientUserId.takeLast(4)}"
+                                val name = executionNames[assignment.recipientUserId]?.takeIf { it.isNotBlank() } ?: "姓名暂不可用"
                                 RemoteAvatar(assignment.recipientUserId, name, 32.dp, 14.sp, userRepo)
                                 Text("$name · ${executionStatusLabel(assignment.executionStatus)}", lineHeight = 22.sp)
                             }
@@ -2484,7 +2505,36 @@ private fun SummaryTaskDetail(id: String, repo: TaskRepository, tags: List<TagDt
                         }
                         stageError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp) }
                         if (stageBusy) LinearProgressIndicator(Modifier.fillMaxWidth(), color = ThemeButton)
-                        TextButton({ showDescDialog = true }) { Text(if (canUpdateTask) "更新执行进度" else "查看执行记录", color = ThemeButton) }
+                        if (canUpdateTask && detailAssignment != null) {
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                            Text("更新执行状态", fontWeight = FontWeight.SemiBold)
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                FilterChip(selected = detailAssignment.executionStatus == "COMPLETED", enabled = !stageBusy,
+                                    onClick = { if (detailAssignment.executionStatus != "COMPLETED") markCompleted(detailAssignment) }, label = { Text("已完成") })
+                                if (dto.seriesId != null && dto.kind == "PERSONAL" && detailAssignment.executionStatus == "COMPLETED") {
+                                    OutlinedButton({ repeatStatus = "NOT_STARTED" }, enabled = !stageBusy) { Text("恢复未完成") }
+                                }
+                            }
+                            if ("UPDATE_PROGRESS" in detailAssignment.allowedActions) {
+                                OutlinedTextField(stageNote, { stageNote = it; stageError = null }, Modifier.fillMaxWidth(),
+                                    label = { Text("阶段性内容记录") }, minLines = 3, enabled = !stageBusy)
+                                TextButton({ recordStage(detailAssignment) }, enabled = !stageBusy && stageNote.isNotBlank()) { Text("保存记录", color = ThemeButton) }
+                            }
+                        }
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        Text("执行记录", fontWeight = FontWeight.SemiBold)
+                        val records = dto.progressRecords.filter { !it.note.isNullOrBlank() }.sortedByDescending { it.recordedAt }
+                        if (records.isEmpty()) Text("暂无执行记录", color = Ink.copy(alpha = .7f))
+                        records.forEach { record ->
+                            Surface(Modifier.fillMaxWidth(), color = WarmCard, shape = RoundedCornerShape(10.dp),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
+                                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text(record.note.orEmpty(), lineHeight = 22.sp)
+                                    record.recordedAt?.let { Text(businessDateTimeLabel(it, businessTimezone), fontSize = 12.sp, color = Ink.copy(alpha = .7f)) }
+                                }
+                            }
+                        }
+
                     }
                 }
             } else if (isLog) {
@@ -2494,112 +2544,7 @@ private fun SummaryTaskDetail(id: String, repo: TaskRepository, tags: List<TagDt
             }
         }
     }
-    // 任务说明弹窗：状态标签（已完成/未完成）+ 阶段性内容输入框（不做百分比），已有记录直接展示
-    if (showDescDialog && dto != null && item != null) {
-        val assignment = detailAssignment
-        val completed = assignment?.executionStatus == "COMPLETED"
-        val records = dto.progressRecords.filter { !it.note.isNullOrBlank() }.sortedByDescending { it.recordedAt }.take(5)
-        AlertDialog(
-            onDismissRequest = { if (!stageBusy) showDescDialog = false },
-            title = { Text(if (canUpdateTask) "任务说明与进度" else "任务说明", fontWeight = FontWeight.Bold) },
-            text = {
-                Column(Modifier.verticalScroll(rememberScrollState())) {
-                    // 备注正文比「任务状态」等小标题更大，与其他详情界面的正文字号一致
-                    Text(dto.description?.takeIf { it.isNotBlank() } ?: "暂无备注", fontSize = 19.sp, lineHeight = 30.sp, fontWeight = FontWeight.Medium, color = Ink.copy(alpha = .85f))
-                    Spacer(Modifier.height(14.dp))
-                    Text("任务状态", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                    Spacer(Modifier.height(6.dp))
-                    if (canUpdateTask) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            FilterChip(
-                                selected = completed,
-                                onClick = { if (!completed && assignment != null) markCompleted(assignment) },
-                                label = { Text("已完成") },
-                                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Mint, selectedLabelColor = Ink)
-                            )
-                            FilterChip(
-                                selected = !completed,
-                                onClick = { if (completed && dto.seriesId != null && dto.kind == "PERSONAL") repeatStatus = "NOT_STARTED" },
-                                label = { Text("未完成") },
-                                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = CreamDeep, selectedLabelColor = Ink)
-                            )
-                        }
-                    } else {
-                        // 无更新权限：只显示当前状态，沿用状态标签原本的色块样式（已完成薄荷、未完成米黄）
-                        Surface(shape = RoundedCornerShape(8.dp), color = if (completed) Mint else CreamDeep) {
-                            Text(
-                                if (completed) "已完成" else "未完成",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = Ink,
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-                            )
-                        }
-                    }
-                    Spacer(Modifier.height(14.dp))
-                    Text("阶段性内容记录", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                    Spacer(Modifier.height(6.dp))
-                    if (canUpdateTask) {
-                        OutlinedTextField(
-                            stageNote,
-                            { stageNote = it; stageError = null },
-                            Modifier.fillMaxWidth(),
-                            placeholder = { Text("记录目前已完成的阶段性内容…") },
-                            minLines = 3,
-                            maxLines = 5,
-                            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Ink.copy(alpha = .65f), unfocusedBorderColor = Ink.copy(alpha = .25f), cursorColor = Ink)
-                        )
-                        if (assignment != null && "UPDATE_PROGRESS" in assignment.allowedActions) {
-                            TextButton({ recordStage(assignment) }, enabled = !stageBusy && stageNote.isNotBlank()) { Text("保存记录", color = WarmOrange, fontWeight = FontWeight.Bold) }
-                        } else if (assignment != null) {
-                            Text("当前账号无记录进度的权限。", fontSize = 12.sp, color = Ink.copy(alpha = .5f), modifier = Modifier.padding(top = 4.dp))
-                        }
-                        stageError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
-                        if (stageBusy) Text("处理中…", fontSize = 12.sp, color = Ink.copy(alpha = .6f), modifier = Modifier.padding(top = 4.dp))
-                        if (records.isNotEmpty()) {
-                            Spacer(Modifier.height(10.dp))
-                            Text("已有记录", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                            Spacer(Modifier.height(6.dp))
-                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                records.forEach { r ->
-                                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(CreamDeep).padding(10.dp)) {
-                                        Text(r.note!!, fontSize = 13.sp, lineHeight = 19.sp)
-                                        r.recordedAt?.let { Text(it.substring(0, minOf(16, it.length)).replace("T", " "), fontSize = 11.sp, color = Ink.copy(alpha = .55f)) }
-                                    }
-                                }
-                            }
-                        }
-                    } else {
-                        // 无更新权限：沿用原来的文本框外观只读展示；无记录时框内直接显示「暂无内容」
-                        OutlinedTextField(
-                            if (records.isEmpty()) "暂无内容" else records.joinToString("\n\n") { it.note!! },
-                            {},
-                            Modifier.fillMaxWidth(),
-                            readOnly = true,
-                            minLines = 3,
-                            maxLines = 5,
-                            textStyle = TextStyle(color = Ink.copy(alpha = .6f), fontSize = 14.sp, lineHeight = 21.sp),
-                            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Ink.copy(alpha = .65f), unfocusedBorderColor = Ink.copy(alpha = .25f), cursorColor = Ink)
-                        )
-                        if (records.isNotEmpty()) {
-                            Spacer(Modifier.height(10.dp))
-                            Text("已有记录", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                            Spacer(Modifier.height(6.dp))
-                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                records.forEach { r ->
-                                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(CreamDeep).padding(10.dp)) {
-                                        Text(r.note!!, fontSize = 13.sp, lineHeight = 19.sp)
-                                        r.recordedAt?.let { Text(it.substring(0, minOf(16, it.length)).replace("T", " "), fontSize = 11.sp, color = Ink.copy(alpha = .55f)) }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = { TextButton({ if (!stageBusy) showDescDialog = false }) { Text("关闭", color = Ink) } }
-        )
-    }
+
 }
 
 @Composable

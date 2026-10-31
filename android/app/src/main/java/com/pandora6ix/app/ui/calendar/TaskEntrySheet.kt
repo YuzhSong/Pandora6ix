@@ -116,7 +116,30 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
         else -> "DELEGATED"
     }
     var candidates by remember { mutableStateOf<List<RecipientDto>>(emptyList()) }
-    val candidateNames = remember { mutableStateMapOf<String, String>() }
+    val candidateNames = remember { mutableStateMapOf<String, String>().apply {
+        editingTask?.authorizedAssignments?.forEach { assignment ->
+            assignment.recipientName?.takeIf { it.isNotBlank() }?.let { put(assignment.recipientUserId, it) }
+        }
+    } }
+    var namesLoading by remember { mutableStateOf(false) }
+    var namesFailed by remember { mutableStateOf(false) }
+    var namesRetry by remember { mutableIntStateOf(0) }
+    LaunchedEffect(selectedRecipientIds, namesRetry) {
+        if (!canDelegate || selectedRecipientIds.all { !candidateNames[it].isNullOrBlank() }) return@LaunchedEffect
+        namesLoading = true; namesFailed = false
+        try {
+            var cursor: String? = null
+            val seen = mutableSetOf<String>()
+            do {
+                val result = taskRepo.recipientCandidatePage(cursor = cursor, limit = 100)
+                candidateNames.putAll(result.items.filter { it.displayName.isNotBlank() }.associate { it.id to it.displayName })
+                cursor = result.nextCursor
+                check(cursor == null || seen.add(cursor))
+            } while (cursor != null && selectedRecipientIds.any { candidateNames[it].isNullOrBlank() })
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) { namesFailed = true }
+        finally { namesLoading = false }
+    }
     // 本人姓名来自登录资料（displayName → name → loginName），无需等候选接口加载即可显示真实姓名
     selfRecipient?.takeIf { it.displayName.isNotBlank() }?.let { candidateNames.putIfAbsent(it.id, it.displayName) }
     var recipientQuery by remember { mutableStateOf("") }
@@ -199,7 +222,7 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
     fun pickTime(target: String) { timePickTarget = target }
     fun nameOf(id: String): String = candidateNames[id]?.ifBlank { null }
         ?: selfRecipient?.takeIf { it.id == id }?.displayName?.ifBlank { null }
-        ?: "成员 ${id.takeLast(4)}"
+        ?: if (namesLoading) "加载姓名…" else "姓名暂不可用"
     /** 提交创建：POST /tasks（非幂等，携带 Idempotency-Key；失败重试复用同一键） */
     fun submit(editScope: String? = null) {
         error = when {
@@ -260,7 +283,7 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
             }
         }
     }
-    ModalBottomSheet(onDismissRequest = requestClose, sheetState = sheetState, containerColor = Cream) {
+    ModalBottomSheet(onDismissRequest = requestClose, sheetState = sheetState, containerColor = Color.White) {
         Column(Modifier.fillMaxWidth().fillMaxHeight(.88f).padding(horizontal = 20.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(if (editingTask == null) "添加任务" else "编辑任务", fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
@@ -323,17 +346,18 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
                 Text("标签", fontWeight = FontWeight.SemiBold)
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     tags.forEachIndexed { i, name ->
-                        val tagColor = availableTags.firstOrNull { it.name == name }?.let { tagHexColor(it.colorHex) } ?: Ink
+                        val tagColor = availableTags.firstOrNull { it.name == name }?.let { androidx.compose.ui.graphics.lerp(tagHexColor(it.colorHex), Ink, .10f) } ?: Ink
                         if (i == 0) {
-                            Button({ tags = tags - name }, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp), colors = ButtonDefaults.buttonColors(containerColor = tagColor, contentColor = Ink)) { Text("$name · 主", fontSize = 13.sp) }
+                            Button({ tags = tags - name }, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), colors = ButtonDefaults.buttonColors(containerColor = tagColor, contentColor = Ink)) { Text("$name · 主", fontSize = 13.sp) }
                         } else {
-                            OutlinedButton({ tags = tags - name }, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp), border = BorderStroke(1.dp, tagColor), colors = ButtonDefaults.outlinedButtonColors(contentColor = Ink)) { Text(name, fontSize = 13.sp) }
+                            OutlinedButton({ tags = tags - name }, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), colors = ButtonDefaults.outlinedButtonColors(containerColor = tagColor, contentColor = Ink)) { Text(name, fontSize = 13.sp) }
                         }
                     }
                     OutlinedButton({ showTagPicker = true }, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp), border = BorderStroke(1.dp, HairLine), colors = ButtonDefaults.outlinedButtonColors(contentColor = Ink)) { Icon(Icons.Default.Add, "选择标签", Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("选择标签", fontSize = 13.sp) }
                 }
                 run {
                 Text("接收人", fontWeight = FontWeight.SemiBold)
+                if (namesFailed) TextButton({ namesRetry++ }) { Text("姓名加载失败，重试", color = ThemeButton) }
                 if (selectedRecipientIds.isNotEmpty()) FlowRow(Modifier.fillMaxWidth().padding(vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     selectedRecipientIds.forEach { id ->
                         if (canDelegate) {
@@ -432,7 +456,7 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
                             Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { tags = if (selected) tags - tag.name else tags + tag.name }.padding(horizontal = 4.dp, vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Box(Modifier.size(14.dp).clip(CircleShape).background(tagHexColor(tag.colorHex)))
+                            Box(Modifier.size(22.dp).clip(CircleShape).background(androidx.compose.ui.graphics.lerp(tagHexColor(tag.colorHex), Ink, .10f)).border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape))
                             Spacer(Modifier.width(10.dp))
                             Text(tag.name, Modifier.weight(1f), fontSize = 15.sp)
                             Box(Modifier.width(72.dp).height(40.dp), contentAlignment = Alignment.Center) {

@@ -98,7 +98,7 @@ fun ProgressSheet(task: TaskDto, taskRepo: TaskRepository, onDismiss: () -> Unit
     if (repeatStatus != null) SeriesStatusEditor(current, taskRepo, repeatStatus!!, note = repeatNote,
         onDismiss = { repeatStatus = null; repeatCancelled?.invoke() },
         onSaved = { repeatStatus = null; repeatSaved?.invoke(); refresh() })
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState, containerColor = WarmCard) {
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState, containerColor = Color.White) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {

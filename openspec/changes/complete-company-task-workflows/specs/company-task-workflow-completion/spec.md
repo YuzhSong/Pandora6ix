@@ -1,5 +1,12 @@
 ## ADDED Requirements
 
+### Requirement: Clear task and approval presentation
+Task editing SHALL resolve authorized recipient display names when opened without requiring an @ search. Modal alert/date/time/confirmation surfaces SHALL be white. Editor tags SHALL all use visible fills derived from their stored color. Detail tags SHALL appear primary first using exact stored colors and a 1dp theme-neutral outline. Execution actions and text history SHALL appear inline, without a task-description dialog. Approval lists and details SHALL use profile-like themed off-white cards and neutral borders rather than dashboard yellow.
+
+#### Scenario: Open editor and task detail
+- **WHEN** an authorized creator edits a task and then reads its details
+- **THEN** existing recipients have resolved names, tags retain primary order and recognizable color, and execution records do not require a modal
+
 ### Requirement: Explicit company-wide tasks
 The system SHALL allow only FOUNDER business users to publish explicitly company-wide delegated tasks. The company panel SHALL list only approved company-wide tasks in the reader's enterprise, identically for all business readers. Legacy and ordinary delegated tasks SHALL remain private. Public reading SHALL NOT grant write, approval or execution rights.
 

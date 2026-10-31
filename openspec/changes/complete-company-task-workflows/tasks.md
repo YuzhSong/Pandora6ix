@@ -26,3 +26,9 @@
 
 ## 8. Final verification
 - [ ] 8.1 Audit all seven requirements, run relevant checks and strict OpenSpec validation; report seven commits and any verified deployment limits.
+
+## 9. Confirmed UI follow-up
+- [x] 9.1 Resolve existing recipient names on editor open, with authorized server projection and legacy compatibility.
+- [x] 9.2 Unify white modal surfaces, clear filled editor tags, primary-first exact-color detail chips and neutral borders.
+- [x] 9.3 Inline execution controls/history and restyle all approval surfaces to match profile.
+- [x] 9.4 Build, test and inspect the five requested UI refinements; commit the follow-up independently of the original seven commits.

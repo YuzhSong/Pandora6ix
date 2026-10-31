@@ -21,6 +21,14 @@
 
 ## Risks / Trade-offs
 
+### Confirmed UI refinement
+
+- Task assignments project recipientName within existing task authorization; the editor seeds these names and proactively loads only missing names through the existing authorized paginated candidate API, including compatibility with deployed older responses.
+- Set all Material surface-container roles to white with transparent tint so alert/date/time/exit-confirmation dialogs inherit white; remove explicit tinted sheet overrides where applicable.
+- Keep stored tag colors unchanged. Derive a slightly stronger tint for the creation/editor picker only, based on the actual tag color; all selected tags receive fills. Detail chips use exact persisted color, primary first, with a 1dp theme-neutral outline.
+- Move the existing execution state actions and all textual history directly into the execution panel. Remove the description dialog and its launcher.
+- Approval screens use the same themed card background as profile with a shared neutral border; preserve semantic approval/rejection badges.
+
 - 新增公开任务阅读容易意外扩大写权限 → 分离只读投影与原有操作授权，覆盖非参与成员、跨企业、普通派发隔离测试。
 - 编辑参与人影响执行记录 → 明确保留既有记录与历史，在批准时原子应用；不让等待审批的变更提前生效。
 - 老版本后端未部署新增字段 → 同步契约并报告部署边界，不伪造成功。
