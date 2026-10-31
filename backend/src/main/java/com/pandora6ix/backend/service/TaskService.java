@@ -274,7 +274,7 @@ public class TaskService
 
     private List<Map<String, Object>> assignments(IdentityService.Actor a, String task) {
         return db.rows(
-                "SELECT * FROM task_assignment WHERE enterprise_id=? AND task_id=? ORDER BY id",
+                "SELECT * FROM task_assignment WHERE enterprise_id=? AND task_id=? AND current_member=TRUE ORDER BY id",
                 a.enterpriseId(),
                 task);
     }
@@ -394,7 +394,7 @@ public class TaskService
 
     private List<String> assignmentActions(
             IdentityService.Actor a, Map<String, Object> task, Map<String, Object> assignment) {
-        if (!"APPROVED".equals(task.get("review_status"))) return List.of();
+        if (Boolean.FALSE.equals(assignment.get("current_member")) || !"APPROVED".equals(task.get("review_status"))) return List.of();
         if (a.id().equals(assignment.get("recipient_user_id"))
                 && "ACTIVE".equals(assignment.get("execution_status")))
             return List.of(
@@ -463,7 +463,7 @@ public class TaskService
                             .append(placeholders)
                             .append(
                                     ") OR EXISTS (SELECT 1 FROM task_assignment x WHERE"
-                                        + " x.enterprise_id=t.enterprise_id AND x.task_id=t.id AND"
+                                        + " x.enterprise_id=t.enterprise_id AND x.task_id=t.id AND x.current_member=TRUE AND"
                                         + " x.recipient_user_id IN (")
                             .append(placeholders)
                             .append(")))");
@@ -474,7 +474,7 @@ public class TaskService
             default -> {
                 sql.append(
                         " AND t.review_status='APPROVED' AND EXISTS (SELECT 1 FROM task_assignment"
-                                + " x WHERE x.enterprise_id=t.enterprise_id AND x.task_id=t.id AND"
+                                + " x WHERE x.enterprise_id=t.enterprise_id AND x.task_id=t.id AND x.current_member=TRUE AND"
                                 + " x.recipient_user_id=?)");
                 args.add(a.id());
             }
@@ -542,22 +542,32 @@ public class TaskService
 
     @Transactional
     public Map<String, Object> patch(IdentityService.Actor a, String id, Contracts.TaskPatch c) {
+        return patchContent(a,id,c,false);
+    }
+
+    private Map<String,Object> patchContent(IdentityService.Actor a,String id,Contracts.TaskPatch c,boolean seriesEdit) {
         a.business();
         var task=db.lock("task",a.enterpriseId(),id);
-        if (task.get("series_id") != null) throw BusinessException.invalid("重复任务请使用范围编辑。");
+        if (task.get("series_id") != null && !seriesEdit) throw BusinessException.invalid("重复任务请使用范围编辑。");
         if(!a.id().equals(task.get("creator_user_id"))) throw BusinessException.missing();
         if(number(task,"version")!=c.expectedVersion()) checkVersion(0);
         boolean effective="APPROVED".equals(task.get("review_status"));
         if(!effective&&!"PENDING".equals(task.get("review_status")))
             throw BusinessException.policy("Only pending or approved tasks can be edited.");
-        var recipients=assignments(a,id).stream().map(r->str(r,"recipient_user_id")).toList();
-        if("DELEGATED".equals(task.get("task_kind"))&&!scope.taskRecipients(a,recipients).containsAll(recipients))
+        var recipients=c.recipientIds()==null?assignments(a,id).stream().map(r->str(r,"recipient_user_id")).toList():List.copyOf(new LinkedHashSet<>(c.recipientIds()));
+        var proposedTask=new HashMap<String,Object>(task);
+        if(c.kind()!=null) proposedTask.put("task_kind",c.kind().name());
+        boolean companyWide=c.companyWide()==null?Boolean.TRUE.equals(task.get("company_wide")):c.companyWide();
+        if(companyWide && (!a.has("FOUNDER") || !"DELEGATED".equals(proposedTask.get("task_kind")))) throw BusinessException.forbidden();
+        validateRecipients(a,proposedTask,recipients);
+        if("DELEGATED".equals(proposedTask.get("task_kind"))&&!scope.taskRecipients(a,recipients).containsAll(recipients))
             throw new BusinessException(403,"RECIPIENT_OUT_OF_SCOPE","Recipients must remain active authorized users.");
         time(c.timeKind(),c.startDate(),c.endDate(),c.startTime(),c.endTime());
         var tagIds=tags.validate(a,c.tagIds(),c.primaryTagId());
-        var snapshot=fields("kind",task.get("task_kind"),"title",c.title(),"description",c.description(),"priorityLevel",c.priorityLevel(),
+        var snapshot=fields("kind",proposedTask.get("task_kind"),"title",c.title(),"description",c.description(),"priorityLevel",c.priorityLevel(),
                 "timeKind",c.timeKind(),"startDate",c.startDate(),"endDate",c.endDate(),"startTime",c.startTime(),"endTime",c.endTime(),
                 "recipientIds",recipients,"tagIds",tagIds,"primaryTagId",c.primaryTagId());
+        snapshot.put("companyWide",companyWide);
         snapshot.put("seriesId", task.get("series_id"));
         snapshot.put("recurrenceLabel", task.get("recurrence_label"));
         var auditBefore=audit.task(a,id);
@@ -588,6 +598,37 @@ public class TaskService
         return detail(a,id);
     }
 
+    void validateRecipients(IdentityService.Actor creator, Map<String,Object> task, List<String> recipients) {
+        if (recipients.isEmpty()) throw BusinessException.invalid("A task requires recipients.");
+        if ("PERSONAL".equals(task.get("task_kind"))) {
+            if (!recipients.equals(List.of(creator.id()))) throw BusinessException.invalid("A personal task belongs to its creator.");
+        } else if (!scope.taskRecipients(creator, recipients).containsAll(recipients)) {
+            throw BusinessException.forbidden();
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private void applyRecipients(IdentityService.Actor actor, String taskId, Map<String,Object> content) {
+        if (!(content.get("recipientIds") instanceof List<?>)) return;
+        var task=db.entity("task",actor.enterpriseId(),taskId);
+        var owner=db.entity("app_user",actor.enterpriseId(),str(task,"creator_user_id"));
+        var creator=identity.actor(str(owner,"id"),actor.enterpriseId(),str(owner,"org_unit_id"),null);
+        var recipients=List.copyOf(new LinkedHashSet<>((List<String>)content.get("recipientIds")));
+        validateRecipients(creator,task,recipients);
+        for (var old: assignments(actor,taskId)) {
+            if (!recipients.contains(str(old,"recipient_user_id")))
+                db.update("UPDATE task_assignment SET current_member=FALSE,version=version+1 WHERE enterprise_id=? AND id=?",actor.enterpriseId(),old.get("id"));
+        }
+        for (String recipient:recipients) {
+            var old=db.optional("SELECT id,current_member FROM task_assignment WHERE enterprise_id=? AND task_id=? AND recipient_user_id=?",actor.enterpriseId(),taskId,recipient);
+            if (old.isEmpty()) {
+                db.update("INSERT INTO task_assignment(id,enterprise_id,task_id,recipient_user_id,execution_status,activated_at) VALUES(?,?,?,?,?,CURRENT_TIMESTAMP)",id(),actor.enterpriseId(),taskId,recipient,"APPROVED".equals(task.get("review_status"))?"ACTIVE":"PENDING_APPROVAL");
+            } else if (Boolean.FALSE.equals(old.get().get("current_member"))) {
+                db.update("UPDATE task_assignment SET current_member=TRUE,version=version+1 WHERE enterprise_id=? AND id=?",actor.enterpriseId(),old.get().get("id"));
+            }
+        }
+    }
+
     /** Apply a validated immutable proposal within the caller's task-locked transaction. */
     @SuppressWarnings("unchecked")
     void applyContent(IdentityService.Actor a,String id,Map<String,Object> content,long expectedVersion) {
@@ -598,7 +639,10 @@ public class TaskService
         var tagIds=tags.validate(a,(List<String>)content.get("tagIds"),(String)content.get("primaryTagId"));
         checkVersion(db.update("UPDATE task SET title=?,description=?,priority_level=?,start_date=?,end_date=?,time_kind=?,start_minute=?,end_minute=?,primary_tag_id=?,version=version+1 WHERE enterprise_id=? AND id=? AND version=?",
                 content.get("title"),content.get("description"),content.get("priorityLevel"),start,end,kind.name(),minutes==null?null:minutes[0],minutes==null?null:minutes[1],content.get("primaryTagId"),a.enterpriseId(),id,expectedVersion));
+        if(content.get("kind")!=null) db.update("UPDATE task SET task_kind=? WHERE enterprise_id=? AND id=?",String.valueOf(content.get("kind")),a.enterpriseId(),id);
+        if(content.containsKey("companyWide")) db.update("UPDATE task SET company_wide=? WHERE enterprise_id=? AND id=?",Boolean.TRUE.equals(content.get("companyWide")),a.enterpriseId(),id);
         tags.replace(a,"task_tag","task_id",id,tagIds);
+        applyRecipients(a,id,content);
     }
 
     private List<Map<String,Object>> scopeTargets(IdentityService.Actor a,String id,String scope,boolean lock) {
@@ -635,16 +679,12 @@ public class TaskService
             scopeVersion(c.versions(),task);
             if(!a.id().equals(task.get("creator_user_id"))) throw BusinessException.missing();
             if(!"APPROVED".equals(task.get("review_status"))) throw BusinessException.policy("重复任务须先完成创建审批。");
-            var recipients=assignments(a,str(task,"id")).stream().map(r->str(r,"recipient_user_id")).toList();
-            if("DELEGATED".equals(task.get("task_kind"))&&!scope.taskRecipients(a,recipients).containsAll(recipients))
-                throw BusinessException.forbidden();
             var start=LocalDate.parse(task.get("start_date").toString()).plusDays(shift);
-            var content=fields("title",c.task().title(),"description",c.task().description(),"priorityLevel",c.task().priorityLevel(),
-                    "timeKind",c.task().timeKind(),"startDate",start,"endDate",start.plusDays(length),"startTime",c.task().startTime(),
-                    "endTime",c.task().endTime(),"tagIds",c.task().tagIds(),"primaryTagId",c.task().primaryTagId());
-            var old=audit.task(a,str(task,"id"));
-            applyContent(a,str(task,"id"),content,number(task,"version"));
-            audit.record(a,str(task,"id"),"TASK","TASK","UPDATE","修改重复任务",old,audit.task(a,str(task,"id")));
+            var proposed = new Contracts.TaskPatch(number(task,"version"), c.task().title(), c.task().description(),
+                    c.task().priorityLevel(), c.task().timeKind(), start, start.plusDays(length), c.task().startTime(),
+                    c.task().endTime(), c.task().tagIds(), c.task().primaryTagId(), c.task().recipientIds(), c.task().kind(), c.task().companyWide());
+            patchContent(a,str(task,"id"),proposed,true);
+
         }
         return detail(a,id);
     }
@@ -672,6 +712,7 @@ public class TaskService
     }
 
     private void active(Map<String, Object> task, Map<String, Object> assignment) {
+        if (Boolean.FALSE.equals(assignment.get("current_member"))) throw BusinessException.missing();
         if (!"APPROVED".equals(task.get("review_status"))
                 || !"ACTIVE".equals(assignment.get("execution_status")))
             throw new BusinessException(
@@ -682,6 +723,7 @@ public class TaskService
     public Map<String, Object> progress(IdentityService.Actor a, String id, Contracts.Progress c) {
         a.business();
         var assignment = db.lock("task_assignment", a.enterpriseId(), id);
+        if (Boolean.FALSE.equals(assignment.get("current_member"))) throw BusinessException.missing();
         if (!a.id().equals(assignment.get("recipient_user_id"))) throw BusinessException.missing();
         var task = db.entity("task", a.enterpriseId(), str(assignment, "task_id"));
         active(task, assignment);
@@ -730,6 +772,7 @@ public class TaskService
     public Map<String,Object> setWorkStatus(IdentityService.Actor a,String id,Contracts.AssignmentStatus c) {
         a.business();
         var assignment=db.lock("task_assignment",a.enterpriseId(),id);
+        if (Boolean.FALSE.equals(assignment.get("current_member"))) throw BusinessException.missing();
         if(!a.id().equals(assignment.get("recipient_user_id"))) throw BusinessException.missing();
         if(number(assignment,"version")!=c.expectedVersion()) checkVersion(0);
         var task=db.entity("task",a.enterpriseId(),str(assignment,"task_id"));
@@ -797,6 +840,7 @@ public class TaskService
             IdentityService.Actor a, String id, Contracts.CompletionRequest c) {
         a.business();
         var assignment = db.lock("task_assignment", a.enterpriseId(), id);
+        if (Boolean.FALSE.equals(assignment.get("current_member"))) throw BusinessException.missing();
         if (!a.id().equals(assignment.get("recipient_user_id"))) throw BusinessException.missing();
         var task = db.entity("task", a.enterpriseId(), str(assignment, "task_id"));
         if (!"DELEGATED".equals(task.get("task_kind")))
@@ -846,6 +890,7 @@ public class TaskService
         var request = db.lock("task_completion_request", a.enterpriseId(), id);
         String assignmentId = str(request, "assignment_id");
         var assignment = db.lock("task_assignment", a.enterpriseId(), assignmentId);
+        if (Boolean.FALSE.equals(assignment.get("current_member"))) throw BusinessException.missing();
         var auditBefore=audit.assignment(a,assignmentId);
         var task = db.entity("task", a.enterpriseId(), str(assignment, "task_id"));
         if (!a.id().equals(task.get("creator_user_id"))) throw BusinessException.missing();

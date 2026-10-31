@@ -133,7 +133,7 @@ class BusinessApiIntegrationTests {
         return request("POST","/tasks/recurring",token,body,201,"Idempotency-Key",UUID.randomUUID().toString());
     }
 
-    @Test void recurringScopedEditsPreservePastAndDoNotCreateNewApprovals() throws Exception {
+    @Test void recurringScopedEditsPreservePastAndRequireNewApprovals() throws Exception {
         var first=recurringFixture(employeeToken);
         request("POST","/task-reviews/"+first.get("reviewId")+"/decision",leadToken,fields("expectedVersion",0,"decision","APPROVE"),200);
         var rows=recurringScopeRows(employeeToken,str(first,"id")).stream().sorted(Comparator.comparing(t->t.get("startDate").toString())).toList();
@@ -142,9 +142,12 @@ class BusinessApiIntegrationTests {
                 "timeKind","ALL_DAY","startDate",selected.get("startDate"),"endDate",selected.get("endDate"),"tagIds",List.of());
         request("POST","/tasks/"+selected.get("id")+"/scoped-edit",employeeToken,
                 fields("scope","THIS_AND_FUTURE","task",command,"versions",recurringVersions(rows)),200,"Idempotency-Key",UUID.randomUUID().toString());
+        var editReviews=db.rows("SELECT id FROM task_review WHERE enterprise_id=? AND review_kind='EDIT'",enterprise);
+        assertEquals(2,editReviews.size());
+        for(var review:editReviews) request("POST","/task-reviews/"+review.get("id")+"/decision",leadToken,fields("expectedVersion",0,"decision","APPROVE"),200);
         var updated=db.rows("SELECT title,start_date,occurrence_date FROM task WHERE enterprise_id=? AND series_id=? ORDER BY occurrence_date",enterprise,first.get("seriesId"));
         assertEquals("Task",updated.get(0).get("title")); assertEquals("Edited future",updated.get(1).get("title")); assertEquals("Edited future",updated.get(2).get("title"));
-        assertEquals(1,db.rows("SELECT id FROM task_review WHERE enterprise_id=?",enterprise).size());
+        assertEquals(3,db.rows("SELECT id FROM task_review WHERE enterprise_id=?",enterprise).size());
         var stale=fields("scope","THIS_AND_FUTURE","task",command,"versions",recurringVersions(rows));
         request("POST","/tasks/"+selected.get("id")+"/scoped-edit",employeeToken,stale,409,"Idempotency-Key",UUID.randomUUID().toString());
         request("POST","/tasks/"+selected.get("id")+"/scoped-edit",peerToken,stale,404,"Idempotency-Key",UUID.randomUUID().toString());
@@ -2887,6 +2890,69 @@ class BusinessApiIntegrationTests {
         request("PATCH", "/tags/"+tag.get("id"), adminToken, fields("expectedVersion", 0, "name", "No"), 403);
         request("DELETE", "/tags/"+tag.get("id"), adminToken, null, 403);
         assertEquals(false, ((Map<?,?>)request("GET", "/me", adminToken, null, 200).get("capabilities")).get("createTags"));
+    }
+
+    @Test
+    void taskKindEditUsesProposedRecipientsAndCompanyPublicationStaysRestricted() throws Exception {
+        var task=createTask(leadToken,"PERSONAL",List.of(lead));
+        reviewDecision(managerToken,task,"APPROVE");
+        String id=str(task,"id");
+        var before=request("GET","/tasks/"+id,leadToken,null,200);
+        var change=revision(((Number)before.get("version")).longValue(),"Converted delegation");
+        change.put("kind","DELEGATED"); change.put("recipientIds",List.of(peer));
+        change.put("companyWide",true);
+        request("PATCH","/tasks/"+id,leadToken,change,403);
+        change.put("companyWide",false);
+        var pending=request("PATCH","/tasks/"+id,leadToken,change,200);
+        assertEquals("PERSONAL",pending.get("kind"));
+        request("POST","/task-reviews/"+pending.get("pendingEditReviewId")+"/decision",managerToken,fields("expectedVersion",0,"decision","APPROVE"),200);
+        var changed=request("GET","/tasks/"+id,leadToken,null,200);
+        assertEquals("DELEGATED",changed.get("kind"));
+        assertEquals("Converted delegation",changed.get("title"));
+        assertEquals(false,changed.get("companyWide"));
+        request("GET","/tasks/"+id,peerToken,null,200);
+    }
+
+    @Test
+    void participantEditWaitsForApprovalAndPreservesRetiredHistory() throws Exception {
+        var task = createTask(leadToken, "DELEGATED", List.of(employee));
+        reviewDecision(managerToken, task, "APPROVE");
+        String id = str(task,"id");
+        var before = request("GET","/tasks/"+id,leadToken,null,200);
+        String oldAssignment = assignment(id,employee);
+        var change = revision(((Number)before.get("version")).longValue(),"Changed delegation");
+        change.put("recipientIds",List.of(peer));
+        var proposed = request("PATCH","/tasks/"+id,leadToken,change,200);
+        assertEquals(before.get("title"),proposed.get("title"));
+        assertEquals(true,db.entity("task_assignment",enterprise,oldAssignment).get("current_member"));
+        String review = str(proposed,"pendingEditReviewId");
+        request("POST","/task-reviews/"+review+"/decision",managerToken,fields("expectedVersion",0,"decision","APPROVE"),200);
+        var changed = request("GET","/tasks/"+id,leadToken,null,200);
+        assertEquals("Changed delegation",changed.get("title"));
+        assertEquals(false,db.entity("task_assignment",enterprise,oldAssignment).get("current_member"));
+        request("PATCH","/task-assignments/"+oldAssignment+"/status",employeeToken,
+                fields("expectedVersion",db.entity("task_assignment",enterprise,oldAssignment).get("version"),"workStatus","IN_PROGRESS"),404);
+        request("GET","/tasks/"+id,employeeToken,null,404);
+        request("GET","/tasks/"+id,peerToken,null,200);
+        assertEquals("ACTIVE",db.entity("task_assignment",enterprise,assignment(id,peer)).get("execution_status"));
+        assertEquals("APPROVED",request("GET","/task-reviews/"+review,leadToken,null,200).get("decision"));
+    }
+
+    @Test
+    void repeatedEditsRequireSuperiorApprovalBeforeChangingOccurrences() throws Exception {
+        var first=recurringFixture(employeeToken);
+        request("POST","/task-reviews/"+first.get("reviewId")+"/decision",leadToken,fields("expectedVersion",0,"decision","APPROVE"),200);
+        var rows=recurringScopeRows(employeeToken,str(first,"id"));
+        var selected=rows.stream().filter(t->t.get("id").equals(first.get("id"))).findFirst().orElseThrow();
+        var change=revision(((Number)selected.get("version")).longValue(),"Proposed repeated edit");
+        change.put("startDate",selected.get("startDate")); change.put("endDate",selected.get("endDate"));
+        request("POST","/tasks/"+first.get("id")+"/scoped-edit",employeeToken,
+                fields("scope","THIS_AND_FUTURE","task",change,"versions",recurringVersions(rows)),200);
+        assertEquals(selected.get("title"),request("GET","/tasks/"+first.get("id"),employeeToken,null,200).get("title"));
+        var edits=db.rows("SELECT * FROM task_review WHERE enterprise_id=? AND review_kind='EDIT' AND task_id IN (SELECT id FROM task WHERE enterprise_id=? AND series_id=?)",enterprise,enterprise,first.get("seriesId"));
+        assertEquals(rows.size(),edits.size());
+        for(var edit:edits) request("POST","/task-reviews/"+edit.get("id")+"/decision",leadToken,fields("expectedVersion",0,"decision","APPROVE"),200);
+        assertEquals("Proposed repeated edit",request("GET","/tasks/"+first.get("id"),employeeToken,null,200).get("title"));
     }
 
     @Test

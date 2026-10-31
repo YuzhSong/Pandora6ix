@@ -143,7 +143,9 @@ public final class Contracts {
             String startTime,
             String endTime,
             @Size(max = 100) List<@NotBlank String> tagIds,
-            String primaryTagId) {}
+            String primaryTagId,
+            @Size(min = 1, max = 100) List<@NotBlank String> recipientIds,
+            TaskKind kind, Boolean companyWide) {}
 
     public record Progress(
             @NotNull @Min(0) Long expectedVersion,

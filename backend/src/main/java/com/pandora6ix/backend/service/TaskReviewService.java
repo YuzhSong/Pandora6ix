@@ -85,11 +85,20 @@ public class TaskReviewService {
                         a.enterpriseId(),
                         str(submitter, "org_unit_id"),
                         null);
+        if ("EDIT".equals(review.get("review_kind"))) {
+            @SuppressWarnings("unchecked") var snapshot=(Map<String,Object>)json.readValue(str(review,"submitted_snapshot"),Map.class);
+            try {
+                var proposed=new HashMap<String,Object>(task);
+                if(snapshot.get("kind")!=null) proposed.put("task_kind",String.valueOf(snapshot.get("kind")));
+                tasks.validateRecipients(creator,proposed,snapshotRecipientIds(snapshot));
+                return true;
+            } catch (BusinessException invalid) { return false; }
+        }
         var assignments =
                 db.rows(
                         "SELECT x.*,u.status AS user_status FROM task_assignment x JOIN app_user u"
                                 + " ON u.enterprise_id=x.enterprise_id AND u.id=x.recipient_user_id"
-                                + " WHERE x.enterprise_id=? AND x.task_id=?",
+                                + " WHERE x.enterprise_id=? AND x.task_id=? AND x.current_member=TRUE",
                         a.enterpriseId(),
                         task.get("id"));
         if (assignments.isEmpty()

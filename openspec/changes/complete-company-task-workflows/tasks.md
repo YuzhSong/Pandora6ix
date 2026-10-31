@@ -3,8 +3,8 @@
 - [x] 1.2 Verify private/public/cross-enterprise boundaries, build affected modules, update contracts and commit item 1 locally.
 
 ## 2. Full task editing
-- [ ] 2.1 Implement complete editable task information panel, separate execution panel and approved participant/content changes.
-- [ ] 2.2 Verify edit/approval/conflict flows, build and commit item 2 locally.
+- [x] 2.1 Implement complete editable task information panel, separate execution panel and approved participant/content changes.
+- [x] 2.2 Verify edit/approval/conflict flows, build and commit item 2 locally.
 
 ## 3. Completion acceptance
 - [ ] 3.1 Connect authorized acceptance/rejection controls and refreshed execution data.

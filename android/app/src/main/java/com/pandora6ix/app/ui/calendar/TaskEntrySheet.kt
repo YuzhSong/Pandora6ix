@@ -77,7 +77,7 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
         if (editingTask != null) TaskDraftDto(editingTask.kind, editingTask.title, editingTask.description.orEmpty(),
             editingTask.timeKind == "ALL_DAY", editingTask.startDate, editingTask.endDate,
             parseHhMm(editingTask.startTime) ?: 0, parseHhMm(editingTask.endTime) ?: 60,
-            editingTask.priorityLevel, editingTask.tags.map { it.name }, editingTask.authorizedAssignments.map { it.recipientUserId })
+            editingTask.priorityLevel, editingTask.tags.sortedBy { if (it.id == editingTask.primaryTagId) 0 else 1 }.map { it.name }, editingTask.authorizedAssignments.map { it.recipientUserId }, companyWide = editingTask.companyWide)
         else
         AppCache.readDraft(context, "task_draft.json")?.let { s -> runCatching { AppCache.json.decodeFromString<TaskDraftDto>(s) }.getOrNull() }
     }
@@ -111,7 +111,7 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
     }
     // 任务类型由接收人推导，不再由按钮区分：仅本人且有个人任务能力 → 个人任务，否则派发任务
     var companyWide by rememberSaveable { mutableStateOf(savedDraft?.companyWide == true) }
-    val kind = editingTask?.kind ?: when {
+    val kind = when {
         selectedRecipientIds.size == 1 && selectedRecipientIds.first() == selfRecipient?.id && canCreatePersonal -> "PERSONAL"
         else -> "DELEGATED"
     }
@@ -129,6 +129,7 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
     var submitting by remember { mutableStateOf(false) }
     var createdTask by remember { mutableStateOf<TaskDto?>(null) }
     val idempotencyKey = remember { UUID.randomUUID().toString() }
+    val editKeys = remember { mutableMapOf<String, String>() }
     LaunchedEffect(candidateOpen, selectedRecipientIds) {
         if (candidateOpen) {
             withFrameNanos { }
@@ -203,7 +204,7 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
     fun submit(editScope: String? = null) {
         error = when {
             title.isBlank() -> "请填写任务名称"
-            editingTask == null && selectedRecipientIds.isEmpty() -> "请至少选择一位接收人"
+            selectedRecipientIds.isEmpty() -> "请至少选择一位接收人"
             editingTask != null && editVersions == null -> if (editLoadError) "加载失败，请关闭后重试" else "正在加载任务"
             repeating && repeatPreview?.isFailure == true -> repeatPreview.exceptionOrNull()?.message ?: "重复规则无效"
             repeating && !allDay && endMinute <= startMinute -> "每次的结束时间须晚于开始时间（同一天）"
@@ -224,8 +225,9 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
                     val command = TaskPatchDto(editingTask.version, title.trim(), note.trim().ifBlank { null }, priority,
                         if (allDay) "ALL_DAY" else "TIMED", startKey.date().let { "%04d-%02d-%02d".format(it.year,it.month,it.day) },
                         endKey.date().let { "%04d-%02d-%02d".format(it.year,it.month,it.day) },
-                        if (allDay) null else minuteLabel(startMinute), if (allDay) null else minuteLabel(endMinute), tagIds, tagIds.firstOrNull())
-                    val updated = taskRepo.scopedEdit(editingTask.id, ScopedEditDto(editScope ?: "SINGLE", command, editVersions!!), UUID.randomUUID().toString())
+                        if (allDay) null else minuteLabel(startMinute), if (allDay) null else minuteLabel(endMinute), tagIds, tagIds.firstOrNull(), selectedRecipientIds, kind, companyWide && kind == "DELEGATED")
+                    val request = ScopedEditDto(editScope ?: "SINGLE", command, editVersions!!)
+                    val updated = taskRepo.scopedEdit(editingTask.id, request, editKeys.getOrPut(request.toString()) { UUID.randomUUID().toString() })
                     onCreated(updated); onDismiss()
                     return@launch
                 }
@@ -265,7 +267,7 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
                 IconButton(requestClose) { Icon(Icons.Default.Close, "关闭任务填写") }
             }
             Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                if (editingTask == null && currentUser?.roles?.contains("FOUNDER") == true && kind == "DELEGATED") {
+                if (currentUser?.roles?.contains("FOUNDER") == true && kind == "DELEGATED") {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Text("全公司可见", Modifier.weight(1f))
                         Switch(companyWide, { companyWide = it }, colors = com.pandora6ix.app.ui.theme.pandoraSwitchColors())
@@ -330,7 +332,7 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
                     }
                     OutlinedButton({ showTagPicker = true }, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp), border = BorderStroke(1.dp, HairLine), colors = ButtonDefaults.outlinedButtonColors(contentColor = Ink)) { Icon(Icons.Default.Add, "选择标签", Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("选择标签", fontSize = 13.sp) }
                 }
-                if (editingTask == null) {
+                run {
                 Text("接收人", fontWeight = FontWeight.SemiBold)
                 if (selectedRecipientIds.isNotEmpty()) FlowRow(Modifier.fillMaxWidth().padding(vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     selectedRecipientIds.forEach { id ->

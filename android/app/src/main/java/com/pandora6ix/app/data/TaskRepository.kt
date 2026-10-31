@@ -27,7 +27,8 @@ data class TaskCreateDto(
 @Serializable
 data class TaskPatchDto(val expectedVersion: Long, val title: String, val description: String?,
     val priorityLevel: Int, val timeKind: String, val startDate: String, val endDate: String,
-    val startTime: String?, val endTime: String?, val tagIds: List<String>, val primaryTagId: String?)
+    val startTime: String?, val endTime: String?, val tagIds: List<String>, val primaryTagId: String?,
+    val recipientIds: List<String>? = null, val kind: String? = null, val companyWide: Boolean? = null)
 @Serializable
 data class TaskScopeDto(val items: List<TaskDto> = emptyList())
 @Serializable

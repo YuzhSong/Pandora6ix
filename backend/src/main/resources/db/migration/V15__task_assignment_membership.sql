@@ -1,0 +1,1 @@
+ALTER TABLE task_assignment ADD COLUMN current_member BOOLEAN NOT NULL DEFAULT TRUE;

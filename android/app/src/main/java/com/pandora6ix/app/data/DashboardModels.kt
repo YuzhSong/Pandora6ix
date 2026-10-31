@@ -99,7 +99,8 @@ data class TaskDto(
     val recurrenceLabel: String? = null,
     val occurrenceCount: Int = 1,
     val occurrenceDate: String? = null,
-    val companyWide: Boolean = false
+    val companyWide: Boolean = false,
+    val pendingEditReviewId: String? = null
 )
 
 @Serializable

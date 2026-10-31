@@ -639,13 +639,16 @@ fun PandoraApp(
         Scaffold(containerColor = theme.background, bottomBar = { NavigationBar(containerColor = theme.backgroundDeep) { nav.forEach { item -> NavigationBarItem(selected = current == item.route, onClick = { route = item.route.name; detail = null; homeDetail = null; journalDetailId = null; showSettings = false; showReviews = false; showTagManage = false; progressTaskId = null; showTaskSummary = false }, icon = { MeNavIcon(item, reviewBadgeCount) }, label = { Text(item.label, fontSize = 11.sp) }, colors = NavigationBarItemDefaults.colors(selectedIconColor = WarmOrange, selectedTextColor = WarmOrange, indicatorColor = theme.backgroundDeep)) } } }) { padding ->
             Surface(Modifier.padding(padding).fillMaxSize(), color = theme.background) {
                 when {
+                    homeDetail?.kind == "TASK" && homeDetail?.id != null -> SummaryTaskDetail(
+                        homeDetail!!.id!!, taskRepo, serverTags, currentUser?.businessTimezone, currentUser,
+                        onBack = { homeDetail = null }, onChanged = { calRetry++ })
                     homeDetail != null -> HomeItemDetailScreen(dashboardRepo, homeDetail!!) { homeDetail = null }
                     journalDetailId != null -> JournalDetailScreen(journalRepo, journalDetailId!!, currentUser?.businessTimezone) { journalDetailId = null }
                     showTaskSummary -> key(currentUser!!.id) {
                         TaskSummaryFlow(
                             currentUser!!, calendarRepo, taskRepo, journalRepo, userRepo,
                             taskDetail = { id, onBack, onChanged ->
-                                SummaryTaskDetail(id, taskRepo, serverTags, currentUser?.businessTimezone, onBack) { onChanged(); calRetry++ }
+                                SummaryTaskDetail(id, taskRepo, serverTags, currentUser?.businessTimezone, currentUser, onBack) { onChanged(); calRetry++ }
                             },
                             journalDetail = { id, onBack -> JournalDetailScreen(journalRepo, id, currentUser?.businessTimezone, onBack) },
                             onClose = { showTaskSummary = false }
@@ -702,7 +705,7 @@ fun PandoraApp(
                             } catch (_: Exception) { /* Existing detail remains available for retry. */ }
                         }
                         val dto = taskDtoById[detailId]
-                        DetailScreen(detailId, dto, serverTags, taskRepo, onBack = { detail = null }, onChanged = { calRetry++ }, businessTimezone = currentUser?.businessTimezone)
+                        DetailScreen(detailId, dto, serverTags, taskRepo, onBack = { detail = null }, onChanged = { calRetry++ }, businessTimezone = currentUser?.businessTimezone, currentUser = currentUser)
                     }
                     else -> AnimatedContent(current, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "page") { target ->
                         when (target) {
@@ -2258,7 +2261,7 @@ private fun roleLabel(role: String): String = when (role.uppercase()) {
 @Composable private fun DetailCard(title: String, body: String, color: Color, maxLines: Int = 2, onClick: () -> Unit = {}) { Card(Modifier.fillMaxWidth().clickable(onClick = onClick), colors = CardDefaults.cardColors(containerColor = color.copy(alpha = .78f)), shape = RoundedCornerShape(16.dp)) { Column(Modifier.padding(14.dp)) { Text(title, fontWeight = FontWeight.Bold); Text(body, fontSize = 13.sp, color = Ink.copy(alpha = .75f), maxLines = maxLines, overflow = TextOverflow.Ellipsis) } } }
 /** Summary uses the same full task detail, with explicit loading/error before enabling actions. */
 @Composable
-private fun SummaryTaskDetail(id: String, repo: TaskRepository, tags: List<TagDto>, businessTimezone: String?, onBack: () -> Unit, onChanged: () -> Unit) {
+private fun SummaryTaskDetail(id: String, repo: TaskRepository, tags: List<TagDto>, businessTimezone: String?, currentUser: UserDto?, onBack: () -> Unit, onChanged: () -> Unit) {
     var task by remember(id) { mutableStateOf<TaskDto?>(null) }
     var loading by remember(id) { mutableStateOf(true) }
     var error by remember(id) { mutableStateOf<String?>(null) }
@@ -2285,11 +2288,12 @@ private fun SummaryTaskDetail(id: String, repo: TaskRepository, tags: List<TagDt
                 }
             }
         }
-        else -> DetailScreen(id, task, tags, repo, onBack, onChanged = { revision++; onChanged() }, businessTimezone = businessTimezone)
+        else -> DetailScreen(id, task, tags, repo, onBack, onChanged = { revision++; onChanged() }, businessTimezone = businessTimezone, currentUser = currentUser)
     }
 }
 
-@Composable private fun DetailScreen(title: String, dto: TaskDto?, availableTags: List<TagDto>, taskRepo: TaskRepository, onBack: () -> Unit, onChanged: () -> Unit, businessTimezone: String? = null) {
+@OptIn(ExperimentalLayoutApi::class)
+@Composable private fun DetailScreen(title: String, dto: TaskDto?, availableTags: List<TagDto>, taskRepo: TaskRepository, onBack: () -> Unit, onChanged: () -> Unit, businessTimezone: String? = null, currentUser: UserDto? = null) {
     val isLog = title.startsWith("日志 · ")
     val logContent = if (isLog) title.substringAfter("§", "") else null
     val displayTitle = dto?.title ?: if (isLog) title.substringBefore("§") else title
@@ -2354,53 +2358,57 @@ private fun SummaryTaskDetail(id: String, repo: TaskRepository, tags: List<TagDt
         }
     }
     if (editOpen && dto != null && item != null) TaskEntrySheet(
-        initialDate = item.start, canCreatePersonal = true, canCreateDelegated = false,
-        availableTags = availableTags, taskRepo = taskRepo, businessTimezone = businessTimezone,
+        initialDate = item.start, canCreatePersonal = currentUser?.capabilities?.createPersonalTasks == true, canCreateDelegated = currentUser?.capabilities?.createDelegatedTasks == true,
+        availableTags = availableTags, taskRepo = taskRepo, businessTimezone = businessTimezone, currentUser = currentUser,
         onDismiss = { editOpen = false }, onCreated = { onChanged() }, editingTask = dto)
     if (repeatStatus != null && dto != null) com.pandora6ix.app.ui.task.SeriesStatusEditor(
         dto, taskRepo, repeatStatus!!, businessTimezone, stageNote.trim().ifBlank { null },
         onDismiss = { repeatStatus = null }, onSaved = { repeatStatus = null; stageNote = ""; onChanged() })
     Column(Modifier.fillMaxSize()) {
         PageHeader(displayTitle, null, onBack)
-        if (dto != null && dto.allowedActions.any { it == "EDIT_TASK" || it == "EDIT_PENDING" }) {
-            TextButton({ editOpen = true }, Modifier.fillMaxWidth()) { Text("编辑任务") }
-        }
-        Column(Modifier.verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, top = 6.dp, bottom = 20.dp)) {
-            if (dto != null && dto.tags.isNotEmpty()) {
-                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    dto.tags.forEach { tag ->
-                        val tagColor = runCatching { Color(android.graphics.Color.parseColor(tag.colorHex)) }.getOrDefault(Ink.copy(alpha = .18f))
-                        Text(if (tag.id == dto.primaryTagId) "${tag.name} · 主" else tag.name, Modifier.clip(RoundedCornerShape(10.dp)).background(tagColor).padding(horizontal = 10.dp, vertical = 4.dp), fontSize = 12.sp, color = Ink)
-                    }
-                }
-                Spacer(Modifier.height(22.dp))
-            }
-            if (!isLog) { Text("详情", fontSize = 24.sp, fontWeight = FontWeight.Bold); Spacer(Modifier.height(12.dp)) }
+        Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             if (dto != null && item != null) {
-                // 任务说明可点开：弹窗内切换任务状态标签并记录阶段性内容；无更新权限时只写「点击查看」
-                DetailCard("任务说明", dto.description?.takeIf { it.isNotBlank() } ?: "暂无备注", CreamDeep, maxLines = 8) { showDescDialog = true }
-                Spacer(Modifier.height(10.dp))
-                DetailCard("时间节点", "${item.start.year}/${item.start.month}/${item.start.day}—${item.end.year}/${item.end.month}/${item.end.day}\n${taskTimeLabel(item)}", CreamDeep)
-                item.recurrenceLabel?.let { DetailCard("重复安排", it, CreamDeep) }
-                Spacer(Modifier.height(10.dp))
-                DetailCard("类型与状态", "${kindLabelOf(dto.kind)} · ${reviewStatusLabel(dto.reviewStatus)}", CreamDeep)
-                Spacer(Modifier.height(10.dp))
-                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = CreamDeep.copy(alpha = .78f)), shape = RoundedCornerShape(16.dp)) {
-                    Column(Modifier.padding(14.dp)) {
-                        Text("重要程度", fontWeight = FontWeight.Bold)
-                        val stars = dto.priorityLevel.coerceIn(1, 5)
-                        val meta = priorityMeta(stars)
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("★".repeat(stars) + "☆".repeat(5 - stars), color = meta.first, fontSize = 13.sp)
-                            Text(meta.second, fontSize = 13.sp, color = Ink.copy(alpha = .75f))
+                Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), color = Color.White, border = BorderStroke(1.dp, HairLine)) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text("任务信息", Modifier.weight(1f), fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                            if (dto.allowedActions.any { it == "EDIT_TASK" || it == "EDIT_PENDING" }) {
+                                TextButton({ editOpen = true }) { Text("编辑", color = ThemeButton) }
+                            }
                         }
+                        Text(dto.title, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                        if (dto.pendingEditReviewId != null) Text("修改待上级审批", color = ThemeButton, fontSize = 13.sp)
+                        if (dto.tags.isNotEmpty()) {
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                dto.tags.forEach { tag ->
+                                    Text(if (tag.id == dto.primaryTagId) "${tag.name} · 主" else tag.name,
+                                        Modifier.clip(RoundedCornerShape(8.dp)).background(CreamDeep).padding(horizontal = 8.dp, vertical = 4.dp), fontSize = 12.sp)
+                                }
+                            }
+                        }
+                        HorizontalDivider(color = HairLine)
+                        Text("任务说明", fontWeight = FontWeight.SemiBold)
+                        Text(dto.description?.takeIf { it.isNotBlank() } ?: "暂无备注", lineHeight = 24.sp)
+                        HorizontalDivider(color = HairLine)
+                        Text("时间节点", fontWeight = FontWeight.SemiBold)
+                        Text("${item.start.year}/${item.start.month}/${item.start.day}—${item.end.year}/${item.end.month}/${item.end.day}\n${taskTimeLabel(item)}", lineHeight = 24.sp)
+                        item.recurrenceLabel?.let { Text("重复安排 · $it", lineHeight = 22.sp) }
+                        HorizontalDivider(color = HairLine)
+                        Text("${kindLabelOf(dto.kind)} · ${reviewStatusLabel(dto.reviewStatus)}")
+                        Text("重要程度 · ${priorityMeta(dto.priorityLevel).second}")
+                        if (dto.companyWide) Text("全公司可见", color = ThemeButton)
                     }
                 }
-                Spacer(Modifier.height(10.dp))
-                Text("执行情况", fontWeight = FontWeight.Bold)
-                if (dto.authorizedAssignments.isEmpty()) Text("暂无可见执行关系", color = Ink.copy(alpha = .6f), lineHeight = 22.sp)
-                dto.authorizedAssignments.forEachIndexed { i, a ->
-                    Text("${if (dto.authorizedAssignments.size > 1) "执行关系 ${i + 1} · " else ""}${executionStatusLabel(a.executionStatus)}", lineHeight = 22.sp)
+                Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), color = Color.White, border = BorderStroke(1.dp, HairLine)) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("执行情况", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                        if (dto.authorizedAssignments.isEmpty()) Text("暂无可见执行关系", color = Ink.copy(alpha = .7f))
+                        dto.authorizedAssignments.forEachIndexed { i, assignment ->
+                            if (i > 0) HorizontalDivider(color = HairLine)
+                            Text("执行人 ${i + 1} · ${executionStatusLabel(assignment.executionStatus)}", lineHeight = 22.sp)
+                        }
+                        TextButton({ showDescDialog = true }) { Text(if (canUpdateTask) "更新执行进度" else "查看执行记录", color = ThemeButton) }
+                    }
                 }
             } else if (isLog) {
                 Text(logContent ?: "", color = Ink.copy(alpha = .75f), fontSize = 16.sp, lineHeight = 26.sp)

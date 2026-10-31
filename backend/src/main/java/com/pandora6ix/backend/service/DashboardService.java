@@ -99,7 +99,7 @@ public class DashboardService
                             + " a.execution_status='COMPLETED' THEN 1 ELSE 0 END),0) AS completed"
                             + " FROM task_assignment a JOIN task t ON"
                             + " t.enterprise_id=a.enterprise_id AND t.id=a.task_id WHERE"
-                            + " a.enterprise_id=? AND a.recipient_user_id=? AND"
+                            + " a.enterprise_id=? AND a.current_member=TRUE AND a.recipient_user_id=? AND"
                             + " t.review_status='APPROVED'",
                         a.enterpriseId(),
                         a.id());
