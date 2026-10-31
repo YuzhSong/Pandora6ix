@@ -492,19 +492,16 @@ fun PandoraApp(
                 }
             }
         }
-        // 登录后加载企业标签目录与本人统计
-        var statistics by remember { mutableStateOf<StatisticsDto?>(null) }
+        // 登录后加载企业标签目录
         LaunchedEffect(currentUser?.id) {
             taskItems.clear()
             taskDtoById.clear()
             serverTags.clear()
-            statistics = null
             progressTaskId = null
             if (currentUser == null) return@LaunchedEffect
             runCatching { calendarRepo.tags() }.getOrNull()?.let { list ->
                 serverTags.clear(); serverTags.addAll(list)
             }
-            runCatching { calendarRepo.statistics() }.getOrNull()?.let { statistics = it }
         }
         // 提醒默认开启：首次登录后申请一次系统通知权限（Android 13+），被拒只失去系统通知，页内弹窗照常
         LaunchedEffect(currentUser?.id, notifyMaster) {
@@ -721,7 +718,7 @@ fun PandoraApp(
                             Route.VIEW -> calendarUiState.SaveableStateProvider("calendar") { CalendarScreen(CalendarMode.valueOf(modeName), date, taskItems, canCreatePersonal, canCreateDelegated, serverTags, taskRepo, { modeName = it.name }, { dateKey = "${it.year}-${it.month}-${it.day}" }, { calRetry++ }, { detail = it.id }, taskScope = taskScope, onTaskScopeChange = { taskScope = it; calNotice = null }, currentUser = currentUser, canReviewTasks = canReviewTasks, businessTimezone = currentUser?.businessTimezone, loading = calLoading, error = calError, onRetry = { calRetry++ }, notice = calNotice, onOpenSummary = { showTaskSummary = true }) }
                             Route.LOGS -> LogsScreen(journalRepo, serverTags.toList(), currentUser?.businessTimezone) { journalDetailId = it }
                             Route.AI -> AiMapScreen()
-                            Route.ME -> ProfileScreen(currentUser!!, statistics, notifyMaster, showReviewCenter, reviewBadgeCount, tagManager, userRepo, scrollState = profileScrollState, onOpenTagManage = { showTagManage = true }, onOpenReviews = { showReviews = true }, onOpenSettings = { showSettings = true })
+                            Route.ME -> ProfileScreen(currentUser!!, notifyMaster, showReviewCenter, reviewBadgeCount, tagManager, userRepo, scrollState = profileScrollState, onOpenTagManage = { showTagManage = true }, onOpenReviews = { showReviews = true }, onOpenSettings = { showSettings = true })
                         }
                     }
                 }
@@ -2053,7 +2050,7 @@ private fun JournalDetailScreen(repo: JournalRepository, journalId: String, busi
     }
 }
 @Composable private fun AiMapScreen() { Column(Modifier.fillMaxSize().padding(16.dp)) { PageHeader("AI地图"); Spacer(Modifier.height(48.dp)); Icon(Icons.Default.Info, null, Modifier.size(70.dp).align(Alignment.CenterHorizontally), tint = Coral); Text("AI 地图", Modifier.fillMaxWidth().padding(top = 18.dp), textAlign = TextAlign.Center, fontSize = 28.sp, fontWeight = FontWeight.Bold); Text("功能规划中", Modifier.fillMaxWidth().padding(top = 8.dp), textAlign = TextAlign.Center, color = Ink.copy(alpha = .6f)) } }
-@Composable private fun ProfileScreen(user: UserDto, statistics: StatisticsDto?, notificationsEnabled: Boolean, showReviewCenter: Boolean, pendingReviewCount: Int, canManageTags: Boolean, userRepo: UserRepository, scrollState: ScrollState, onOpenTagManage: () -> Unit, onOpenReviews: () -> Unit, onOpenSettings: () -> Unit) {
+@Composable private fun ProfileScreen(user: UserDto, notificationsEnabled: Boolean, showReviewCenter: Boolean, pendingReviewCount: Int, canManageTags: Boolean, userRepo: UserRepository, scrollState: ScrollState, onOpenTagManage: () -> Unit, onOpenReviews: () -> Unit, onOpenSettings: () -> Unit) {
     val context = LocalContext.current
     val avatarScope = rememberCoroutineScope()
     val prefs = remember { context.getSharedPreferences("profile_avatar_" + SessionStore(context).ownerId, Context.MODE_PRIVATE) }
@@ -2196,13 +2193,18 @@ private fun JournalDetailScreen(repo: JournalRepository, journalId: String, busi
                 },
                 confirmButton = { TextButton({ showGallery = false }) { Text("关闭") } }
             )
-            statistics?.let { st ->
-                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = WarmCard), shape = RoundedCornerShape(20.dp), border = cardBorderIfBlended()) {
-                    Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                        Text("任务统计", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                        ProfileInfoRow("任务总数", "${st.total}")
-                        ProfileInfoRow("已完成", "${st.completed}")
-                        ProfileInfoRow("未完成", "${st.uncompleted}")
+            if (showReviewCenter) {
+                SettingsCard {
+                    SettingsRow(icon = Icons.Default.FactCheck, title = "审批中心", onClick = onOpenReviews) {
+                        if (pendingReviewCount > 0) {
+                            Text(
+                                if (pendingReviewCount >= 99) "99+" else "$pendingReviewCount",
+                                fontSize = 11.sp, color = Color.White, fontWeight = FontWeight.Bold,
+                                modifier = Modifier.clip(CircleShape).background(CoralDark).padding(horizontal = 7.dp, vertical = 2.dp)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                        }
+                        Icon(Icons.Default.ChevronRight, null, Modifier.size(20.dp), tint = Ink.copy(alpha = .4f))
                     }
                 }
             }
@@ -2222,20 +2224,6 @@ private fun JournalDetailScreen(repo: JournalRepository, journalId: String, busi
                 // 仅 FOUNDER/DEPARTMENT_MANAGER 可见标签管理入口
                 if (canManageTags) {
                     SettingsRow(icon = Icons.Default.Label, title = "标签管理", onClick = onOpenTagManage) {
-                        Icon(Icons.Default.ChevronRight, null, Modifier.size(20.dp), tint = Ink.copy(alpha = .4f))
-                    }
-                    DashedDivider(HairLine)
-                }
-                if (showReviewCenter) {
-                    SettingsRow(icon = Icons.Default.FactCheck, title = "审批中心", onClick = onOpenReviews) {
-                        if (pendingReviewCount > 0) {
-                            Text(
-                                if (pendingReviewCount >= 99) "99+" else "$pendingReviewCount",
-                                fontSize = 11.sp, color = Color.White, fontWeight = FontWeight.Bold,
-                                modifier = Modifier.clip(CircleShape).background(CoralDark).padding(horizontal = 7.dp, vertical = 2.dp)
-                            )
-                            Spacer(Modifier.width(6.dp))
-                        }
                         Icon(Icons.Default.ChevronRight, null, Modifier.size(20.dp), tint = Ink.copy(alpha = .4f))
                     }
                     DashedDivider(HairLine)
