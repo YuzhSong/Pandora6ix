@@ -2890,6 +2890,45 @@ class BusinessApiIntegrationTests {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void companyPanelContainsOnlyExplicitPublicTasksAndDoesNotGrantActions() throws Exception {
+        var privateTask = createTask(founderToken, "DELEGATED", List.of(employee));
+        var body = taskBody("DELEGATED", List.of(employee), List.of(), null);
+        body.put("companyWide", true);
+        var publicTask = request("POST", "/tasks", founderToken, body, 201);
+        String publicId = str(publicTask, "id");
+        for (String token : List.of(employeeToken, peerToken, leadToken, managerToken, founderToken)) {
+            var panel = (Map<String,Object>) request("GET", "/dashboard", token, null, 200).get("companyTasks");
+            assertEquals(List.of(publicId), items(panel).stream().map(t -> t.get("id")).toList());
+        }
+        var read = request("GET", "/tasks/" + publicId, peerToken, null, 200);
+        assertEquals(true, read.get("companyWide"));
+        assertEquals(List.of(), read.get("allowedActions"));
+        assertEquals(List.of(), read.get("authorizedAssignments"));
+        request("GET", "/tasks/" + privateTask.get("id"), peerToken, null, 404);
+        request("POST", "/tasks", leadToken, body, 403);
+        body.put("kind", "PERSONAL");
+        request("POST", "/tasks", founderToken, body, 403);
+        var other = request("POST", "/admin/enterprise-initializations", null,
+                fields("loginDomain", "public-other-" + UUID.randomUUID(), "name", "Other", "businessTimezone", "Asia/Shanghai",
+                        "adminLoginName", "admin", "adminPassword", PASSWORD, "adminDisplayName", "Other admin"),
+                201, "X-Bootstrap-Token", "integration-tests-only-bootstrap");
+        String otherAdminToken = str(request("POST", "/auth/login", null, fields("accountIdentifier", "admin@" + other.get("loginDomain"), "password", PASSWORD), 200), "accessToken");
+        var otherFounder = request("POST", "/admin/users", otherAdminToken,
+                fields("loginName", "founder", "password", PASSWORD, "displayName", "Other founder",
+                        "orgUnitId", other.get("rootOrgUnitId"), "roles", List.of("FOUNDER"),
+                        "gender", "MALE", "idNumber", "11010119900101001X", "phoneNumber", "13800000000"), 201);
+        String otherToken = str(request("POST", "/auth/login", null, fields("accountIdentifier", "founder@" + other.get("loginDomain"), "password", PASSWORD), 200), "accessToken");
+        request("GET", "/tasks/" + publicId, otherToken, null, 404);
+        var otherPanel = (Map<String,Object>) request("GET", "/dashboard", otherToken, null, 200).get("companyTasks");
+        assertTrue(items(otherPanel).isEmpty());
+        db.update("UPDATE task SET review_status='REJECTED' WHERE enterprise_id=? AND id=?", enterprise, publicId);
+        var panel = (Map<String,Object>) request("GET", "/dashboard", peerToken, null, 200).get("companyTasks");
+        assertTrue(items(panel).isEmpty());
+        request("GET", "/tasks/" + publicId, peerToken, null, 404);
+    }
+
+    @Test
     void memberContactReturnsOnlyRealTelephoneAndReflectsUpdates() throws Exception {
         String path = "/users/" + employee + "/contact";
         var contact = request("GET", path, managerToken, null, 200);

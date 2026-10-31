@@ -110,6 +110,7 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
         mutableStateOf(if (canDelegate) savedDraft?.recipientIds ?: listOf() else listOfNotNull(selfRecipient?.id))
     }
     // 任务类型由接收人推导，不再由按钮区分：仅本人且有个人任务能力 → 个人任务，否则派发任务
+    var companyWide by rememberSaveable { mutableStateOf(savedDraft?.companyWide == true) }
     val kind = editingTask?.kind ?: when {
         selectedRecipientIds.size == 1 && selectedRecipientIds.first() == selfRecipient?.id && canCreatePersonal -> "PERSONAL"
         else -> "DELEGATED"
@@ -161,9 +162,9 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
     }
     var tags by rememberSaveable { mutableStateOf(savedDraft?.tags ?: listOf<String>()) }
     // 草稿实时落盘（缓存目录）：提交成功或明确放弃时清除
-    LaunchedEffect(kind, title, note, allDay, startKey, endKey, startMinute, endMinute, priority, tags, selectedRecipientIds, repeatRule, customRepeat) {
+    LaunchedEffect(kind, title, note, allDay, startKey, endKey, startMinute, endMinute, priority, tags, selectedRecipientIds, repeatRule, customRepeat, companyWide) {
         if (editingTask != null) return@LaunchedEffect
-        val draft = TaskDraftDto(kind, title, note, allDay, startKey, endKey, startMinute, endMinute, priority, tags, selectedRecipientIds, repeatRule, customRepeat)
+        val draft = TaskDraftDto(kind, title, note, allDay, startKey, endKey, startMinute, endMinute, priority, tags, selectedRecipientIds, repeatRule, customRepeat, companyWide)
         AppCache.writeDraft(context, "task_draft.json", AppCache.json.encodeToString(TaskDraftDto.serializer(), draft))
     }
     var showTagPicker by rememberSaveable { mutableStateOf(false) }
@@ -173,8 +174,8 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
     var timePickTarget by rememberSaveable { mutableStateOf<String?>(null) }
     var datePickTarget by rememberSaveable { mutableStateOf<String?>(null) }
     // 进入弹层时的状态快照：退出时仅在实际改动（相对进入时）才提示保存，草稿恢复的未修改内容不算改动
-    val initialState = remember { listOf(kind, title, note, startKey, endKey, allDay, startMinute, endMinute, priority, tags, selectedRecipientIds, repeatRule, customRepeat) }
-    val dirty = listOf(kind, title, note, startKey, endKey, allDay, startMinute, endMinute, priority, tags, selectedRecipientIds, repeatRule, customRepeat) != initialState
+    val initialState = remember { listOf(kind, title, note, startKey, endKey, allDay, startMinute, endMinute, priority, tags, selectedRecipientIds, repeatRule, customRepeat, companyWide) }
+    val dirty = listOf(kind, title, note, startKey, endKey, allDay, startMinute, endMinute, priority, tags, selectedRecipientIds, repeatRule, customRepeat, companyWide) != initialState
     val latestDirty by rememberUpdatedState(dirty)
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true, confirmValueChange = { value ->
         if (value == SheetValue.Hidden && latestDirty) { confirmExit = true; false } else true
@@ -242,7 +243,8 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
                         recipientIds = if (kind == "DELEGATED") selectedRecipientIds else null,
                         tagIds = tagIds.ifEmpty { null },
                         primaryTagId = tagIds.firstOrNull(),
-                        recurrence = repeatRule
+                        recurrence = repeatRule,
+                        companyWide = companyWide && kind == "DELEGATED"
                     ),
                     idempotencyKey
                 )
@@ -263,6 +265,12 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
                 IconButton(requestClose) { Icon(Icons.Default.Close, "关闭任务填写") }
             }
             Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (editingTask == null && currentUser?.roles?.contains("FOUNDER") == true && kind == "DELEGATED") {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text("全公司可见", Modifier.weight(1f))
+                        Switch(companyWide, { companyWide = it }, colors = com.pandora6ix.app.ui.theme.pandoraSwitchColors())
+                    }
+                }
                 OutlinedTextField(title, { title = it; error = null }, Modifier.fillMaxWidth(), label = { Text("任务名称（必填）") }, placeholder = { Text("我计划做…") }, singleLine = true, colors = fieldColors)
                 OutlinedTextField(note, { note = it }, Modifier.fillMaxWidth().heightIn(min = 112.dp), label = { Text("备注 / 简介（选填）") }, colors = fieldColors, minLines = 3)
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {

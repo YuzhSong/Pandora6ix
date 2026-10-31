@@ -129,7 +129,7 @@ public class TaskService
         Map<String, Object> first = null;
         for (var date : dates) {
             var occurrence = new Contracts.TaskCreate(c.kind(), c.title(), c.description(), c.priorityLevel(),
-                    c.timeKind(), date, date, c.startTime(), c.endTime(), c.recipientIds(), c.tagIds(), c.primaryTagId());
+                    c.timeKind(), date, date, c.startTime(), c.endTime(), c.recipientIds(), c.tagIds(), c.primaryTagId(), null, c.companyWide());
             var result = createOne(a, occurrence, series, label, first == null);
             if (first == null) first = result;
         }
@@ -140,6 +140,8 @@ public class TaskService
     private Map<String, Object> createOne(IdentityService.Actor a, Contracts.TaskCreate c, String series, String recurrenceLabel, boolean submitReview) {
         a.business();
         identity.zone(a);
+        if (Boolean.TRUE.equals(c.companyWide()) && (!a.has("FOUNDER") || c.kind() != TaskKind.DELEGATED))
+            throw BusinessException.forbidden();
         var minutes = time(c.timeKind(), c.startDate(), c.endDate(), c.startTime(), c.endTime());
         var tagIds = tags.validate(a, c.tagIds(), c.primaryTagId());
         List<String> recipients =
@@ -197,6 +199,7 @@ public class TaskService
                 minutes == null ? null : minutes[0],
                 minutes == null ? null : minutes[1],
                 c.primaryTagId());
+        db.update("UPDATE task SET company_wide=? WHERE enterprise_id=? AND id=?", Boolean.TRUE.equals(c.companyWide()), a.enterpriseId(), task);
         tags.replace(a, "task_tag", "task_id", task, tagIds);
         if (series != null) db.update("UPDATE task SET series_id=?,recurrence_label=?,occurrence_date=? WHERE enterprise_id=? AND id=?",
                 series, recurrenceLabel, c.startDate(), a.enterpriseId(), task);
@@ -246,6 +249,7 @@ public class TaskService
                         tagIds,
                         "primaryTagId",
                         c.primaryTagId());
+        snapshot.put("companyWide", Boolean.TRUE.equals(c.companyWide()));
         snapshot.put("seriesId", series);
         snapshot.put("recurrenceLabel", recurrenceLabel);
         if (!founder && submitReview)
@@ -284,6 +288,7 @@ public class TaskService
             Map<String, Object> task,
             List<Map<String, Object>> assignments,
             Set<String> managed) {
+        if (Boolean.TRUE.equals(task.get("company_wide")) && "APPROVED".equals(task.get("review_status"))) return true;
         if (a.id().equals(task.get("creator_user_id"))
                 || managed.contains(str(task, "creator_user_id"))) return true;
         return assignments.stream()
@@ -529,7 +534,8 @@ public class TaskService
     }
 
     public Map<String, Object> delegatedPage(IdentityService.Actor a, String cursor, int limit) {
-        var query = query(a, null, null, "mine", List.of(), true, "DELEGATED");
+        a.business();
+        var query = new TaskQuery("SELECT t.* FROM task t WHERE t.enterprise_id=? AND t.company_wide=TRUE AND t.review_status='APPROVED' AND t.task_kind='DELEGATED'", List.of(a.enterpriseId()), managedOrEmpty(a));
         return queryPage(
                 a, query, cursor, limit, a.enterpriseId() + ":" + a.id() + ":dashboard-tasks");
     }

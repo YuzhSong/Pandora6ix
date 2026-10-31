@@ -20,7 +20,8 @@ data class TaskCreateDto(
     val recipientIds: List<String>? = null,
     val tagIds: List<String>? = null,
     val primaryTagId: String? = null,
-    val recurrence: RecurrenceRule? = null
+    val recurrence: RecurrenceRule? = null,
+    val companyWide: Boolean = false
 )
 
 @Serializable

@@ -98,7 +98,8 @@ data class TaskDto(
     val seriesId: String? = null,
     val recurrenceLabel: String? = null,
     val occurrenceCount: Int = 1,
-    val occurrenceDate: String? = null
+    val occurrenceDate: String? = null,
+    val companyWide: Boolean = false
 )
 
 @Serializable

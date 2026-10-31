@@ -9084,6 +9084,16 @@
                 "type": "null"
               }
             ]
+          },
+          "companyWide": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -9987,6 +9997,9 @@
           "taskId": {
             "type": "string",
             "format": "uuid"
+          },
+          "companyWide": {
+            "type": "boolean"
           },
           "creatorUserId": {
             "type": "string",

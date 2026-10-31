@@ -60,6 +60,8 @@ def java_type(name):
     name = name.replace("Contracts.", "")
     if name.startswith("List<"):
         return array(java_type(name[5:-1]))
+    if name in ("boolean", "Boolean"):
+        return dict(BOOLEAN)
     if name == "String":
         return dict(STRING)
     if name in ("int", "Integer", "Long", "long"):
@@ -138,7 +140,7 @@ def read_schemas():
     progress = obj({"id": ID, "assignmentId": ID, "actorUserId": ID, "progressPercent": INTEGER, "note": nullable(STRING), "recordedAt": INSTANT})
     completion = obj({**versioned, "assignmentId": ID, "requestedByUserId": ID, "submittedNote": nullable(STRING), "requestedAt": INSTANT,
         "decision": {"type": "string", "enum": ["PENDING", "ACCEPTED", "REJECTED"]}, "decidedByUserId": nullable(ID), "decisionNote": nullable(STRING), "decidedAt": nullable(INSTANT)})
-    task = obj({**versioned, "taskId": ID, "creatorUserId": ID, "kind": java_type("TaskKind"), "title": STRING, "description": nullable(STRING),
+    task = obj({**versioned, "taskId": ID, "companyWide": BOOLEAN, "creatorUserId": ID, "kind": java_type("TaskKind"), "title": STRING, "description": nullable(STRING),
         "priorityLevel": {"type": "integer", "minimum": 1, "maximum": 5}, "startDate": DATE, "endDate": DATE,
         "timeKind": java_type("TimeKind"), "startTime": nullable(STRING), "endTime": nullable(STRING), "reviewStatus": {"type": "string", "enum": ["PENDING", "APPROVED", "REJECTED"]},
         "primaryTagId": nullable(ID), "tags": array(ref("Tag")), "tagIds": array(ID), "displayColor": nullable(STRING), "createdAt": INSTANT,

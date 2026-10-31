@@ -123,12 +123,12 @@ public final class Contracts {
             @Size(max = 100) List<@NotBlank String> recipientIds,
             @Size(max = 100) List<@NotBlank String> tagIds,
             String primaryTagId,
-            @Valid Recurrence recurrence) {
+            @Valid Recurrence recurrence, Boolean companyWide) {
         public TaskCreate(TaskKind kind, String title, String description, Integer priorityLevel,
                 TimeKind timeKind, LocalDate startDate, LocalDate endDate, String startTime,
                 String endTime, List<String> recipientIds, List<String> tagIds, String primaryTagId) {
             this(kind, title, description, priorityLevel, timeKind, startDate, endDate,
-                    startTime, endTime, recipientIds, tagIds, primaryTagId, null);
+                    startTime, endTime, recipientIds, tagIds, primaryTagId, null, false);
         }
     }
 
