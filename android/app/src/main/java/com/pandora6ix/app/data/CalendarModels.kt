@@ -101,7 +101,7 @@ fun kindLabelOf(kind: String): String = if (kind == "DELEGATED") "派发任务" 
 fun reviewStatusLabel(status: String): String = when (status) {
     "PENDING" -> "待审批"
     "APPROVED" -> "已批准"
-    "REJECTED" -> "已驳回"
+    "REJECTED" -> "被驳回"
     else -> status.ifBlank { "未知" }
 }
 fun executionStatusLabel(status: String): String = when (status) {

@@ -432,11 +432,14 @@ private fun DayNumberRow(month: DemoDate, week: List<DemoDate>, inMonth: List<Bo
             Box(Modifier.offset(x = cellWidth * segment.first).width(cellWidth * (segment.last - segment.first + 1)).fillMaxHeight().padding(horizontal = 1.dp).clip(RoundedCornerShape(3.dp)).background(taskColor(segment.task))
                 .semantics { role = Role.Button; onClick("查看${segment.task.title}") { onSelect(segment.task, dates[segment.first]); true } }
                 .pointerInput(segment.task.id, dates) { detectTapGestures { position -> val day = (position.x / (size.width.toFloat() / (segment.last - segment.first + 1))).toInt().coerceIn(0, segment.last - segment.first); onSelect(segment.task, dates[segment.first + day]) } }, contentAlignment = Alignment.CenterStart) {
-                Text((if (segment.task.recurrenceLabel != null) "↻ " else "") + segment.task.title, Modifier.padding(horizontal = 3.dp), fontSize = if (compact) 11.sp else 12.sp, lineHeight = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Ink)
+                Text((if (segment.task.recurrenceLabel != null) "↻ " else "") + calendarTaskTitle(segment.task), Modifier.padding(horizontal = 3.dp), fontSize = if (compact) 11.sp else 12.sp, lineHeight = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Ink)
             }
         }
     }
 }
+
+private fun calendarTaskTitle(task: TaskItem): String =
+    if (task.reviewStatus == "REJECTED") "被驳回 · ${task.title}" else task.title
 
 // 任务颜色：优先服务端 displayColor（主标签颜色），其次主标签目录 colorHex；
 // 无标签的任务使用中性灰（不同于任何标签色），标签已改为可选
@@ -539,7 +542,7 @@ private fun Modifier.calendarGuides(): Modifier = drawBehind {
                             }
                         }) {
                         Column(Modifier.padding(start = 7.dp, end = 4.dp, top = 2.dp, bottom = 2.dp)) {
-                            Text(task.title, fontSize = if (dayMode) 13.sp else 11.sp, lineHeight = if (dayMode) 16.sp else 13.sp, maxLines = if (dayMode) 2 else 1, overflow = TextOverflow.Ellipsis)
+                            Text(calendarTaskTitle(task), fontSize = if (dayMode) 13.sp else 11.sp, lineHeight = if (dayMode) 16.sp else 13.sp, maxLines = if (dayMode) 2 else 1, overflow = TextOverflow.Ellipsis)
                             if (dayMode && !isAllDay(task) && range.last - range.first >= 30) Text("${if (spansFrom) "自昨日 " else ""}${minuteLabel(range.first)}—${minuteLabel(range.last + 1)}${if (spansInto) " →次日" else ""}", fontSize = 11.sp, color = Ink.copy(alpha = .7f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
@@ -568,7 +571,7 @@ private fun Modifier.calendarGuides(): Modifier = drawBehind {
                         Box(Modifier.size(12.dp).clip(CircleShape).background(WarmCard.copy(alpha = 1f)).background(taskColor(candidate)))
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
-                            Text(candidate.title, fontSize = 16.sp, color = Ink)
+                            Text(calendarTaskTitle(candidate), fontSize = 16.sp, color = Ink)
                             Text(taskSelectionTimeLabel(candidate), Modifier.padding(top = 4.dp), fontSize = 12.sp, color = Ink.copy(alpha = .65f))
                         }
                     }
@@ -603,7 +606,7 @@ private fun Modifier.calendarGuides(): Modifier = drawBehind {
                                 drawLine(edge, Offset(1.dp.toPx(), 0f), Offset(1.dp.toPx(), size.height), strokeWidth = 2.dp.toPx())
                             }.padding(start = 4.dp, end = 2.dp, top = 4.dp, bottom = 4.dp)
                     ) {
-                        Text(task.title, Modifier.weight(1f), fontSize = 11.sp, lineHeight = 14.sp,
+                        Text(calendarTaskTitle(task), Modifier.weight(1f), fontSize = 11.sp, lineHeight = 14.sp,
                             maxLines = 3, overflow = TextOverflow.Ellipsis, color = Ink)
                         val time = (if (task.recurrenceLabel != null) "↻ " else "") + if (isAllDay(task)) "全天" else minuteLabel(timelineTimeRangeOnDate(task, date)?.first ?: task.startMinute!!)
                         Text(if (date > task.start) "续 $time" else time,
