@@ -705,7 +705,7 @@ fun PandoraApp(
                         currentUser, userRepo, onBack = { detail = null }, onChanged = { calRetry++ })
                     else -> AnimatedContent(current, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "page") { target ->
                         when (target) {
-                            Route.HOME -> HomeScreen(dashboardRepo, selectionRepo, notificationRepo, openedNotificationId, notificationOpenSequence, notificationReadRevision, pendingPushNotificationId = pendingPushNotificationId, onPushNotificationConsumed = { pendingPushNotificationId = null }, onDrawerClosed = { openedNotificationId = null }, onOpenHome = { homeDetail = it }, onOpenNotification = { item ->
+                            Route.HOME -> calendarUiState.SaveableStateProvider("home") { HomeScreen(dashboardRepo, selectionRepo, notificationRepo, openedNotificationId, notificationOpenSequence, notificationReadRevision, pendingPushNotificationId = pendingPushNotificationId, onPushNotificationConsumed = { pendingPushNotificationId = null }, onDrawerClosed = { openedNotificationId = null }, onOpenHome = { homeDetail = it }, onOpenNotification = { item ->
                                 // 只有仍在「待我审批」队列里的审批申请才进审批中心并展开该条；
                                 // 已审批/驳回的消息（含「审批结果」）队列里查不到，直接看对应任务详情
                                 val awaitingReview = item.reviewId != null && item.eventType == "REVIEW_REQUEST" && !item.resolved
@@ -713,7 +713,7 @@ fun PandoraApp(
                                     reviewFocusId = item.reviewId
                                     showReviews = true
                                 } else if (item.taskId.isNotBlank()) detail = item.taskId
-                            })
+                            }) }
                             Route.VIEW -> calendarUiState.SaveableStateProvider("calendar") { CalendarScreen(CalendarMode.valueOf(modeName), date, taskItems, canCreatePersonal, canCreateDelegated, serverTags, taskRepo, { modeName = it.name }, { dateKey = "${it.year}-${it.month}-${it.day}" }, { calRetry++ }, { detail = it.id }, taskScope = taskScope, onTaskScopeChange = { taskScope = it; calNotice = null }, currentUser = currentUser, canReviewTasks = canReviewTasks, businessTimezone = currentUser?.businessTimezone, loading = calLoading, error = calError, onRetry = { calRetry++ }, notice = calNotice, onOpenSummary = { showTaskSummary = true }) }
                             Route.LOGS -> LogsScreen(journalRepo, serverTags.toList(), currentUser?.businessTimezone, currentUser, userRepo) { journalDetailId = it }
                             Route.AI -> AiMapScreen()
@@ -1002,8 +1002,9 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
           PersonalImportantEditor(repo = selectionRepo, onClose = { editingPersonal = false }, onSaved = { loadDashboard() })
       }
       if (notifications) {
+          androidx.activity.compose.BackHandler { notifications = false; onDrawerClosed() }
           Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .42f)).clickable { notifications = false; expandedPanel = null; onDrawerClosed() })
-          NotificationDrawer(notificationRepo, openedNotificationId, onClose = { notifications = false; onDrawerClosed() }, onOpen = { notifications = false; onDrawerClosed(); onOpenNotification(it) })
+          NotificationDrawer(notificationRepo, openedNotificationId, onClose = { notifications = false; onDrawerClosed() }, onOpen = { onDrawerClosed(); onOpenNotification(it) })
       }
     }
 }
@@ -2007,6 +2008,7 @@ private fun JournalDetailScreen(repo: JournalRepository, journalId: String, busi
 }
 
 @Composable private fun BoxScope.NotificationDrawer(repository: NotificationRepository, requestedId: String?, onClose: () -> Unit, onOpen: (NotificationDto) -> Unit) {
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
     var records by remember { mutableStateOf<List<NotificationDto>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var loadError by remember { mutableStateOf<String?>(null) }
@@ -2031,7 +2033,7 @@ private fun JournalDetailScreen(repo: JournalRepository, journalId: String, busi
                 loading -> Text("正在加载消息…", color = Ink.copy(alpha = .6f), modifier = Modifier.padding(vertical = 16.dp))
                 loadError != null -> Text(loadError!!, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(vertical = 16.dp))
                 records.isEmpty() -> Text("暂无消息", color = Ink.copy(alpha = .6f), modifier = Modifier.padding(vertical = 16.dp))
-                else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                else -> LazyColumn(state = listState, verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     items(records, key = { it.id }) { item ->
                         // 未读主题色、已读白色；点推送进来的那条（requestedId）始终高亮，方便一眼找到
                         Card(colors = CardDefaults.cardColors(containerColor = if (item.id == requestedId || item.readAt == null) CreamDeep else Color.White), shape = RoundedCornerShape(8.dp)) {
