@@ -153,12 +153,31 @@ class BusinessApiIntegrationTests {
         request("POST","/tasks/"+selected.get("id")+"/scoped-edit",peerToken,stale,404,"Idempotency-Key",UUID.randomUUID().toString());
     }
 
+    @Test void personalCompletionPreservesSavedNotesAndRetries() throws Exception {
+        var task=request("POST","/tasks",founderToken,taskBody("PERSONAL",List.of(),List.of(),null),201);
+        String id=str(task,"id"), relation=assignment(id,founder);
+        var before=db.entity("task_assignment",enterprise,relation);
+        request("POST","/task-assignments/"+relation+"/progress-records",founderToken,
+                fields("expectedVersion",before.get("version"),"note","Saved stage"),201);
+        var rows=List.of(request("GET","/tasks/"+id,founderToken,null,200));
+        var body=fields("scope","SINGLE","workStatus","COMPLETED","note","Final stage","versions",recurringVersions(rows));
+        String key=UUID.randomUUID().toString();
+        var completed=request("POST","/tasks/"+id+"/scoped-status",founderToken,body,200,"Idempotency-Key",key);
+        assertEquals(completed,request("POST","/tasks/"+id+"/scoped-status",founderToken,body,200,"Idempotency-Key",key));
+        request("POST","/tasks/"+id+"/scoped-status",founderToken,body,409,"Idempotency-Key",UUID.randomUUID().toString());
+        var notes=db.rows("SELECT note FROM task_progress_record WHERE enterprise_id=? AND assignment_id=?",enterprise,relation);
+        assertEquals(2,notes.size());
+        assertEquals(Set.of("Saved stage","Final stage"),notes.stream().map(n->n.get("note")).collect(java.util.stream.Collectors.toSet()));
+        assertTrue(request("GET","/tasks/"+id,founderToken,null,200).toString().contains("Saved stage"));
+    }
+
     @Test void recurringScopedCompletionAndUndoPreserveOtherOccurrences() throws Exception {
         var first=recurringFixture(founderToken);
         var rows=recurringScopeRows(founderToken,str(first,"id")).stream().sorted(Comparator.comparing(t->t.get("startDate").toString())).toList();
         var selected=rows.get(1);
         request("POST","/tasks/"+selected.get("id")+"/scoped-status",founderToken,
-                fields("scope","THIS_AND_FUTURE","workStatus","COMPLETED","versions",recurringVersions(rows)),200,"Idempotency-Key",UUID.randomUUID().toString());
+                fields("scope","THIS_AND_FUTURE","workStatus","COMPLETED","note","Recurring final stage","versions",recurringVersions(rows)),200,"Idempotency-Key",UUID.randomUUID().toString());
+        assertEquals(2,db.rows("SELECT id FROM task_progress_record WHERE enterprise_id=? AND note=?",enterprise,"Recurring final stage").size());
         var states=db.rows("SELECT a.execution_status FROM task_assignment a JOIN task t ON t.enterprise_id=a.enterprise_id AND t.id=a.task_id WHERE t.enterprise_id=? AND t.series_id=? ORDER BY t.occurrence_date",enterprise,first.get("seriesId"));
         assertEquals(List.of("ACTIVE","COMPLETED","COMPLETED"),states.stream().map(t->t.get("execution_status")).toList());
         var current=recurringScopeRows(founderToken,str(selected,"id"));
@@ -3522,6 +3541,7 @@ class BusinessApiIntegrationTests {
         var submitted=request("PATCH","/task-assignments/"+relation+"/status",employeeToken,completionBody,200,"Idempotency-Key",key);
         assertEquals(submitted,request("PATCH","/task-assignments/"+relation+"/status",employeeToken,completionBody,200,"Idempotency-Key",key));
         assertEquals(1,db.rows("SELECT id FROM task_completion_request WHERE enterprise_id=? AND assignment_id=?",enterprise,relation).size());
+        assertEquals(2,db.rows("SELECT id FROM task_progress_record WHERE enterprise_id=? AND assignment_id=?",enterprise,relation).size());
         var submission=db.one("SELECT after_values FROM operation_log WHERE enterprise_id=? AND object_id=? AND action='SUBMIT'",enterprise,relation);
         assertTrue(str(submission,"after_values").contains("Please inspect"));
         assertEquals("AWAITING_ACCEPTANCE",((Map<?,?>)submitted.get("assignment")).get("executionStatus"));

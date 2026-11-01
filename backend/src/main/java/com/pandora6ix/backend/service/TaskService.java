@@ -778,12 +778,18 @@ public class TaskService
         var task=db.entity("task",a.enterpriseId(),str(assignment,"task_id"));
         active(task,assignment);
         if("COMPLETED".equals(c.workStatus())) {
+            Map<String,Object> result;
             if("DELEGATED".equals(task.get("task_kind"))) {
-                var result=requestCompletion(a,id,new Contracts.CompletionRequest(c.expectedVersion(),c.note()));
-                return fields("assignment",result.get("assignment"),"completionRequest",result.get("request"));
+                var requested=requestCompletion(a,id,new Contracts.CompletionRequest(c.expectedVersion(),c.note()));
+                result=fields("assignment",requested.get("assignment"),"completionRequest",requested.get("request"));
+            } else {
+                var completed=complete(a,str(task,"id"),new Contracts.Complete(c.expectedVersion()));
+                result=fields("assignment",completed,"completionRequest",null);
             }
-            var completed=complete(a,str(task,"id"),new Contracts.Complete(c.expectedVersion()));
-            return fields("assignment",completed,"completionRequest",null);
+            if(c.note()!=null&&!c.note().isBlank()) db.update(
+                    "INSERT INTO task_progress_record(id,enterprise_id,assignment_id,actor_user_id,progress_percent,note) VALUES(?,?,?,?,?,?)",
+                    id(),a.enterpriseId(),id,a.id(),assignment.get("progress_percent"),c.note());
+            return result;
         }
         var before=audit.assignment(a,id);
         checkVersion(db.update("UPDATE task_assignment SET work_status=?,version=version+1 WHERE enterprise_id=? AND id=? AND version=?",c.workStatus(),a.enterpriseId(),id,c.expectedVersion()));

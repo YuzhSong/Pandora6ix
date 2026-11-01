@@ -337,7 +337,6 @@ fun PandoraApp(
         // 视图页任务与企业标签目录来自真实接口（登录后按模式/日期加载）
         val taskItems = remember { mutableStateListOf<TaskItem>() }
         // 保留服务端原始 TaskDto（执行关系/allowedActions/进度），供详情与进度记录使用
-        val taskDtoById = remember { mutableStateMapOf<String, TaskDto>() }
         val serverTags = remember { mutableStateListOf<TagDto>() }
         val date = dateKey.split("-").map(String::toInt).let { DemoDate(it[0], it[1], it[2]) }
         val current = Route.valueOf(route)
@@ -505,7 +504,6 @@ fun PandoraApp(
         // 登录后加载企业标签目录
         LaunchedEffect(currentUser?.id) {
             taskItems.clear()
-            taskDtoById.clear()
             serverTags.clear()
             progressTaskId = null
             if (currentUser == null) return@LaunchedEffect
@@ -603,7 +601,6 @@ fun PandoraApp(
                 }
                 coroutineContext.ensureActive()
                 taskItems.clear(); taskItems.addAll(loaded.map { it.toTaskItem() })
-                taskDtoById.clear(); taskDtoById.putAll(loaded.associateBy { it.id })
                 calNotice = null
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
@@ -619,7 +616,7 @@ fun PandoraApp(
                 } else {
                     calError = api?.friendlyMessage() ?: "加载失败，请重试"
                 }
-                taskItems.clear(); taskDtoById.clear()
+                taskItems.clear()
             } finally {
                 if (coroutineContext[kotlinx.coroutines.Job]?.isActive == true) calLoading = false
             }
@@ -649,7 +646,7 @@ fun PandoraApp(
         Scaffold(containerColor = theme.background, bottomBar = { NavigationBar(containerColor = theme.backgroundDeep) { nav.forEach { item -> NavigationBarItem(selected = current == item.route, onClick = { route = item.route.name; detail = null; homeDetail = null; journalDetailId = null; showSettings = false; showReviews = false; showTagManage = false; progressTaskId = null; showTaskSummary = false }, icon = { MeNavIcon(item, reviewBadgeCount) }, label = { Text(item.label, fontSize = 11.sp) }, colors = NavigationBarItemDefaults.colors(selectedIconColor = WarmOrange, selectedTextColor = WarmOrange, indicatorColor = theme.backgroundDeep)) } } }) { padding ->
             Surface(Modifier.padding(padding).fillMaxSize(), color = theme.background) {
                 when {
-                    homeDetail?.kind == "TASK" && homeDetail?.id != null -> SummaryTaskDetail(
+                    homeDetail?.kind == "TASK" && homeDetail?.id != null -> FullTaskDetail(
                         homeDetail!!.id!!, taskRepo, serverTags, currentUser?.businessTimezone, currentUser, userRepo,
                         onBack = { homeDetail = null }, onChanged = { calRetry++ })
                     homeDetail != null -> HomeItemDetailScreen(dashboardRepo, homeDetail!!) { homeDetail = null }
@@ -658,7 +655,7 @@ fun PandoraApp(
                         TaskSummaryFlow(
                             currentUser!!, calendarRepo, taskRepo, journalRepo, userRepo,
                             taskDetail = { id, onBack, onChanged ->
-                                SummaryTaskDetail(id, taskRepo, serverTags, currentUser?.businessTimezone, currentUser, userRepo, onBack) { onChanged(); calRetry++ }
+                                FullTaskDetail(id, taskRepo, serverTags, currentUser?.businessTimezone, currentUser, userRepo, onBack) { onChanged(); calRetry++ }
                             },
                             journalDetail = { id, onBack -> JournalDetailScreen(journalRepo, id, currentUser?.businessTimezone, currentUser, userRepo, onBack) },
                             onClose = { showTaskSummary = false }
@@ -704,21 +701,8 @@ fun PandoraApp(
                         TagPermissions(canCreate = tagManager, canUpdate = tagManager, canDelete = tagManager),
                         reloadTags = { refreshTags() }
                     ) { showTagManage = false }
-                    detail != null -> {
-                        // 列表接口的视图会剥除任务说明/进度记录/完成申请（full=false），打开详情时按 ID 拉取完整数据
-                        val detailId = detail!!
-                        LaunchedEffect(detailId, currentUser?.id, calRetry) {
-                            try {
-                                val full = taskRepo.task(detailId)
-                                coroutineContext.ensureActive()
-                                taskDtoById[full.id] = full
-                            } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                                throw cancelled
-                            } catch (_: Exception) { /* Existing detail remains available for retry. */ }
-                        }
-                        val dto = taskDtoById[detailId]
-                        DetailScreen(detailId, dto, serverTags, taskRepo, onBack = { detail = null }, onChanged = { calRetry++ }, businessTimezone = currentUser?.businessTimezone, currentUser = currentUser, userRepo = userRepo)
-                    }
+                    detail != null -> FullTaskDetail(detail!!, taskRepo, serverTags, currentUser?.businessTimezone,
+                        currentUser, userRepo, onBack = { detail = null }, onChanged = { calRetry++ })
                     else -> AnimatedContent(current, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "page") { target ->
                         when (target) {
                             Route.HOME -> HomeScreen(dashboardRepo, selectionRepo, notificationRepo, openedNotificationId, notificationOpenSequence, notificationReadRevision, pendingPushNotificationId = pendingPushNotificationId, onPushNotificationConsumed = { pendingPushNotificationId = null }, onDrawerClosed = { openedNotificationId = null }, onOpenHome = { homeDetail = it }, onOpenNotification = { item ->
@@ -2304,9 +2288,9 @@ private fun roleLabel(role: String): String = when (role.uppercase()) {
     else -> role
 }
 @Composable private fun DetailCard(title: String, body: String, color: Color, maxLines: Int = 2, onClick: () -> Unit = {}) { Card(Modifier.fillMaxWidth().clickable(onClick = onClick), colors = CardDefaults.cardColors(containerColor = color.copy(alpha = .78f)), shape = RoundedCornerShape(16.dp)) { Column(Modifier.padding(14.dp)) { Text(title, fontWeight = FontWeight.Bold); Text(body, fontSize = 13.sp, color = Ink.copy(alpha = .75f), maxLines = maxLines, overflow = TextOverflow.Ellipsis) } } }
-/** Summary uses the same full task detail, with explicit loading/error before enabling actions. */
+/** 完整详情独立加载，避免日历简略列表刷新覆盖执行记录。 */
 @Composable
-private fun SummaryTaskDetail(id: String, repo: TaskRepository, tags: List<TagDto>, businessTimezone: String?, currentUser: UserDto?, userRepo: UserRepository, onBack: () -> Unit, onChanged: () -> Unit) {
+private fun FullTaskDetail(id: String, repo: TaskRepository, tags: List<TagDto>, businessTimezone: String?, currentUser: UserDto?, userRepo: UserRepository, onBack: () -> Unit, onChanged: () -> Unit) {
     var task by remember(id) { mutableStateOf<TaskDto?>(null) }
     var loading by remember(id) { mutableStateOf(true) }
     var error by remember(id) { mutableStateOf<String?>(null) }
@@ -2385,13 +2369,13 @@ private fun SummaryTaskDetail(id: String, repo: TaskRepository, tags: List<TagDt
         stageBusy = true; stageError = null
         scope.launch {
             try {
-                when {
-                    "COMPLETE_PERSONAL" in assignment.allowedActions ->
-                        taskRepo.completePersonalTask(dto!!.id, assignment.version, stageKey("complete", assignment.id))
-                    "REQUEST_COMPLETION" in assignment.allowedActions ->
-                        taskRepo.requestCompletion(assignment.id, assignment.version, stageNote.trim().ifBlank { null }, stageKey("request", assignment.id))
-                    else -> { stageError = "当前账号无权变更该任务状态"; stageBusy = false; return@launch }
+                if (assignment.allowedActions.none { it == "COMPLETE_PERSONAL" || it == "REQUEST_COMPLETION" }) {
+                    stageError = "当前账号无权变更该任务状态"; stageBusy = false; return@launch
                 }
+                taskRepo.scopedStatus(dto!!.id, ScopedStatusDto(
+                    scope = "SINGLE", workStatus = "COMPLETED", note = stageNote.trim().ifBlank { null },
+                    versions = listOf(ScopeVersionDto(dto.id, dto.version, assignment.id, assignment.version))
+                ), stageKey("complete", assignment.id))
                 stageNote = ""
                 onChanged(); stageBusy = false
             } catch (e: ApiException) {
