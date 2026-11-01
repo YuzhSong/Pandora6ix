@@ -9,7 +9,10 @@ import com.pandora6ix.backend.repository.BusinessDb;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.*;
 
 @Service
@@ -111,24 +114,18 @@ public class JournalService implements com.pandora6ix.backend.application.journa
         result.put("tags", linked);
         result.put("tagIds", linked.stream().map(t -> t.get("id")).toList());
         result.put("businessToday", identity.today(a).toString());
-        result.put("allowedActions", a.id().equals(journal.get("author_user_id")) && createdToday(a, journal)
+        result.put("allowedActions", a.id().equals(journal.get("author_user_id")) && withinEditWindow(journal.get("published_at"), Instant.now())
                 ? List.of("EDIT", "DELETE") : List.of());
         return result;
     }
 
-    /**
-     * 创建当天可编辑：以 published_at（创建时间）的业务日期判断，而不是 work_date。
-     * 这样当天补交的往期日志在当天内仍可修改，跨天后转为只读。
-     */
-    private boolean createdToday(IdentityService.Actor a, Map<String, Object> row) {
-        var zone = identity.zone(a);
-        var today = identity.today(a);
-        Object value = row.get("published_at");
-        if (value instanceof java.time.OffsetDateTime odt)
-            return odt.atZoneSameInstant(zone).toLocalDate().equals(today);
-        if (value instanceof java.time.Instant instant)
-            return instant.atZone(zone).toLocalDate().equals(today);
-        return false;
+    /** 创建时刻起连续 24 小时；跨午夜与公司时区调整不改变截止时间。 */
+    static boolean withinEditWindow(Object publishedAt, Instant now) {
+        Instant created;
+        if (publishedAt instanceof OffsetDateTime odt) created = odt.toInstant();
+        else if (publishedAt instanceof Instant instant) created = instant;
+        else return false;
+        return now.isBefore(created.plus(Duration.ofHours(24)));
     }
 
     /**
@@ -234,13 +231,13 @@ public class JournalService implements com.pandora6ix.backend.application.journa
                 order);
     }
 
-    /** 创建时间为准：当天创建（含当天补交的往期日志）当天可改可删，跨天即只读。 */
-    private void checkEditWindow(IdentityService.Actor a, Map<String, Object> row) {
-        if (!createdToday(a, row))
+    /** 与响应能力共用同一创建后 24 小时窗口，写请求实时重验。 */
+    private void checkEditWindow(Map<String, Object> row) {
+        if (!withinEditWindow(row.get("published_at"), Instant.now()))
             throw new BusinessException(
                     409,
                     "JOURNAL_EDIT_WINDOW_EXPIRED",
-                    "Only journals created today can be edited or deleted.",
+                    "Journals can only be edited or deleted within 24 hours of creation.",
                     Map.of());
     }
 
@@ -251,7 +248,7 @@ public class JournalService implements com.pandora6ix.backend.application.journa
         var row = db.lock("work_log", a.enterpriseId(), id);
         scope.read(a, str(row, "author_user_id"));
         if (!a.id().equals(row.get("author_user_id"))) throw BusinessException.forbidden();
-        checkEditWindow(a, row);
+        checkEditWindow(row);
         var auditBefore=audit.journal(a,id);
         for (var entry : db.rows(
                 "SELECT id FROM work_log_entry WHERE enterprise_id=? AND work_log_id=?",
@@ -287,7 +284,7 @@ public class JournalService implements com.pandora6ix.backend.application.journa
         var row = db.lock("work_log", a.enterpriseId(), id);
         scope.read(a, str(row, "author_user_id"));
         if (!a.id().equals(row.get("author_user_id"))) throw BusinessException.forbidden();
-        checkEditWindow(a, row);
+        checkEditWindow(row);
         var auditBefore=audit.journal(a,id);
         List<String> tagIds = null;
         if (c.tagIds() != null) tagIds = tags.validate(a, c.tagIds(), c.primaryTagId());

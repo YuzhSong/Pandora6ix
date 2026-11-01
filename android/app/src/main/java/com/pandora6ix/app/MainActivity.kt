@@ -1536,7 +1536,7 @@ private data class EntryDraft(val entryId: String?, val content: String)
         editorDateKey = draft?.dateKey ?: dateKey
         // 编辑窗口按创建时间（allowedActions 由后端按 published_at 判定），而不是 work_date
         val existing = journals.firstOrNull { it.workDate == editorDateKey }
-        if (existing != null && "EDIT" !in existing.allowedActions) { showEditNotice("该日志不是当天创建，已不能修改"); return }
+        if (existing != null && "EDIT" !in existing.allowedActions) { showEditNotice("日志创建已满 24 小时，不能再修改或删除"); return }
         editNotice = null
         editingJournal = journals.firstOrNull { it.workDate == editorDateKey }
         entryDrafts = draft?.entries?.map { EntryDraft(it.entryId, it.content) }
@@ -1550,7 +1550,7 @@ private data class EntryDraft(val entryId: String?, val content: String)
     fun switchEditorDate(dateKey: String) {
         if (dateKey == editorDateKey) { editNotice = null; return }
         val existing = journals.firstOrNull { it.workDate == dateKey }
-        if (existing != null && "EDIT" !in existing.allowedActions) { showEditNotice("该日期日志不是当天创建，已不能修改"); return }
+        if (existing != null && "EDIT" !in existing.allowedActions) { showEditNotice("日志创建已满 24 小时，不能再修改或删除"); return }
         editNotice = null
         editorDateKey = dateKey
         editingJournal = journals.firstOrNull { it.workDate == dateKey }
@@ -1562,7 +1562,8 @@ private data class EntryDraft(val entryId: String?, val content: String)
         if (entryDrafts.any { it.content.isNotBlank() }) confirmExit = true else writing = false
     }
     fun publish() {
-        if (editorDateKey !in threeDays().map(::isoOf) || (editingJournal != null && "EDIT" !in editingJournal!!.allowedActions)) { publishError = "只能补交昨天和前天的日志；日志仅在创建当天可修改"; return }
+        if (editingJournal == null && editorDateKey !in threeDays().map(::isoOf)) { publishError = "只能填写今天、昨天和前天的日志"; return }
+        if (editingJournal != null && "EDIT" !in editingJournal!!.allowedActions) { publishError = "日志创建已满 24 小时，不能再修改或删除"; return }
         val valid = entryDrafts.filter { it.content.isNotBlank() }
         // 从草稿列表移除的既有条目 = 删除（PATCH deleteEntryIds）；不在原条目上追加新条目代替删改
         val deleteIds = editingJournal?.entries
@@ -1728,7 +1729,7 @@ private data class EntryDraft(val entryId: String?, val content: String)
                             }
                         }
                         val editorEditable = editingJournal == null || "EDIT" in editingJournal!!.allowedActions
-                        if (!editorEditable) Text("补交日志已提交，不能再次修改。今日的日志可在今日内修改。", fontSize = 12.sp, color = Ink.copy(alpha = .55f))
+                        if (!editorEditable) Text("日志仅在创建后 24 小时内可修改或删除。", fontSize = 12.sp, color = Ink.copy(alpha = .55f))
                         Text("· 标签（可多选，可切换主标签）", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp, bottom = 6.dp))
                         if (tags.isNotEmpty()) FlowRow(Modifier.fillMaxWidth().padding(vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             tags.forEach { name ->

@@ -1322,7 +1322,7 @@ class BusinessApiIntegrationTests {
                 422);
         // 非作者删除
         request("DELETE", "/work-logs/" + id, managerToken, null, 403);
-        // 创建时间跨日即不可修改或删除（窗口按创建日判断，与 work_date 无关）
+        // 创建已满 24 小时即不可修改或删除，与 work_date 无关
         db.update(
                 "UPDATE work_log SET published_at=? WHERE id=?",
                 java.time.OffsetDateTime.now().minusDays(1),
@@ -1334,7 +1334,7 @@ class BusinessApiIntegrationTests {
                 fields("expectedVersion", 1, "deleteEntryIds", List.of(second)),
                 409);
         request("DELETE", "/work-logs/" + id, employeeToken, null, 409);
-        // 创建日回到今天：窗口内删除成功，删除后不可读且同日可重建
+        // 恢复为窗口内：删除成功，删除后不可读且同日可重建
         db.update(
                 "UPDATE work_log SET published_at=? WHERE id=?",
                 java.time.OffsetDateTime.now(),
@@ -3094,14 +3094,16 @@ class BusinessApiIntegrationTests {
     }
 
     @Test
-    void journalCreatedOnEarlierDayIsReadOnly() throws Exception {
+    void journalCreatedMoreThan24HoursAgoIsReadOnly() throws Exception {
         var old = journal(employeeToken, today.minusDays(1), 1);
-        // 把创建时间挪到两天前：窗口按创建日判断，跨天即只读
+        // 创建已超过 24 小时，与 work_date 无关
         db.update("UPDATE work_log SET published_at=? WHERE enterprise_id=? AND id=?",
                 java.time.OffsetDateTime.now().minusDays(2), enterprise, str(old, "id"));
         assertEquals(List.of(), request("GET", "/work-logs/"+old.get("id"), employeeToken, null, 200).get("allowedActions"));
-        request("PATCH", "/work-logs/"+old.get("id"), employeeToken, fields("expectedVersion", 0), 409);
-        request("DELETE", "/work-logs/"+old.get("id"), employeeToken, null, 409);
+        assertEquals(List.of(), items(request("GET", "/work-logs?scope=mine", employeeToken, null, 200)).getFirst().get("allowedActions"));
+        assertEquals("JOURNAL_EDIT_WINDOW_EXPIRED", request("PATCH", "/work-logs/"+old.get("id"), employeeToken, fields("expectedVersion", 0), 409).get("code"));
+        assertEquals("JOURNAL_EDIT_WINDOW_EXPIRED", request("DELETE", "/work-logs/"+old.get("id"), employeeToken, null, 409).get("code"));
+        assertEquals(0, number(db.entity("work_log", enterprise, str(old, "id")), "version"));
     }
 
     @SuppressWarnings("unchecked")
@@ -3144,23 +3146,47 @@ class BusinessApiIntegrationTests {
 
 
     @Test
-    void journalEditWindowUsesCreationDateInCompanyTimezone() throws Exception {
+    void journalEditWindowIgnoresCompanyTimezoneChanges() throws Exception {
         db.update("UPDATE enterprise SET business_timezone='Pacific/Kiritimati' WHERE id=?", enterprise);
         LocalDate companyToday = LocalDate.now(ZoneId.of("Pacific/Kiritimati"));
         var created = request("POST", "/work-logs", employeeToken,
                 fields("workDate", companyToday, "entries", List.of(fields("clientEntryKey", "zone", "content", "Timezone boundary"))), 201);
         assertEquals(companyToday.toString(), created.get("businessToday"));
-        // 创建时刻落在公司时区的今天 → 即使切换时区也仍可编辑（窗口看创建日，不看 work_date）
+        // 切换时区不影响连续 24 小时窗口
         db.update("UPDATE enterprise SET business_timezone='Etc/GMT+12' WHERE id=?", enterprise);
         assertTrue(LocalDate.now(ZoneId.of("Etc/GMT+12")).isBefore(companyToday));
         assertEquals(List.of("EDIT", "DELETE"), request("GET", "/work-logs/"+created.get("id"), employeeToken, null, 200).get("allowedActions"));
-        // 创建时间落到业务时区的前一天 → 立即只读
+        // 创建已满 24 小时才转为只读
         db.update("UPDATE work_log SET published_at=? WHERE enterprise_id=? AND id=?",
                 java.time.OffsetDateTime.now(ZoneId.of("Etc/GMT+12")).minusDays(1), enterprise, str(created, "id"));
         assertEquals(List.of(), request("GET", "/work-logs/"+created.get("id"), employeeToken, null, 200).get("allowedActions"));
         request("PATCH", "/work-logs/"+created.get("id"), employeeToken, fields("expectedVersion", 0), 409);
         request("DELETE", "/work-logs/"+created.get("id"), employeeToken, null, 409);
         assertEquals(0, number(db.entity("work_log", enterprise, str(created, "id")), "version"));
+    }
+
+    @Test
+    void backfilledJournalRemainsEditableAcrossMidnightOutsideCreationDateRange() throws Exception {
+        // 选择当前正午附近的业务时区，保证 23 小时前属于前一天。
+        int offset = 12 - java.time.OffsetDateTime.now(java.time.ZoneOffset.UTC).getHour();
+        var zone = java.time.ZoneOffset.ofHours(offset);
+        db.update("UPDATE enterprise SET business_timezone=? WHERE id=?", zone.getId(), enterprise);
+        var companyToday = LocalDate.now(zone);
+        var created = journal(employeeToken, companyToday.minusDays(2), 1);
+        var publishedAt = java.time.OffsetDateTime.now(java.time.ZoneOffset.UTC).minusHours(23);
+        // 模拟前一业务日补交前天日志，workDate 如今已在创建范围外。
+        db.update("UPDATE work_log SET published_at=?,work_date=? WHERE enterprise_id=? AND id=?",
+                publishedAt, companyToday.minusDays(3), enterprise, str(created, "id"));
+        var before = db.entity("work_log", enterprise, str(created, "id")).get("published_at");
+        assertEquals(List.of("EDIT", "DELETE"), request("GET", "/work-logs/"+created.get("id"), employeeToken, null, 200).get("allowedActions"));
+        var listed = items(request("GET", "/work-logs?scope=mine", employeeToken, null, 200));
+        assertEquals(List.of("EDIT", "DELETE"), listed.getFirst().get("allowedActions"));
+        assertEquals(List.of(), request("GET", "/work-logs/"+created.get("id"), managerToken, null, 200).get("allowedActions"));
+        var patched = request("PATCH", "/work-logs/"+created.get("id"), employeeToken,
+                fields("expectedVersion", 0, "upsertEntries", List.of(fields("entryId", entries(created).getFirst().get("entryId"), "content", "Edited after midnight"))), 200);
+        assertEquals(1, number(patched, "version"));
+        assertEquals(before, db.entity("work_log", enterprise, str(created, "id")).get("published_at"));
+        request("DELETE", "/work-logs/"+created.get("id"), employeeToken, null, 200);
     }
 
     @Test

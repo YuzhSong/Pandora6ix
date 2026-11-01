@@ -42,7 +42,7 @@ class ApiException(
         "REVIEW_CONTEXT_CHANGED" -> "审批环境已变化，请刷新后重试"
         "IDEMPOTENCY_CONFLICT" -> "操作已提交，请勿重复操作"
         "DAILY_JOURNAL_EXISTS" -> "今日日报已存在"
-        "JOURNAL_EDIT_WINDOW_EXPIRED" -> "只能修改或删除公司时区今天的日志，补交日志提交后不能再修改"
+        "JOURNAL_EDIT_WINDOW_EXPIRED" -> "日志创建已满 24 小时，不能再修改或删除"
         "JOURNAL_DATE_OUT_OF_RANGE" -> "只能填写公司时区今天、昨天和前天的日志"
         // 任务时间等业务校验：字段级错误优先，其次按服务端英文原因给出人话
         "VALIDATION_FAILED" -> when {
