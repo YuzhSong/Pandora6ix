@@ -1527,7 +1527,7 @@ private data class EntryDraft(val entryId: String?, val content: String)
             ?: editingJournal?.entries?.sortedBy { it.displayOrder }?.map { EntryDraft(it.entryId, it.content) }
             ?: listOf(EntryDraft(null, ""))
         tags = if (draft != null) draft.tagIds.mapNotNull { id -> availableTags.firstOrNull { it.id == id }?.name }
-        else editingJournal?.tags?.map { it.name } ?: emptyList()
+        else editingJournal?.tags?.sortedBy { if (it.id == editingJournal?.primaryTagId) 0 else 1 }?.map { it.name } ?: emptyList()
         publishError = null
         writing = true
     }
@@ -1539,7 +1539,7 @@ private data class EntryDraft(val entryId: String?, val content: String)
         editorDateKey = dateKey
         editingJournal = journals.firstOrNull { it.workDate == dateKey }
         entryDrafts = editingJournal?.entries?.sortedBy { it.displayOrder }?.map { EntryDraft(it.entryId, it.content) } ?: listOf(EntryDraft(null, ""))
-        tags = editingJournal?.tags?.map { it.name } ?: emptyList()
+        tags = editingJournal?.tags?.sortedBy { if (it.id == editingJournal?.primaryTagId) 0 else 1 }?.map { it.name } ?: emptyList()
         publishError = null
     }
     fun closeEditor() {
@@ -1762,7 +1762,7 @@ private data class EntryDraft(val entryId: String?, val content: String)
                 Spacer(Modifier.height(6.dp))
                 Column(Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())) {
                     if (availableTags.isEmpty()) Text("暂无标签，可在「我的 → 标签管理」中创建。", fontSize = 13.sp, color = Ink.copy(alpha = .5f))
-                    availableTags.forEach { tag ->
+                    availableTags.sortedBy { if (it.name == tags.firstOrNull()) 0 else 1 }.forEach { tag ->
                         val selected = tag.name in tags
                         val isPrimary = selected && tags.first() == tag.name
                         Row(
@@ -1846,7 +1846,7 @@ private fun TagChips(tags: List<TagDto>, primaryTagId: String?) {
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        tags.forEach { t ->
+        tags.sortedBy { if (it.id == primaryTagId) 0 else 1 }.forEach { t ->
             Text(
                 if (t.id == primaryTagId) "${t.name} · 主" else t.name,
                 fontSize = 11.sp,
