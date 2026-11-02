@@ -42,6 +42,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -49,6 +50,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pandora6ix.app.mock.*
 import com.pandora6ix.app.ui.theme.*
+import com.pandora6ix.app.ui.components.*
 import kotlin.math.abs
 
 @Composable
@@ -102,12 +104,13 @@ fun CalendarScreen(
         gridJumpTarget = if (target == CalendarMode.MONTH) cursor else null
         onModeChange(target)
     }
+    val colors = PandoraTheme.colors
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
-            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().heightIn(min = PandoraDimensions.touchTarget).padding(horizontal = PandoraSpacing.space8), verticalAlignment = Alignment.CenterVertically) {
                 Box {
-                    TextButton({ menu = true }, colors = ButtonDefaults.textButtonColors(contentColor = Ink)) {
-                        Text(mode.label, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    TextButton({ menu = true }, colors = ButtonDefaults.textButtonColors(contentColor = colors.textPrimary)) {
+                        Text(mode.label, style = PandoraTypography.titleMedium)
                         Icon(Icons.Default.ArrowDropDown, "选择视图")
                     }
                     DropdownMenu(menu, { menu = false }) {
@@ -115,19 +118,19 @@ fun CalendarScreen(
                     }
                 }
                 Spacer(Modifier.weight(1f))
-                TextButton(onOpenSummary, colors = ButtonDefaults.textButtonColors(contentColor = Ink)) {
-                    Icon(Icons.Default.Checklist, null, Modifier.size(18.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("任务汇总")
+                TextButton(onOpenSummary, colors = ButtonDefaults.textButtonColors(contentColor = colors.primary)) {
+                    Icon(Icons.Default.Checklist, null, Modifier.size(PandoraDimensions.iconSmall + 2.dp))
+                    Spacer(Modifier.width(PandoraSpacing.space4))
+                    Text("任务汇总", style = PandoraTypography.labelLarge)
                 }
             }
             val weekStart = mondayOfWeek(cursor)
             val dates = (0..6).map { weekStart.plusDays(it) }
             var showDatePick by rememberSaveable { mutableStateOf(false) }
-            Row(Modifier.fillMaxWidth().height(44.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(calendarPeriodTitle(mode, cursor), fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f).clickable { showDatePick = true })
+            Row(Modifier.fillMaxWidth().heightIn(min = PandoraDimensions.touchTarget).padding(start = PandoraSpacing.pageHorizontal, end = PandoraSpacing.space4), verticalAlignment = Alignment.CenterVertically) {
+                Text(calendarPeriodTitle(mode, cursor), style = PandoraTypography.titleMedium, color = colors.textPrimary, modifier = Modifier.weight(1f).clickable(onClickLabel = "选择日期") { showDatePick = true })
                 IconButton({ showTagFilter = true }) {
-                    Icon(Icons.Default.Search, "按标签筛选任务", tint = if (filterTags.isEmpty()) Ink else WarmOrange)
+                    Icon(Icons.Default.Search, "按标签筛选任务", tint = if (filterTags.isEmpty()) colors.textSecondary else colors.primary)
                 }
             }
             if (showDatePick) DateWheelDialog(
@@ -136,38 +139,26 @@ fun CalendarScreen(
                 onConfirm = { d -> showDatePick = false; jumpToDate(d) }
             )
             // 所有视图共用任务范围；"我管理的"仅对有审批能力的用户显示。
-            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = PandoraSpacing.pageHorizontal, vertical = PandoraSpacing.space4).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space8)) {
                 (listOf("mine" to "我的任务") + (if (canReviewTasks) listOf("managed" to "我管理的") else emptyList()) + listOf("created" to "我创建的")).forEach { (value, label) ->
                     val selected = taskScope == value
-                    Text(
-                        label,
-                        Modifier.clip(RoundedCornerShape(14.dp))
-                            .background(if (selected) WarmOrange else WarmCard)
-                            .clickable { if (!selected) onTaskScopeChange(value) }
-                            .padding(horizontal = 12.dp, vertical = 5.dp),
-                        fontSize = 12.sp,
-                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                        color = if (selected) Ink else Ink.copy(alpha = .65f),
-                        maxLines = 1,
-                        softWrap = false
-                    )
+                    PandoraChoiceChip(label, selected, onClick = { if (!selected) onTaskScopeChange(value) })
                 }
             }
-            if (notice != null) Text(notice, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp), fontSize = 12.sp, color = Ink.copy(alpha = .6f))
-            if (filterTags.isNotEmpty()) Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("仅显示：", fontSize = 12.sp, color = Ink.copy(alpha = .6f), maxLines = 1, softWrap = false)
+            if (notice != null) Text(notice, Modifier.fillMaxWidth().padding(horizontal = PandoraSpacing.pageHorizontal, vertical = PandoraSpacing.space2), style = PandoraTypography.caption, color = colors.textSecondary)
+            if (filterTags.isNotEmpty()) Row(Modifier.fillMaxWidth().padding(horizontal = PandoraSpacing.pageHorizontal, vertical = PandoraSpacing.space2), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space8)) {
+                Text("仅显示：", style = PandoraTypography.caption, color = colors.textSecondary, maxLines = 1, softWrap = false)
                 // 仅标签区域横向滚动，避免多选时换行挤占日历，并保持清除按钮可见。
                 Row(
                     Modifier.weight(1f).horizontalScroll(rememberScrollState()),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space4)
                 ) {
                     filterTags.forEach { name ->
-                        val chipBg = availableTags.firstOrNull { it.name == name }?.let { tagHexColor(it.colorHex).copy(alpha = .4f) } ?: Ink.copy(alpha = .15f)
-                        Text(name, Modifier.clip(RoundedCornerShape(10.dp)).background(chipBg).padding(horizontal = 8.dp, vertical = 2.dp), fontSize = 12.sp, color = Ink, maxLines = 1, softWrap = false)
+                        PandoraTagChip(name, availableTags.firstOrNull { it.name == name }?.colorHex)
                     }
                 }
-                TextButton({ filterTags = emptyList() }, contentPadding = PaddingValues(horizontal = 8.dp)) { Text("清除", fontSize = 12.sp, color = WarmOrange, maxLines = 1, softWrap = false) }
+                TextButton({ filterTags = emptyList() }, contentPadding = PaddingValues(horizontal = PandoraSpacing.space8)) { Text("清除", style = PandoraTypography.labelLarge, color = colors.primary, maxLines = 1, softWrap = false) }
             }
             // 应用标签筛选后的任务集合：空筛选 = 全部任务
             val taskSnapshot = tasks.toList()
@@ -207,7 +198,7 @@ fun CalendarScreen(
                             onCursorChange(date)
                             if (mode == CalendarMode.WEEK) onModeChange(CalendarMode.DAY)
                         }
-                        HorizontalDivider(color = Ink.copy(alpha = .08f))
+                        PandoraDivider()
                         key(mode, if (mode == CalendarMode.DAY) cursor else weekStart) {
                             if (mode == CalendarMode.WEEK) WeekTaskStacks(visibleDates, visibleTasks, onOpen)
                             else TimeGrid(visibleDates, visibleTasks, true, today, businessTimezone, onSelect = { task, _ -> onOpen(task) })
@@ -215,21 +206,21 @@ fun CalendarScreen(
                     }
                 }
                 // 加载/失败覆盖层：真实接口三态（不遮住顶部导航）
-                if (loading) Box(Modifier.fillMaxSize().background(Cream.copy(alpha = .45f)), contentAlignment = Alignment.Center) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        CircularProgressIndicator(color = WarmOrange, strokeWidth = 3.dp)
-                        Text("正在加载…", color = Ink.copy(alpha = .6f), fontSize = 13.sp)
+                if (loading) Box(Modifier.fillMaxSize().background(colors.appBackground.copy(alpha = .6f)), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space12)) {
+                        CircularProgressIndicator(color = colors.primary, strokeWidth = 3.dp)
+                        Text("正在加载…", style = PandoraTypography.bodyMedium, color = colors.textSecondary)
                     }
                 }
-                if (error != null) Box(Modifier.fillMaxSize().background(Cream.copy(alpha = .45f)), contentAlignment = Alignment.Center) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text(error, color = Ink.copy(alpha = .75f))
-                        Button(onRetry, colors = ButtonDefaults.buttonColors(containerColor = ThemeButton, contentColor = OnThemeButton), shape = RoundedCornerShape(12.dp)) { Text("重试") }
+                if (error != null) Box(Modifier.fillMaxSize().background(colors.appBackground.copy(alpha = .6f)), contentAlignment = Alignment.Center) {
+                    Column(Modifier.padding(PandoraSpacing.space24), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space12)) {
+                        Text(error, style = PandoraTypography.bodyMedium, color = colors.textSecondary)
+                        PandoraButton("重试", onRetry)
                     }
                 }
             }
         }
-        if (canCreatePersonal || canCreateDelegated) FloatingActionButton(onClick = { adding = true }, modifier = Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 48.dp), shape = CircleShape, containerColor = WarmOrange, contentColor = Color.White) { Icon(Icons.Default.Add, "添加任务", Modifier.size(30.dp)) }
+        if (canCreatePersonal || canCreateDelegated) FloatingActionButton(onClick = { adding = true }, modifier = Modifier.align(Alignment.BottomEnd).padding(end = PandoraSpacing.space16, bottom = PandoraSpacing.space48), shape = PandoraShapes.circle, containerColor = colors.primary, contentColor = colors.textOnPrimary) { Icon(Icons.Default.Add, "添加任务", Modifier.size(PandoraDimensions.icon)) }
         val atToday = when (mode) {
             CalendarMode.DAY -> cursor == today
             CalendarMode.WEEK -> mondayOfWeek(cursor) == mondayOfWeek(today)
@@ -242,7 +233,8 @@ fun CalendarScreen(
             CalendarMode.WEEK -> "回到本周"
             CalendarMode.DAY -> "回到今天"
         }
-        if (!atToday) Button(onClick = { jumpToDate(today) }, modifier = Modifier.align(Alignment.BottomEnd).fillMaxWidth(.25f).height(34.dp), shape = RoundedCornerShape(topStart = 17.dp, bottomStart = 17.dp), contentPadding = PaddingValues(horizontal = 4.dp), colors = ButtonDefaults.buttonColors(containerColor = ThemeButton, contentColor = OnThemeButton)) { Text(returnToCurrentLabel, fontSize = 12.sp, maxLines = 1) }
+        // 贴右边缘的半胶囊入口：视觉 40dp 紧凑高度，Material 默认把命中区扩展到 48dp
+        if (!atToday) Button(onClick = { jumpToDate(today) }, modifier = Modifier.align(Alignment.BottomEnd).fillMaxWidth(.25f).height(PandoraDimensions.compactButtonHeight), shape = RoundedCornerShape(topStartPercent = 50, bottomStartPercent = 50), contentPadding = PaddingValues(horizontal = PandoraSpacing.space4), colors = ButtonDefaults.buttonColors(containerColor = colors.primary, contentColor = colors.textOnPrimary)) { Text(returnToCurrentLabel, style = PandoraTypography.caption, maxLines = 1) }
     }
     if (adding && (canCreatePersonal || canCreateDelegated)) TaskEntrySheet(cursor, canCreatePersonal, canCreateDelegated, availableTags, taskRepo, businessTimezone, currentUser, onDismiss = { adding = false }, onCreated = { task -> onCreated(task) })
     if (showTagFilter) {
@@ -252,34 +244,35 @@ fun CalendarScreen(
             title = { Text("按标签筛选") },
             text = {
                 Column {
-                    Text("可多选；任务需同时包含所选的全部标签才会显示。", fontSize = 12.sp, color = Ink.copy(alpha = .6f))
-                    Spacer(Modifier.height(6.dp))
+                    Text("可多选；任务需同时包含所选的全部标签才会显示。", style = PandoraTypography.bodyMedium, color = PandoraTheme.colors.textSecondary)
+                    Spacer(Modifier.height(PandoraSpacing.space8))
                     Column(Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())) {
                         availableTags.forEach { tag ->
                             val selected = tag.name in pending
-                            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { pending = if (selected) pending - tag.name else pending + tag.name }.padding(horizontal = 4.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Box(Modifier.size(14.dp).clip(CircleShape).background(tagHexColor(tag.colorHex)))
-                                Spacer(Modifier.width(10.dp))
-                                Text(tag.name, Modifier.weight(1f), fontSize = 15.sp)
-                                if (selected) Icon(Icons.Default.Check, "已选", Modifier.size(18.dp), tint = Ink)
+                            Row(Modifier.fillMaxWidth().heightIn(min = PandoraDimensions.touchTarget).clip(PandoraShapes.small).clickable { pending = if (selected) pending - tag.name else pending + tag.name }.padding(horizontal = PandoraSpacing.space4), verticalAlignment = Alignment.CenterVertically) {
+                                Box(Modifier.size(PandoraDimensions.iconSmall).clip(PandoraShapes.circle).background(tagHexColor(tag.colorHex)).border(PandoraDimensions.borderWidth, PandoraTheme.colors.border, PandoraShapes.circle))
+                                Spacer(Modifier.width(PandoraSpacing.space12))
+                                Text(tag.name, Modifier.weight(1f), style = PandoraTypography.bodyLarge)
+                                if (selected) Icon(Icons.Default.Check, "已选", Modifier.size(PandoraDimensions.icon), tint = PandoraTheme.colors.primary)
                             }
                         }
                     }
                 }
             },
-            confirmButton = { TextButton({ filterTags = pending; showTagFilter = false }) { Text("确定", color = WarmOrange, fontWeight = FontWeight.Bold) } },
-            dismissButton = { TextButton({ showTagFilter = false }) { Text("取消", color = Ink.copy(alpha = .7f)) } }
+            confirmButton = { TextButton({ filterTags = pending; showTagFilter = false }) { Text("确定", style = PandoraTypography.labelLarge) } },
+            dismissButton = { TextButton({ showTagFilter = false }) { Text("取消", style = PandoraTypography.labelLarge, color = PandoraTheme.colors.textSecondary) } }
         )
     }
 }
 
 @Composable private fun WeekDates(dates: List<DemoDate>, today: DemoDate, onSelect: (DemoDate) -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(start = if (dates.size == 1) 40.dp else 8.dp, end = 8.dp, bottom = 8.dp)) {
+    val colors = PandoraTheme.colors
+    Row(Modifier.fillMaxWidth().padding(start = if (dates.size == 1) PandoraCalendarDimens.timeAxisWidth else PandoraCalendarDimens.contentHorizontal, end = PandoraCalendarDimens.contentHorizontal, bottom = PandoraSpacing.space8)) {
         dates.forEach { date ->
             Column(Modifier.weight(1f).clickable { onSelect(date) }, horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("周${date.weekdayLabel()}", fontSize = 12.sp, color = Ink.copy(alpha = .65f))
-                Box(Modifier.padding(top = 3.dp).size(32.dp).clip(CircleShape).background(if (date == today) CreamDeep else Color.Transparent), contentAlignment = Alignment.Center) {
-                    Text("${date.day}", fontSize = 17.sp, lineHeight = 17.sp, fontWeight = if (date == today) FontWeight.Bold else FontWeight.Normal)
+                Text("周${date.weekdayLabel()}", style = PandoraTypography.caption, color = colors.textSecondary)
+                Box(Modifier.padding(top = PandoraSpacing.space2).size(32.dp).clip(PandoraShapes.circle).background(if (date == today) colors.primaryContainer else Color.Transparent), contentAlignment = Alignment.Center) {
+                    Text("${date.day}", style = PandoraTypography.bodyLarge, fontWeight = if (date == today) FontWeight.SemiBold else FontWeight.Normal, color = colors.textPrimary)
                 }
             }
         }
@@ -348,8 +341,8 @@ private fun MonthScroll(
         index.monthItemIndex[monthKey(target)]?.let { state.scrollToItem(it) }
         onJumpConsumed()
     }
-    Column(Modifier.fillMaxSize().padding(horizontal = 8.dp)) {
-        Row(Modifier.fillMaxWidth().height(20.dp)) { listOf("一", "二", "三", "四", "五", "六", "日").forEach { Text("周$it", Modifier.weight(1f), fontSize = 11.sp, textAlign = TextAlign.Center, color = Ink.copy(alpha = .6f)) } }
+    Column(Modifier.fillMaxSize().padding(horizontal = PandoraCalendarDimens.contentHorizontal)) {
+        Row(Modifier.fillMaxWidth().height(20.dp)) { listOf("一", "二", "三", "四", "五", "六", "日").forEach { Text("周$it", Modifier.weight(1f), style = PandoraTypography.caption, textAlign = TextAlign.Center, color = PandoraTheme.colors.textSecondary) } }
         LazyColumn(state = state, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 96.dp)) {
             items(index.items.size,
                 key = { i -> index.items[i].key },
@@ -357,7 +350,7 @@ private fun MonthScroll(
             ) { i ->
                 val item = index.items[i]
                 if (item.isTitle) {
-                    Text("${item.month.month}月", fontSize = 26.sp, fontWeight = FontWeight.Bold, color = Ink, modifier = Modifier.padding(top = 18.dp, bottom = 6.dp))
+                    Text("${item.month.month}月", style = PandoraTypography.titleLarge, color = PandoraTheme.colors.textPrimary, modifier = Modifier.padding(start = PandoraSpacing.space8, top = PandoraSpacing.space16, bottom = PandoraSpacing.space4).semantics { heading() })
                 } else {
                     MonthScrollRow(item.month, item.week, tasks, today, onCursorChange, onOpen, onOpenDay)
                 }
@@ -389,7 +382,7 @@ private fun MonthScrollRow(month: DemoDate, week: List<DemoDate>, tasks: List<Ta
     val hiddenPerDay = IntArray(7)
     lanes.drop(capacity).forEach { lane -> lane.forEach { seg -> for (c in seg.first..seg.last) hiddenPerDay[c]++ } }
     val dayRowHeight = 30.dp
-    val laneHeight = 18.dp
+    val laneHeight = PandoraCalendarDimens.monthBarMinHeight
     val laneGap = 3.dp       // 行间距加大
     val overflowRowHeight = 16.dp  // 第 4 行：放每日“+N”
     Column(Modifier.fillMaxWidth().height(dayRowHeight + (laneHeight + laneGap) * capacity + overflowRowHeight + 2.dp)) {
@@ -406,7 +399,7 @@ private fun MonthScrollRow(month: DemoDate, week: List<DemoDate>, tasks: List<Ta
             (0..6).forEach { c ->
                 if (hiddenPerDay[c] > 0 && inMonth[c]) {
                     Box(Modifier.offset(x = cell * c).width(cell), contentAlignment = Alignment.Center) {
-                        Text("+${hiddenPerDay[c]}", Modifier.clickable { onOpenDay(week[c]) }, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = Ink.copy(alpha = .6f), maxLines = 1)
+                        Text("+${hiddenPerDay[c]}", Modifier.clickable(onClickLabel = "查看当天其余${hiddenPerDay[c]}项任务") { onOpenDay(week[c]) }, style = PandoraTypography.calendarMicro, fontWeight = FontWeight.Medium, color = PandoraTheme.colors.textSecondary, maxLines = 1)
                     }
                 }
             }
@@ -419,7 +412,7 @@ private fun DayNumberRow(month: DemoDate, week: List<DemoDate>, inMonth: List<Bo
     Row(Modifier.fillMaxWidth().height(30.dp)) {
         week.forEachIndexed { col, date ->
             Box(Modifier.weight(1f).fillMaxHeight().clickable(enabled = inMonth[col]) { onOpenDay(date) }, contentAlignment = Alignment.Center) {
-                if (inMonth[col]) Text("${date.day}", fontSize = 16.sp, lineHeight = 16.sp, fontWeight = if (date == today) FontWeight.Bold else FontWeight.Normal, color = Ink, modifier = Modifier.clip(CircleShape).background(if (date == today) Peach else Color.Transparent).padding(horizontal = 7.dp, vertical = 1.dp))
+                if (inMonth[col]) Text("${date.day}", style = PandoraTypography.bodyMedium, fontWeight = if (date == today) FontWeight.SemiBold else FontWeight.Normal, color = PandoraTheme.colors.textPrimary, modifier = Modifier.clip(PandoraShapes.pill).background(if (date == today) PandoraTheme.colors.primaryContainer else Color.Transparent).padding(horizontal = PandoraSpacing.space8, vertical = PandoraSpacing.space2))
             }
         }
     }
@@ -429,10 +422,11 @@ private fun DayNumberRow(month: DemoDate, week: List<DemoDate>, inMonth: List<Bo
     BoxWithConstraints(Modifier.fillMaxWidth().height(height.dp)) {
         val cellWidth = maxWidth / dates.size
         lane.forEach { segment ->
-            Box(Modifier.offset(x = cellWidth * segment.first).width(cellWidth * (segment.last - segment.first + 1)).fillMaxHeight().padding(horizontal = 1.dp).clip(RoundedCornerShape(3.dp)).background(taskColor(segment.task))
+            val barColor = taskColor(segment.task)
+            Box(Modifier.offset(x = cellWidth * segment.first).width(cellWidth * (segment.last - segment.first + 1)).fillMaxHeight().padding(horizontal = 1.dp).clip(RoundedCornerShape(PandoraCalendarDimens.monthBarRadius)).background(barColor)
                 .semantics { role = Role.Button; onClick("查看${segment.task.title}") { onSelect(segment.task, dates[segment.first]); true } }
                 .pointerInput(segment.task.id, dates) { detectTapGestures { position -> val day = (position.x / (size.width.toFloat() / (segment.last - segment.first + 1))).toInt().coerceIn(0, segment.last - segment.first); onSelect(segment.task, dates[segment.first + day]) } }, contentAlignment = Alignment.CenterStart) {
-                Text((if (segment.task.recurrenceLabel != null) "↻ " else "") + calendarTaskTitle(segment.task), Modifier.padding(horizontal = 3.dp), fontSize = if (compact) 11.sp else 12.sp, lineHeight = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Ink)
+                Text((if (segment.task.recurrenceLabel != null) "↻ " else "") + calendarTaskTitle(segment.task), Modifier.padding(horizontal = PandoraSpacing.space4), style = if (compact) PandoraTypography.calendarMicro else PandoraTypography.caption, maxLines = 1, overflow = TextOverflow.Ellipsis, color = tagContentColor(barColor))
             }
         }
     }
@@ -446,12 +440,12 @@ private fun calendarTaskTitle(task: TaskItem): String =
 private fun taskColor(task: TaskItem): Color =
     task.displayColorHex?.let { hex -> runCatching { Color(android.graphics.Color.parseColor(hex)) }.getOrNull() }
         ?: task.tags.firstOrNull()?.let { tag -> tag.colorHex.takeIf { it.isNotBlank() }?.let { hex -> runCatching { Color(android.graphics.Color.parseColor(hex)) }.getOrNull() } }
-        ?: Ink.copy(alpha = 0.12f)
+        ?: WarmColors.neutralContainer
 // 主标签已排在首位：保留色相生成深色版本，原色不透明时同样能区分。
 private fun taskEdgeColor(task: TaskItem): Color {
     val rawColor = task.tags.firstOrNull()?.colorHex?.let { hex -> runCatching { android.graphics.Color.parseColor(hex) }.getOrNull() }
         ?: task.displayColorHex?.let { hex -> runCatching { android.graphics.Color.parseColor(hex) }.getOrNull() }
-        ?: return Ink.copy(alpha = .55f)
+        ?: return WarmColors.textTertiary
     val hsv = FloatArray(3)
     android.graphics.Color.colorToHSV(rawColor, hsv)
     // 灰色保持中性；彩色适度提高饱和度并降低明度，不改变色相。
@@ -461,13 +455,14 @@ private fun taskEdgeColor(task: TaskItem): Color {
 }
 private fun Modifier.calendarGuides(): Modifier = drawBehind {
     val effect = PathEffect.dashPathEffect(floatArrayOf(3.dp.toPx(), 4.dp.toPx()))
-    for (i in 1..6) drawLine(Ink.copy(alpha = .06f), Offset(size.width * i / 7, 0f), Offset(size.width * i / 7, size.height), pathEffect = effect)
-    drawLine(Ink.copy(alpha = .08f), Offset(0f, size.height), Offset(size.width, size.height), pathEffect = effect)
+    for (i in 1..6) drawLine(WarmColors.divider, Offset(size.width * i / 7, 0f), Offset(size.width * i / 7, size.height), pathEffect = effect)
+    drawLine(WarmColors.divider, Offset(0f, size.height), Offset(size.width, size.height), pathEffect = effect)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable private fun TimeGrid(dates: List<DemoDate>, tasks: List<TaskItem>, dayMode: Boolean, today: DemoDate, businessTimezone: String?, onSelect: (TaskItem, DemoDate) -> Unit) {
-    val hourHeight = if (dayMode) 60.dp else 56.dp
+    val hourHeight = if (dayMode) PandoraCalendarDimens.dayHourHeight else PandoraCalendarDimens.weekHourHeight
+    val colors = PandoraTheme.colors
     val density = LocalDensity.current
     var selection by remember(dates) { mutableStateOf<Pair<DemoDate, Int>?>(null) }
     val selectAt by rememberUpdatedState({ date: DemoDate, minute: Int ->
@@ -480,28 +475,28 @@ private fun Modifier.calendarGuides(): Modifier = drawBehind {
     val initialHour = ((nowMinute - 90) / 60).coerceIn(0, 22)
     val scroll = rememberScrollState(with(density) { (hourHeight * initialHour).roundToPx() })
     val todayIndex = dates.indexOfFirst { it == today }
-    Row(Modifier.fillMaxSize().padding(end = 8.dp).verticalScroll(scroll)) {
-        Column(Modifier.width(40.dp)) {
-            (0..23).forEach { hour -> Text("%02d".format(hour), Modifier.fillMaxWidth().height(hourHeight).padding(top = 2.dp), textAlign = TextAlign.Center, fontSize = 11.sp, color = Ink.copy(alpha = .5f)) }
+    Row(Modifier.fillMaxSize().padding(end = PandoraCalendarDimens.contentHorizontal).verticalScroll(scroll)) {
+        Column(Modifier.width(PandoraCalendarDimens.timeAxisWidth)) {
+            (0..23).forEach { hour -> Text("%02d".format(hour), Modifier.fillMaxWidth().height(hourHeight).padding(top = PandoraSpacing.space2), textAlign = TextAlign.Center, style = PandoraTypography.caption, color = colors.textTertiary) }
             // 底部留白：避免悬浮“添加任务”按钮遮挡 24:00 附近内容
             Spacer(Modifier.height(72.dp))
         }
         BoxWithConstraints(Modifier.weight(1f).height(hourHeight * 24 + 72.dp).drawBehind {
             val dash = PathEffect.dashPathEffect(floatArrayOf(3.dp.toPx(), 4.dp.toPx()))
-            for (day in 1 until dates.size) drawLine(Ink.copy(alpha = .07f), Offset(size.width * day / dates.size, 0f), Offset(size.width * day / dates.size, size.height), pathEffect = dash)
+            for (day in 1 until dates.size) drawLine(colors.divider, Offset(size.width * day / dates.size, 0f), Offset(size.width * day / dates.size, size.height), pathEffect = dash)
         }.drawWithContent {
             drawContent()
             // 整点实线覆盖任务色块，长任务内仍能辨认每小时边界。
             for (hour in 0..24) {
                 val y = hourHeight.toPx() * hour
-                drawLine(Ink.copy(alpha = .10f), Offset(0f, y), Offset(size.width, y), strokeWidth = 1.dp.toPx())
+                drawLine(colors.divider, Offset(0f, y), Offset(size.width, y), strokeWidth = 1.dp.toPx())
             }
-            // “现在”指示线：今天的列内一条红线，随时间实时对位
+            // “现在”指示线：今天的列内一条 Info 色线（规范 2.2：不混用 Error 红），随时间实时对位
             if (todayIndex >= 0) {
                 val y = hourHeight.toPx() * nowMinute / 60f
                 val left = size.width * todayIndex / dates.size
-                drawLine(Color(0xFFE5484D), Offset(left, y), Offset(size.width * (todayIndex + 1) / dates.size, y), strokeWidth = 1.5.dp.toPx())
-                drawCircle(Color(0xFFE5484D), radius = 3.dp.toPx(), center = Offset(left, y))
+                drawLine(colors.info, Offset(left, y), Offset(size.width * (todayIndex + 1) / dates.size, y), strokeWidth = 1.5.dp.toPx())
+                drawCircle(colors.info, radius = 3.dp.toPx(), center = Offset(left, y))
             }
         }) {
             val dayWidth = maxWidth / dates.size
@@ -518,7 +513,9 @@ private fun Modifier.calendarGuides(): Modifier = drawBehind {
                     val spansFrom = date > task.start
                     val spansInto = date < task.end
                     // 半透明任务色必须有实色衬底，否则同刻开始的底层标题会透出。
-                    Box(Modifier.offset(x = dayWidth * index + indent, y = hourHeight * (range.first / 60f)).width(cardWidth).height(hourHeight * ((range.last - range.first + 1) / 60f)).padding(1.dp).clip(RoundedCornerShape(4.dp)).background(WarmCard.copy(alpha = 1f)).background(taskColor(task))
+                    val blockColor = taskColor(task)
+                    val blockContent = tagContentColor(blockColor, colors.textPrimary)
+                    Box(Modifier.offset(x = dayWidth * index + indent, y = hourHeight * (range.first / 60f)).width(cardWidth).height(hourHeight * ((range.last - range.first + 1) / 60f)).padding(1.dp).clip(RoundedCornerShape(PandoraCalendarDimens.blockRadius)).background(colors.surface).background(blockColor)
                         .drawBehind {
                             val stroke = minOf(3.dp.toPx(), size.width)
                             drawLine(edgeColor, Offset(stroke / 2, 0f), Offset(stroke / 2, size.height), strokeWidth = stroke)
@@ -541,9 +538,9 @@ private fun Modifier.calendarGuides(): Modifier = drawBehind {
                                 selectAt(date, minute)
                             }
                         }) {
-                        Column(Modifier.padding(start = 7.dp, end = 4.dp, top = 2.dp, bottom = 2.dp)) {
-                            Text(calendarTaskTitle(task), fontSize = if (dayMode) 13.sp else 11.sp, lineHeight = if (dayMode) 16.sp else 13.sp, maxLines = if (dayMode) 2 else 1, overflow = TextOverflow.Ellipsis)
-                            if (dayMode && !isAllDay(task) && range.last - range.first >= 30) Text("${if (spansFrom) "自昨日 " else ""}${minuteLabel(range.first)}—${minuteLabel(range.last + 1)}${if (spansInto) " →次日" else ""}", fontSize = 11.sp, color = Ink.copy(alpha = .7f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Column(Modifier.padding(start = PandoraSpacing.space8, end = PandoraSpacing.space4, top = PandoraSpacing.space2, bottom = PandoraSpacing.space2)) {
+                            Text(calendarTaskTitle(task), style = if (dayMode) PandoraTypography.bodyMedium else PandoraTypography.calendarMicro, color = blockContent, maxLines = if (dayMode) 2 else 1, overflow = TextOverflow.Ellipsis)
+                            if (dayMode && !isAllDay(task) && range.last - range.first >= 30) Text("${if (spansFrom) "自昨日 " else ""}${minuteLabel(range.first)}—${minuteLabel(range.last + 1)}${if (spansInto) " →次日" else ""}", style = PandoraTypography.caption, color = blockContent, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
                 }
@@ -556,29 +553,31 @@ private fun Modifier.calendarGuides(): Modifier = drawBehind {
         ModalBottomSheet(
             onDismissRequest = { selection = null },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-            containerColor = Color.White
+            containerColor = colors.elevatedSurface,
+            shape = PandoraShapes.sheet,
+            scrimColor = colors.scrim
         ) {
-            Text("选择任务", Modifier.padding(horizontal = 20.dp), fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Text("选择任务", Modifier.padding(horizontal = PandoraSpacing.space16), style = PandoraTypography.titleMedium, color = colors.textPrimary)
             Text("${date.year}年${date.month}月${date.day}日 · ${minuteLabel(minute)} · ${candidates.size} 项任务",
-                Modifier.padding(horizontal = 20.dp, vertical = 8.dp), fontSize = 13.sp, color = Ink.copy(alpha = .65f))
+                Modifier.padding(horizontal = PandoraSpacing.space16, vertical = PandoraSpacing.space8), style = PandoraTypography.bodyMedium, color = colors.textSecondary)
             LazyColumn(Modifier.fillMaxWidth().heightIn(max = 480.dp)) {
                 items(candidates.size, key = { candidates[it].id }) { index ->
                     val candidate = candidates[index]
                     Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable {
                         selection = null
                         onSelect(candidate, date)
-                    }.padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.size(12.dp).clip(CircleShape).background(WarmCard.copy(alpha = 1f)).background(taskColor(candidate)))
-                        Spacer(Modifier.width(12.dp))
+                    }.padding(horizontal = PandoraSpacing.space16, vertical = PandoraSpacing.space12), verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(12.dp).clip(PandoraShapes.circle).background(taskColor(candidate)).border(PandoraDimensions.borderWidth, colors.border, PandoraShapes.circle))
+                        Spacer(Modifier.width(PandoraSpacing.space12))
                         Column(Modifier.weight(1f)) {
-                            Text(calendarTaskTitle(candidate), fontSize = 16.sp, color = Ink)
-                            Text(taskSelectionTimeLabel(candidate), Modifier.padding(top = 4.dp), fontSize = 12.sp, color = Ink.copy(alpha = .65f))
+                            Text(calendarTaskTitle(candidate), style = PandoraTypography.bodyLarge, color = colors.textPrimary)
+                            Text(taskSelectionTimeLabel(candidate), Modifier.padding(top = PandoraSpacing.space4), style = PandoraTypography.caption, color = colors.textSecondary)
                         }
                     }
-                    HorizontalDivider(color = Ink.copy(alpha = .08f))
+                    PandoraDivider()
                 }
             }
-            TextButton(onClick = { selection = null }, modifier = Modifier.fillMaxWidth().padding(8.dp)) { Text("取消") }
+            TextButton(onClick = { selection = null }, modifier = Modifier.fillMaxWidth().padding(PandoraSpacing.space8)) { Text("取消", style = PandoraTypography.labelLarge, color = colors.textSecondary) }
         }
     }
 }
@@ -586,7 +585,7 @@ private fun Modifier.calendarGuides(): Modifier = drawBehind {
 @Composable private fun WeekTaskStacks(dates: List<DemoDate>, tasks: List<TaskItem>, onOpen: (TaskItem) -> Unit) {
     val allDayRows = weekAllDayRows(tasks, dates)
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 80.dp)
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = PandoraCalendarDimens.contentHorizontal, end = PandoraCalendarDimens.contentHorizontal, top = PandoraSpacing.space8, bottom = 80.dp)
     ) {
         allDayRows.forEach { lane ->
             DateLane(lane, dates, height = 28, compact = false) { task, _ -> onOpen(task) }
@@ -595,23 +594,25 @@ private fun Modifier.calendarGuides(): Modifier = drawBehind {
         if (allDayRows.isNotEmpty()) Spacer(Modifier.height(4.dp))
         Row(Modifier.fillMaxWidth()) {
         dates.forEach { date ->
-            Column(Modifier.weight(1f).padding(horizontal = 2.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Column(Modifier.weight(1f).padding(horizontal = PandoraSpacing.space2), verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space4)) {
                 weekCardTasksOnDate(tasks, date).forEach { task ->
                     val edge = taskEdgeColor(task)
+                    val cardColor = taskColor(task)
+                    val cardContent = tagContentColor(cardColor)
                     Column(
-                        Modifier.fillMaxWidth().height(88.dp).clip(RoundedCornerShape(4.dp))
-                            .background(WarmCard).background(taskColor(task))
+                        Modifier.fillMaxWidth().height(88.dp).clip(RoundedCornerShape(PandoraCalendarDimens.blockRadius))
+                            .background(cardColor)
                             .clickable(role = Role.Button, onClickLabel = "查看${task.title}") { onOpen(task) }
                             .drawBehind {
                                 drawLine(edge, Offset(1.dp.toPx(), 0f), Offset(1.dp.toPx(), size.height), strokeWidth = 2.dp.toPx())
-                            }.padding(start = 4.dp, end = 2.dp, top = 4.dp, bottom = 4.dp)
+                            }.padding(start = PandoraSpacing.space4, end = PandoraSpacing.space2, top = PandoraSpacing.space4, bottom = PandoraSpacing.space4)
                     ) {
-                        Text(calendarTaskTitle(task), Modifier.weight(1f), fontSize = 11.sp, lineHeight = 14.sp,
-                            maxLines = 3, overflow = TextOverflow.Ellipsis, color = Ink)
+                        Text(calendarTaskTitle(task), Modifier.weight(1f), style = PandoraTypography.caption,
+                            maxLines = 3, overflow = TextOverflow.Ellipsis, color = cardContent)
                         val time = (if (task.recurrenceLabel != null) "↻ " else "") + if (isAllDay(task)) "全天" else minuteLabel(timelineTimeRangeOnDate(task, date)?.first ?: task.startMinute!!)
                         Text(if (date > task.start) "续 $time" else time,
-                            fontSize = 10.sp, lineHeight = 12.sp, maxLines = 1,
-                            overflow = TextOverflow.Ellipsis, color = Ink.copy(alpha = .7f))
+                            style = PandoraTypography.calendarMicro, maxLines = 1,
+                            overflow = TextOverflow.Ellipsis, color = cardContent)
                     }
                 }
             }
@@ -736,7 +737,7 @@ private fun Modifier.swipeNavigate(mode: CalendarMode, onAdvance: (Boolean) -> U
                     window = activeWindow.recenteredAt(state.firstVisibleItemIndex, state.firstVisibleItemScrollOffset)
                 }
         }
-        LazyVerticalGrid(state = state, columns = GridCells.Fixed(2), modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp), contentPadding = PaddingValues(bottom = 96.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        LazyVerticalGrid(state = state, columns = GridCells.Fixed(2), modifier = Modifier.fillMaxSize().padding(horizontal = PandoraCalendarDimens.contentHorizontal), contentPadding = PaddingValues(bottom = 96.dp), horizontalArrangement = Arrangement.spacedBy(PandoraGrid.gutter), verticalArrangement = Arrangement.spacedBy(PandoraGrid.gutter)) {
             items(activeWindow.itemCount, key = { monthKey(activeWindow.monthAt(it)) }) { index ->
                 val month = activeWindow.monthAt(index)
                 val weeks = remember(month) { monthWeeks(month) }
@@ -748,19 +749,20 @@ private fun Modifier.swipeNavigate(mode: CalendarMode, onAdvance: (Boolean) -> U
                         monthTasks.firstOrNull { date >= it.start && date <= it.end }?.let(::taskColor) ?: Color.Transparent
                     }
                 }
-                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(WarmCard).border(1.dp, CreamDeep, RoundedCornerShape(10.dp)).padding(4.dp)) {
-                    Text(if (month.month == 1) "${month.year}年1月" else "${month.month}月", fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.fillMaxWidth().clickable { onSelectMonth(month) }.padding(horizontal = 2.dp))
-                    Row(Modifier.fillMaxWidth().padding(top = 1.dp)) { listOf("一", "二", "三", "四", "五", "六", "日").forEach { Text(it, Modifier.weight(1f), fontSize = 8.sp, lineHeight = 8.sp, textAlign = TextAlign.Center, color = Ink.copy(alpha = .45f)) } }
+                val colors = PandoraTheme.colors
+                Column(Modifier.fillMaxWidth().clip(PandoraShapes.small).background(colors.surface).border(PandoraDimensions.borderWidth, colors.border, PandoraShapes.small).padding(PandoraSpacing.space4)) {
+                    Text(if (month.month == 1) "${month.year}年1月" else "${month.month}月", style = PandoraTypography.labelLarge, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.fillMaxWidth().clickable(onClickLabel = "打开${month.month}月") { onSelectMonth(month) }.padding(horizontal = PandoraSpacing.space2))
+                    Row(Modifier.fillMaxWidth()) { listOf("一", "二", "三", "四", "五", "六", "日").forEach { Text(it, Modifier.weight(1f), style = PandoraTypography.calendarMicro, textAlign = TextAlign.Center, color = colors.textTertiary) } }
                     weeks.forEach { week ->
                         Row(Modifier.fillMaxWidth()) {
                             week.forEach { date ->
                                 val inMonth = date.month == month.month
                                 val marker = if (inMonth) dayTaskColors.getValue(date.day) else Color.Transparent
                                 Box(Modifier.weight(1f).height(24.dp).clickable { onSelectDate(date) }.drawBehind {
-                                    if (date == today) drawCircle(Peach, radius = 10.dp.toPx(), center = Offset(size.width / 2, 10.dp.toPx()))
+                                    if (date == today) drawCircle(colors.primaryContainer, radius = 10.dp.toPx(), center = Offset(size.width / 2, 10.dp.toPx()))
                                     if (marker != Color.Transparent) drawCircle(marker, radius = 2.dp.toPx(), center = Offset(size.width / 2, 22.dp.toPx()))
                                 }, contentAlignment = Alignment.TopCenter) {
-                                    Text("${date.day}", Modifier.height(20.dp).wrapContentHeight(Alignment.CenterVertically), fontSize = 9.sp, lineHeight = 9.sp, fontWeight = if (date == today) FontWeight.Bold else FontWeight.Normal, color = if (inMonth) Ink else Ink.copy(alpha = .25f))
+                                    Text("${date.day}", Modifier.height(20.dp).wrapContentHeight(Alignment.CenterVertically), style = PandoraTypography.calendarMicro, fontWeight = if (date == today) FontWeight.SemiBold else FontWeight.Normal, color = if (inMonth) colors.textPrimary else colors.textDisabled)
                                 }
                             }
                         }
