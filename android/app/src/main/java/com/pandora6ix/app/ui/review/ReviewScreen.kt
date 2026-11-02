@@ -1,5 +1,7 @@
 package com.pandora6ix.app.ui.review
 
+import com.pandora6ix.app.ui.theme.*
+import com.pandora6ix.app.ui.components.*
 import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -190,18 +192,18 @@ fun ReviewScreen(taskRepo: TaskRepository, availableTags: List<TagDto>, business
             navigationIcon = { IconButton(onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") } },
             colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
         )
-        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (canReview) QueueTab("待我审批", scope == "pending", Modifier.weight(1f)) { scope = "pending" }
-            QueueTab("我提交的", scope == "created", Modifier.weight(1f)) { scope = "created" }
-        }
+        // 两个审批队列统一为标准 Tab（48dp、Primary 2dp 下划线）
+        val queues = (if (canReview) listOf("pending" to "待我审批") else emptyList()) + listOf("created" to "我提交的")
+        PandoraTabRow(queues.map { it.second }, queues.indexOfFirst { it.first == scope }.coerceAtLeast(0), { scope = queues[it].first },
+            Modifier.padding(horizontal = PandoraSpacing.pageHorizontal))
         Box(Modifier.fillMaxSize()) {
             when {
                 loading && items.isEmpty() -> CircularProgressIndicator(Modifier.align(Alignment.Center).size(36.dp), color = WarmOrange)
                 loadError != null && items.isEmpty() -> Column(Modifier.align(Alignment.Center).padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(loadError!!, color = Ink.copy(alpha = .7f), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                     Spacer(Modifier.height(12.dp))
-                    if (loadDenied) OutlinedButton({ scope = "created" }) { Text("查看我提交的") }
-                    else OutlinedButton({ loadRetry++ }) { Text("重试") }
+                    if (loadDenied) PandoraButton("查看我提交的", { scope = "created" }, variant = PandoraButtonVariant.Outline)
+                    else PandoraButton("重试", { loadRetry++ }, variant = PandoraButtonVariant.Outline)
                 }
                 items.isEmpty() -> Text(
                     if (scope == "pending") "暂无待审批的申请" else "暂无提交的申请",
@@ -219,7 +221,7 @@ fun ReviewScreen(taskRepo: TaskRepository, availableTags: List<TagDto>, business
                         item(key = "review-load-error") {
                             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
                                 Text(loadError!!, color = Ink.copy(alpha = .7f))
-                                OutlinedButton({ loadRetry++ }, enabled = !loading) { Text("重试") }
+                                PandoraButton("重试", { loadRetry++ }, variant = PandoraButtonVariant.Outline, enabled = !loading)
                             }
                         }
                     }
@@ -227,7 +229,7 @@ fun ReviewScreen(taskRepo: TaskRepository, availableTags: List<TagDto>, business
                         item {
                             Box(Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
                                 if (loading) CircularProgressIndicator(Modifier.size(22.dp), color = WarmOrange)
-                                else OutlinedButton({ load(append = true, cursor = cursor) }) { Text("加载更多") }
+                                else PandoraButton("加载更多", { load(append = true, cursor = cursor) }, variant = PandoraButtonVariant.Outline)
                             }
                         }
                     }
@@ -235,18 +237,6 @@ fun ReviewScreen(taskRepo: TaskRepository, availableTags: List<TagDto>, business
             }
         }
     }
-}
-
-@Composable
-private fun QueueTab(label: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    Box(
-        modifier
-            .clip(RoundedCornerShape(20.dp))
-            .background(if (selected) WarmOrange else WarmCard)
-            .clickable(onClick = onClick)
-            .padding(vertical = 10.dp),
-        contentAlignment = Alignment.Center
-    ) { Text(label, fontSize = 14.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal, color = if (selected) Ink else Ink.copy(alpha = .65f)) }
 }
 
 @Composable
@@ -345,7 +335,7 @@ private fun ReviewDetail(review: TaskReviewDto, taskRepo: TaskRepository, availa
     // 背景与设置页一致（主题 dashboard 色）
     Column(Modifier.fillMaxSize().background(LocalAppTheme.current.background)) {
         TopAppBar(
-            title = { Text("审批详情", fontWeight = FontWeight.Bold) },
+            title = { Text("审批详情") },
             navigationIcon = { IconButton(onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") } },
             colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
         )
@@ -446,11 +436,11 @@ private fun ReviewDetail(review: TaskReviewDto, taskRepo: TaskRepository, availa
                     if (current.decision == "REJECTED" && current.reviewKind == "CREATE" &&
                         currentUser?.id == current.submittedByUserId &&
                         (currentUser.capabilities.createPersonalTasks || currentUser.capabilities.createDelegatedTasks)) {
-                        Button({
+                        PandoraButton("重新编辑并发布", {
                             runCatching { rejectedTaskDraft(current, currentUser.id, availableTags) }
                                 .onSuccess { resubmitDraft = it; error = null }
                                 .onFailure { error = "原申请内容不完整，请刷新后重试" }
-                        }) { Text("重新编辑并发布") }
+                        })
                         error?.let {
                             Text(it, color = CoralDark, fontSize = 13.sp)
                             TextButton({ refresh() }) { Text("重新加载申请") }
@@ -477,18 +467,8 @@ private fun ReviewDetail(review: TaskReviewDto, taskRepo: TaskRepository, availa
                     }
                     if (error != null) Text(error!!, color = com.pandora6ix.app.ui.theme.CoralDark, fontSize = 13.sp)
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Button(
-                            { confirmAction = "APPROVE" },
-                            Modifier.weight(1f),
-                            enabled = !submitting,
-                            colors = ButtonDefaults.buttonColors(containerColor = MintDeep, contentColor = Color.White)
-                        ) { Text("批准") }
-                        OutlinedButton(
-                            { confirmAction = "REJECT" },
-                            Modifier.weight(1f),
-                            enabled = !submitting,
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = com.pandora6ix.app.ui.theme.CoralDark)
-                        ) { Text("驳回") }
+                        PandoraButton("批准", { confirmAction = "APPROVE" }, Modifier.weight(1f), enabled = !submitting)
+                        PandoraButton("驳回", { confirmAction = "REJECT" }, Modifier.weight(1f), variant = PandoraButtonVariant.Destructive, enabled = !submitting)
                     }
                 }
             }
@@ -501,7 +481,7 @@ private fun ReviewDetail(review: TaskReviewDto, taskRepo: TaskRepository, availa
             Surface(color = WarmCard, shadowElevation = 8.dp) {
                 // targetSdk 35 强制 edge-to-edge，adjustResize 不生效：必须用 imePadding 把输入条顶到键盘上方
                 Row(Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
+                    PandoraTextField(
                         value = comment,
                         onValueChange = { comment = it },
                         Modifier.weight(1f).focusRequester(commentFocus).heightIn(min = 44.dp, max = 168.dp),
@@ -517,23 +497,23 @@ private fun ReviewDetail(review: TaskReviewDto, taskRepo: TaskRepository, availa
     }
 
     confirmAction?.let { action ->
-        AlertDialog(
+        PandoraAlertDialog(
             onDismissRequest = { if (!submitting) confirmAction = null },
             title = { Text(if (action == "APPROVE") "批准该申请？" else "驳回该申请？") },
             text = { Text(if (action == "APPROVE") "批准后任务立即生效，接收人可见。" else "驳回后创建者可修改内容重新提交。") },
             confirmButton = {
                 if (submitting) CircularProgressIndicator(Modifier.size(22.dp), color = WarmOrange)
-                else TextButton({ submit(action) }) { Text(if (action == "APPROVE") "批准" else "驳回", color = if (action == "APPROVE") MintDeep else com.pandora6ix.app.ui.theme.CoralDark) }
+                else TextButton({ submit(action) }) { Text(if (action == "APPROVE") "批准" else "驳回", style = PandoraTypography.labelLarge, color = if (action == "APPROVE") PandoraTheme.colors.primary else PandoraTheme.colors.error) }
             },
-            dismissButton = { if (!submitting) TextButton({ confirmAction = null }) { Text("取消") } }
+            dismissButton = { if (!submitting) PandoraDialogDismiss("取消", { confirmAction = null }) }
         )
     }
     doneMessage?.let { message ->
-        AlertDialog(
+        PandoraAlertDialog(
             onDismissRequest = { },
             title = { Text("操作完成") },
             text = { Text(message) },
-            confirmButton = { TextButton({ doneMessage = null; onChanged(); onBack() }) { Text("好的") } }
+            confirmButton = { PandoraDialogConfirm("好的", { doneMessage = null; onChanged(); onBack() }) }
         )
     }
 }

@@ -113,7 +113,7 @@ fun CalendarScreen(
                         Text(mode.label, style = PandoraTypography.titleMedium)
                         Icon(Icons.Default.ArrowDropDown, "选择视图")
                     }
-                    DropdownMenu(menu, { menu = false }) {
+                    PandoraDropdownMenu(menu, { menu = false }) {
                         CalendarMode.entries.forEach { option -> DropdownMenuItem({ Text(option.label) }, { menu = false; onChangeModeRecenter(option) }) }
                     }
                 }
@@ -239,7 +239,7 @@ fun CalendarScreen(
     if (adding && (canCreatePersonal || canCreateDelegated)) TaskEntrySheet(cursor, canCreatePersonal, canCreateDelegated, availableTags, taskRepo, businessTimezone, currentUser, onDismiss = { adding = false }, onCreated = { task -> onCreated(task) })
     if (showTagFilter) {
         var pending by remember { mutableStateOf(filterTags) }
-        AlertDialog(
+        PandoraAlertDialog(
             onDismissRequest = { showTagFilter = false },
             title = { Text("按标签筛选") },
             text = {
@@ -259,8 +259,8 @@ fun CalendarScreen(
                     }
                 }
             },
-            confirmButton = { TextButton({ filterTags = pending; showTagFilter = false }) { Text("确定", style = PandoraTypography.labelLarge) } },
-            dismissButton = { TextButton({ showTagFilter = false }) { Text("取消", style = PandoraTypography.labelLarge, color = PandoraTheme.colors.textSecondary) } }
+            confirmButton = { PandoraDialogConfirm("确定", { filterTags = pending; showTagFilter = false }) },
+            dismissButton = { PandoraDialogDismiss("取消", { showTagFilter = false }) }
         )
     }
 }
@@ -550,12 +550,9 @@ private fun Modifier.calendarGuides(): Modifier = drawBehind {
     selection?.let { (date, minute) ->
         val candidates = timelineTasksAt(tasks, date, minute)
         LaunchedEffect(candidates.isEmpty()) { if (candidates.isEmpty()) selection = null }
-        ModalBottomSheet(
+        PandoraBottomSheet(
             onDismissRequest = { selection = null },
-            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-            containerColor = colors.elevatedSurface,
-            shape = PandoraShapes.sheet,
-            scrimColor = colors.scrim
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ) {
             Text("选择任务", Modifier.padding(horizontal = PandoraSpacing.space16), style = PandoraTypography.titleMedium, color = colors.textPrimary)
             Text("${date.year}年${date.month}月${date.day}日 · ${minuteLabel(minute)} · ${candidates.size} 项任务",

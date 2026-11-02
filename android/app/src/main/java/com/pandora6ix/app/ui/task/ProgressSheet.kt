@@ -1,5 +1,7 @@
 package com.pandora6ix.app.ui.task
 
+import com.pandora6ix.app.ui.theme.*
+import com.pandora6ix.app.ui.components.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -98,7 +100,7 @@ fun ProgressSheet(task: TaskDto, taskRepo: TaskRepository, onDismiss: () -> Unit
     if (repeatStatus != null) SeriesStatusEditor(current, taskRepo, repeatStatus!!, note = repeatNote,
         onDismiss = { repeatStatus = null; repeatCancelled?.invoke() },
         onSaved = { repeatStatus = null; repeatSaved?.invoke(); refresh() })
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState, containerColor = Color.White) {
+    PandoraBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -222,31 +224,24 @@ private fun AssignmentActions(
 
         if (actions.contains("UPDATE_PROGRESS")) {
             Slider(value = percent.toFloat(), onValueChange = { percent = it.toInt() }, valueRange = 0f..100f, steps = 19, enabled = !busy)
-            OutlinedTextField(
+            PandoraTextField(
                 value = note,
                 onValueChange = { note = it },
                 Modifier.fillMaxWidth().heightIn(min = 64.dp),
                 label = { Text("备注（可选）") },
-                minLines = 1,
-                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Ink.copy(alpha = .7f), unfocusedBorderColor = Ink.copy(alpha = .3f), focusedLabelColor = Ink, cursorColor = Ink)
+                minLines = 1
             )
-            Button({ busy = true; onProgress(percent, note, { done("progress") }, ::fail) }, Modifier.fillMaxWidth(), enabled = !busy) {
-                Text(if (percent >= 100) "记录 100%（仍为进行中）" else "记录 $percent%")
-            }
+            PandoraButton(if (percent >= 100) "记录 100%（仍为进行中）" else "记录 $percent%", { busy = true; onProgress(percent, note, { done("progress") }, ::fail) }, Modifier.fillMaxWidth(), enabled = !busy)
             if (percent >= 100) Text("进度 100% 不计为完成；完成需按验收流程确认。", fontSize = 12.sp, color = Ink.copy(alpha = .55f))
         }
 
         if (actions.contains("COMPLETE_PERSONAL")) {
-            Button({ confirm = "complete" }, Modifier.fillMaxWidth(), enabled = !busy, colors = ButtonDefaults.buttonColors(containerColor = MintDeep, contentColor = Color.White)) {
-                Text("完成任务")
-            }
+            PandoraButton("完成任务", { confirm = "complete" }, Modifier.fillMaxWidth(), enabled = !busy)
             Text("确认后本人执行关系标记为已完成，计入任务统计。", fontSize = 12.sp, color = Ink.copy(alpha = .55f))
         }
 
         if (actions.contains("REQUEST_COMPLETION")) {
-            Button({ confirm = "request" }, Modifier.fillMaxWidth(), enabled = !busy) {
-                Text("申请验收")
-            }
+            PandoraButton("申请验收", { confirm = "request" }, Modifier.fillMaxWidth(), enabled = !busy)
             Text("提交后创建者将收到完成确认申请，确认前任务保持进行中。", fontSize = 12.sp, color = Ink.copy(alpha = .55f))
         }
 
@@ -256,8 +251,8 @@ private fun AssignmentActions(
                 Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(CreamDeep).padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     request.submittedNote?.takeIf { it.isNotBlank() }?.let { Text("留言：$it", fontSize = 13.sp) }
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Button({ busy = true; onDecide(request, true, "", { done("decide", true) }, ::fail) }, Modifier.weight(1f), enabled = !busy, colors = ButtonDefaults.buttonColors(containerColor = MintDeep, contentColor = Color.White)) { Text("接受完成") }
-                        OutlinedButton({ rejectRequest = request }, Modifier.weight(1f), enabled = !busy, colors = ButtonDefaults.outlinedButtonColors(contentColor = CoralDark)) { Text("驳回") }
+                        PandoraButton("接受完成", { busy = true; onDecide(request, true, "", { done("decide", true) }, ::fail) }, Modifier.weight(1f), enabled = !busy)
+                        PandoraButton("驳回", { rejectRequest = request }, Modifier.weight(1f), variant = PandoraButtonVariant.Destructive, enabled = !busy)
                     }
                 }
             }
@@ -269,7 +264,7 @@ private fun AssignmentActions(
     }
 
     confirm?.let { action ->
-        AlertDialog(
+        PandoraAlertDialog(
             onDismissRequest = { if (!busy) confirm = null },
             title = { Text(if (action == "complete") "确认完成任务？" else "提交验收申请？") },
             confirmButton = {
@@ -277,40 +272,39 @@ private fun AssignmentActions(
                     confirm = null
                     if (action == "complete") { busy = true; onComplete({ done("complete") }, ::fail) }
                     else { busy = true; onRequest(note, { done("request") }, ::fail) }
-                }) { Text("确认") }
+                }) { Text("确认", style = PandoraTypography.labelLarge, color = PandoraTheme.colors.primary) }
             },
-            dismissButton = { if (!busy) TextButton({ confirm = null }) { Text("取消") } }
+            dismissButton = { if (!busy) PandoraDialogDismiss("取消", { confirm = null }) }
         )
     }
     rejectRequest?.let { request ->
-        AlertDialog(
+        PandoraAlertDialog(
             onDismissRequest = { if (!busy) rejectRequest = null },
             title = { Text("驳回完成申请？") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("驳回后接收人可继续执行并重新提交。")
-                    OutlinedTextField(
+                    PandoraTextField(
                         value = note,
                         onValueChange = { note = it },
                         Modifier.fillMaxWidth(),
-                        label = { Text("驳回理由（可选）") },
-                        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Ink.copy(alpha = .7f), unfocusedBorderColor = Ink.copy(alpha = .3f), focusedLabelColor = Ink, cursorColor = Ink)
+                        label = { Text("驳回理由（可选）") }
                     )
                 }
             },
             confirmButton = {
-                if (!busy) TextButton({ busy = true; onDecide(request, false, note, { done("decide", false) }, ::fail) }) { Text("驳回", color = CoralDark) }
+                if (!busy) TextButton({ busy = true; onDecide(request, false, note, { done("decide", false) }, ::fail) }) { Text("驳回", style = PandoraTypography.labelLarge, color = PandoraTheme.colors.error) }
                 else CircularProgressIndicator(Modifier.height(22.dp), color = WarmOrange)
             },
-            dismissButton = { if (!busy) TextButton({ rejectRequest = null }) { Text("取消") } }
+            dismissButton = { if (!busy) PandoraDialogDismiss("取消", { rejectRequest = null }) }
         )
     }
     doneMessage?.let { message ->
-        AlertDialog(
+        PandoraAlertDialog(
             onDismissRequest = { },
             title = { Text("操作完成") },
             text = { Text(message) },
-            confirmButton = { TextButton({ doneMessage = null }) { Text("好的") } }
+            confirmButton = { PandoraDialogConfirm("好的", { doneMessage = null }) }
         )
     }
 }

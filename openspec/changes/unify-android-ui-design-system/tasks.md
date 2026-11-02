@@ -11,11 +11,13 @@ P0 记录：五主题导图/视图及日月年模式已在 Pixel_9a 模拟器（
 
 ## 2. P1 公共组件
 
-- [ ] 2.1 Dialog/AlertDialog/自制浮层统一白底、24dp、40% 遮罩与按钮顺序
-- [ ] 2.2 BottomSheet、DropdownMenu/Popup 统一外观
-- [ ] 2.3 TextField、TagChip/StatusChip、Tab、ListItem、IconButton、Snackbar 提示统一
-- [ ] 2.4 底部导航与 TopAppBar 按规范显式配置
-- [ ] 2.5 P1 验证：构建、单测、组件五主题检查
+- [x] 2.1 Dialog/AlertDialog/自制浮层统一白底、24dp、40% 遮罩与按钮顺序
+- [x] 2.2 BottomSheet、DropdownMenu/Popup 统一外观
+- [x] 2.3 TextField、TagChip/StatusChip、Tab、ListItem、IconButton、Snackbar 提示统一
+- [x] 2.4 底部导航与 TopAppBar 按规范显式配置
+- [x] 2.5 P1 验证：构建、单测、组件五主题检查
+
+P1 记录：新增 PandoraAlertDialog/Dialog/BottomSheet/DropdownMenu/TextField/TopBar/TabRow/ListItem/Toast/IconButton；全部 AlertDialog、OutlinedTextField、ModalBottomSheet、DropdownMenu 调用改用统一组件，主题 backgroundDimAmount=0.4。历史日期全屏选择器改为白色浮层并自理系统栏。模拟器核对：暖米/紫藤下弹窗为纯白、任务表单 Sheet、审批两队列 Tab。观察到审批中心列表页无系统返回处理（改造前已存在，未改动，记入验收报告）。
 
 ## 3. P2 页面迁移
 

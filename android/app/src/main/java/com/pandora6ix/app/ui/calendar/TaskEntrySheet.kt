@@ -1,5 +1,6 @@
 package com.pandora6ix.app.ui.calendar
 
+import com.pandora6ix.app.ui.components.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -206,9 +207,10 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
     })
     val requestClose = { if (dirty) confirmExit = true else onDismiss() }
     val sheetScope = rememberCoroutineScope()
-    val fieldColors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Ink.copy(alpha = .65f), unfocusedBorderColor = Ink.copy(alpha = .25f), focusedLabelColor = Ink, cursorColor = Ink)
-    val buttonColors = ButtonDefaults.outlinedButtonColors(contentColor = Ink)
-    val buttonBorder = BorderStroke(1.dp, HairLine)
+    val fieldColors = pandoraTextFieldColors()
+    // 日期/时间选择按钮：Outline 变体（透明底、中性 1dp 边框、12 角）
+    val buttonColors = ButtonDefaults.outlinedButtonColors(contentColor = PandoraTheme.colors.textPrimary)
+    val buttonBorder = BorderStroke(PandoraDimensions.borderWidth, PandoraTheme.colors.inputBorder)
     var editVersions by remember { mutableStateOf<List<ScopeVersionDto>?>(null) }
     var editLoadError by remember { mutableStateOf(false) }
     var scopeOpen by remember { mutableStateOf(false) }
@@ -283,7 +285,7 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
             }
         }
     }
-    ModalBottomSheet(onDismissRequest = requestClose, sheetState = sheetState, containerColor = Color.White) {
+    PandoraBottomSheet(onDismissRequest = requestClose, sheetState = sheetState) {
         Column(Modifier.fillMaxWidth().fillMaxHeight(.88f).padding(horizontal = 20.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(if (editingTask == null) "添加任务" else "编辑任务", fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
@@ -296,8 +298,8 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
                         Switch(companyWide, { companyWide = it }, colors = com.pandora6ix.app.ui.theme.pandoraSwitchColors())
                     }
                 }
-                OutlinedTextField(title, { title = it; error = null }, Modifier.fillMaxWidth(), label = { Text("任务名称（必填）") }, placeholder = { Text("我计划做…") }, singleLine = true, colors = fieldColors)
-                OutlinedTextField(note, { note = it }, Modifier.fillMaxWidth().heightIn(min = 112.dp), label = { Text("备注 / 简介（选填）") }, colors = fieldColors, minLines = 3)
+                PandoraTextField(title, { title = it; error = null }, Modifier.fillMaxWidth(), label = { Text("任务名称（必填）") }, placeholder = { Text("我计划做…") }, singleLine = true, colors = fieldColors)
+                PandoraTextField(note, { note = it }, Modifier.fillMaxWidth().heightIn(min = 112.dp), label = { Text("备注 / 简介（选填）") }, colors = fieldColors, minLines = 3)
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text("全天任务", Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
                     Switch(allDay, { allDay = it; error = null }, colors = com.pandora6ix.app.ui.theme.pandoraSwitchColors())
@@ -319,7 +321,7 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
                             FilterChip(selected = repeatFrequency == value, onClick = { repeatFrequency = value; error = null }, label = { Text(label) })
                         }
                     }
-                    OutlinedTextField(repeatInterval, { if (it.length <= 3 && it.all(Char::isDigit)) repeatInterval = it },
+                    PandoraTextField(repeatInterval, { if (it.length <= 3 && it.all(Char::isDigit)) repeatInterval = it },
                         Modifier.fillMaxWidth(), singleLine = true, colors = fieldColors,
                         label = { Text("自定义间隔：每 N ${when (repeatFrequency) { "DAILY" -> "天"; "WEEKLY" -> "周"; else -> "个月" }}（1–365）") })
                     }
@@ -332,12 +334,12 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
                 }
                 Text(if (repeating) "重复生效日期范围（包含结束日）" else "连续时段的开始与结束", Modifier.fillMaxWidth(), fontWeight = FontWeight.SemiBold)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton({ pickDate("start") }, Modifier.weight(1f), colors = buttonColors, border = buttonBorder, contentPadding = PaddingValues(8.dp)) { Text(startKey.date().let { "开始\n${it.year}/${it.month}/${it.day}" }, fontSize = 13.sp) }
-                    OutlinedButton({ pickDate("end") }, Modifier.weight(1f), colors = buttonColors, border = buttonBorder, contentPadding = PaddingValues(8.dp)) { Text(endKey.date().let { "结束\n${it.year}/${it.month}/${it.day}" }, fontSize = 13.sp) }
+                    OutlinedButton({ pickDate("start") }, Modifier.weight(1f), colors = buttonColors, border = buttonBorder, shape = PandoraShapes.medium, contentPadding = PaddingValues(8.dp)) { Text(startKey.date().let { "开始\n${it.year}/${it.month}/${it.day}" }, fontSize = 13.sp) }
+                    OutlinedButton({ pickDate("end") }, Modifier.weight(1f), colors = buttonColors, border = buttonBorder, shape = PandoraShapes.medium, contentPadding = PaddingValues(8.dp)) { Text(endKey.date().let { "结束\n${it.year}/${it.month}/${it.day}" }, fontSize = 13.sp) }
                 }
                 if (!allDay) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton({ pickTime("start") }, Modifier.weight(1f), colors = buttonColors, border = buttonBorder) { Text("${if (repeating) "每次开始" else "开始"} ${minuteLabel(startMinute)}") }
-                    OutlinedButton({ pickTime("end") }, Modifier.weight(1f), colors = buttonColors, border = buttonBorder) { Text("${if (repeating) "每次结束" else "结束"} ${minuteLabel(endMinute)}") }
+                    OutlinedButton({ pickTime("start") }, Modifier.weight(1f), colors = buttonColors, border = buttonBorder, shape = PandoraShapes.medium) { Text("${if (repeating) "每次开始" else "开始"} ${minuteLabel(startMinute)}") }
+                    OutlinedButton({ pickTime("end") }, Modifier.weight(1f), colors = buttonColors, border = buttonBorder, shape = PandoraShapes.medium) { Text("${if (repeating) "每次结束" else "结束"} ${minuteLabel(endMinute)}") }
                 }
                 if (repeating) repeatPreview?.getOrNull()?.let { Text("共 ${it.size} 次", fontWeight = FontWeight.SemiBold) }
                 // 星级文字含义：与审批规则一致——星级越高越优先处理
@@ -357,7 +359,7 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
                 }
                 run {
                 Text("接收人", fontWeight = FontWeight.SemiBold)
-                if (namesFailed) TextButton({ namesRetry++ }) { Text("姓名加载失败，重试", color = ThemeButton) }
+                if (namesFailed) TextButton({ namesRetry++ }) { Text("姓名加载失败，重试", style = PandoraTypography.labelLarge, color = PandoraTheme.colors.primary) }
                 if (selectedRecipientIds.isNotEmpty()) FlowRow(Modifier.fillMaxWidth().padding(vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     selectedRecipientIds.forEach { id ->
                         if (canDelegate) {
@@ -373,7 +375,7 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
                     queryWidth = coordinates.size.width
                     queryTop = coordinates.boundsInWindow().top.toInt()
                 }) {
-                    OutlinedTextField(recipientQuery, { recipientQuery = it; candidateOpen = it.contains("@") }, Modifier.fillMaxWidth(), placeholder = { Text("@ 检索接收人，勾选候选") }, singleLine = true, colors = fieldColors)
+                    PandoraTextField(recipientQuery, { recipientQuery = it; candidateOpen = it.contains("@") }, Modifier.fillMaxWidth(), placeholder = { Text("@ 检索接收人，勾选候选") }, singleLine = true, colors = fieldColors)
                     if (candidateOpen && queryWidth > 0) Popup(
                         popupPositionProvider = candidatePosition,
                         onDismissRequest = { candidateOpen = false },
@@ -416,10 +418,10 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
             }
             // 标签已改为可选：无可用标签不再阻断提交
             error?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp) }
-            Button(onClick = { submit() }, Modifier.fillMaxWidth().padding(vertical = 12.dp), enabled = !submitting, colors = ButtonDefaults.buttonColors(containerColor = ThemeButton, contentColor = OnThemeButton)) { Text(if (submitting) "保存中…" else if (editingTask != null) "保存" else "提交审批") }
+            PandoraButton(if (editingTask != null) "保存" else "提交审批", { submit() }, Modifier.fillMaxWidth().padding(vertical = PandoraSpacing.space12), loading = submitting)
         }
     }
-    if (confirmExit) AlertDialog(onDismissRequest = { confirmExit = false; sheetScope.launch { sheetState.show() } }, title = { Text("放弃未保存的任务？") }, text = { Text("关闭后，本次填写的内容会清空。") }, confirmButton = { TextButton({ confirmExit = false; AppCache.deleteDraft(context, draftKey); onDismiss() }) { Text("放弃") } }, dismissButton = { TextButton({ confirmExit = false; sheetScope.launch { sheetState.show() } }) { Text("继续填写") } })
+    if (confirmExit) PandoraAlertDialog(onDismissRequest = { confirmExit = false; sheetScope.launch { sheetState.show() } }, title = { Text("放弃未保存的任务？") }, text = { Text("关闭后，本次填写的内容会清空。") }, confirmButton = { PandoraDialogConfirm("放弃", { confirmExit = false; AppCache.deleteDraft(context, draftKey); onDismiss() }, destructive = true) }, dismissButton = { TextButton({ confirmExit = false; sheetScope.launch { sheetState.show() } }) { Text("继续填写", style = PandoraTypography.labelLarge, color = PandoraTheme.colors.textSecondary) } })
     timePickTarget?.let { target ->
         TimeWheelDialog(
             initialMinute = if (target == "start") startMinute else endMinute,
@@ -442,7 +444,7 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
             }
         )
     }
-    if (showTagPicker) AlertDialog(
+    if (showTagPicker) PandoraAlertDialog(
         onDismissRequest = { showTagPicker = false },
         title = { Text("选择标签") },
         text = {
@@ -482,9 +484,9 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
                 }
             }
         },
-        confirmButton = { TextButton({ showTagPicker = false }) { Text("完成") } }
+        confirmButton = { PandoraDialogConfirm("完成", { showTagPicker = false }) }
     )
-    if (createdTask != null) AlertDialog(
+    if (createdTask != null) PandoraAlertDialog(
         onDismissRequest = { },
         title = { Text("已提交") },
         text = { Text("${createdTask?.occurrenceCount ?: 1} 次任务") },
@@ -494,7 +496,7 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
                 createdTask = null
                 onDismiss()
                 if (created != null) onCreated(created)
-            }) { Text("知道了", color = Ink, fontWeight = FontWeight.Bold) }
+            }) { Text("知道了", style = PandoraTypography.labelLarge, color = PandoraTheme.colors.primary) }
         }
     )
     if (scopeOpen && editingTask != null) com.pandora6ix.app.ui.task.ChangeScopeDialog(
@@ -555,9 +557,9 @@ private fun RecipientGroupRows(
 private fun TimeWheelDialog(initialMinute: Int, onDismiss: () -> Unit, onConfirm: (Int) -> Unit) {
     var hour by remember { mutableStateOf(initialMinute / 60) }
     var minute by remember { mutableStateOf(initialMinute % 60) }
-    AlertDialog(
+    PandoraAlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("选择时间", fontWeight = FontWeight.Bold) },
+        title = { Text("选择时间") },
         text = {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -571,7 +573,7 @@ private fun TimeWheelDialog(initialMinute: Int, onDismiss: () -> Unit, onConfirm
                 }
             }
         },
-        confirmButton = { TextButton({ onConfirm(hour * 60 + minute) }) { Text("确定", color = Ink, fontWeight = FontWeight.Bold) } },
-        dismissButton = { TextButton(onDismiss) { Text("取消", color = Ink.copy(alpha = .6f)) } }
+        confirmButton = { PandoraDialogConfirm("确定", { onConfirm(hour * 60 + minute) }) },
+        dismissButton = { PandoraDialogDismiss("取消", onDismiss) }
     )
 }

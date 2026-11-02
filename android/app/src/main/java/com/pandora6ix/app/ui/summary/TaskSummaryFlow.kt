@@ -1,5 +1,6 @@
 package com.pandora6ix.app.ui.summary
 
+import com.pandora6ix.app.ui.components.*
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
@@ -220,12 +221,7 @@ fun TaskSummaryFlow(
                     else -> LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                         item {
                             SummaryPanel {
-                                TabRow(selectedTabIndex = TaskScopes.indexOfFirst { it.first == taskScope }, containerColor = MaterialTheme.colorScheme.surface, contentColor = Ink) {
-                                    TaskScopes.forEach { (value, label) ->
-                                        Tab(selected = taskScope == value, onClick = { taskScope = value }, selectedContentColor = ThemeButton,
-                                            unselectedContentColor = Ink.copy(alpha = .75f), text = { Text(label, maxLines = 2) })
-                                    }
-                                }
+                                PandoraTabRow(TaskScopes.map { it.second }, TaskScopes.indexOfFirst { it.first == taskScope }.coerceAtLeast(0), { taskScope = TaskScopes[it].first })
                                 if (!canRead || (taskScope == "managed" && !canManage)) Note(if (!canRead) "当前账号没有业务任务查看权限" else "当前账号没有下属任务查看权限")
                                 else {
                                     TaskPreview(selectedTasks, selectedTasks.items, name, userRepo, { taskId = it }, { openTasks() }, { scope.launch { selectedTasks.load() } })
@@ -279,7 +275,7 @@ private fun TaskPreview(
     CollectionFooter(pager, records.isEmpty(), "暂无相关任务", filtered, showMore = false,
         partialEmptyText = "已加载范围暂无相关任务，可查看全部任务", onMore = onRetry)
     TextButton(onAll, Modifier.fillMaxWidth()) {
-        Text("查看全部任务", color = ThemeButton)
+        Text("查看全部任务", style = PandoraTypography.labelLarge, color = PandoraTheme.colors.primary)
         Icon(Icons.Default.ChevronRight, null, Modifier.size(18.dp), tint = ThemeButton)
     }
 }
@@ -354,7 +350,7 @@ private fun MemberPhone(memberId: String, userRepo: UserRepository, refresh: Int
             is MemberPhoneState.Loaded -> current.phone?.takeIf { it.isNotBlank() } ?: "未填写"
             is MemberPhoneState.Failed -> current.text
         }, Modifier.weight(1f), fontSize = 14.sp)
-        if (state is MemberPhoneState.Failed) TextButton({ attempt++ }) { Text("重试", color = ThemeButton) }
+        if (state is MemberPhoneState.Failed) TextButton({ attempt++ }) { Text("重试", style = PandoraTypography.labelLarge, color = PandoraTheme.colors.primary) }
     }
 }
 
@@ -370,11 +366,11 @@ private fun <T> CollectionFooter(
         }
         pager.error != null -> Column {
             Text(pager.error!!, color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
-            TextButton(onMore) { Text("重试", color = ThemeButton) }
+            TextButton(onMore) { Text("重试", style = PandoraTypography.labelLarge, color = PandoraTheme.colors.primary) }
         }
         else -> {
             if (empty) Note(if (filtered && pager.nextCursor != null) partialEmptyText else emptyText)
-            if (showMore && pager.nextCursor != null) TextButton(onMore) { Text("加载更多", color = ThemeButton) }
+            if (showMore && pager.nextCursor != null) TextButton(onMore) { Text("加载更多", style = PandoraTypography.labelLarge, color = PandoraTheme.colors.primary) }
         }
     }
 }

@@ -1,5 +1,7 @@
 package com.pandora6ix.app.ui.tags
 
+import com.pandora6ix.app.ui.theme.*
+import com.pandora6ix.app.ui.components.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -97,7 +99,7 @@ fun TagManageScreen(tagRepo: TagRepository, permissions: TagPermissions, reloadT
                 loadError != null -> Column(Modifier.align(Alignment.Center).padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(loadError!!, color = Ink.copy(alpha = .7f), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                     Spacer(Modifier.height(12.dp))
-                    OutlinedButton({ loadRetry++ }) { Text("重试") }
+                    PandoraButton("重试", { loadRetry++ }, variant = PandoraButtonVariant.Outline)
                 }
                 else -> Column(Modifier.fillMaxSize()) {
                     LazyColumn(Modifier.fillMaxSize().weight(1f), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -118,7 +120,7 @@ fun TagManageScreen(tagRepo: TagRepository, permissions: TagPermissions, reloadT
                         }
                     }
                     if (permissions.canCreate) Box(Modifier.fillMaxWidth().padding(16.dp)) {
-                        Button({ editing = null; showEditor = true; actionError = null }, Modifier.fillMaxWidth().height(48.dp), colors = ButtonDefaults.buttonColors(containerColor = ThemeButton, contentColor = OnThemeButton), shape = RoundedCornerShape(14.dp)) {
+                        PandoraButton({ editing = null; showEditor = true; actionError = null }, Modifier.fillMaxWidth()) {
                             Icon(Icons.Default.Add, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("新建标签")
                         }
                     }
@@ -157,9 +159,9 @@ fun TagManageScreen(tagRepo: TagRepository, permissions: TagPermissions, reloadT
     )
 
     deleting?.let { tag ->
-        AlertDialog(
+        PandoraAlertDialog(
             onDismissRequest = { if (!busy) deleting = null },
-            title = { Text("删除标签？", fontWeight = FontWeight.Bold) },
+            title = { Text("删除标签？") },
             text = { Text("「${tag.name}」将从企业与所有使用它的任务、日志中移除，且不可恢复。") },
             confirmButton = {
                 if (busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = WarmOrange)
@@ -182,9 +184,9 @@ fun TagManageScreen(tagRepo: TagRepository, permissions: TagPermissions, reloadT
                             busy = false
                         }
                     }
-                }, colors = ButtonDefaults.textButtonColors(contentColor = com.pandora6ix.app.ui.theme.CoralDark)) { Text("删除") }
+                }) { Text("删除", style = PandoraTypography.labelLarge, color = PandoraTheme.colors.error) }
             },
-            dismissButton = { if (!busy) TextButton({ deleting = null }, colors = ButtonDefaults.textButtonColors(contentColor = Ink)) { Text("取消") } }
+            dismissButton = { if (!busy) PandoraDialogDismiss("取消", { deleting = null }) }
         )
     }
 }
@@ -196,46 +198,45 @@ private fun TagEditDialog(initialName: String, initialColorHex: String, busy: Bo
     var colorIndex by remember {
         mutableStateOf(TagColorPalette.indexOfFirst { tagHexToHex6(it).equals(initialColorHex, ignoreCase = true) }.takeIf { it >= 0 } ?: 0)
     }
-    Dialog(onDismissRequest = onDismiss) {
-        Surface(shape = RoundedCornerShape(18.dp), color = Color.White, modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp)) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(if (initialName.isBlank()) "新建标签" else "编辑标签", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                OutlinedTextField(
+    PandoraDialog(onDismissRequest = onDismiss) {
+            val colors = PandoraTheme.colors
+            Column(verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space12)) {
+                Text(if (initialName.isBlank()) "新建标签" else "编辑标签", style = PandoraTypography.titleMedium, color = colors.textPrimary)
+                PandoraTextField(
                     name, { name = it },
                     Modifier.fillMaxWidth(), label = { Text("标签名称") }, singleLine = true,
                     isError = name.isBlank()
                 )
-                Text("配色（可与其他标签相同）", fontSize = 12.sp, color = Ink.copy(alpha = .6f))
-                LazyVerticalGrid(columns = GridCells.Fixed(6), modifier = Modifier.height(132.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("配色（可与其他标签相同）", style = PandoraTypography.bodyMedium, color = colors.textSecondary)
+                LazyVerticalGrid(columns = GridCells.Fixed(6), modifier = Modifier.height(112.dp), horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space8), verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space8)) {
                     items(TagColorPalette.size) { i ->
                         val color = TagColorPalette[i]
                         val selected = i == colorIndex
+                        // 色块视觉 40dp，外围由网格行距补足触达；选中用 2dp Focus 边框 + “字”预览
                         Box(
-                            Modifier.size(40.dp).clip(CircleShape)
+                            Modifier.size(40.dp).clip(PandoraShapes.circle)
                                 .background(color)
-                                .border(if (selected) 2.dp else 1.dp, if (selected) Ink else Ink.copy(alpha = .12f), CircleShape)
-                                .clickable { colorIndex = i },
+                                .border(if (selected) PandoraDimensions.focusWidth else PandoraDimensions.borderWidth, if (selected) colors.focus else colors.border, PandoraShapes.circle)
+                                .clickable(onClickLabel = "选择第${i + 1}种颜色") { colorIndex = i },
                             contentAlignment = Alignment.Center
                         ) {
-                            // 黑色文字预览：确保所选浅色在黑字下清晰可读
-                            if (selected) Text("字", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Black)
+                            if (selected) Text("字", style = PandoraTypography.labelLarge, color = tagContentColor(color, colors.textPrimary))
                         }
                     }
                 }
-                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(TagColorPalette[colorIndex]).padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(name.ifBlank { "标签预览" }, color = Color.Black, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Row(Modifier.fillMaxWidth().clip(PandoraShapes.medium).background(TagColorPalette[colorIndex]).border(PandoraDimensions.borderWidth, colors.border, PandoraShapes.medium).padding(horizontal = PandoraSpacing.space12, vertical = PandoraSpacing.space8), verticalAlignment = Alignment.CenterVertically) {
+                    Text(name.ifBlank { "标签预览" }, color = tagContentColor(TagColorPalette[colorIndex], colors.textPrimary), style = PandoraTypography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                error?.let { Text(it, color = com.pandora6ix.app.ui.theme.CoralDark, fontSize = 13.sp) }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton({ onDismiss() }, Modifier.weight(1f), enabled = !busy, colors = ButtonDefaults.outlinedButtonColors(contentColor = Ink)) { Text("取消") }
-                    Button(
+                error?.let { Text(it, color = colors.error, style = PandoraTypography.bodyMedium) }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space8)) {
+                    PandoraButton("取消", { onDismiss() }, Modifier.weight(1f), variant = PandoraButtonVariant.Secondary, enabled = !busy)
+                    PandoraButton(
+                        if (initialName.isBlank()) "创建" else "保存",
                         { onSave(name.trim(), tagHexToHex6(TagColorPalette[colorIndex])) },
-                        Modifier.weight(1f), enabled = !busy && name.isNotBlank(),
-                        colors = ButtonDefaults.buttonColors(containerColor = ThemeButton, contentColor = OnThemeButton), shape = RoundedCornerShape(12.dp)
-                    ) { if (busy) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = Color.White) else Text(if (initialName.isBlank()) "创建" else "保存") }
+                        Modifier.weight(1f), enabled = name.isNotBlank(), loading = busy
+                    )
                 }
             }
-        }
     }
 }
 
