@@ -1341,10 +1341,10 @@ class BusinessApiIntegrationTests {
                 422);
         // 非作者删除
         request("DELETE", "/work-logs/" + id, managerToken, null, 403);
-        // 创建已满 24 小时即不可修改或删除，与 work_date 无关
+        // 明确超过 24 小时，避免数据库微秒舍入影响实时边界；精确边界由 JournalEditWindowTests 验证
         db.update(
                 "UPDATE work_log SET published_at=? WHERE id=?",
-                java.time.OffsetDateTime.now().minusDays(1),
+                java.time.OffsetDateTime.now().minusHours(25),
                 id);
         request(
                 "PATCH",
@@ -3191,7 +3191,10 @@ class BusinessApiIntegrationTests {
         var zone = java.time.ZoneOffset.ofHours(offset);
         db.update("UPDATE enterprise SET business_timezone=? WHERE id=?", zone.getId(), enterprise);
         var companyToday = LocalDate.now(zone);
-        var created = journal(employeeToken, companyToday.minusDays(2), 1);
+        // 使用企业时区日期直接创建，避免 journal() 夹具按固定测试时区替换日期。
+        var created = request("POST", "/work-logs", employeeToken,
+                fields("workDate", companyToday.minusDays(2), "entries",
+                        List.of(fields("clientEntryKey", "cross-midnight", "content", "Backfilled work"))), 201);
         var publishedAt = java.time.OffsetDateTime.now(java.time.ZoneOffset.UTC).minusHours(23);
         // 模拟前一业务日补交前天日志，workDate 如今已在创建范围外。
         db.update("UPDATE work_log SET published_at=?,work_date=? WHERE enterprise_id=? AND id=?",
