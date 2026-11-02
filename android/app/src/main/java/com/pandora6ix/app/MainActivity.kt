@@ -337,7 +337,6 @@ fun PandoraApp(
         // 视图页任务与企业标签目录来自真实接口（登录后按模式/日期加载）
         val taskItems = remember { mutableStateListOf<TaskItem>() }
         // 保留服务端原始 TaskDto（执行关系/allowedActions/进度），供详情与进度记录使用
-        val taskDtoById = remember { mutableStateMapOf<String, TaskDto>() }
         val serverTags = remember { mutableStateListOf<TagDto>() }
         val date = dateKey.split("-").map(String::toInt).let { DemoDate(it[0], it[1], it[2]) }
         val current = Route.valueOf(route)
@@ -505,7 +504,6 @@ fun PandoraApp(
         // 登录后加载企业标签目录
         LaunchedEffect(currentUser?.id) {
             taskItems.clear()
-            taskDtoById.clear()
             serverTags.clear()
             progressTaskId = null
             if (currentUser == null) return@LaunchedEffect
@@ -603,7 +601,6 @@ fun PandoraApp(
                 }
                 coroutineContext.ensureActive()
                 taskItems.clear(); taskItems.addAll(loaded.map { it.toTaskItem() })
-                taskDtoById.clear(); taskDtoById.putAll(loaded.associateBy { it.id })
                 calNotice = null
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
@@ -619,7 +616,7 @@ fun PandoraApp(
                 } else {
                     calError = api?.friendlyMessage() ?: "加载失败，请重试"
                 }
-                taskItems.clear(); taskDtoById.clear()
+                taskItems.clear()
             } finally {
                 if (coroutineContext[kotlinx.coroutines.Job]?.isActive == true) calLoading = false
             }
@@ -649,7 +646,7 @@ fun PandoraApp(
         Scaffold(containerColor = theme.background, bottomBar = { NavigationBar(containerColor = theme.backgroundDeep) { nav.forEach { item -> NavigationBarItem(selected = current == item.route, onClick = { route = item.route.name; detail = null; homeDetail = null; journalDetailId = null; showSettings = false; showReviews = false; showTagManage = false; progressTaskId = null; showTaskSummary = false }, icon = { MeNavIcon(item, reviewBadgeCount) }, label = { Text(item.label, fontSize = 11.sp) }, colors = NavigationBarItemDefaults.colors(selectedIconColor = WarmOrange, selectedTextColor = WarmOrange, indicatorColor = theme.backgroundDeep)) } } }) { padding ->
             Surface(Modifier.padding(padding).fillMaxSize(), color = theme.background) {
                 when {
-                    homeDetail?.kind == "TASK" && homeDetail?.id != null -> SummaryTaskDetail(
+                    homeDetail?.kind == "TASK" && homeDetail?.id != null -> FullTaskDetail(
                         homeDetail!!.id!!, taskRepo, serverTags, currentUser?.businessTimezone, currentUser, userRepo,
                         onBack = { homeDetail = null }, onChanged = { calRetry++ })
                     homeDetail != null -> HomeItemDetailScreen(dashboardRepo, homeDetail!!) { homeDetail = null }
@@ -658,7 +655,7 @@ fun PandoraApp(
                         TaskSummaryFlow(
                             currentUser!!, calendarRepo, taskRepo, journalRepo, userRepo,
                             taskDetail = { id, onBack, onChanged ->
-                                SummaryTaskDetail(id, taskRepo, serverTags, currentUser?.businessTimezone, currentUser, userRepo, onBack) { onChanged(); calRetry++ }
+                                FullTaskDetail(id, taskRepo, serverTags, currentUser?.businessTimezone, currentUser, userRepo, onBack) { onChanged(); calRetry++ }
                             },
                             journalDetail = { id, onBack -> JournalDetailScreen(journalRepo, id, currentUser?.businessTimezone, currentUser, userRepo, onBack) },
                             onClose = { showTaskSummary = false }
@@ -704,24 +701,11 @@ fun PandoraApp(
                         TagPermissions(canCreate = tagManager, canUpdate = tagManager, canDelete = tagManager),
                         reloadTags = { refreshTags() }
                     ) { showTagManage = false }
-                    detail != null -> {
-                        // 列表接口的视图会剥除任务说明/进度记录/完成申请（full=false），打开详情时按 ID 拉取完整数据
-                        val detailId = detail!!
-                        LaunchedEffect(detailId, currentUser?.id, calRetry) {
-                            try {
-                                val full = taskRepo.task(detailId)
-                                coroutineContext.ensureActive()
-                                taskDtoById[full.id] = full
-                            } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                                throw cancelled
-                            } catch (_: Exception) { /* Existing detail remains available for retry. */ }
-                        }
-                        val dto = taskDtoById[detailId]
-                        DetailScreen(detailId, dto, serverTags, taskRepo, onBack = { detail = null }, onChanged = { calRetry++ }, businessTimezone = currentUser?.businessTimezone, currentUser = currentUser, userRepo = userRepo)
-                    }
+                    detail != null -> FullTaskDetail(detail!!, taskRepo, serverTags, currentUser?.businessTimezone,
+                        currentUser, userRepo, onBack = { detail = null }, onChanged = { calRetry++ })
                     else -> AnimatedContent(current, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "page") { target ->
                         when (target) {
-                            Route.HOME -> HomeScreen(dashboardRepo, selectionRepo, notificationRepo, openedNotificationId, notificationOpenSequence, notificationReadRevision, pendingPushNotificationId = pendingPushNotificationId, onPushNotificationConsumed = { pendingPushNotificationId = null }, onDrawerClosed = { openedNotificationId = null }, onOpenHome = { homeDetail = it }, onOpenNotification = { item ->
+                            Route.HOME -> calendarUiState.SaveableStateProvider("home") { HomeScreen(dashboardRepo, selectionRepo, notificationRepo, openedNotificationId, notificationOpenSequence, notificationReadRevision, pendingPushNotificationId = pendingPushNotificationId, onPushNotificationConsumed = { pendingPushNotificationId = null }, onDrawerClosed = { openedNotificationId = null }, onOpenHome = { homeDetail = it }, onOpenNotification = { item ->
                                 // 只有仍在「待我审批」队列里的审批申请才进审批中心并展开该条；
                                 // 已审批/驳回的消息（含「审批结果」）队列里查不到，直接看对应任务详情
                                 val awaitingReview = item.reviewId != null && item.eventType == "REVIEW_REQUEST" && !item.resolved
@@ -729,7 +713,7 @@ fun PandoraApp(
                                     reviewFocusId = item.reviewId
                                     showReviews = true
                                 } else if (item.taskId.isNotBlank()) detail = item.taskId
-                            })
+                            }) }
                             Route.VIEW -> calendarUiState.SaveableStateProvider("calendar") { CalendarScreen(CalendarMode.valueOf(modeName), date, taskItems, canCreatePersonal, canCreateDelegated, serverTags, taskRepo, { modeName = it.name }, { dateKey = "${it.year}-${it.month}-${it.day}" }, { calRetry++ }, { detail = it.id }, taskScope = taskScope, onTaskScopeChange = { taskScope = it; calNotice = null }, currentUser = currentUser, canReviewTasks = canReviewTasks, businessTimezone = currentUser?.businessTimezone, loading = calLoading, error = calError, onRetry = { calRetry++ }, notice = calNotice, onOpenSummary = { showTaskSummary = true }) }
                             Route.LOGS -> LogsScreen(journalRepo, serverTags.toList(), currentUser?.businessTimezone, currentUser, userRepo) { journalDetailId = it }
                             Route.AI -> AiMapScreen()
@@ -1018,8 +1002,9 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
           PersonalImportantEditor(repo = selectionRepo, onClose = { editingPersonal = false }, onSaved = { loadDashboard() })
       }
       if (notifications) {
+          androidx.activity.compose.BackHandler { notifications = false; onDrawerClosed() }
           Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .42f)).clickable { notifications = false; expandedPanel = null; onDrawerClosed() })
-          NotificationDrawer(notificationRepo, openedNotificationId, onClose = { notifications = false; onDrawerClosed() }, onOpen = { notifications = false; onDrawerClosed(); onOpenNotification(it) })
+          NotificationDrawer(notificationRepo, openedNotificationId, onClose = { notifications = false; onDrawerClosed() }, onOpen = { onDrawerClosed(); onOpenNotification(it) })
       }
     }
 }
@@ -1536,33 +1521,34 @@ private data class EntryDraft(val entryId: String?, val content: String)
         editorDateKey = draft?.dateKey ?: dateKey
         // 编辑窗口按创建时间（allowedActions 由后端按 published_at 判定），而不是 work_date
         val existing = journals.firstOrNull { it.workDate == editorDateKey }
-        if (existing != null && "EDIT" !in existing.allowedActions) { showEditNotice("该日志不是当天创建，已不能修改"); return }
+        if (existing != null && "EDIT" !in existing.allowedActions) { showEditNotice("日志创建已满 24 小时，不能再修改或删除"); return }
         editNotice = null
         editingJournal = journals.firstOrNull { it.workDate == editorDateKey }
         entryDrafts = draft?.entries?.map { EntryDraft(it.entryId, it.content) }
             ?: editingJournal?.entries?.sortedBy { it.displayOrder }?.map { EntryDraft(it.entryId, it.content) }
             ?: listOf(EntryDraft(null, ""))
         tags = if (draft != null) draft.tagIds.mapNotNull { id -> availableTags.firstOrNull { it.id == id }?.name }
-        else editingJournal?.tags?.map { it.name } ?: emptyList()
+        else editingJournal?.tags?.sortedBy { if (it.id == editingJournal?.primaryTagId) 0 else 1 }?.map { it.name } ?: emptyList()
         publishError = null
         writing = true
     }
     fun switchEditorDate(dateKey: String) {
         if (dateKey == editorDateKey) { editNotice = null; return }
         val existing = journals.firstOrNull { it.workDate == dateKey }
-        if (existing != null && "EDIT" !in existing.allowedActions) { showEditNotice("该日期日志不是当天创建，已不能修改"); return }
+        if (existing != null && "EDIT" !in existing.allowedActions) { showEditNotice("日志创建已满 24 小时，不能再修改或删除"); return }
         editNotice = null
         editorDateKey = dateKey
         editingJournal = journals.firstOrNull { it.workDate == dateKey }
         entryDrafts = editingJournal?.entries?.sortedBy { it.displayOrder }?.map { EntryDraft(it.entryId, it.content) } ?: listOf(EntryDraft(null, ""))
-        tags = editingJournal?.tags?.map { it.name } ?: emptyList()
+        tags = editingJournal?.tags?.sortedBy { if (it.id == editingJournal?.primaryTagId) 0 else 1 }?.map { it.name } ?: emptyList()
         publishError = null
     }
     fun closeEditor() {
         if (entryDrafts.any { it.content.isNotBlank() }) confirmExit = true else writing = false
     }
     fun publish() {
-        if (editorDateKey !in threeDays().map(::isoOf) || (editingJournal != null && "EDIT" !in editingJournal!!.allowedActions)) { publishError = "只能补交昨天和前天的日志；日志仅在创建当天可修改"; return }
+        if (editingJournal == null && editorDateKey !in threeDays().map(::isoOf)) { publishError = "只能填写今天、昨天和前天的日志"; return }
+        if (editingJournal != null && "EDIT" !in editingJournal!!.allowedActions) { publishError = "日志创建已满 24 小时，不能再修改或删除"; return }
         val valid = entryDrafts.filter { it.content.isNotBlank() }
         // 从草稿列表移除的既有条目 = 删除（PATCH deleteEntryIds）；不在原条目上追加新条目代替删改
         val deleteIds = editingJournal?.entries
@@ -1728,7 +1714,7 @@ private data class EntryDraft(val entryId: String?, val content: String)
                             }
                         }
                         val editorEditable = editingJournal == null || "EDIT" in editingJournal!!.allowedActions
-                        if (!editorEditable) Text("补交日志已提交，不能再次修改。今日的日志可在今日内修改。", fontSize = 12.sp, color = Ink.copy(alpha = .55f))
+                        if (!editorEditable) Text("日志仅在创建后 24 小时内可修改或删除。", fontSize = 12.sp, color = Ink.copy(alpha = .55f))
                         Text("· 标签（可多选，可切换主标签）", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp, bottom = 6.dp))
                         if (tags.isNotEmpty()) FlowRow(Modifier.fillMaxWidth().padding(vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             tags.forEach { name ->
@@ -1777,7 +1763,7 @@ private data class EntryDraft(val entryId: String?, val content: String)
                 Spacer(Modifier.height(6.dp))
                 Column(Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())) {
                     if (availableTags.isEmpty()) Text("暂无标签，可在「我的 → 标签管理」中创建。", fontSize = 13.sp, color = Ink.copy(alpha = .5f))
-                    availableTags.forEach { tag ->
+                    availableTags.sortedBy { if (it.name == tags.firstOrNull()) 0 else 1 }.forEach { tag ->
                         val selected = tag.name in tags
                         val isPrimary = selected && tags.first() == tag.name
                         Row(
@@ -1861,7 +1847,7 @@ private fun TagChips(tags: List<TagDto>, primaryTagId: String?) {
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        tags.forEach { t ->
+        tags.sortedBy { if (it.id == primaryTagId) 0 else 1 }.forEach { t ->
             Text(
                 if (t.id == primaryTagId) "${t.name} · 主" else t.name,
                 fontSize = 11.sp,
@@ -2022,6 +2008,7 @@ private fun JournalDetailScreen(repo: JournalRepository, journalId: String, busi
 }
 
 @Composable private fun BoxScope.NotificationDrawer(repository: NotificationRepository, requestedId: String?, onClose: () -> Unit, onOpen: (NotificationDto) -> Unit) {
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
     var records by remember { mutableStateOf<List<NotificationDto>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var loadError by remember { mutableStateOf<String?>(null) }
@@ -2046,7 +2033,7 @@ private fun JournalDetailScreen(repo: JournalRepository, journalId: String, busi
                 loading -> Text("正在加载消息…", color = Ink.copy(alpha = .6f), modifier = Modifier.padding(vertical = 16.dp))
                 loadError != null -> Text(loadError!!, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(vertical = 16.dp))
                 records.isEmpty() -> Text("暂无消息", color = Ink.copy(alpha = .6f), modifier = Modifier.padding(vertical = 16.dp))
-                else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                else -> LazyColumn(state = listState, verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     items(records, key = { it.id }) { item ->
                         // 未读主题色、已读白色；点推送进来的那条（requestedId）始终高亮，方便一眼找到
                         Card(colors = CardDefaults.cardColors(containerColor = if (item.id == requestedId || item.readAt == null) CreamDeep else Color.White), shape = RoundedCornerShape(8.dp)) {
@@ -2303,9 +2290,9 @@ private fun roleLabel(role: String): String = when (role.uppercase()) {
     else -> role
 }
 @Composable private fun DetailCard(title: String, body: String, color: Color, maxLines: Int = 2, onClick: () -> Unit = {}) { Card(Modifier.fillMaxWidth().clickable(onClick = onClick), colors = CardDefaults.cardColors(containerColor = color.copy(alpha = .78f)), shape = RoundedCornerShape(16.dp)) { Column(Modifier.padding(14.dp)) { Text(title, fontWeight = FontWeight.Bold); Text(body, fontSize = 13.sp, color = Ink.copy(alpha = .75f), maxLines = maxLines, overflow = TextOverflow.Ellipsis) } } }
-/** Summary uses the same full task detail, with explicit loading/error before enabling actions. */
+/** 完整详情独立加载，避免日历简略列表刷新覆盖执行记录。 */
 @Composable
-private fun SummaryTaskDetail(id: String, repo: TaskRepository, tags: List<TagDto>, businessTimezone: String?, currentUser: UserDto?, userRepo: UserRepository, onBack: () -> Unit, onChanged: () -> Unit) {
+private fun FullTaskDetail(id: String, repo: TaskRepository, tags: List<TagDto>, businessTimezone: String?, currentUser: UserDto?, userRepo: UserRepository, onBack: () -> Unit, onChanged: () -> Unit) {
     var task by remember(id) { mutableStateOf<TaskDto?>(null) }
     var loading by remember(id) { mutableStateOf(true) }
     var error by remember(id) { mutableStateOf<String?>(null) }
@@ -2384,13 +2371,13 @@ private fun SummaryTaskDetail(id: String, repo: TaskRepository, tags: List<TagDt
         stageBusy = true; stageError = null
         scope.launch {
             try {
-                when {
-                    "COMPLETE_PERSONAL" in assignment.allowedActions ->
-                        taskRepo.completePersonalTask(dto!!.id, assignment.version, stageKey("complete", assignment.id))
-                    "REQUEST_COMPLETION" in assignment.allowedActions ->
-                        taskRepo.requestCompletion(assignment.id, assignment.version, stageNote.trim().ifBlank { null }, stageKey("request", assignment.id))
-                    else -> { stageError = "当前账号无权变更该任务状态"; stageBusy = false; return@launch }
+                if (assignment.allowedActions.none { it == "COMPLETE_PERSONAL" || it == "REQUEST_COMPLETION" }) {
+                    stageError = "当前账号无权变更该任务状态"; stageBusy = false; return@launch
                 }
+                taskRepo.scopedStatus(dto!!.id, ScopedStatusDto(
+                    scope = "SINGLE", workStatus = "COMPLETED", note = stageNote.trim().ifBlank { null },
+                    versions = listOf(ScopeVersionDto(dto.id, dto.version, assignment.id, assignment.version))
+                ), stageKey("complete", assignment.id))
                 stageNote = ""
                 onChanged(); stageBusy = false
             } catch (e: ApiException) {

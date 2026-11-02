@@ -153,12 +153,31 @@ class BusinessApiIntegrationTests {
         request("POST","/tasks/"+selected.get("id")+"/scoped-edit",peerToken,stale,404,"Idempotency-Key",UUID.randomUUID().toString());
     }
 
+    @Test void personalCompletionPreservesSavedNotesAndRetries() throws Exception {
+        var task=request("POST","/tasks",founderToken,taskBody("PERSONAL",List.of(),List.of(),null),201);
+        String id=str(task,"id"), relation=assignment(id,founder);
+        var before=db.entity("task_assignment",enterprise,relation);
+        request("POST","/task-assignments/"+relation+"/progress-records",founderToken,
+                fields("expectedVersion",before.get("version"),"note","Saved stage"),201);
+        var rows=List.of(request("GET","/tasks/"+id,founderToken,null,200));
+        var body=fields("scope","SINGLE","workStatus","COMPLETED","note","Final stage","versions",recurringVersions(rows));
+        String key=UUID.randomUUID().toString();
+        var completed=request("POST","/tasks/"+id+"/scoped-status",founderToken,body,200,"Idempotency-Key",key);
+        assertEquals(completed,request("POST","/tasks/"+id+"/scoped-status",founderToken,body,200,"Idempotency-Key",key));
+        request("POST","/tasks/"+id+"/scoped-status",founderToken,body,409,"Idempotency-Key",UUID.randomUUID().toString());
+        var notes=db.rows("SELECT note FROM task_progress_record WHERE enterprise_id=? AND assignment_id=?",enterprise,relation);
+        assertEquals(2,notes.size());
+        assertEquals(Set.of("Saved stage","Final stage"),notes.stream().map(n->n.get("note")).collect(java.util.stream.Collectors.toSet()));
+        assertTrue(request("GET","/tasks/"+id,founderToken,null,200).toString().contains("Saved stage"));
+    }
+
     @Test void recurringScopedCompletionAndUndoPreserveOtherOccurrences() throws Exception {
         var first=recurringFixture(founderToken);
         var rows=recurringScopeRows(founderToken,str(first,"id")).stream().sorted(Comparator.comparing(t->t.get("startDate").toString())).toList();
         var selected=rows.get(1);
         request("POST","/tasks/"+selected.get("id")+"/scoped-status",founderToken,
-                fields("scope","THIS_AND_FUTURE","workStatus","COMPLETED","versions",recurringVersions(rows)),200,"Idempotency-Key",UUID.randomUUID().toString());
+                fields("scope","THIS_AND_FUTURE","workStatus","COMPLETED","note","Recurring final stage","versions",recurringVersions(rows)),200,"Idempotency-Key",UUID.randomUUID().toString());
+        assertEquals(2,db.rows("SELECT id FROM task_progress_record WHERE enterprise_id=? AND note=?",enterprise,"Recurring final stage").size());
         var states=db.rows("SELECT a.execution_status FROM task_assignment a JOIN task t ON t.enterprise_id=a.enterprise_id AND t.id=a.task_id WHERE t.enterprise_id=? AND t.series_id=? ORDER BY t.occurrence_date",enterprise,first.get("seriesId"));
         assertEquals(List.of("ACTIVE","COMPLETED","COMPLETED"),states.stream().map(t->t.get("execution_status")).toList());
         var current=recurringScopeRows(founderToken,str(selected,"id"));
@@ -1322,10 +1341,10 @@ class BusinessApiIntegrationTests {
                 422);
         // 非作者删除
         request("DELETE", "/work-logs/" + id, managerToken, null, 403);
-        // 创建时间跨日即不可修改或删除（窗口按创建日判断，与 work_date 无关）
+        // 明确超过 24 小时，避免数据库微秒舍入影响实时边界；精确边界由 JournalEditWindowTests 验证
         db.update(
                 "UPDATE work_log SET published_at=? WHERE id=?",
-                java.time.OffsetDateTime.now().minusDays(1),
+                java.time.OffsetDateTime.now().minusHours(25),
                 id);
         request(
                 "PATCH",
@@ -1334,7 +1353,7 @@ class BusinessApiIntegrationTests {
                 fields("expectedVersion", 1, "deleteEntryIds", List.of(second)),
                 409);
         request("DELETE", "/work-logs/" + id, employeeToken, null, 409);
-        // 创建日回到今天：窗口内删除成功，删除后不可读且同日可重建
+        // 恢复为窗口内：删除成功，删除后不可读且同日可重建
         db.update(
                 "UPDATE work_log SET published_at=? WHERE id=?",
                 java.time.OffsetDateTime.now(),
@@ -3094,14 +3113,16 @@ class BusinessApiIntegrationTests {
     }
 
     @Test
-    void journalCreatedOnEarlierDayIsReadOnly() throws Exception {
+    void journalCreatedMoreThan24HoursAgoIsReadOnly() throws Exception {
         var old = journal(employeeToken, today.minusDays(1), 1);
-        // 把创建时间挪到两天前：窗口按创建日判断，跨天即只读
+        // 创建已超过 24 小时，与 work_date 无关
         db.update("UPDATE work_log SET published_at=? WHERE enterprise_id=? AND id=?",
                 java.time.OffsetDateTime.now().minusDays(2), enterprise, str(old, "id"));
         assertEquals(List.of(), request("GET", "/work-logs/"+old.get("id"), employeeToken, null, 200).get("allowedActions"));
-        request("PATCH", "/work-logs/"+old.get("id"), employeeToken, fields("expectedVersion", 0), 409);
-        request("DELETE", "/work-logs/"+old.get("id"), employeeToken, null, 409);
+        assertEquals(List.of(), items(request("GET", "/work-logs?scope=mine", employeeToken, null, 200)).getFirst().get("allowedActions"));
+        assertEquals("JOURNAL_EDIT_WINDOW_EXPIRED", request("PATCH", "/work-logs/"+old.get("id"), employeeToken, fields("expectedVersion", 0), 409).get("code"));
+        assertEquals("JOURNAL_EDIT_WINDOW_EXPIRED", request("DELETE", "/work-logs/"+old.get("id"), employeeToken, null, 409).get("code"));
+        assertEquals(0, number(db.entity("work_log", enterprise, str(old, "id")), "version"));
     }
 
     @SuppressWarnings("unchecked")
@@ -3144,23 +3165,50 @@ class BusinessApiIntegrationTests {
 
 
     @Test
-    void journalEditWindowUsesCreationDateInCompanyTimezone() throws Exception {
+    void journalEditWindowIgnoresCompanyTimezoneChanges() throws Exception {
         db.update("UPDATE enterprise SET business_timezone='Pacific/Kiritimati' WHERE id=?", enterprise);
         LocalDate companyToday = LocalDate.now(ZoneId.of("Pacific/Kiritimati"));
         var created = request("POST", "/work-logs", employeeToken,
                 fields("workDate", companyToday, "entries", List.of(fields("clientEntryKey", "zone", "content", "Timezone boundary"))), 201);
         assertEquals(companyToday.toString(), created.get("businessToday"));
-        // 创建时刻落在公司时区的今天 → 即使切换时区也仍可编辑（窗口看创建日，不看 work_date）
+        // 切换时区不影响连续 24 小时窗口
         db.update("UPDATE enterprise SET business_timezone='Etc/GMT+12' WHERE id=?", enterprise);
         assertTrue(LocalDate.now(ZoneId.of("Etc/GMT+12")).isBefore(companyToday));
         assertEquals(List.of("EDIT", "DELETE"), request("GET", "/work-logs/"+created.get("id"), employeeToken, null, 200).get("allowedActions"));
-        // 创建时间落到业务时区的前一天 → 立即只读
+        // 创建已满 24 小时才转为只读
         db.update("UPDATE work_log SET published_at=? WHERE enterprise_id=? AND id=?",
                 java.time.OffsetDateTime.now(ZoneId.of("Etc/GMT+12")).minusDays(1), enterprise, str(created, "id"));
         assertEquals(List.of(), request("GET", "/work-logs/"+created.get("id"), employeeToken, null, 200).get("allowedActions"));
         request("PATCH", "/work-logs/"+created.get("id"), employeeToken, fields("expectedVersion", 0), 409);
         request("DELETE", "/work-logs/"+created.get("id"), employeeToken, null, 409);
         assertEquals(0, number(db.entity("work_log", enterprise, str(created, "id")), "version"));
+    }
+
+    @Test
+    void backfilledJournalRemainsEditableAcrossMidnightOutsideCreationDateRange() throws Exception {
+        // 选择当前正午附近的业务时区，保证 23 小时前属于前一天。
+        int offset = 12 - java.time.OffsetDateTime.now(java.time.ZoneOffset.UTC).getHour();
+        var zone = java.time.ZoneOffset.ofHours(offset);
+        db.update("UPDATE enterprise SET business_timezone=? WHERE id=?", zone.getId(), enterprise);
+        var companyToday = LocalDate.now(zone);
+        // 使用企业时区日期直接创建，避免 journal() 夹具按固定测试时区替换日期。
+        var created = request("POST", "/work-logs", employeeToken,
+                fields("workDate", companyToday.minusDays(2), "entries",
+                        List.of(fields("clientEntryKey", "cross-midnight", "content", "Backfilled work"))), 201);
+        var publishedAt = java.time.OffsetDateTime.now(java.time.ZoneOffset.UTC).minusHours(23);
+        // 模拟前一业务日补交前天日志，workDate 如今已在创建范围外。
+        db.update("UPDATE work_log SET published_at=?,work_date=? WHERE enterprise_id=? AND id=?",
+                publishedAt, companyToday.minusDays(3), enterprise, str(created, "id"));
+        var before = db.entity("work_log", enterprise, str(created, "id")).get("published_at");
+        assertEquals(List.of("EDIT", "DELETE"), request("GET", "/work-logs/"+created.get("id"), employeeToken, null, 200).get("allowedActions"));
+        var listed = items(request("GET", "/work-logs?scope=mine", employeeToken, null, 200));
+        assertEquals(List.of("EDIT", "DELETE"), listed.getFirst().get("allowedActions"));
+        assertEquals(List.of(), request("GET", "/work-logs/"+created.get("id"), managerToken, null, 200).get("allowedActions"));
+        var patched = request("PATCH", "/work-logs/"+created.get("id"), employeeToken,
+                fields("expectedVersion", 0, "upsertEntries", List.of(fields("entryId", entries(created).getFirst().get("entryId"), "content", "Edited after midnight"))), 200);
+        assertEquals(1, number(patched, "version"));
+        assertEquals(before, db.entity("work_log", enterprise, str(created, "id")).get("published_at"));
+        request("DELETE", "/work-logs/"+created.get("id"), employeeToken, null, 200);
     }
 
     @Test
@@ -3496,6 +3544,7 @@ class BusinessApiIntegrationTests {
         var submitted=request("PATCH","/task-assignments/"+relation+"/status",employeeToken,completionBody,200,"Idempotency-Key",key);
         assertEquals(submitted,request("PATCH","/task-assignments/"+relation+"/status",employeeToken,completionBody,200,"Idempotency-Key",key));
         assertEquals(1,db.rows("SELECT id FROM task_completion_request WHERE enterprise_id=? AND assignment_id=?",enterprise,relation).size());
+        assertEquals(2,db.rows("SELECT id FROM task_progress_record WHERE enterprise_id=? AND assignment_id=?",enterprise,relation).size());
         var submission=db.one("SELECT after_values FROM operation_log WHERE enterprise_id=? AND object_id=? AND action='SUBMIT'",enterprise,relation);
         assertTrue(str(submission,"after_values").contains("Please inspect"));
         assertEquals("AWAITING_ACCEPTANCE",((Map<?,?>)submitted.get("assignment")).get("executionStatus"));
