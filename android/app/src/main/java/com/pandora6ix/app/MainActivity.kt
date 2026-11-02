@@ -284,14 +284,6 @@ private fun MeNavIcon(item: NavItem, badgeCount: Int) {
     }
 }
 
-/** 白色圆角卡片边框：主题背景与卡片色（WarmCard）过于接近时（如暖米）加细边框以免融入背景，其余主题返回 null 无边框 */
-@Composable
-private fun cardBorderIfBlended(): BorderStroke? {
-    val bg = LocalAppTheme.current.background
-    return if (kotlin.math.abs(bg.luminance() - WarmCard.luminance()) < 0.02f)
-        BorderStroke(1.dp, Ink.copy(alpha = 0.14f)) else null
-}
-
 @Composable
 fun PandoraApp(
     session: SessionStore,
@@ -636,9 +628,9 @@ fun PandoraApp(
             // 启动会话检查中的过渡页
             !authChecked -> Box(Modifier.fillMaxSize().background(theme.background), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Default.GridView, null, Modifier.size(64.dp), tint = WarmOrange)
-                    Spacer(Modifier.height(12.dp))
-                    Text("正在恢复会话…", color = Ink.copy(alpha = .6f))
+                    Icon(Icons.Default.GridView, null, Modifier.size(64.dp), tint = PandoraTheme.colors.primary)
+                    Spacer(Modifier.height(PandoraSpacing.space12))
+                    Text("正在恢复会话…", color = PandoraTheme.colors.textTertiary)
                 }
             }
             // 未登录：登录页，禁止进入保护页
@@ -769,18 +761,20 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
-    Column(Modifier.fillMaxSize().background(Cream).verticalScroll(rememberScrollState()).padding(horizontal = 28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    // 登录：水平 24dp、内容最宽 480dp 居中；品牌字使用 Display（规范例外白名单）
+    Column(Modifier.fillMaxSize().background(PandoraTheme.colors.appBackground).verticalScroll(rememberScrollState()).padding(horizontal = PandoraSpacing.loginHorizontal), horizontalAlignment = Alignment.CenterHorizontally) {
+      Column(Modifier.widthIn(max = PandoraDimensions.loginMaxWidth).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
         Spacer(Modifier.height(72.dp))
-        Icon(Icons.Default.GridView, null, Modifier.size(64.dp), tint = WarmOrange)
-        Spacer(Modifier.height(12.dp))
-        Text("Pandora", fontSize = 30.sp, fontWeight = FontWeight.Bold)
-        Text("智能掌上日志系统", fontSize = 14.sp, color = Ink.copy(alpha = .6f))
-        Spacer(Modifier.height(36.dp))
-        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Icon(Icons.Default.GridView, null, Modifier.size(PandoraDimensions.placeholderIcon), tint = PandoraTheme.colors.primary)
+        Spacer(Modifier.height(PandoraSpacing.space12))
+        Text("Pandora", style = PandoraTypography.display)
+        Text("智能掌上日志系统", style = PandoraTypography.bodyMedium, color = PandoraTheme.colors.textSecondary)
+        Spacer(Modifier.height(PandoraSpacing.space32))
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space16)) {
             PandoraTextField(domain, { domain = it; error = null }, Modifier.fillMaxWidth(), label = { Text("企业域") }, singleLine = true)
             PandoraTextField(loginName, { loginName = it; error = null }, Modifier.fillMaxWidth(), label = { Text("登录名") }, singleLine = true)
             PandoraTextField(password, { password = it; error = null }, Modifier.fillMaxWidth(), label = { Text("密码") }, visualTransformation = PasswordVisualTransformation(), singleLine = true)
-            error?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp) }
+            error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = PandoraTypography.bodyMedium) }
             PandoraButton("登录", {
                 if (domain.isBlank() || loginName.isBlank() || password.isBlank()) {
                     error = "请填写企业域、登录名和密码"
@@ -800,6 +794,7 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
                 }
             }, Modifier.fillMaxWidth(), loading = loading, loadingText = "登录中…")
         }
+      }
     }
 }
 
@@ -886,7 +881,7 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
         HomePanelDef("个人十大重要事项", d?.personalImportantEntries?.entries?.map { it.content } ?: emptyList(), "暂无个人重要事项"),
         HomePanelDef("个人日志", entryPager.items.map { it.content }, "暂无日志")
     )
-    val panelAccent = LocalAppTheme.current.accent
+    val panelAccent = PandoraTheme.colors.primary
     fun openItem(panelIndex: Int, index: Int, text: String) {
         val kind: String?
         val id: String?
@@ -904,8 +899,7 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
     val colors = PandoraTheme.colors
     Box(Modifier.fillMaxSize().background(colors.appBackground)) {
       Column(Modifier.fillMaxSize().padding(horizontal = PandoraSpacing.pageHorizontal)) {
-        Row(Modifier.fillMaxWidth().padding(vertical = PandoraSpacing.space8), verticalAlignment = Alignment.CenterVertically) {
-            Text(todayDate().shortLabelWithWeekday(), style = PandoraTypography.titleLarge, color = colors.textPrimary, modifier = Modifier.weight(1f).semantics { heading() })
+        PandoraPageTitle(todayDate().shortLabelWithWeekday()) {
             // 与「我的」页红点同一实现：未读消息数角标（99+ 封顶）
             BadgedBox(badge = { if (unreadCount > 0) Badge { Text(if (unreadCount >= 99) "99+" else "$unreadCount") } }) {
                 IconButton(onClick = { notifications = true }) { Surface(shape = PandoraShapes.circle, color = colors.primaryContainer) { Icon(Icons.Default.Email, "邮箱", Modifier.padding(PandoraSpacing.space8).size(PandoraDimensions.icon), tint = colors.textPrimary) } }
@@ -1089,13 +1083,8 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
     }
 }
 
-@Composable private fun DashedDivider(color: Color) {
-    Spacer(
-        Modifier.fillMaxWidth().height(4.dp).drawBehind {
-            drawLine(color, Offset(size.width * .25f, size.height / 2), Offset(size.width * .75f, size.height / 2), strokeWidth = 1.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(1.dp.toPx(), 4.dp.toPx())))
-        }
-    )
-}
+/** 列表行分割：统一 1dp Divider；保留原调用名，颜色参数由 Token 决定 */
+@Composable private fun DashedDivider(@Suppress("UNUSED_PARAMETER") color: Color) = PandoraDivider()
 
 @Composable private fun PersonalImportantEditor(repo: SelectionRepository, onClose: () -> Unit, onSaved: () -> Unit) {
     androidx.activity.compose.BackHandler(onBack = onClose)
@@ -1116,7 +1105,7 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
     val density = LocalDensity.current
     val rowHeightPx = with(density) { 52.dp.toPx() }
     val scope = rememberCoroutineScope()
-    val accent = WarmOrange
+    val accent = PandoraTheme.colors.primary
     fun load() {
         loading = true; loadError = null
         scope.launch {
@@ -1189,32 +1178,32 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
             Column(Modifier.fillMaxSize().padding(PandoraSpacing.dialogPadding)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.size(10.dp).clip(CircleShape).background(accent))
-                    Spacer(Modifier.width(10.dp))
+                    Spacer(Modifier.width(PandoraSpacing.space12))
                     Column(Modifier.weight(1f)) {
                         Text("编辑 · 个人十大重要事项", style = PandoraTypography.titleMedium)
                     }
                     IconButton(onClose) { Icon(Icons.Default.Close, "关闭") }
                 }
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(PandoraSpacing.space12))
                 when {
                     loading -> Column(Modifier.fillMaxWidth().weight(1f), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                         CircularProgressIndicator(color = accent, strokeWidth = 3.dp)
-                        Spacer(Modifier.height(10.dp))
-                        Text("正在加载…", color = Ink.copy(alpha = .6f), fontSize = 13.sp)
+                        Spacer(Modifier.height(PandoraSpacing.space12))
+                        Text("正在加载…", color = PandoraTheme.colors.textTertiary, style = PandoraTypography.bodyMedium)
                     }
-                    loadError != null -> Column(Modifier.fillMaxWidth().weight(1f), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text(loadError!!, color = Ink.copy(alpha = .7f))
+                    loadError != null -> Column(Modifier.fillMaxWidth().weight(1f), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space12)) {
+                        Text(loadError!!, color = PandoraTheme.colors.textSecondary)
                         PandoraButton("重试", { retry++ })
                     }
                     else -> Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())) {
-                        Text("正式事项", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                        Spacer(Modifier.height(4.dp))
+                        Text("正式事项", style = PandoraTypography.labelLarge)
+                        Spacer(Modifier.height(PandoraSpacing.space4))
                         selected.forEachIndexed { i, item ->
                             val dragging = draggingIndex == i
                             Row(
                                 Modifier.fillMaxWidth()
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(if (dragging) accent.copy(alpha = .18f) else Color.Transparent)
+                                    .clip(PandoraShapes.medium)
+                                    .background(if (dragging) PandoraTheme.colors.primaryContainer else Color.Transparent)
                                     // 排序模式下长按即可上下拖动换位
                                     .then(
                                         if (sorting) Modifier.pointerInput(i) {
@@ -1243,19 +1232,19 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
                                             )
                                         } else Modifier
                                     )
-                                    .padding(horizontal = 4.dp, vertical = 6.dp),
+                                    .padding(horizontal = PandoraSpacing.space4, vertical = PandoraSpacing.space8),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Box(Modifier.size(26.dp).clip(CircleShape).background(accent.copy(alpha = .3f)), contentAlignment = Alignment.Center) {
-                                    Text("${i + 1}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Ink)
+                                Box(Modifier.size(28.dp).clip(PandoraShapes.circle).background(PandoraTheme.colors.primaryContainer), contentAlignment = Alignment.Center) {
+                                    Text("${i + 1}", style = PandoraTypography.caption, fontWeight = FontWeight.Medium, color = PandoraTheme.colors.textPrimary)
                                 }
-                                Spacer(Modifier.width(8.dp))
+                                Spacer(Modifier.width(PandoraSpacing.space8))
                                 Column(Modifier.weight(1f)) {
-                                    Text(item.content, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                    Text(item.content, style = PandoraTypography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                 }
                                 // 排序中不提供移出，避免与拖动冲突
-                                if (!sorting) IconButton({ toggle(item) }, Modifier.size(34.dp)) {
-                                    Icon(Icons.Default.Close, "移出", Modifier.size(18.dp), tint = CoralDark)
+                                if (!sorting) IconButton({ toggle(item) }) {
+                                    Icon(Icons.Default.Close, "移出", Modifier.size(PandoraDimensions.iconSmall + 2.dp), tint = PandoraTheme.colors.error)
                                 }
                             }
                             if (i < selected.lastIndex) DashedDivider(accent)
@@ -1263,32 +1252,33 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
                         // 排序模式下不显示候选区，只专注于正式事项排序
                         if (!sorting) {
                             // 分割线：上为正式事项，下为候选事项
-                            Spacer(Modifier.height(14.dp))
+                            Spacer(Modifier.height(PandoraSpacing.space16))
                             DashedDivider(accent)
-                            Spacer(Modifier.height(10.dp))
-                            Text("候选事项", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                            Spacer(Modifier.height(4.dp))
+                            Spacer(Modifier.height(PandoraSpacing.space12))
+                            Text("候选事项", style = PandoraTypography.labelLarge)
+                            Spacer(Modifier.height(PandoraSpacing.space4))
                         }
                         if (!sorting) visibleCandidates.forEach { entry ->
                             val canAdd = selected.size < 10
                             Row(
-                                Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 7.dp),
+                                Modifier.fillMaxWidth().padding(horizontal = PandoraSpacing.space4, vertical = PandoraSpacing.space8),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 // 勾选圆形：打钩即加入正式事项，并随即从候选区移除
-                                Box(
-                                    Modifier.size(26.dp).clip(CircleShape)
-                                        .background(if (canAdd) accent.copy(alpha = .12f) else Color.Transparent)
-                                        .border(1.5.dp, if (canAdd) accent else HairLine, CircleShape)
-                                        .clickable(enabled = canAdd) { toggle(entry) },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(Icons.Default.Add, "加入正式事项", Modifier.size(16.dp), tint = if (canAdd) Ink else Ink.copy(alpha = .3f))
+                                // 视觉 28dp 圆形、外围 40dp 命中区
+                                Box(Modifier.size(40.dp).clip(PandoraShapes.circle).clickable(enabled = canAdd, onClickLabel = "加入正式事项") { toggle(entry) }, contentAlignment = Alignment.Center) {
+                                    Box(
+                                        Modifier.size(28.dp).clip(PandoraShapes.circle)
+                                            .background(if (canAdd) PandoraTheme.colors.primaryContainer else Color.Transparent)
+                                            .border(PandoraDimensions.borderWidth, if (canAdd) PandoraTheme.colors.primary else PandoraTheme.colors.border, PandoraShapes.circle),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(Icons.Default.Add, null, Modifier.size(PandoraDimensions.iconSmall), tint = if (canAdd) PandoraTheme.colors.textPrimary else PandoraTheme.colors.textDisabled)
+                                    }
                                 }
-                                Spacer(Modifier.width(8.dp))
+                                Spacer(Modifier.width(PandoraSpacing.space8))
                                 Text(
-                                    entry.content,
-                                    fontSize = 14.sp,
+                                    entry.content, style = PandoraTypography.bodyMedium,
                                     maxLines = 2,
                                     overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier.weight(1f)
@@ -1297,29 +1287,15 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
                         }
                     }
                 }
-                saveError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp)) }
-                Spacer(Modifier.height(8.dp))
+                saveError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = PandoraTypography.bodyMedium, modifier = Modifier.padding(top = PandoraSpacing.space8)) }
+                Spacer(Modifier.height(PandoraSpacing.space8))
                 // 左下：排序 / 取消；右下：保存 / 完成
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     // 排序与保存同宽同高（96×40），左右两角对称
                     if (sorting) {
-                        TextButton(
-                            { cancelSorting() },
-                            Modifier.defaultMinSize(minWidth = 96.dp, minHeight = 40.dp),
-                            shape = RoundedCornerShape(12.dp),
-                            border = BorderStroke(1.dp, accent)
-                        ) { Text("取消", color = Ink.copy(alpha = .65f)) }
+                        PandoraButton("取消", { cancelSorting() }, Modifier.defaultMinSize(minWidth = 96.dp), variant = PandoraButtonVariant.Outline, size = PandoraButtonSize.Compact)
                     } else {
-                        TextButton(
-                            { showSortHint = true },
-                            Modifier.defaultMinSize(minWidth = 96.dp, minHeight = 40.dp),
-                            enabled = selected.size > 1,
-                            shape = RoundedCornerShape(12.dp),
-                            // 描边让它看起来像按钮，而不是一段可点的文字
-                            border = BorderStroke(1.dp, accent.copy(alpha = if (selected.size > 1) .9f else .3f))
-                        ) {
-                            Text("排序", color = if (selected.size > 1) Ink else Ink.copy(alpha = .35f))
-                        }
+                        PandoraButton("排序", { showSortHint = true }, Modifier.defaultMinSize(minWidth = 96.dp), variant = PandoraButtonVariant.Outline, size = PandoraButtonSize.Compact, enabled = selected.size > 1)
                     }
                     Spacer(Modifier.weight(1f))
                     PandoraButton(
@@ -1336,7 +1312,7 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
     if (showSortHint) PandoraAlertDialog(
         onDismissRequest = { showSortHint = false },
         title = { Text("排序") },
-        text = { Text("长按正式事项即可自由排序。", color = Ink.copy(alpha = .8f)) },
+        text = { Text("长按正式事项即可自由排序。", color = PandoraTheme.colors.textSecondary) },
         confirmButton = { PandoraDialogConfirm("确定", { showSortHint = false; startSorting() }) },
         dismissButton = { PandoraDialogDismiss("取消", { showSortHint = false }) }
     )
@@ -1371,30 +1347,25 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
             loading = false
         }
     }
-    Column(Modifier.fillMaxSize().background(LocalAppTheme.current.dashboard)) {
+    Column(Modifier.fillMaxSize().background(PandoraTheme.colors.appBackground)) {
         PageHeader(detail.section, onBack = onBack)
         Column(
-            Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(20.dp)
+            Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(PandoraSpacing.pageHorizontal)
         ) {
-            Card(
-                Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = WarmCard),
-                elevation = CardDefaults.cardElevation(4.dp)
-            ) {
-                Column(Modifier.fillMaxWidth().padding(24.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+            PandoraPanel(Modifier.fillMaxWidth(), tone = PandoraPanelTone.White, contentPadding = PaddingValues(0.dp)) {
+                Column(Modifier.fillMaxWidth().padding(PandoraSpacing.space24), verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space16)) {
                     Box(
-                        Modifier.align(Alignment.CenterHorizontally).size(48.dp).clip(CircleShape).background(detail.accent.copy(alpha = .3f)),
+                        Modifier.align(Alignment.CenterHorizontally).size(PandoraDimensions.avatarLarge).clip(PandoraShapes.circle).background(PandoraTheme.colors.primaryContainer),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text("${detail.index + 1}", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Ink)
+                        Text("${detail.index + 1}", style = PandoraTypography.titleMedium, color = PandoraTheme.colors.textPrimary)
                     }
                     when {
-                        loading -> Column(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            CircularProgressIndicator(color = WarmOrange, strokeWidth = 3.dp)
-                            Text("正在加载全文…", color = Ink.copy(alpha = .6f))
+                        loading -> Column(Modifier.fillMaxWidth().padding(vertical = PandoraSpacing.space12), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space12)) {
+                            CircularProgressIndicator(color = PandoraTheme.colors.primary, strokeWidth = 3.dp)
+                            Text("正在加载全文…", color = PandoraTheme.colors.textTertiary)
                         }
-                        error != null -> Column(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        error != null -> Column(Modifier.fillMaxWidth().padding(vertical = PandoraSpacing.space12), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space12)) {
                             Text(error!!, color = MaterialTheme.colorScheme.error)
                             PandoraButton("重试", { attempt++ })
                         }
@@ -1402,7 +1373,7 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
                             // 详情正文前补上面板里的标题：面板只看到标题，点开后仍是「标题：全文」
                             val text = content ?: detail.text
                             val shown = if (detail.text.isNotBlank() && !text.startsWith(detail.text)) "${detail.text}：$text" else text
-                            Text(shown, fontSize = 19.sp, lineHeight = 30.sp, fontWeight = FontWeight.Medium)
+                            Text(shown, style = PandoraTypography.bodyLarge)
                         }
                     }
                 }
@@ -1453,7 +1424,7 @@ private data class EntryDraft(val entryId: String?, val content: String)
     var deletingJournal by remember { mutableStateOf<JournalDto?>(null) }
     var deleteError by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
-    val mutedColors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Ink.copy(alpha = .7f), unfocusedBorderColor = Ink.copy(alpha = .3f), focusedLabelColor = Ink, cursorColor = Ink)
+    val mutedColors = OutlinedTextFieldDefaults.colors(focusedBorderColor = PandoraTheme.colors.textSecondary, unfocusedBorderColor = PandoraTheme.colors.textDisabled, focusedLabelColor = Ink, cursorColor = PandoraTheme.colors.textPrimary)
     // 日报草稿（缓存目录）：上次编辑未发布的内容
     val context = LocalContext.current
     val savedJournalDraft = remember {
@@ -1623,16 +1594,13 @@ private data class EntryDraft(val entryId: String?, val content: String)
         }
     }
     Box(Modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-            // 「日志」与导图页左上角当日日期同高：导图日期行上 12dp + 48dp 图标行 → 文字中心 36dp；
-            // 行高与下方间距同步各加 14dp，「记录今日工作」与「日志」的距离保持不变
-            Row(Modifier.fillMaxWidth().height(58.dp).padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("日志", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-            }
-            Spacer(Modifier.height(10.dp))
-            LazyColumn(Modifier.fillMaxWidth().weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 16.dp)) {
+        Column(Modifier.fillMaxSize().padding(horizontal = PandoraSpacing.space16)) {
+            // 一级页面统一标题行：与导图、AI地图、我的同高同字号
+            PandoraPageTitle("日志")
+            Spacer(Modifier.height(PandoraSpacing.space4))
+            LazyColumn(Modifier.fillMaxWidth().weight(1f), verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space12), contentPadding = PaddingValues(bottom = PandoraSpacing.space16)) {
                 // 主操作与视图页「回到今年」同为实心主题按钮
-                item { PandoraButton({ openEditor(todayIso()) }, Modifier.fillMaxWidth(), enabled = !publishing) { Icon(Icons.Default.Add, null); Spacer(Modifier.width(6.dp)); Text(if (todayJournal != null) "补充今日工作" else "记录今日工作") } }
+                item { PandoraButton({ openEditor(todayIso()) }, Modifier.fillMaxWidth(), enabled = !publishing) { Icon(Icons.Default.Add, null); Spacer(Modifier.width(PandoraSpacing.space8)); Text(if (todayJournal != null) "补充今日工作" else "记录今日工作") } }
                 item {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                         PandoraButton({ filterOpen = true }, variant = PandoraButtonVariant.Secondary, size = PandoraButtonSize.Compact) {
@@ -1642,15 +1610,15 @@ private data class EntryDraft(val entryId: String?, val content: String)
                     }
                 }
                 if (loading && journals.isEmpty()) item {
-                    Row(Modifier.fillMaxWidth().padding(vertical = 24.dp), horizontalArrangement = Arrangement.Center) {
-                        CircularProgressIndicator(color = WarmOrange, strokeWidth = 3.dp)
-                        Spacer(Modifier.width(12.dp))
-                        Text("正在加载…", color = Ink.copy(alpha = .6f))
+                    Row(Modifier.fillMaxWidth().padding(vertical = PandoraSpacing.space24), horizontalArrangement = Arrangement.Center) {
+                        CircularProgressIndicator(color = PandoraTheme.colors.primary, strokeWidth = 3.dp)
+                        Spacer(Modifier.width(PandoraSpacing.space12))
+                        Text("正在加载…", color = PandoraTheme.colors.textTertiary)
                     }
                 }
                 if (loadError != null && journals.isEmpty()) item {
-                    Column(Modifier.fillMaxWidth().padding(vertical = 16.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text(loadError!!, color = Ink.copy(alpha = .7f))
+                    Column(Modifier.fillMaxWidth().padding(vertical = PandoraSpacing.space16), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space12)) {
+                        Text(loadError!!, color = PandoraTheme.colors.textSecondary)
                         PandoraButton("重试", { loadRetry++ })
                     }
                 }
@@ -1666,8 +1634,8 @@ private data class EntryDraft(val entryId: String?, val content: String)
                     )
                 }
                 if (filteredJournals.size > 5) item { PandoraButton(if (expandedLogs) "收起" else "展开", { expandedLogs = !expandedLogs }, Modifier.fillMaxWidth(), variant = PandoraButtonVariant.Secondary) }
-                if (!loading && journals.isNotEmpty() && filteredJournals.isEmpty()) item { Text("所选日期暂无日志", color = Ink.copy(alpha = .6f)) }
-                if (!loading && journals.isEmpty() && loadError == null) item { Text("最近 30 天暂无日志，点击上方按钮记录今日工作。", color = Ink.copy(alpha = .6f)) }
+                if (!loading && journals.isNotEmpty() && filteredJournals.isEmpty()) item { Text("所选日期暂无日志", color = PandoraTheme.colors.textTertiary) }
+                if (!loading && journals.isEmpty() && loadError == null) item { Text("最近 30 天暂无日志，点击上方按钮记录今日工作。", color = PandoraTheme.colors.textTertiary) }
             }
         }
         if (filterOpen) JournalDatePickerDialog(
@@ -1684,38 +1652,36 @@ private data class EntryDraft(val entryId: String?, val content: String)
             val journalFocusManager = LocalFocusManager.current
             // 底部对齐 + 导航栏/键盘避让：弹窗直接落在键盘（或导航栏）上方，不再留出一段空白
             Box(Modifier.fillMaxSize()) {
-            Card(Modifier.align(Alignment.BottomCenter).navigationBarsPadding().imePadding().fillMaxWidth(.9f).fillMaxHeight(if (imeVisible) .92f else .9f).border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(24.dp)).clickable { }, shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
-                Column(Modifier.fillMaxSize().padding(20.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) { Text(if (editingJournal != null) "编辑日志" else "记录日志", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f)); IconButton({ closeEditor() }) { Icon(Icons.Default.Close, "关闭") } }
+            PandoraOverlaySurface(Modifier.align(Alignment.BottomCenter).navigationBarsPadding().imePadding().padding(horizontal = PandoraSpacing.space16).widthIn(max = PandoraDimensions.dialogMaxWidth).fillMaxWidth().fillMaxHeight(if (imeVisible) .92f else .9f).clickable(enabled = false) { }) {
+                Column(Modifier.fillMaxSize().padding(PandoraSpacing.dialogPadding)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) { Text(if (editingJournal != null) "编辑日志" else "记录日志", style = PandoraTypography.titleMedium, modifier = Modifier.weight(1f)); IconButton({ closeEditor() }) { Icon(Icons.Default.Close, "关闭", tint = PandoraTheme.colors.textSecondary) } }
                     // 日期、标签与工作条目共用滚动视口，保留键盘和导航栏避让。
                     Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())) {
-                        Text("· 日志日期", fontWeight = FontWeight.Bold)
-                        Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("· 日志日期", style = PandoraTypography.labelLarge)
+                        Row(Modifier.fillMaxWidth().padding(vertical = PandoraSpacing.space12), horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space8)) {
                             threeDays().forEach { d ->
                                 val key = isoOf(d)
                                 val selected = editorDateKey == key
                                 Text(
                                     d.shortLabel(),
-                                    Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).background(if (selected) WarmOrange else CreamDeep).clickable { switchEditorDate(key) }.padding(vertical = 8.dp),
-                                    fontSize = 13.sp,
-                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                                    color = if (selected) Ink else Ink.copy(alpha = .65f),
+                                    Modifier.weight(1f).heightIn(min = PandoraDimensions.compactButtonHeight).clip(PandoraShapes.medium).background(if (selected) PandoraTheme.colors.primary else PandoraTheme.colors.primaryContainer).clickable { switchEditorDate(key) }.padding(vertical = PandoraSpacing.space8), style = PandoraTypography.labelLarge,
+                                    color = if (selected) PandoraTheme.colors.textOnPrimary else PandoraTheme.colors.textPrimary,
                                     textAlign = TextAlign.Center
                                 )
                             }
                         }
                         val editorEditable = editingJournal == null || "EDIT" in editingJournal!!.allowedActions
-                        if (!editorEditable) Text("日志仅在创建后 24 小时内可修改或删除。", fontSize = 12.sp, color = Ink.copy(alpha = .55f))
-                        Text("· 标签（可多选，可切换主标签）", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp, bottom = 6.dp))
-                        if (tags.isNotEmpty()) FlowRow(Modifier.fillMaxWidth().padding(vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        if (!editorEditable) Text("日志仅在创建后 24 小时内可修改或删除。", style = PandoraTypography.caption, color = PandoraTheme.colors.textTertiary)
+                        Text("· 标签（可多选，可切换主标签）", style = PandoraTypography.labelLarge, modifier = Modifier.padding(top = PandoraSpacing.space12, bottom = PandoraSpacing.space8))
+                        if (tags.isNotEmpty()) FlowRow(Modifier.fillMaxWidth().padding(vertical = PandoraSpacing.space2), horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space8)) {
                             tags.forEach { name ->
-                                val tagColor = availableTags.firstOrNull { it.name == name }?.let { tagHexColor(it.colorHex) } ?: CreamDeep
-                                FilterChip(selected = true, onClick = { tags = tags - name }, label = { Text(name, fontSize = 13.sp) }, colors = FilterChipDefaults.filterChipColors(containerColor = tagColor, labelColor = Ink, selectedContainerColor = tagColor, selectedLabelColor = Ink))
+                                val tagColor = availableTags.firstOrNull { it.name == name }?.let { tagHexColor(it.colorHex) } ?: PandoraTheme.colors.primaryContainer
+                                FilterChip(selected = true, onClick = { tags = tags - name }, label = { Text(name, style = PandoraTypography.bodyMedium) }, colors = FilterChipDefaults.filterChipColors(containerColor = tagColor, labelColor = PandoraTheme.colors.textPrimary, selectedContainerColor = tagColor, selectedLabelColor = Ink))
                             }
                         }
-                        OutlinedButton({ journalFocusManager.clearFocus(force = true); showTagPicker = true }, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp), border = BorderStroke(1.dp, HairLine), colors = ButtonDefaults.outlinedButtonColors(contentColor = Ink)) { Icon(Icons.Default.Add, "选择标签", Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("选择标签", fontSize = 13.sp) }
-                        Text("· 完成的工作", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp, bottom = 6.dp))
-                        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton({ journalFocusManager.clearFocus(force = true); showTagPicker = true }, contentPadding = PaddingValues(horizontal = PandoraSpacing.space12, vertical = PandoraSpacing.space8), border = BorderStroke(1.dp, PandoraTheme.colors.border), colors = ButtonDefaults.outlinedButtonColors(contentColor = PandoraTheme.colors.textPrimary)) { Icon(Icons.Default.Add, "选择标签", Modifier.size(16.dp)); Spacer(Modifier.width(PandoraSpacing.space4)); Text("选择标签", style = PandoraTypography.bodyMedium) }
+                        Text("· 完成的工作", style = PandoraTypography.labelLarge, modifier = Modifier.padding(top = PandoraSpacing.space12, bottom = PandoraSpacing.space8))
+                        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space8)) {
                             entryDrafts.forEachIndexed { i, draft ->
                                 Row(verticalAlignment = Alignment.Top) {
                                     JournalEntryField(
@@ -1729,8 +1695,8 @@ private data class EntryDraft(val entryId: String?, val content: String)
                             }
                         }
                     }
-                    (publishError ?: editNotice)?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)) }
-                    Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    (publishError ?: editNotice)?.let { Text(it, color = MaterialTheme.colorScheme.error, style = PandoraTypography.bodyMedium, modifier = Modifier.padding(top = PandoraSpacing.space8, bottom = PandoraSpacing.space4)) }
+                    Row(Modifier.fillMaxWidth().padding(top = PandoraSpacing.space12), horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space12)) {
                         PandoraButton("取消", { closeEditor() }, Modifier.weight(1f), variant = PandoraButtonVariant.Secondary, enabled = !publishing)
                         PandoraButton(
                             "发布",
@@ -1751,37 +1717,37 @@ private data class EntryDraft(val entryId: String?, val content: String)
         title = { Text("选择标签") },
         text = {
             Column {
-                Text("可多选；点“设为主”可更换主标签。再次点击已选标签可取消。", fontSize = 12.sp, color = Ink.copy(alpha = .6f))
-                Spacer(Modifier.height(6.dp))
+                Text("可多选；点“设为主”可更换主标签。再次点击已选标签可取消。", style = PandoraTypography.caption, color = PandoraTheme.colors.textTertiary)
+                Spacer(Modifier.height(PandoraSpacing.space8))
                 Column(Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())) {
-                    if (availableTags.isEmpty()) Text("暂无标签，可在「我的 → 标签管理」中创建。", fontSize = 13.sp, color = Ink.copy(alpha = .5f))
+                    if (availableTags.isEmpty()) Text("暂无标签，可在「我的 → 标签管理」中创建。", style = PandoraTypography.bodyMedium, color = PandoraTheme.colors.textTertiary)
                     availableTags.sortedBy { if (it.name == tags.firstOrNull()) 0 else 1 }.forEach { tag ->
                         val selected = tag.name in tags
                         val isPrimary = selected && tags.first() == tag.name
                         Row(
-                            Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { tags = if (selected) tags - tag.name else tags + tag.name }.padding(horizontal = 4.dp, vertical = 4.dp),
+                            Modifier.fillMaxWidth().clip(PandoraShapes.small).clickable { tags = if (selected) tags - tag.name else tags + tag.name }.padding(horizontal = PandoraSpacing.space4, vertical = PandoraSpacing.space4),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Box(Modifier.size(14.dp).clip(CircleShape).background(tagHexColor(tag.colorHex)))
-                            Spacer(Modifier.width(10.dp))
-                            Text(tag.name, Modifier.weight(1f), fontSize = 15.sp)
+                            Box(Modifier.size(PandoraDimensions.iconSmall).clip(PandoraShapes.circle).background(tagHexColor(tag.colorHex)).border(PandoraDimensions.borderWidth, PandoraTheme.colors.border, PandoraShapes.circle))
+                            Spacer(Modifier.width(PandoraSpacing.space12))
+                            Text(tag.name, Modifier.weight(1f), style = PandoraTypography.bodyMedium)
                             Box(Modifier.width(72.dp).height(40.dp), contentAlignment = Alignment.Center) {
                                 if (selected) {
                                     if (isPrimary) {
-                                        Text("主标签", fontSize = 12.sp, color = Ink.copy(alpha = .6f))
+                                        Text("主标签", style = PandoraTypography.caption, color = PandoraTheme.colors.textTertiary)
                                     } else {
                                         TextButton(
                                             { tags = listOf(tag.name) + (tags - tag.name) },
                                             modifier = Modifier.fillMaxSize(),
                                             contentPadding = PaddingValues(0.dp),
-                                            colors = ButtonDefaults.textButtonColors(contentColor = Ink.copy(alpha = .65f))
-                                        ) { Text("设为主", fontSize = 12.sp) }
+                                            colors = ButtonDefaults.textButtonColors(contentColor = PandoraTheme.colors.textSecondary)
+                                        ) { Text("设为主", style = PandoraTypography.caption) }
                                     }
                                 }
                             }
-                            Spacer(Modifier.width(6.dp))
+                            Spacer(Modifier.width(PandoraSpacing.space8))
                             Box(Modifier.size(18.dp), contentAlignment = Alignment.Center) {
-                                if (selected) Icon(Icons.Default.Check, "已选", Modifier.size(18.dp), tint = Ink)
+                                if (selected) Icon(Icons.Default.Check, "已选", Modifier.size(18.dp), tint = PandoraTheme.colors.textPrimary)
                             }
                         }
                     }
@@ -1795,13 +1761,13 @@ private data class EntryDraft(val entryId: String?, val content: String)
                 onDismissRequest = { if (!publishing) deletingJournal = null },
                 title = { Text("删除这篇日志？") },
                 text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space8)) {
                         Text("${dateLabel(j.workDate)} 的 ${j.entries.size} 条工作记录将被删除，且不可恢复。")
-                        deleteError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp) }
+                        deleteError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = PandoraTypography.bodyMedium) }
                     }
                 },
                 confirmButton = {
-                    if (publishing) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = WarmOrange)
+                    if (publishing) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = PandoraTheme.colors.primary)
                     else TextButton({
                         publishing = true
                         scope.launch {
@@ -1836,16 +1802,11 @@ private fun isoLabel(iso: String): String = parseIsoDate(iso)?.shortLabel() ?: i
 private fun TagChips(tags: List<TagDto>, primaryTagId: String?) {
     FlowRow(
         Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
+        horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space8),
+        verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space8)
     ) {
         tags.sortedBy { if (it.id == primaryTagId) 0 else 1 }.forEach { t ->
-            Text(
-                if (t.id == primaryTagId) "${t.name} · 主" else t.name,
-                fontSize = 11.sp,
-                color = Ink,
-                modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(tagHexColor(t.colorHex)).padding(horizontal = 7.dp, vertical = 3.dp)
-            )
+            PandoraTagChip(t.name, t.colorHex, primary = t.id == primaryTagId)
         }
     }
 }
@@ -1868,43 +1829,37 @@ private fun JournalCard(
     val editable = "EDIT" in journal.allowedActions
     // publishedAt 是 UTC 时间戳，按公司业务时区换算，保证与现实时间一致
     val created = businessTimeLabel(journal.publishedAt, businessTimezone)
-    Card(
-        Modifier.fillMaxWidth().clickable(onClick = onOpen),
-        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = .8f)),
-        shape = RoundedCornerShape(16.dp)
-    ) {
-        Column(Modifier.padding(14.dp)) {
+    PandoraPanel(Modifier.fillMaxWidth(), shape = PandoraShapes.medium, contentPadding = PaddingValues(0.dp), onClick = onOpen) {
+        Column(Modifier.padding(horizontal = PandoraSpacing.space16, vertical = PandoraSpacing.space12)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 RemoteAvatar(journal.authorUserId, currentUser?.displayName.orEmpty(), 32.dp, 14.sp, userRepo)
-                Spacer(Modifier.width(10.dp))
-                Text(isoLabel(journal.workDate), fontWeight = FontWeight.Bold, fontSize = 15.sp, modifier = Modifier.weight(1f))
-                if (created.isNotBlank()) Text(created, fontSize = 12.sp, color = Ink.copy(alpha = .6f))
+                Spacer(Modifier.width(PandoraSpacing.space12))
+                Text(isoLabel(journal.workDate), style = PandoraTypography.labelLarge, modifier = Modifier.weight(1f))
+                if (created.isNotBlank()) Text(created, style = PandoraTypography.caption, color = PandoraTheme.colors.textTertiary)
             }
             if (journal.tags.isNotEmpty()) {
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(PandoraSpacing.space8))
                 TagChips(journal.tags, journal.primaryTagId)
             }
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(PandoraSpacing.space8))
             journal.entries.sortedBy { it.displayOrder }.forEachIndexed { i, entry ->
                 Text(
-                    entry.content,
-                    fontSize = 13.sp,
-                    color = Ink.copy(alpha = .8f),
-                    lineHeight = 20.sp,
+                    entry.content, style = PandoraTypography.bodyMedium,
+                    color = PandoraTheme.colors.textSecondary,
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis
                 )
-                if (i < journal.entries.lastIndex) Spacer(Modifier.height(4.dp))
+                if (i < journal.entries.lastIndex) Spacer(Modifier.height(PandoraSpacing.space4))
             }
             if (editable) {
                 // 编辑/删除居中放在工作内容下方
                 Row(
-                    Modifier.fillMaxWidth().padding(top = 6.dp),
+                    Modifier.fillMaxWidth().padding(top = PandoraSpacing.space8),
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    TextButton(onEdit, enabled = enabled, contentPadding = PaddingValues(horizontal = 14.dp)) { Text("编辑", color = Ink) }
-                    TextButton(onDelete, enabled = enabled, contentPadding = PaddingValues(horizontal = 14.dp)) { Text("删除", color = CoralDark) }
+                    TextButton(onEdit, enabled = enabled, contentPadding = PaddingValues(horizontal = PandoraSpacing.space16)) { Text("编辑", style = PandoraTypography.labelLarge, color = PandoraTheme.colors.primary) }
+                    TextButton(onDelete, enabled = enabled, contentPadding = PaddingValues(horizontal = PandoraSpacing.space16)) { Text("删除", style = PandoraTypography.labelLarge, color = PandoraTheme.colors.error) }
                 }
             }
         }
@@ -1915,15 +1870,9 @@ private fun JournalCard(
 @Composable
 private fun JournalSection(title: String, content: @Composable ColumnScope.() -> Unit) {
     Column(Modifier.fillMaxWidth()) {
-        Text("· $title", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-        Spacer(Modifier.height(6.dp))
-        Card(
-            Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = WarmCard)
-        ) {
-            Column(Modifier.fillMaxWidth().padding(14.dp), content = content)
-        }
+        Text(title, style = PandoraTypography.labelLarge, color = PandoraTheme.colors.textSecondary, modifier = Modifier.semantics { heading() })
+        Spacer(Modifier.height(PandoraSpacing.space8))
+        PandoraPanel(Modifier.fillMaxWidth(), tone = PandoraPanelTone.White, content = content)
     }
 }
 
@@ -1948,50 +1897,46 @@ private fun JournalDetailScreen(repo: JournalRepository, journalId: String, busi
         }
     }
     val j = journal
-    Column(Modifier.fillMaxSize().background(LocalAppTheme.current.dashboard)) {
+    Column(Modifier.fillMaxSize().background(PandoraTheme.colors.appBackground)) {
         // 抬头与导图片事项详情同为 PageHeader，两个详情界面的抬头高度一致
         PageHeader("日志详情", onBack = onBack)
         when {
             loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = WarmOrange, strokeWidth = 3.dp)
+                CircularProgressIndicator(color = PandoraTheme.colors.primary, strokeWidth = 3.dp)
             }
             error != null -> Column(
                 Modifier.fillMaxSize(),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
-                Text(error!!, color = Ink.copy(alpha = .7f))
-                Spacer(Modifier.height(10.dp))
+                Text(error!!, color = PandoraTheme.colors.textSecondary)
+                Spacer(Modifier.height(PandoraSpacing.space12))
                 PandoraButton("重试", { attempt++ })
             }
             j == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("日志不存在或已被删除。", color = Ink.copy(alpha = .7f))
+                Text("日志不存在或已被删除。", color = PandoraTheme.colors.textSecondary)
             }
             else -> Column(
-                Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(PandoraSpacing.space16),
+                verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space12)
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space12)) {
                     val authorName = if (j.authorUserId == currentUser?.id) currentUser.displayName.ifBlank { currentUser.name } else "成员 ${j.authorUserId.takeLast(4)}"
                     RemoteAvatar(j.authorUserId, authorName, 40.dp, 17.sp, userRepo)
-                    Text(authorName, fontWeight = FontWeight.SemiBold)
+                    Text(authorName, style = PandoraTypography.labelLarge)
                 }
                 JournalSection("创建时间") {
                     val created = com.pandora6ix.app.data.businessDateTimeLabel(j.publishedAt, businessTimezone)
                     Text(
-                        created.ifBlank { "未知" },
-                        fontSize = 19.sp,
-                        lineHeight = 30.sp,
-                        fontWeight = FontWeight.Medium
-                    )
+                        created.ifBlank { "未知" }, style = PandoraTypography.bodyLarge)
                 }
                 if (j.tags.isNotEmpty()) JournalSection("标签") { TagChips(j.tags, j.primaryTagId) }
                 JournalSection("完成的工作") {
                     val entries = j.entries.sortedBy { it.displayOrder }
                     entries.forEachIndexed { i, entry ->
                         // 正文与导图片事项详情一致（19sp / 30sp 行高），日志详情更易读
-                        Text(entry.content, fontSize = 19.sp, lineHeight = 30.sp, fontWeight = FontWeight.Medium)
-                        if (i < entries.lastIndex) Spacer(Modifier.height(10.dp))
+                        Text(entry.content, style = PandoraTypography.bodyLarge)
+                        if (i < entries.lastIndex) Spacer(Modifier.height(PandoraSpacing.space12))
                     }
                 }
             }
@@ -2023,29 +1968,29 @@ private fun JournalDetailScreen(repo: JournalRepository, journalId: String, busi
                 IconButton(onClose) { Icon(Icons.Default.Close, "关闭", tint = PandoraTheme.colors.textSecondary) }
             }
             when {
-                loading -> Text("正在加载消息…", color = Ink.copy(alpha = .6f), modifier = Modifier.padding(vertical = 16.dp))
-                loadError != null -> Text(loadError!!, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(vertical = 16.dp))
-                records.isEmpty() -> Text("暂无消息", color = Ink.copy(alpha = .6f), modifier = Modifier.padding(vertical = 16.dp))
-                else -> LazyColumn(state = listState, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                loading -> Text("正在加载消息…", color = PandoraTheme.colors.textTertiary, modifier = Modifier.padding(vertical = PandoraSpacing.space16))
+                loadError != null -> Text(loadError!!, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(vertical = PandoraSpacing.space16))
+                records.isEmpty() -> Text("暂无消息", color = PandoraTheme.colors.textTertiary, modifier = Modifier.padding(vertical = PandoraSpacing.space16))
+                else -> LazyColumn(state = listState, verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space12)) {
                     items(records, key = { it.id }) { item ->
                         // 未读主题色、已读白色；点推送进来的那条（requestedId）始终高亮，方便一眼找到
-                        Card(colors = CardDefaults.cardColors(containerColor = if (item.id == requestedId || item.readAt == null) CreamDeep else Color.White), shape = RoundedCornerShape(8.dp)) {
+                        PandoraItemContainer(color = if (item.id == requestedId || item.readAt == null) PandoraTheme.colors.primaryContainer else PandoraTheme.colors.surface) {
                             Column(Modifier.fillMaxWidth().clickable {
                                 if (item.readAt == null) scope.launch {
                                     if (runCatching { repository.markRead(item.id) }.isSuccess)
                                         records = records.map { if (it.id == item.id) it.copy(readAt = "read") else it }
                                 }
                                 onOpen(item)
-                            }.padding(12.dp)) {
+                            }.padding(PandoraSpacing.space12)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(item.title, modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold, color = Ink)
+                                    Text(item.title, modifier = Modifier.weight(1f), color = PandoraTheme.colors.textPrimary, style = PandoraTypography.labelLarge)
                                     val decided = item.eventType == "REVIEW_REQUEST" && item.resolved
-                                    if (decided) Text("已审批", color = Ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                                    else if (item.readAt == null) Text("未读", color = Ink, fontSize = 12.sp)
+                                    if (decided) Text("已审批", color = PandoraTheme.colors.textPrimary, style = PandoraTypography.labelLarge)
+                                    else if (item.readAt == null) Text("未读", color = PandoraTheme.colors.textPrimary, style = PandoraTypography.caption)
                                 }
-                                Spacer(Modifier.height(4.dp))
-                                Text(item.body, color = Ink, fontSize = 13.sp)
-                                Text(item.createdAt.replace('T', ' ').take(16), color = Ink, fontSize = 11.sp, modifier = Modifier.padding(top = 6.dp))
+                                Spacer(Modifier.height(PandoraSpacing.space4))
+                                Text(item.body, color = PandoraTheme.colors.textPrimary, style = PandoraTypography.bodyMedium)
+                                Text(item.createdAt.replace('T', ' ').take(16), color = PandoraTheme.colors.textPrimary, style = PandoraTypography.caption, modifier = Modifier.padding(top = PandoraSpacing.space8))
                             }
                         }
                     }
@@ -2054,7 +1999,16 @@ private fun JournalDetailScreen(repo: JournalRepository, journalId: String, busi
         }
     }
 }
-@Composable private fun AiMapScreen() { Column(Modifier.fillMaxSize().padding(16.dp)) { PageHeader("AI地图"); Spacer(Modifier.height(48.dp)); Icon(Icons.Default.Info, null, Modifier.size(70.dp).align(Alignment.CenterHorizontally), tint = Coral); Text("AI 地图", Modifier.fillMaxWidth().padding(top = 18.dp), textAlign = TextAlign.Center, fontSize = 28.sp, fontWeight = FontWeight.Bold); Text("功能规划中", Modifier.fillMaxWidth().padding(top = 8.dp), textAlign = TextAlign.Center, color = Ink.copy(alpha = .6f)) } }
+/** AI 地图：保持规划中占位，不扩展业务；占位插图 64dp、品牌 Coral 仅作小面积装饰 */
+@Composable private fun AiMapScreen() {
+    Column(Modifier.fillMaxSize()) {
+        PandoraPageTitle("AI地图", Modifier.padding(horizontal = PandoraSpacing.pageHorizontal))
+        Spacer(Modifier.height(PandoraSpacing.space48))
+        Icon(Icons.Default.Info, null, Modifier.size(PandoraDimensions.placeholderIcon).align(Alignment.CenterHorizontally), tint = PandoraTheme.colors.brandCoral)
+        Text("AI 地图", Modifier.fillMaxWidth().padding(top = PandoraSpacing.space16), textAlign = TextAlign.Center, style = PandoraTypography.titleMedium, color = PandoraTheme.colors.textPrimary)
+        Text("功能规划中", Modifier.fillMaxWidth().padding(top = PandoraSpacing.space8), textAlign = TextAlign.Center, style = PandoraTypography.bodyMedium, color = PandoraTheme.colors.textSecondary)
+    }
+}
 @Composable private fun ProfileScreen(user: UserDto, notificationsEnabled: Boolean, showReviewCenter: Boolean, pendingReviewCount: Int, canManageTags: Boolean, userRepo: UserRepository, scrollState: ScrollState, onOpenTagManage: () -> Unit, onOpenReviews: () -> Unit, onOpenSettings: () -> Unit) {
     val context = LocalContext.current
     val avatarScope = rememberCoroutineScope()
@@ -2150,22 +2104,22 @@ private fun JournalDetailScreen(repo: JournalRepository, journalId: String, busi
         if (granted) capturePhoto() else Toast.makeText(context, "未授予相机权限，可在系统设置中重新开启", Toast.LENGTH_SHORT).show()
     }
     val displayName = user.displayName.ifBlank { user.name }.ifBlank { "未命名" }
-    Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-        PageHeader("我的")
-        Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(scrollState).padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = WarmCard), shape = RoundedCornerShape(20.dp), border = cardBorderIfBlended()) {
-                Row(Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
+    Column(Modifier.fillMaxSize().padding(horizontal = PandoraSpacing.space16)) {
+        PandoraPageTitle("我的")
+        Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(scrollState).padding(vertical = PandoraSpacing.space8), verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space16)) {
+            PandoraPanel(Modifier.fillMaxWidth(), contentPadding = PaddingValues(0.dp)) {
+                Row(Modifier.padding(PandoraSpacing.panelPadding), verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.size(64.dp).clickable { showAvatarMenu = true }) {
                         RemoteAvatar(user.id, displayName, 64.dp, 23.sp, userRepo) {
                             AvatarView(avatarType, avatarColorIndex, avatarPath, displayName, 64.dp)
                         }
-                        Box(Modifier.size(20.dp).align(Alignment.BottomEnd).clip(CircleShape).background(Ink), contentAlignment = Alignment.Center) {
-                            Icon(Icons.Default.PhotoCamera, "更换头像", Modifier.size(12.dp), tint = Color.White)
+                        Box(Modifier.size(20.dp).align(Alignment.BottomEnd).clip(PandoraShapes.circle).background(PandoraTheme.colors.textPrimary), contentAlignment = Alignment.Center) {
+                            Icon(Icons.Default.PhotoCamera, "更换头像", Modifier.size(12.dp), tint = PandoraTheme.colors.elevatedSurface)
                         }
                     }
-                    Column(Modifier.padding(start = 16.dp)) {
-                        Text(displayName, fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Ink)
-                        Text(user.jobTitle ?: "未设置职位", color = Ink.copy(alpha = .7f))
+                    Column(Modifier.padding(start = PandoraSpacing.space16)) {
+                        Text(displayName, style = PandoraTypography.titleLarge, color = PandoraTheme.colors.textPrimary)
+                        Text(user.jobTitle ?: "未设置职位", color = PandoraTheme.colors.textSecondary)
                     }
                 }
             }
@@ -2184,14 +2138,14 @@ private fun JournalDetailScreen(repo: JournalRepository, journalId: String, busi
                 onDismissRequest = { showAvatarPalette = false },
                 title = { Text("默认头像") },
                 text = {
-                    LazyVerticalGrid(columns = GridCells.Fixed(4), modifier = Modifier.height(200.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    LazyVerticalGrid(columns = GridCells.Fixed(4), modifier = Modifier.height(200.dp), horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space12), verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space12)) {
                         items(AvatarPalette.size) { i ->
                             Box(
                                 Modifier.size(52.dp).clip(CircleShape).background(AvatarPalette[i])
-                                    .border(2.dp, if (avatarType == "color" && avatarColorIndex == i) Ink else Color.Transparent, CircleShape)
+                                    .border(2.dp, if (avatarType == "color" && avatarColorIndex == i) PandoraTheme.colors.textPrimary else Color.Transparent, CircleShape)
                                     .clickable { saveAvatar("color", colorIndex = i); syncDefaultAvatar(i); showAvatarPalette = false },
                                 contentAlignment = Alignment.Center
-                            ) { Text(displayName.take(1), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 20.sp) }
+                            ) { Text(displayName.take(1), color = Color.White, style = PandoraTypography.titleMedium) }
                         }
                     }
                 },
@@ -2201,18 +2155,18 @@ private fun JournalDetailScreen(repo: JournalRepository, journalId: String, busi
                 onDismissRequest = { showGallery = false },
                 title = { Text("选择头像照片") },
                 text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space8)) {
                         Text(if (galleryUris.isEmpty()) "当前没有可访问的照片。" else "仅显示已授权可访问的照片；点击照片设为头像。", style = PandoraTypography.bodyMedium, color = PandoraTheme.colors.textSecondary)
                         if (galleryUris.isEmpty()) {
                             TextButton({ galleryPermission.launch(photoPerms()) }, Modifier.fillMaxWidth()) { Text("重新授权 / 管理可访问的照片", style = PandoraTypography.labelLarge, color = PandoraTheme.colors.primary) }
                         } else {
-                            LazyVerticalGrid(columns = GridCells.Fixed(3), modifier = Modifier.height(380.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            LazyVerticalGrid(columns = GridCells.Fixed(3), modifier = Modifier.height(380.dp), horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space8), verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space8)) {
                                 items(galleryUris.size) { i ->
                                     val uri = galleryUris[i]
                                     val bmp = remember(uri) { decodeUriThumbnail(context, uri) }
-                                    Box(Modifier.size(96.dp).clip(RoundedCornerShape(10.dp)).background(CreamDeep).clickable { importImage(uri); showGallery = false }, contentAlignment = Alignment.Center) {
+                                    Box(Modifier.size(96.dp).clip(PandoraShapes.medium).background(PandoraTheme.colors.primaryContainer).clickable { importImage(uri); showGallery = false }, contentAlignment = Alignment.Center) {
                                         if (bmp != null) Image(bmp.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-                                        else CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = WarmOrange)
+                                        else CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = PandoraTheme.colors.primary)
                                     }
                                 }
                             }
@@ -2227,13 +2181,12 @@ private fun JournalDetailScreen(repo: JournalRepository, journalId: String, busi
                     SettingsRow(icon = Icons.Default.FactCheck, title = "审批中心", onClick = onOpenReviews) {
                         if (pendingReviewCount > 0) {
                             Text(
-                                if (pendingReviewCount >= 99) "99+" else "$pendingReviewCount",
-                                fontSize = 11.sp, color = Color.White, fontWeight = FontWeight.Bold,
-                                modifier = Modifier.clip(CircleShape).background(CoralDark).padding(horizontal = 7.dp, vertical = 2.dp)
+                                if (pendingReviewCount >= 99) "99+" else "$pendingReviewCount", style = PandoraTypography.caption, color = PandoraTheme.colors.textOnPrimary, fontWeight = FontWeight.Medium,
+                                modifier = Modifier.clip(CircleShape).background(PandoraTheme.colors.error).padding(horizontal = PandoraSpacing.space8, vertical = PandoraSpacing.space2)
                             )
-                            Spacer(Modifier.width(6.dp))
+                            Spacer(Modifier.width(PandoraSpacing.space8))
                         }
-                        Icon(Icons.Default.ChevronRight, null, Modifier.size(20.dp), tint = Ink.copy(alpha = .4f))
+                        Icon(Icons.Default.ChevronRight, null, Modifier.size(20.dp), tint = PandoraTheme.colors.textTertiary)
                     }
                 }
             }
@@ -2241,35 +2194,35 @@ private fun JournalDetailScreen(repo: JournalRepository, journalId: String, busi
                 // 仅 FOUNDER/DEPARTMENT_MANAGER 可见标签管理入口
                 if (canManageTags) {
                     SettingsRow(icon = Icons.Default.Label, title = "标签管理", onClick = onOpenTagManage) {
-                        Icon(Icons.Default.ChevronRight, null, Modifier.size(20.dp), tint = Ink.copy(alpha = .4f))
+                        Icon(Icons.Default.ChevronRight, null, Modifier.size(20.dp), tint = PandoraTheme.colors.textTertiary)
                     }
-                    DashedDivider(HairLine)
+                    DashedDivider(PandoraTheme.colors.border)
                 }
                 SettingsRow(icon = Icons.Default.Tune, title = "全部设置", onClick = onOpenSettings) {
-                    Icon(Icons.Default.ChevronRight, null, Modifier.size(20.dp), tint = Ink.copy(alpha = .4f))
+                    Icon(Icons.Default.ChevronRight, null, Modifier.size(20.dp), tint = PandoraTheme.colors.textTertiary)
                 }
             }
-            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = WarmCard), shape = RoundedCornerShape(20.dp), border = cardBorderIfBlended()) {
-                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Text("组织信息", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            PandoraPanel(Modifier.fillMaxWidth(), contentPadding = PaddingValues(0.dp)) {
+                Column(Modifier.padding(PandoraSpacing.panelPadding), verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space16)) {
+                    Text("组织信息", style = PandoraTypography.titleSmall, modifier = Modifier.semantics { heading() })
                     ProfileInfoRow("所属企业", user.enterprise?.name ?: "未分配")
-                    DashedDivider(HairLine)
+                    DashedDivider(PandoraTheme.colors.border)
                     ProfileInfoRow("所属部门", user.department ?: user.organization?.name ?: "未分配")
-                    DashedDivider(HairLine)
+                    DashedDivider(PandoraTheme.colors.border)
                     // 角色显示中文；未分配直属上级时明确说明（数据来源 /me.supervisorUserId）
                     ProfileInfoRow("当前角色", user.roles.joinToString("、") { roleLabel(it) }.ifBlank { "未分配" })
                     ProfileInfoRow("直属上级", user.supervisorName?.takeIf { it.isNotBlank() } ?: "未配置（请联系管理员设置）")
                 }
             }
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(PandoraSpacing.space16))
         }
     }
 }
 
 @Composable private fun ProfileInfoRow(label: String, value: String) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text(label, Modifier.width(72.dp), color = Ink.copy(alpha = .6f), fontSize = 14.sp)
-        Text(value, Modifier.weight(1f), fontSize = 14.sp)
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space16)) {
+        Text(label, Modifier.widthIn(min = 72.dp), color = PandoraTheme.colors.textSecondary, style = PandoraTypography.bodyMedium)
+        Text(value, Modifier.weight(1f), style = PandoraTypography.bodyLarge)
     }
 }
 
@@ -2282,7 +2235,13 @@ private fun roleLabel(role: String): String = when (role.uppercase()) {
     "ADMIN" -> "管理员"
     else -> role
 }
-@Composable private fun DetailCard(title: String, body: String, color: Color, maxLines: Int = 2, onClick: () -> Unit = {}) { Card(Modifier.fillMaxWidth().clickable(onClick = onClick), colors = CardDefaults.cardColors(containerColor = color.copy(alpha = .78f)), shape = RoundedCornerShape(16.dp)) { Column(Modifier.padding(14.dp)) { Text(title, fontWeight = FontWeight.Bold); Text(body, fontSize = 13.sp, color = Ink.copy(alpha = .75f), maxLines = maxLines, overflow = TextOverflow.Ellipsis) } } }
+@Composable private fun DetailCard(title: String, body: String, @Suppress("UNUSED_PARAMETER") color: Color, maxLines: Int = 2, onClick: () -> Unit = {}) {
+    PandoraPanel(Modifier.fillMaxWidth(), onClick = onClick) {
+        Text(title, style = PandoraTypography.titleSmall)
+        Spacer(Modifier.height(PandoraSpacing.space4))
+        Text(body, style = PandoraTypography.bodyMedium, color = PandoraTheme.colors.textSecondary, maxLines = maxLines, overflow = TextOverflow.Ellipsis)
+    }
+}
 /** 完整详情独立加载，避免日历简略列表刷新覆盖执行记录。 */
 @Composable
 private fun FullTaskDetail(id: String, repo: TaskRepository, tags: List<TagDto>, businessTimezone: String?, currentUser: UserDto?, userRepo: UserRepository, onBack: () -> Unit, onChanged: () -> Unit) {
@@ -2304,8 +2263,8 @@ private fun FullTaskDetail(id: String, repo: TaskRepository, tags: List<TagDto>,
     when {
         loading || error != null -> Column(Modifier.fillMaxSize()) {
             PageHeader("任务详情", onBack = onBack)
-            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                if (loading) CircularProgressIndicator(color = ThemeButton)
+            Column(Modifier.padding(PandoraSpacing.space20), verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space12)) {
+                if (loading) CircularProgressIndicator(color = PandoraTheme.colors.primary)
                 else {
                     Text(error!!, color = MaterialTheme.colorScheme.error)
                     TextButton({ revision++ }) { Text("重试", style = PandoraTypography.labelLarge, color = PandoraTheme.colors.primary) }
@@ -2427,67 +2386,66 @@ private fun FullTaskDetail(id: String, repo: TaskRepository, tags: List<TagDto>,
         onDismiss = { repeatStatus = null }, onSaved = { repeatStatus = null; stageNote = ""; onChanged() })
     Column(Modifier.fillMaxSize()) {
         PageHeader(displayTitle, null, onBack)
-        Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Column(Modifier.verticalScroll(rememberScrollState()).padding(PandoraSpacing.space16), verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space16)) {
             if (dto != null && item != null) {
-                Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), color = Color.White, border = BorderStroke(1.dp, HairLine)) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Surface(Modifier.fillMaxWidth(), shape = PandoraShapes.large, color = PandoraTheme.colors.panelSurface, border = BorderStroke(PandoraDimensions.borderWidth, PandoraTheme.colors.border)) {
+                    Column(Modifier.padding(PandoraSpacing.space16), verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space12)) {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            Text("任务信息", Modifier.weight(1f), fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                            Text("任务信息", Modifier.weight(1f), style = PandoraTypography.titleSmall)
                             if (dto.allowedActions.any { it == "EDIT_TASK" || it == "EDIT_PENDING" }) {
                                 TextButton({ editOpen = true }) { Text("编辑", style = PandoraTypography.labelLarge, color = PandoraTheme.colors.primary) }
                             }
                         }
-                        Text(dto.title, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-                        if (dto.pendingEditReviewId != null) Text("修改待上级审批", color = ThemeButton, fontSize = 13.sp)
+                        Text(dto.title, style = PandoraTypography.titleMedium)
+                        if (dto.pendingEditReviewId != null) Text("修改待上级审批", color = PandoraTheme.colors.primary, style = PandoraTypography.bodyMedium)
                         if (dto.tags.isNotEmpty()) {
-                            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space8), verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space8)) {
                                 dto.tags.sortedBy { if (it.id == dto.primaryTagId) 0 else 1 }.forEach { tag ->
-                                    Text(if (tag.id == dto.primaryTagId) "${tag.name} · 主" else tag.name,
-                                        Modifier.clip(RoundedCornerShape(8.dp)).background(tagHexColor(tag.colorHex)).border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(8.dp)).padding(horizontal = 8.dp, vertical = 4.dp), fontSize = 12.sp)
+                                    PandoraTagChip(tag.name, tag.colorHex, primary = tag.id == dto.primaryTagId)
                                 }
                             }
                         }
-                        HorizontalDivider(color = HairLine)
-                        Text("任务说明", fontWeight = FontWeight.SemiBold)
-                        Text(dto.description?.takeIf { it.isNotBlank() } ?: "暂无备注", lineHeight = 24.sp)
-                        HorizontalDivider(color = HairLine)
-                        Text("时间节点", fontWeight = FontWeight.SemiBold)
-                        Text("${item.start.year}/${item.start.month}/${item.start.day}—${item.end.year}/${item.end.month}/${item.end.day}\n${taskTimeLabel(item)}", lineHeight = 24.sp)
-                        item.recurrenceLabel?.let { Text("重复安排 · $it", lineHeight = 22.sp) }
-                        HorizontalDivider(color = HairLine)
+                        HorizontalDivider(color = PandoraTheme.colors.border)
+                        Text("任务说明", style = PandoraTypography.titleSmall)
+                        Text(dto.description?.takeIf { it.isNotBlank() } ?: "暂无备注", style = PandoraTypography.bodyLarge)
+                        HorizontalDivider(color = PandoraTheme.colors.border)
+                        Text("时间节点", style = PandoraTypography.titleSmall)
+                        Text("${item.start.year}/${item.start.month}/${item.start.day}—${item.end.year}/${item.end.month}/${item.end.day}\n${taskTimeLabel(item)}", style = PandoraTypography.bodyLarge)
+                        item.recurrenceLabel?.let { Text("重复安排 · $it", style = PandoraTypography.bodyLarge) }
+                        HorizontalDivider(color = PandoraTheme.colors.border)
                         Text("${kindLabelOf(dto.kind)} · ${reviewStatusLabel(dto.reviewStatus)}")
                         Text("重要程度 · ${priorityMeta(dto.priorityLevel).second}")
                         if (dto.companyWide) Text("全公司可见", style = PandoraTypography.labelLarge, color = PandoraTheme.colors.primary)
                     }
                 }
-                Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), color = Color.White, border = BorderStroke(1.dp, HairLine)) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text("执行情况", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                        if (dto.authorizedAssignments.isEmpty()) Text("暂无可见执行关系", color = Ink.copy(alpha = .7f))
+                Surface(Modifier.fillMaxWidth(), shape = PandoraShapes.large, color = PandoraTheme.colors.panelSurface, border = BorderStroke(PandoraDimensions.borderWidth, PandoraTheme.colors.border)) {
+                    Column(Modifier.padding(PandoraSpacing.space16), verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space12)) {
+                        Text("执行情况", style = PandoraTypography.titleSmall)
+                        if (dto.authorizedAssignments.isEmpty()) Text("暂无可见执行关系", color = PandoraTheme.colors.textSecondary)
                         dto.authorizedAssignments.forEachIndexed { i, assignment ->
-                            if (i > 0) HorizontalDivider(color = HairLine)
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            if (i > 0) HorizontalDivider(color = PandoraTheme.colors.border)
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space12)) {
                                 val name = executionNames[assignment.recipientUserId]?.takeIf { it.isNotBlank() } ?: "姓名暂不可用"
                                 RemoteAvatar(assignment.recipientUserId, name, 32.dp, 14.sp, userRepo)
-                                Text("$name · ${executionStatusLabel(assignment.executionStatus)}", lineHeight = 22.sp)
+                                Text("$name · ${executionStatusLabel(assignment.executionStatus)}", style = PandoraTypography.bodyLarge)
                             }
 
                             val pending = dto.completionRequests.lastOrNull { it.assignmentId == assignment.id && it.decision == "PENDING" }
                             if ("DECIDE_COMPLETION" in assignment.allowedActions && pending != null) {
-                                pending.submittedNote?.takeIf { it.isNotBlank() }?.let { Text(it, lineHeight = 22.sp) }
-                                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                pending.submittedNote?.takeIf { it.isNotBlank() }?.let { Text(it, style = PandoraTypography.bodyLarge) }
+                                Row(horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space12)) {
                                     PandoraButton("验收通过", { decideCompletion(pending, "ACCEPT") }, enabled = !stageBusy)
                                     PandoraButton("不通过", { decideCompletion(pending, "REJECT") }, variant = PandoraButtonVariant.Destructive, enabled = !stageBusy)
                                 }
                             }
 
                         }
-                        stageError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp) }
-                        if (stageBusy) LinearProgressIndicator(Modifier.fillMaxWidth(), color = ThemeButton)
+                        stageError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = PandoraTypography.bodyMedium) }
+                        if (stageBusy) LinearProgressIndicator(Modifier.fillMaxWidth(), color = PandoraTheme.colors.primary)
                         if (canUpdateTask && detailAssignment != null) {
                             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                            Text("更新执行状态", fontWeight = FontWeight.SemiBold)
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("更新执行状态", style = PandoraTypography.labelLarge)
+                            Row(horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space8)) {
                                 FilterChip(selected = detailAssignment.executionStatus == "COMPLETED", enabled = !stageBusy,
                                     onClick = { if (detailAssignment.executionStatus != "COMPLETED") markCompleted(detailAssignment) }, label = { Text("已完成") })
                                 if (dto.seriesId != null && dto.kind == "PERSONAL" && detailAssignment.executionStatus == "COMPLETED") {
@@ -2501,15 +2459,15 @@ private fun FullTaskDetail(id: String, repo: TaskRepository, tags: List<TagDto>,
                             }
                         }
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                        Text("执行记录", fontWeight = FontWeight.SemiBold)
+                        Text("执行记录", style = PandoraTypography.titleSmall)
                         val records = dto.progressRecords.filter { !it.note.isNullOrBlank() }.sortedByDescending { it.recordedAt }
-                        if (records.isEmpty()) Text("暂无执行记录", color = Ink.copy(alpha = .7f))
+                        if (records.isEmpty()) Text("暂无执行记录", color = PandoraTheme.colors.textSecondary)
                         records.forEach { record ->
-                            Surface(Modifier.fillMaxWidth(), color = WarmCard, shape = RoundedCornerShape(10.dp),
+                            Surface(Modifier.fillMaxWidth(), color = PandoraTheme.colors.surface, shape = PandoraShapes.medium,
                                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
-                                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    Text(record.note.orEmpty(), lineHeight = 22.sp)
-                                    record.recordedAt?.let { Text(businessDateTimeLabel(it, businessTimezone), fontSize = 12.sp, color = Ink.copy(alpha = .7f)) }
+                                Column(Modifier.padding(PandoraSpacing.space12), verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space8)) {
+                                    Text(record.note.orEmpty(), style = PandoraTypography.bodyLarge)
+                                    record.recordedAt?.let { Text(businessDateTimeLabel(it, businessTimezone), style = PandoraTypography.caption, color = PandoraTheme.colors.textSecondary) }
                                 }
                             }
                         }
@@ -2517,9 +2475,9 @@ private fun FullTaskDetail(id: String, repo: TaskRepository, tags: List<TagDto>,
                     }
                 }
             } else if (isLog) {
-                Text(logContent ?: "", color = Ink.copy(alpha = .75f), fontSize = 16.sp, lineHeight = 26.sp)
+                Text(logContent ?: "", color = PandoraTheme.colors.textSecondary, style = PandoraTypography.bodyLarge)
             } else {
-                Text("任务不存在或已被移除。", color = Ink.copy(alpha = .75f), lineHeight = 24.sp)
+                Text("任务不存在或已被移除。", color = PandoraTheme.colors.textSecondary, style = PandoraTypography.bodyLarge)
             }
         }
     }
@@ -2584,10 +2542,10 @@ private fun SettingsScreen(
         }
     }
 
-    Column(Modifier.fillMaxSize().background(LocalAppTheme.current.dashboard)) {
+    Column(Modifier.fillMaxSize().background(PandoraTheme.colors.appBackground)) {
         PageHeader("设置", onBack = onClose)
         Box(Modifier.fillMaxWidth().weight(1f)) {
-            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp)) {
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = PandoraSpacing.space16, vertical = PandoraSpacing.space12)) {
                 SettingsSectionLabel("通用")
                 SettingsCard {
                     SettingsRow(
@@ -2595,24 +2553,24 @@ private fun SettingsScreen(
                         title = "字号大小",
                         onClick = { showFontDialog = true }
                     ) {
-                        Text(fontScaleLabel(fontScale), color = Ink.copy(alpha = 0.55f), fontSize = 13.sp)
+                        Text(fontScaleLabel(fontScale), color = PandoraTheme.colors.textTertiary, style = PandoraTypography.bodyMedium)
                     }
-                    DashedDivider(HairLine)
+                    DashedDivider(PandoraTheme.colors.border)
                     SettingsRow(
                         icon = Icons.Default.Lock,
                         title = "修改登录密码",
                         onClick = { showPasswordDialog = true }
                     )
-                    DashedDivider(HairLine)
+                    DashedDivider(PandoraTheme.colors.border)
                     SettingsRow(
                         icon = Icons.Default.Palette,
                         title = "切换主题",
                         onClick = { showThemeDialog = true }
                     ) {
-                        Text(appThemes.firstOrNull { it.key == themeKey }?.label ?: "暖米", color = Ink.copy(alpha = 0.55f), fontSize = 13.sp)
+                        Text(appThemes.firstOrNull { it.key == themeKey }?.label ?: "暖米", color = PandoraTheme.colors.textTertiary, style = PandoraTypography.bodyMedium)
                     }
                 }
-                Spacer(Modifier.height(18.dp))
+                Spacer(Modifier.height(PandoraSpacing.space16))
                 // 通知提醒独立成一级分区：主开关 + 三个同级开关（提前量是截止时间临近的子项）
                 SettingsSectionLabel("通知提醒")
                 SettingsCard {
@@ -2636,13 +2594,13 @@ private fun SettingsScreen(
                             subtitle = "请在系统设置中允许通知，否则提醒不会展示",
                             onClick = { context.startActivity(intent) }
                         ) {
-                            Text("去设置", color = WarmOrange, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            Text("去设置", color = PandoraTheme.colors.primary, style = PandoraTypography.labelLarge)
                         }
-                        DashedDivider(HairLine)
+                        DashedDivider(PandoraTheme.colors.border)
                     }
                     // 总控关闭则全部静默：不展示分项
                     if (notificationsEnabled) {
-                        DashedDivider(HairLine)
+                        DashedDivider(PandoraTheme.colors.border)
                         SettingsRow(
                             icon = Icons.Default.Assignment,
                             title = "新任务提醒",
@@ -2650,7 +2608,7 @@ private fun SettingsScreen(
                         ) {
                             ReminderSwitch(newTaskEnabled, onNewTaskChange)
                         }
-                        DashedDivider(HairLine)
+                        DashedDivider(PandoraTheme.colors.border)
                         SettingsRow(
                             icon = Icons.Default.Schedule,
                             title = "截止时间临近",
@@ -2667,7 +2625,7 @@ private fun SettingsScreen(
                                 onClick = { showLeadDialog = true }
                             )
                         }
-                        DashedDivider(HairLine)
+                        DashedDivider(PandoraTheme.colors.border)
                         SettingsRow(
                             icon = Icons.Default.SyncAlt,
                             title = "任务状态变化",
@@ -2677,7 +2635,7 @@ private fun SettingsScreen(
                         }
                     }
                 }
-                Spacer(Modifier.height(18.dp))
+                Spacer(Modifier.height(PandoraSpacing.space16))
                 SettingsSectionLabel("数据")
                 SettingsCard {
                     SettingsRow(
@@ -2685,10 +2643,10 @@ private fun SettingsScreen(
                         title = "清除缓存",
                         onClick = { showClearCacheDialog = true }
                     ) {
-                        Text(AppCache.formatSize(totalCache), color = Ink.copy(alpha = 0.5f), fontSize = 13.sp)
+                        Text(AppCache.formatSize(totalCache), color = PandoraTheme.colors.textTertiary, style = PandoraTypography.bodyMedium)
                     }
                 }
-                Spacer(Modifier.height(18.dp))
+                Spacer(Modifier.height(PandoraSpacing.space16))
                 SettingsSectionLabel("关于")
                 SettingsCard {
                     SettingsRow(
@@ -2696,9 +2654,9 @@ private fun SettingsScreen(
                         title = "关于我们",
                         onClick = { showAboutDialog = true }
                     ) {
-                        Text("v0.1.0", color = Ink.copy(alpha = 0.5f), fontSize = 13.sp)
+                        Text("v0.1.0", color = PandoraTheme.colors.textTertiary, style = PandoraTypography.bodyMedium)
                     }
-                    DashedDivider(HairLine)
+                    DashedDivider(PandoraTheme.colors.border)
                     SettingsRow(icon = Icons.Default.Logout, title = "退出登录", isDestructive = true, onClick = { showLogoutDialog = true })
                 }
             }
@@ -2719,16 +2677,16 @@ private fun SettingsScreen(
                     val options = listOf(0.9f to "小", 1.0f to "标准", 1.15f to "大")
                     options.forEach { (v, label) ->
                         Row(
-                            Modifier.fillMaxWidth().clickable { onFontScaleChange(v); showFontDialog = false }.padding(vertical = 8.dp),
+                            Modifier.fillMaxWidth().clickable { onFontScaleChange(v); showFontDialog = false }.padding(vertical = PandoraSpacing.space8),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             RadioButton(
                                 selected = fontScale == v,
                                 onClick = { onFontScaleChange(v); showFontDialog = false },
-                                colors = RadioButtonDefaults.colors(selectedColor = WarmOrange)
+                                colors = RadioButtonDefaults.colors(selectedColor = PandoraTheme.colors.primary)
                             )
-                            Spacer(Modifier.width(6.dp))
-                            Text(label, fontSize = 15.sp)
+                            Spacer(Modifier.width(PandoraSpacing.space8))
+                            Text(label, style = PandoraTypography.bodyMedium)
                         }
                     }
                 }
@@ -2761,23 +2719,23 @@ private fun SettingsScreen(
             title = { Text("提前提醒时间") },
             text = {
                 Column {
-                    Text("常用时长：", fontSize = 12.sp, color = Ink.copy(alpha = 0.55f))
+                    Text("常用时长：", style = PandoraTypography.caption, color = PandoraTheme.colors.textTertiary)
                     REMINDER_LEAD_OPTIONS.forEach { minutes ->
                         Row(
-                            Modifier.fillMaxWidth().clickable { onLeadMinutesChange(minutes); showLeadDialog = false }.padding(vertical = 6.dp),
+                            Modifier.fillMaxWidth().clickable { onLeadMinutesChange(minutes); showLeadDialog = false }.padding(vertical = PandoraSpacing.space8),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             RadioButton(
                                 selected = leadMinutes == minutes,
                                 onClick = { onLeadMinutesChange(minutes); showLeadDialog = false },
-                                colors = RadioButtonDefaults.colors(selectedColor = WarmOrange)
+                                colors = RadioButtonDefaults.colors(selectedColor = PandoraTheme.colors.primary)
                             )
-                            Spacer(Modifier.width(6.dp))
-                            Text("截止前 ${leadLabel(minutes)}", fontSize = 15.sp)
+                            Spacer(Modifier.width(PandoraSpacing.space8))
+                            Text("截止前 ${leadLabel(minutes)}", style = PandoraTypography.bodyMedium)
                         }
                     }
-                    Spacer(Modifier.height(10.dp))
-                    Text("自定义（精确到分钟）：", fontSize = 12.sp, color = Ink.copy(alpha = 0.55f))
+                    Spacer(Modifier.height(PandoraSpacing.space12))
+                    Text("自定义（精确到分钟）：", style = PandoraTypography.caption, color = PandoraTheme.colors.textTertiary)
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         PandoraTextField(
                             value = hourText,
@@ -2789,7 +2747,7 @@ private fun SettingsScreen(
                                 keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
                             )
                         )
-                        Spacer(Modifier.width(10.dp))
+                        Spacer(Modifier.width(PandoraSpacing.space12))
                         PandoraTextField(
                             value = minuteText,
                             onValueChange = { input -> minuteText = input.filter(Char::isDigit).take(2); leadError = null },
@@ -2801,7 +2759,7 @@ private fun SettingsScreen(
                             )
                         )
                     }
-                    if (leadError != null) Text(leadError!!, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                    if (leadError != null) Text(leadError!!, color = MaterialTheme.colorScheme.error, style = PandoraTypography.caption)
                 }
             },
             confirmButton = { PandoraDialogConfirm("确定", ::applyCustom) },
@@ -2818,11 +2776,11 @@ private fun SettingsScreen(
             onDismissRequest = { if (!changing) showPasswordDialog = false },
             title = { Text("修改密码") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space12)) {
                     PandoraTextField(oldPw, { oldPw = it; pwError = null }, label = { Text("当前密码") }, visualTransformation = PasswordVisualTransformation(), singleLine = true, enabled = !changing)
                     PandoraTextField(newPw, { newPw = it; pwError = null }, label = { Text("新密码（至少 10 个字符）") }, visualTransformation = PasswordVisualTransformation(), singleLine = true, enabled = !changing)
                     PandoraTextField(confirmPw, { confirmPw = it; pwError = null }, label = { Text("确认新密码") }, visualTransformation = PasswordVisualTransformation(), singleLine = true, enabled = !changing)
-                    pwError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
+                    pwError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = PandoraTypography.caption) }
                 }
             },
             confirmButton = {
@@ -2871,16 +2829,17 @@ private fun SettingsScreen(
                 Column {
                     appThemes.forEach { t ->
                         Row(
-                            Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { onThemeChange(t.key); showThemeDialog = false }.padding(vertical = 8.dp),
+                            Modifier.fillMaxWidth().clip(PandoraShapes.small).clickable { onThemeChange(t.key); showThemeDialog = false }.padding(vertical = PandoraSpacing.space8),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Box(Modifier.size(22.dp).clip(CircleShape).background(t.background).border(1.5.dp, t.backgroundDeep, CircleShape))
-                            Spacer(Modifier.width(10.dp))
-                            Text(t.label, Modifier.weight(1f), fontSize = 15.sp)
-                            RadioButton(selected = t.key == themeKey, onClick = { onThemeChange(t.key); showThemeDialog = false }, colors = RadioButtonDefaults.colors(selectedColor = WarmOrange))
+                            // 色块：主题背景 + 主题主色描边，便于区分五套主题
+                            Box(Modifier.size(PandoraDimensions.icon).clip(PandoraShapes.circle).background(t.colors.appBackground).border(PandoraDimensions.focusWidth, t.colors.primary, PandoraShapes.circle))
+                            Spacer(Modifier.width(PandoraSpacing.space12))
+                            Text(t.label, Modifier.weight(1f), style = PandoraTypography.bodyMedium)
+                            RadioButton(selected = t.key == themeKey, onClick = { onThemeChange(t.key); showThemeDialog = false }, colors = RadioButtonDefaults.colors(selectedColor = PandoraTheme.colors.primary))
                         }
                     }
-                    Text("切换后仅更改背景颜色，演示数据不受影响。", fontSize = 12.sp, color = Ink.copy(alpha = 0.55f))
+                    Text("切换后仅更改界面配色，数据不受影响。", style = PandoraTypography.caption, color = PandoraTheme.colors.textTertiary)
                 }
             },
             confirmButton = { PandoraDialogConfirm("关闭", { showThemeDialog = false }) }
@@ -2891,18 +2850,18 @@ private fun SettingsScreen(
             onDismissRequest = { showClearCacheDialog = false },
             title = { Text("清除缓存") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space8)) {
                     if (cacheItems.isEmpty()) {
-                        Text("暂无可清理的缓存。", color = Ink.copy(alpha = .6f))
+                        Text("暂无可清理的缓存。", color = PandoraTheme.colors.textTertiary)
                     } else {
-                        Text("共 ${AppCache.formatSize(totalCache)}，明细：", color = Ink.copy(alpha = .75f))
+                        Text("共 ${AppCache.formatSize(totalCache)}，明细：", color = PandoraTheme.colors.textSecondary)
                         cacheItems.forEach { item ->
-                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                Text(item.label, Modifier.weight(1f), fontSize = 13.sp, lineHeight = 18.sp)
-                                Text(AppCache.formatSize(item.size), fontSize = 13.sp, color = Ink.copy(alpha = .6f))
+                            Row(horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space12)) {
+                                Text(item.label, Modifier.weight(1f), style = PandoraTypography.bodyMedium)
+                                Text(AppCache.formatSize(item.size), style = PandoraTypography.bodyMedium, color = PandoraTheme.colors.textTertiary)
                             }
                         }
-                        Text("不影响登录状态、设置与当前使用的头像。", fontSize = 12.sp, color = Ink.copy(alpha = .5f))
+                        Text("不影响登录状态、设置与当前使用的头像。", style = PandoraTypography.caption, color = PandoraTheme.colors.textTertiary)
                     }
                 }
             },
@@ -2949,25 +2908,15 @@ private fun SettingsScreen(
 @Composable
 private fun SettingsSectionLabel(text: String) {
     Text(
-        text,
-        fontSize = 12.sp,
-        color = Ink.copy(alpha = 0.55f),
-        fontWeight = FontWeight.SemiBold,
-        modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+        text, style = PandoraTypography.caption,
+        color = PandoraTheme.colors.textTertiary, fontWeight = FontWeight.Medium,
+        modifier = Modifier.padding(start = PandoraSpacing.space4, bottom = PandoraSpacing.space8)
     )
 }
 
 @Composable
 private fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
-    Card(
-        Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = WarmCard),
-        elevation = CardDefaults.cardElevation(2.dp),
-        border = cardBorderIfBlended()
-    ) {
-        Column(content = content)
-    }
+    PandoraPanel(Modifier.fillMaxWidth(), contentPadding = PaddingValues(0.dp), content = content)
 }
 
 @Composable
@@ -2979,22 +2928,22 @@ private fun SettingsRow(
     onClick: () -> Unit,
     trailing: @Composable () -> Unit = {}
 ) {
-    val tint = if (isDestructive) CoralDark else WarmOrange
+    val tint = if (isDestructive) PandoraTheme.colors.error else PandoraTheme.colors.primary
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 14.dp),
+        Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable(onClick = onClick).padding(horizontal = PandoraSpacing.space16, vertical = PandoraSpacing.space12),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
-            Modifier.size(36.dp).clip(CircleShape).background(tint.copy(alpha = 0.14f)),
+            Modifier.size(PandoraDimensions.avatarList).clip(PandoraShapes.circle).background(if (isDestructive) PandoraTheme.colors.errorContainer else PandoraTheme.colors.primaryContainer),
             contentAlignment = Alignment.Center
         ) {
-            Icon(icon, null, Modifier.size(19.dp), tint = tint)
+            Icon(icon, null, Modifier.size(PandoraDimensions.icon - 4.dp), tint = tint)
         }
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.width(PandoraSpacing.space12))
         Column(Modifier.weight(1f)) {
-            Text(title, fontSize = 15.sp, color = if (isDestructive) CoralDark else Ink)
+            Text(title, style = PandoraTypography.bodyLarge, color = if (isDestructive) PandoraTheme.colors.error else PandoraTheme.colors.textPrimary)
             if (!subtitle.isNullOrBlank())
-                Text(subtitle, fontSize = 12.sp, color = Ink.copy(alpha = 0.5f), lineHeight = 18.sp)
+                Text(subtitle, style = PandoraTypography.caption, color = PandoraTheme.colors.textTertiary)
         }
         trailing()
     }
@@ -3026,17 +2975,18 @@ private fun SubValueRow(
 ) {
     Row(
         // 紧凑子项：随「截止时间临近」开关收展，不再占据独立大行
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(start = 50.dp, end = 14.dp, top = 4.dp, bottom = 4.dp),
+        // 子项与上方标题文字左对齐：16 内距 + 40 图标 + 12 间距
+        Modifier.fillMaxWidth().heightIn(min = PandoraDimensions.touchTarget).clickable(onClick = onClick).padding(start = 68.dp, end = PandoraSpacing.space16, top = PandoraSpacing.space4, bottom = PandoraSpacing.space4),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(icon, null, Modifier.size(14.dp), tint = WarmOrange.copy(alpha = 0.65f))
-        Spacer(Modifier.width(10.dp))
+        Icon(icon, null, Modifier.size(PandoraDimensions.iconSmall), tint = PandoraTheme.colors.textSecondary)
+        Spacer(Modifier.width(PandoraSpacing.space12))
         Column(Modifier.weight(1f)) {
-            Text(title, fontSize = 13.sp, color = Ink)
+            Text(title, style = PandoraTypography.bodyMedium, color = PandoraTheme.colors.textPrimary)
         }
-        Text(value, color = WarmOrange, fontSize = 13.sp)
-        Spacer(Modifier.width(4.dp))
-        Icon(Icons.Default.ChevronRight, null, Modifier.size(18.dp), tint = Ink.copy(alpha = 0.4f))
+        Text(value, color = PandoraTheme.colors.primary, style = PandoraTypography.bodyMedium)
+        Spacer(Modifier.width(PandoraSpacing.space4))
+        Icon(Icons.Default.ChevronRight, null, Modifier.size(18.dp), tint = PandoraTheme.colors.textTertiary)
     }
 }
 
@@ -3046,7 +2996,7 @@ private fun ReminderDialog(event: ReminderEvent, onDismiss: () -> Unit) {
     PandoraAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(event.title) },
-        text = { Text(event.message, color = Ink.copy(alpha = 0.75f), lineHeight = 22.sp) },
+        text = { Text(event.message, color = PandoraTheme.colors.textSecondary, style = PandoraTypography.bodyLarge) },
         confirmButton = { PandoraDialogConfirm("知道了", onDismiss) }
     )
 }

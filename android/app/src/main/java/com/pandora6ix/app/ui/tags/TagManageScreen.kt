@@ -37,12 +37,7 @@ import com.pandora6ix.app.data.TagDto
 import com.pandora6ix.app.data.TagPermissions
 import com.pandora6ix.app.data.TagRepository
 import com.pandora6ix.app.ui.calendar.tagHexColor
-import com.pandora6ix.app.ui.theme.CreamDeep
-import com.pandora6ix.app.ui.theme.ThemeButton
-import com.pandora6ix.app.ui.theme.OnThemeButton
 import com.pandora6ix.app.ui.theme.Ink
-import com.pandora6ix.app.ui.theme.WarmCard
-import com.pandora6ix.app.ui.theme.WarmOrange
 import kotlinx.coroutines.launch
 
 /** 浅色候选色板：全部适配黑色文字（不同标签可选相同颜色） */
@@ -87,41 +82,37 @@ fun TagManageScreen(tagRepo: TagRepository, permissions: TagPermissions, reloadT
     LaunchedEffect(loadRetry) { load() }
 
     androidx.activity.compose.BackHandler(onBack = onBack)
-    Column(Modifier.fillMaxSize()) {
-        TopAppBar(
-            title = { Column { Text("标签管理", fontWeight = FontWeight.Bold); Text("任务与日志的标签配色", fontSize = 12.sp, color = Ink.copy(alpha = .6f)) } },
-            navigationIcon = { IconButton(onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") } },
-            colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
-        )
+    Column(Modifier.fillMaxSize().background(PandoraTheme.colors.appBackground)) {
+        PandoraTopBar("标签管理", subtitle = "任务与日志的标签配色", onBack = onBack)
         Box(Modifier.fillMaxSize()) {
             when {
-                loading && tags.isEmpty() -> CircularProgressIndicator(Modifier.align(Alignment.Center).size(36.dp), color = WarmOrange)
-                loadError != null -> Column(Modifier.align(Alignment.Center).padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(loadError!!, color = Ink.copy(alpha = .7f), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                    Spacer(Modifier.height(12.dp))
+                loading && tags.isEmpty() -> CircularProgressIndicator(Modifier.align(Alignment.Center).size(36.dp), color = PandoraTheme.colors.primary)
+                loadError != null -> Column(Modifier.align(Alignment.Center).padding(PandoraSpacing.space32), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(loadError!!, color = PandoraTheme.colors.textSecondary, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                    Spacer(Modifier.height(PandoraSpacing.space12))
                     PandoraButton("重试", { loadRetry++ }, variant = PandoraButtonVariant.Outline)
                 }
                 else -> Column(Modifier.fillMaxSize()) {
-                    LazyColumn(Modifier.fillMaxSize().weight(1f), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    LazyColumn(Modifier.fillMaxSize().weight(1f), contentPadding = PaddingValues(PandoraSpacing.space16), verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space8)) {
                         items(tags, key = { it.id }) { tag ->
                             Row(
-                                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(WarmCard).padding(horizontal = 14.dp, vertical = 10.dp),
+                                Modifier.fillMaxWidth().heightIn(min = 56.dp).clip(PandoraShapes.medium).background(PandoraTheme.colors.surface).border(PandoraDimensions.borderWidth, PandoraTheme.colors.border, PandoraShapes.medium).padding(start = PandoraSpacing.space16, end = PandoraSpacing.space4, top = PandoraSpacing.space4, bottom = PandoraSpacing.space4),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Box(Modifier.size(26.dp).clip(CircleShape).background(tagHexColor(tag.colorHex)).border(1.dp, Ink.copy(alpha = .12f), CircleShape))
-                                Spacer(Modifier.width(12.dp))
-                                Text(tag.name, Modifier.weight(1f), fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                if (permissions.canUpdate) IconButton({ editing = tag; showEditor = true }, Modifier.size(36.dp)) { Icon(Icons.Default.Edit, "编辑标签", Modifier.size(18.dp), tint = Ink.copy(alpha = .65f)) }
-                                if (permissions.canDelete) IconButton({ deleting = tag; actionError = null }, Modifier.size(36.dp)) { Icon(Icons.Default.Delete, "删除标签", Modifier.size(18.dp), tint = com.pandora6ix.app.ui.theme.CoralDark.copy(alpha = .75f)) }
+                                Box(Modifier.size(PandoraDimensions.icon).clip(PandoraShapes.circle).background(tagHexColor(tag.colorHex)).border(PandoraDimensions.borderWidth, PandoraTheme.colors.border, PandoraShapes.circle))
+                                Spacer(Modifier.width(PandoraSpacing.space12))
+                                Text(tag.name, Modifier.weight(1f), style = PandoraTypography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                if (permissions.canUpdate) PandoraIconButton(Icons.Default.Edit, "编辑标签", { editing = tag; showEditor = true })
+                                if (permissions.canDelete) PandoraIconButton(Icons.Default.Delete, "删除标签", { deleting = tag; actionError = null }, destructive = true)
                             }
                         }
                         if (tags.isEmpty()) item {
-                            Text("暂无标签。创建第一个标签后，可在添加任务与日志中使用。", Modifier.padding(8.dp), fontSize = 13.sp, color = Ink.copy(alpha = .55f))
+                            Text("暂无标签。创建第一个标签后，可在添加任务与日志中使用。", Modifier.padding(PandoraSpacing.space8), style = PandoraTypography.bodyMedium, color = PandoraTheme.colors.textTertiary)
                         }
                     }
-                    if (permissions.canCreate) Box(Modifier.fillMaxWidth().padding(16.dp)) {
+                    if (permissions.canCreate) Box(Modifier.fillMaxWidth().padding(PandoraSpacing.space16)) {
                         PandoraButton({ editing = null; showEditor = true; actionError = null }, Modifier.fillMaxWidth()) {
-                            Icon(Icons.Default.Add, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("新建标签")
+                            Icon(Icons.Default.Add, null, Modifier.size(PandoraDimensions.iconSmall + 2.dp)); Spacer(Modifier.width(PandoraSpacing.space8)); Text("新建标签", style = PandoraTypography.labelLarge)
                         }
                     }
                 }
@@ -164,7 +155,7 @@ fun TagManageScreen(tagRepo: TagRepository, permissions: TagPermissions, reloadT
             title = { Text("删除标签？") },
             text = { Text("「${tag.name}」将从企业与所有使用它的任务、日志中移除，且不可恢复。") },
             confirmButton = {
-                if (busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = WarmOrange)
+                if (busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = PandoraTheme.colors.primary)
                 else TextButton({
                     busy = true
                     scope.launch {

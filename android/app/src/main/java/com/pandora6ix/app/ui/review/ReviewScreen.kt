@@ -2,6 +2,10 @@ package com.pandora6ix.app.ui.review
 
 import com.pandora6ix.app.ui.theme.*
 import com.pandora6ix.app.ui.components.*
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.heading
 import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -83,19 +87,10 @@ import com.pandora6ix.app.data.TaskRepository
 import com.pandora6ix.app.data.TaskReviewDto
 import com.pandora6ix.app.data.reviewResultKey
 import com.pandora6ix.app.ui.calendar.tagHexColor
-import com.pandora6ix.app.ui.theme.CoralDark
-import com.pandora6ix.app.ui.theme.CreamDeep
 import com.pandora6ix.app.ui.theme.Ink
-import com.pandora6ix.app.ui.theme.Mint
-import com.pandora6ix.app.ui.theme.MintDeep
-import com.pandora6ix.app.ui.theme.Peach
-import com.pandora6ix.app.ui.theme.WarmCard
 import com.pandora6ix.app.ui.theme.LocalAppTheme
-import com.pandora6ix.app.ui.theme.Cream
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.MaterialTheme
-import com.pandora6ix.app.ui.theme.WarmDashboard
-import com.pandora6ix.app.ui.theme.WarmOrange
 import com.pandora6ix.app.ui.theme.priorityMeta
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
@@ -185,31 +180,26 @@ fun ReviewScreen(taskRepo: TaskRepository, availableTags: List<TagDto>, business
         return
     }
 
-    // 背景与设置页一致（主题 dashboard 色），避免同一主题下不同页面底色深浅不一
-    Column(Modifier.fillMaxSize().background(LocalAppTheme.current.background)) {
-        TopAppBar(
-            title = { Text("审批中心", fontWeight = FontWeight.Bold, maxLines = 1) },
-            navigationIcon = { IconButton(onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") } },
-            colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
-        )
+    Column(Modifier.fillMaxSize().background(PandoraTheme.colors.appBackground)) {
+        PandoraTopBar("审批中心", onBack = onBack)
         // 两个审批队列统一为标准 Tab（48dp、Primary 2dp 下划线）
         val queues = (if (canReview) listOf("pending" to "待我审批") else emptyList()) + listOf("created" to "我提交的")
         PandoraTabRow(queues.map { it.second }, queues.indexOfFirst { it.first == scope }.coerceAtLeast(0), { scope = queues[it].first },
             Modifier.padding(horizontal = PandoraSpacing.pageHorizontal))
         Box(Modifier.fillMaxSize()) {
             when {
-                loading && items.isEmpty() -> CircularProgressIndicator(Modifier.align(Alignment.Center).size(36.dp), color = WarmOrange)
-                loadError != null && items.isEmpty() -> Column(Modifier.align(Alignment.Center).padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(loadError!!, color = Ink.copy(alpha = .7f), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                    Spacer(Modifier.height(12.dp))
+                loading && items.isEmpty() -> CircularProgressIndicator(Modifier.align(Alignment.Center).size(36.dp), color = PandoraTheme.colors.primary)
+                loadError != null && items.isEmpty() -> Column(Modifier.align(Alignment.Center).padding(PandoraSpacing.space32), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(loadError!!, color = PandoraTheme.colors.textSecondary, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                    Spacer(Modifier.height(PandoraSpacing.space12))
                     if (loadDenied) PandoraButton("查看我提交的", { scope = "created" }, variant = PandoraButtonVariant.Outline)
                     else PandoraButton("重试", { loadRetry++ }, variant = PandoraButtonVariant.Outline)
                 }
                 items.isEmpty() -> Text(
                     if (scope == "pending") "暂无待审批的申请" else "暂无提交的申请",
-                    Modifier.align(Alignment.Center), color = Ink.copy(alpha = .5f)
+                    Modifier.align(Alignment.Center), color = PandoraTheme.colors.textTertiary
                 )
-                else -> LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                else -> LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = androidx.compose.foundation.layout.PaddingValues(PandoraSpacing.space16), verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space12)) {
                     items(items, key = { it.id }) { review ->
                         val unread = scope == "created" && reviewResultKey(review)?.let { it !in readResultKeys } == true
                         ReviewCard(review, businessTimezone, unread) {
@@ -220,15 +210,15 @@ fun ReviewScreen(taskRepo: TaskRepository, availableTags: List<TagDto>, business
                     if (loadError != null) {
                         item(key = "review-load-error") {
                             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                                Text(loadError!!, color = Ink.copy(alpha = .7f))
+                                Text(loadError!!, color = PandoraTheme.colors.textSecondary)
                                 PandoraButton("重试", { loadRetry++ }, variant = PandoraButtonVariant.Outline, enabled = !loading)
                             }
                         }
                     }
                     nextCursor?.let { cursor ->
                         item {
-                            Box(Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
-                                if (loading) CircularProgressIndicator(Modifier.size(22.dp), color = WarmOrange)
+                            Box(Modifier.fillMaxWidth().padding(vertical = PandoraSpacing.space8), contentAlignment = Alignment.Center) {
+                                if (loading) CircularProgressIndicator(Modifier.size(22.dp), color = PandoraTheme.colors.primary)
                                 else PandoraButton("加载更多", { load(append = true, cursor = cursor) }, variant = PandoraButtonVariant.Outline)
                             }
                         }
@@ -242,26 +232,26 @@ fun ReviewScreen(taskRepo: TaskRepository, availableTags: List<TagDto>, business
 @Composable
 private fun ReviewCard(review: TaskReviewDto, businessTimezone: String?, unread: Boolean = false, onOpen: () -> Unit) {
     val snapshot = parseSnapshot(review.submittedSnapshot)
-    Card(Modifier.fillMaxWidth().clickable(onClick = onOpen), colors = CardDefaults.cardColors(containerColor = WarmCard), shape = RoundedCornerShape(16.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(snapshot.title.ifBlank { "未命名任务" }, Modifier.weight(1f), fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    PandoraPanel(Modifier.fillMaxWidth(), shape = PandoraShapes.medium, contentPadding = PaddingValues(0.dp), onClick = onOpen) {
+        Column(Modifier.padding(horizontal = PandoraSpacing.space16, vertical = PandoraSpacing.space12), verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space8)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space8)) {
+                Text(snapshot.title.ifBlank { "未命名任务" }, Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis, style = PandoraTypography.labelLarge)
                 DecisionBadge(review.decision)
-                if (unread) Text("新结果", color = WarmOrange, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                if (unread) PandoraStatusChip("新结果", StatusTone.INFO)
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("${kindLabel(snapshot.kind)} · 请求人 ${personName(review.submittedByName, review.submittedByUserId)}", fontSize = 12.sp, color = Ink.copy(alpha = .6f))
-                review.submittedAt?.let { Text(timeLabel(it, businessTimezone), fontSize = 12.sp, color = Ink.copy(alpha = .6f)) }
+            Row(horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space12)) {
+                Text("${kindLabel(snapshot.kind)} · 请求人 ${personName(review.submittedByName, review.submittedByUserId)}", style = PandoraTypography.caption, color = PandoraTheme.colors.textTertiary)
+                review.submittedAt?.let { Text(timeLabel(it, businessTimezone), style = PandoraTypography.caption, color = PandoraTheme.colors.textTertiary) }
             }
             // 已有结果时直接展示审批人与结果时间，不用进详情才知道
             if (review.decision != "PENDING") {
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("审批人 ${personName(review.reviewerName, review.reviewerUserId)}", fontSize = 12.sp, color = Ink.copy(alpha = .6f))
-                    review.decidedAt?.let { Text(timeLabel(it, businessTimezone), fontSize = 12.sp, color = Ink.copy(alpha = .6f)) }
+                Row(horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space12)) {
+                    Text("审批人 ${personName(review.reviewerName, review.reviewerUserId)}", style = PandoraTypography.caption, color = PandoraTheme.colors.textTertiary)
+                    review.decidedAt?.let { Text(timeLabel(it, businessTimezone), style = PandoraTypography.caption, color = PandoraTheme.colors.textTertiary) }
                 }
             }
             if (review.decision != "PENDING" && review.decisionNote?.isNotBlank() == true) {
-                Text("批注：${review.decisionNote}", fontSize = 12.sp, color = Ink.copy(alpha = .6f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text("批注：${review.decisionNote}", style = PandoraTypography.caption, color = PandoraTheme.colors.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
     }
@@ -332,33 +322,28 @@ private fun ReviewDetail(review: TaskReviewDto, taskRepo: TaskRepository, availa
     }
 
     androidx.activity.compose.BackHandler(onBack = onBack)
-    // 背景与设置页一致（主题 dashboard 色）
-    Column(Modifier.fillMaxSize().background(LocalAppTheme.current.background)) {
-        TopAppBar(
-            title = { Text("审批详情") },
-            navigationIcon = { IconButton(onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") } },
-            colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
-        )
+    Column(Modifier.fillMaxSize().background(PandoraTheme.colors.appBackground)) {
+        PandoraTopBar("审批详情", onBack = onBack)
         val tagNames = snapshot.tagIds.sortedBy { if (it == snapshot.primaryTagId) 0 else 1 }.mapNotNull { id -> availableTags.firstOrNull { it.id == id } }
         val executors = executorActors(current, snapshot)
-        LazyColumn(Modifier.fillMaxSize().weight(1f), contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        LazyColumn(Modifier.fillMaxSize().weight(1f), contentPadding = androidx.compose.foundation.layout.PaddingValues(PandoraSpacing.space16), verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space16)) {
             // 概览：标题 + 决策 + 类型/重要程度 + 说明
             item {
                 SectionCard("任务信息") {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(snapshot.title.ifBlank { "未命名任务" }, Modifier.weight(1f), fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space8)) {
+                        Text(snapshot.title.ifBlank { "未命名任务" }, Modifier.weight(1f), style = PandoraTypography.titleSmall)
                         DecisionBadge(current.decision)
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space8), verticalAlignment = Alignment.CenterVertically) {
                         val level = (snapshot.priorityLevel ?: 3).coerceIn(1, 5)
                         val (starColor, starText) = priorityMeta(level)
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text("★".repeat(level) + "☆".repeat(5 - level), color = starColor, fontSize = 13.sp)
-                            Text(starText, fontSize = 13.sp, color = Ink.copy(alpha = .75f))
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space8)) {
+                            Text("★".repeat(level) + "☆".repeat(5 - level), color = starColor, style = PandoraTypography.bodyMedium)
+                            Text(starText, style = PandoraTypography.bodyMedium, color = PandoraTheme.colors.textSecondary)
                         }
                     }
                     snapshot.description?.takeIf { it.isNotBlank() }?.let {
-                        Text(it, fontSize = 14.sp, lineHeight = 21.sp, color = Ink.copy(alpha = .85f))
+                        Text(it, style = PandoraTypography.bodyMedium, color = PandoraTheme.colors.textSecondary)
                     }
                 }
             }
@@ -392,9 +377,9 @@ private fun ReviewDetail(review: TaskReviewDto, taskRepo: TaskRepository, availa
                         userRepo,
                         null
                     )
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("执行人", fontSize = 13.sp, color = Ink)
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space8)) {
+                        Text("执行人", style = PandoraTypography.bodyMedium, color = PandoraTheme.colors.textPrimary)
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space8), verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space8)) {
                             executors.forEach { PersonChip(it, userRepo) }
                         }
                     }
@@ -402,32 +387,24 @@ private fun ReviewDetail(review: TaskReviewDto, taskRepo: TaskRepository, availa
             }
             if (tagNames.isNotEmpty()) item {
                 SectionCard("标签") {
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space8), verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space8)) {
                         tagNames.forEach { tag ->
                             // 标签用服务端 colorHex 自己的颜色（与任务详情、日志一致），不跟随主题色
-                            Text(
-                                "${tag.name}${if (tag.id == snapshot.primaryTagId) " · 主" else ""}",
-                                Modifier.clip(RoundedCornerShape(10.dp))
-                                    .background(tagHexColor(tag.colorHex))
-                                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(10.dp))
-                                    .padding(horizontal = 10.dp, vertical = 4.dp),
-                                fontSize = 12.sp,
-                                color = Ink
-                            )
+                            PandoraTagChip(tag.name, tag.colorHex, primary = tag.id == snapshot.primaryTagId)
                         }
                     }
                 }
             }
             if (stale) item {
-                Text("任务在提交后已有修改，以下为提交当时的内容快照。", fontSize = 12.sp, color = Ink.copy(alpha = .55f))
+                Text("任务在提交后已有修改，以下为提交当时的内容快照。", style = PandoraTypography.caption, color = PandoraTheme.colors.textTertiary)
             }
             if (current.decision == "PENDING" && current.allowedActions.isEmpty()) item {
-                Text("该申请当前不可操作（权限或人员范围已变化），请由创建者修改后重新提交。", fontSize = 12.sp, color = Ink.copy(alpha = .55f))
+                Text("该申请当前不可操作（权限或人员范围已变化），请由创建者修改后重新提交。", style = PandoraTypography.caption, color = PandoraTheme.colors.textTertiary)
             }
             if (current.decision != "PENDING") item {
                 SectionCard("审批结果") {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(if (current.decision == "APPROVED") "已批准" else "已驳回", Modifier.weight(1f), fontWeight = FontWeight.Bold, color = if (current.decision == "APPROVED") MintDeep else CoralDark)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space8)) {
+                        Text(if (current.decision == "APPROVED") "已批准" else "已驳回", Modifier.weight(1f), color = if (current.decision == "APPROVED") PandoraTheme.colors.success else PandoraTheme.colors.error, style = PandoraTypography.labelLarge)
                         DecisionBadge(current.decision)
                     }
                     InfoRow("审批人", personName(current.reviewerName, current.reviewerUserId))
@@ -442,7 +419,7 @@ private fun ReviewDetail(review: TaskReviewDto, taskRepo: TaskRepository, availa
                                 .onFailure { error = "原申请内容不完整，请刷新后重试" }
                         })
                         error?.let {
-                            Text(it, color = CoralDark, fontSize = 13.sp)
+                            Text(it, color = PandoraTheme.colors.error, style = PandoraTypography.bodyMedium)
                             TextButton({ refresh() }) { Text("重新加载申请") }
                         }
                     }
@@ -450,23 +427,23 @@ private fun ReviewDetail(review: TaskReviewDto, taskRepo: TaskRepository, availa
                 }
             }
             if (canDecide) item {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space12)) {
                     // 批注入口：点击后在屏幕底部、键盘上方展开输入条（微信打字框样式）
                     Row(
-                        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Cream).clickable { commentOpen = true }.padding(horizontal = 12.dp, vertical = 14.dp),
+                        Modifier.fillMaxWidth().clip(PandoraShapes.medium).background(PandoraTheme.colors.surface).clickable { commentOpen = true }.padding(horizontal = PandoraSpacing.space12, vertical = PandoraSpacing.space16),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
                             if (comment.isBlank()) "写批注（驳回时建议填写）" else "批注：$comment",
-                            Modifier.weight(1f), fontSize = 13.sp,
-                            color = if (comment.isBlank()) Ink.copy(alpha = .5f) else Ink,
+                            Modifier.weight(1f), style = PandoraTypography.bodyMedium,
+                            color = if (comment.isBlank()) PandoraTheme.colors.textTertiary else Ink,
                             maxLines = 1, overflow = TextOverflow.Ellipsis
                         )
-                        Spacer(Modifier.width(8.dp))
-                        Icon(Icons.Default.Edit, "编辑批注", Modifier.size(16.dp), tint = Ink.copy(alpha = .5f))
+                        Spacer(Modifier.width(PandoraSpacing.space8))
+                        Icon(Icons.Default.Edit, "编辑批注", Modifier.size(16.dp), tint = PandoraTheme.colors.textTertiary)
                     }
-                    if (error != null) Text(error!!, color = com.pandora6ix.app.ui.theme.CoralDark, fontSize = 13.sp)
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (error != null) Text(error!!, color = PandoraTheme.colors.error, style = PandoraTypography.bodyMedium)
+                    Row(horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space12)) {
                         PandoraButton("批准", { confirmAction = "APPROVE" }, Modifier.weight(1f), enabled = !submitting)
                         PandoraButton("驳回", { confirmAction = "REJECT" }, Modifier.weight(1f), variant = PandoraButtonVariant.Destructive, enabled = !submitting)
                     }
@@ -478,19 +455,19 @@ private fun ReviewDetail(review: TaskReviewDto, taskRepo: TaskRepository, availa
             val keyboard = LocalSoftwareKeyboardController.current
             val commentFocus = remember { FocusRequester() }
             LaunchedEffect(commentOpen) { if (commentOpen) commentFocus.requestFocus() }
-            Surface(color = WarmCard, shadowElevation = 8.dp) {
+            // 键盘上方的浮动输入条：白色浮层 + 3dp 阴影（与 Sheet 同级），不再用 8dp 厚阴影
+            Surface(color = PandoraTheme.colors.elevatedSurface, shadowElevation = 3.dp) {
                 // targetSdk 35 强制 edge-to-edge，adjustResize 不生效：必须用 imePadding 把输入条顶到键盘上方
-                Row(Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(horizontal = PandoraSpacing.space12, vertical = PandoraSpacing.space8), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space8)) {
                     PandoraTextField(
                         value = comment,
                         onValueChange = { comment = it },
                         Modifier.weight(1f).focusRequester(commentFocus).heightIn(min = 44.dp, max = 168.dp),
                         placeholder = { Text("输入批注（驳回时建议填写）") },
                         minLines = 1,
-                        maxLines = 5,
-                        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Ink.copy(alpha = .7f), unfocusedBorderColor = Ink.copy(alpha = .3f), focusedLabelColor = Ink, cursorColor = Ink)
+                        maxLines = 5
                     )
-                    TextButton({ keyboard?.hide(); commentOpen = false }, Modifier.padding(bottom = 6.dp)) { Text("完成", color = Ink, fontWeight = FontWeight.Bold) }
+                    TextButton({ keyboard?.hide(); commentOpen = false }, Modifier.padding(bottom = PandoraSpacing.space8)) { Text("完成", color = PandoraTheme.colors.textPrimary, style = PandoraTypography.labelLarge) }
                 }
             }
         }
@@ -502,7 +479,7 @@ private fun ReviewDetail(review: TaskReviewDto, taskRepo: TaskRepository, availa
             title = { Text(if (action == "APPROVE") "批准该申请？" else "驳回该申请？") },
             text = { Text(if (action == "APPROVE") "批准后任务立即生效，接收人可见。" else "驳回后创建者可修改内容重新提交。") },
             confirmButton = {
-                if (submitting) CircularProgressIndicator(Modifier.size(22.dp), color = WarmOrange)
+                if (submitting) CircularProgressIndicator(Modifier.size(22.dp), color = PandoraTheme.colors.primary)
                 else TextButton({ submit(action) }) { Text(if (action == "APPROVE") "批准" else "驳回", style = PandoraTypography.labelLarge, color = if (action == "APPROVE") PandoraTheme.colors.primary else PandoraTheme.colors.error) }
             },
             dismissButton = { if (!submitting) PandoraDialogDismiss("取消", { confirmAction = null }) }
@@ -521,50 +498,49 @@ private fun ReviewDetail(review: TaskReviewDto, taskRepo: TaskRepository, availa
 /** 详情分区：小标题 + 主题卡片，卡片内统一间距 */
 @Composable
 private fun SectionCard(title: String, content: @Composable ColumnScope.() -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(title, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Ink.copy(alpha = .5f))
-        Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = WarmCard), shape = RoundedCornerShape(16.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
-            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp), content = content)
+    Column(verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space8)) {
+        Text(title, style = PandoraTypography.labelLarge, color = PandoraTheme.colors.textSecondary, modifier = Modifier.semantics { heading() })
+        PandoraPanel(Modifier.fillMaxWidth()) {
+            Column(verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space8), content = content)
         }
     }
 }
 
 @Composable
 private fun InfoRow(label: String, value: String) {
-    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(label, Modifier.width(64.dp), fontSize = 13.sp, color = Ink.copy(alpha = .6f))
-        Text(value, Modifier.weight(1f), fontSize = 14.sp, lineHeight = 20.sp)
+    Row(horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space12)) {
+        Text(label, Modifier.widthIn(min = 64.dp), style = PandoraTypography.bodyMedium, color = PandoraTheme.colors.textSecondary)
+        Text(value, Modifier.weight(1f), style = PandoraTypography.bodyMedium)
     }
 }
 
 /** 文字小标签：类型等次要信息 */
 @Composable
 private fun MetaChip(text: String) {
-    Box(Modifier.clip(RoundedCornerShape(10.dp)).background(Cream).padding(horizontal = 10.dp, vertical = 4.dp)) {
-        Text(text, fontSize = 12.sp, color = Ink.copy(alpha = .8f))
+    Box(Modifier.clip(PandoraShapes.pill).background(PandoraTheme.colors.neutralContainer).padding(horizontal = PandoraSpacing.space8, vertical = PandoraSpacing.space2)) {
+        Text(text, style = PandoraTypography.caption, color = PandoraTheme.colors.textSecondary)
     }
 }
 
 /** 人员行：角色标签（左对齐、与“执行人”同线）+ 头像 + 姓名 + 职位胶囊 + 补充信息 */
 @Composable
 private fun PersonRow(label: String, name: String, jobTitle: String?, userId: String, userRepo: UserRepository?, sub: String?) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(label, fontSize = 13.sp, color = Ink)
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            RemoteAvatar(userId, name, 38.dp, 16.sp, userRepo)
+    Column(verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space4)) {
+        Text(label, style = PandoraTypography.bodyMedium, color = PandoraTheme.colors.textPrimary)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space12)) {
+            RemoteAvatar(userId, name, PandoraDimensions.avatarList, 16.sp, userRepo)
             Column(Modifier.weight(1f)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(name, fontSize = 14.sp, fontWeight = FontWeight.Medium, lineHeight = 19.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space8), verticalAlignment = Alignment.CenterVertically) {
+                    Text(name, style = PandoraTypography.labelLarge)
                     jobTitle?.takeIf { it.isNotBlank() }?.let {
                         Text(
                             it,
-                            Modifier.clip(RoundedCornerShape(8.dp)).background(Cream).padding(horizontal = 6.dp, vertical = 2.dp),
-                            fontSize = 11.sp,
-                            color = Ink.copy(alpha = .65f)
+                            Modifier.clip(PandoraShapes.pill).background(PandoraTheme.colors.neutralContainer).padding(horizontal = PandoraSpacing.space8, vertical = PandoraSpacing.space2), style = PandoraTypography.caption,
+                            color = PandoraTheme.colors.textSecondary
                         )
                     }
                 }
-                if (!sub.isNullOrBlank()) Text(sub, fontSize = 12.sp, color = Ink.copy(alpha = .5f))
+                if (!sub.isNullOrBlank()) Text(sub, style = PandoraTypography.caption, color = PandoraTheme.colors.textTertiary)
             }
         }
     }
@@ -576,13 +552,13 @@ private fun PersonChip(actor: ReviewActorDto, userRepo: UserRepository?) {
     val name = personName(actor.displayName, actor.id)
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
+        horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space12)
     ) {
         RemoteAvatar(actor.id, name, 38.dp, 16.sp, userRepo)
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(name, fontSize = 14.sp, fontWeight = FontWeight.Medium, lineHeight = 19.sp)
+        Row(horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space8), verticalAlignment = Alignment.CenterVertically) {
+            Text(name, style = PandoraTypography.labelLarge)
             actor.jobTitle?.takeIf { it.isNotBlank() }?.let {
-                Text(it, Modifier.clip(RoundedCornerShape(8.dp)).background(Cream).padding(horizontal = 6.dp, vertical = 2.dp), fontSize = 11.sp, color = Ink.copy(alpha = .65f))
+                Text(it, Modifier.clip(PandoraShapes.small).background(PandoraTheme.colors.surface).padding(horizontal = PandoraSpacing.space8, vertical = PandoraSpacing.space2), style = PandoraTypography.caption, color = PandoraTheme.colors.textSecondary)
             }
         }
     }
@@ -590,14 +566,7 @@ private fun PersonChip(actor: ReviewActorDto, userRepo: UserRepository?) {
 
 @Composable
 private fun DecisionBadge(decision: String) {
-    val (bg, fg) = when (decision) {
-        "APPROVED" -> Mint to MintDeep
-        "REJECTED" -> Peach to com.pandora6ix.app.ui.theme.CoralDark
-        else -> CreamDeep to Ink
-    }
-    Box(Modifier.clip(RoundedCornerShape(10.dp)).background(bg).padding(horizontal = 10.dp, vertical = 4.dp)) {
-        Text(when (decision) { "APPROVED" -> "已批准"; "REJECTED" -> "已驳回"; else -> "待审批" }, fontSize = 12.sp, color = fg, fontWeight = FontWeight.SemiBold)
-    }
+    PandoraStatusChip(when (decision) { "APPROVED" -> "已批准"; "REJECTED" -> "已驳回"; else -> "待审批" }, reviewStatusTone(decision))
 }
 
 /** submittedSnapshot 宽松解析：新快照字段与 TaskCreateDto 对应，旧快照可能缺字段或含历史字段 */

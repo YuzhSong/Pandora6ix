@@ -64,6 +64,18 @@ fun PandoraTopBar(
     )
 }
 
+/**
+ * 一级页面标题行（导图、日志、AI地图、我的）：TitleLarge、最小 64dp，
+ * 与页面内容共用 16dp 左对齐线；视图页保留日历自身的模式标题。
+ */
+@Composable
+fun PandoraPageTitle(title: String, modifier: Modifier = Modifier, actions: @Composable RowScope.() -> Unit = {}) {
+    Row(modifier.fillMaxWidth().heightIn(min = PandoraDimensions.topBarMinHeight).padding(vertical = PandoraSpacing.space8), verticalAlignment = Alignment.CenterVertically) {
+        Text(title, Modifier.weight(1f).semantics { heading() }, style = PandoraTypography.titleLarge, color = PandoraTheme.colors.textPrimary)
+        actions()
+    }
+}
+
 /** Tab 行：最小 48dp、LabelLarge、选中 Primary 2dp 下划线，未选 TextSecondary */
 @Composable
 fun PandoraTabRow(tabs: List<String>, selectedIndex: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier) {
