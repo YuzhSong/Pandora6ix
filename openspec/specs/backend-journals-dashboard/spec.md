@@ -4,23 +4,27 @@
 Define author-protected daily journals, stable work entries, explicit important-entry selections, enterprise company items and four-panel dashboard/basic statistics.
 ## Requirements
 ### Requirement: Daily unique journals and stable work entries
-The backend SHALL publish at most one journal per author/date, return existingJournalId on duplicate, and provide authorized lists/details and entry detail. New journals SHALL use only today, yesterday or the day before yesterday in the enterprise business timezone. Only the author SHALL edit or delete a journal whose creation timestamp (published_at), converted to the enterprise business timezone, falls on the current business date. Backfills for yesterday or the day before yesterday SHALL remain editable and deletable throughout their creation day, independently of workDate; all journals SHALL become read-only after their creation day. Patches SHALL preserve entry IDs, keep omitted entries, and atomically update entries/tags with expectedVersion. Explicit entry or journal deletion SHALL atomically remove personal-important references and advance any affected manual selection version without selecting replacement entries. Journal responses SHALL expose businessToday and author-scoped EDIT/DELETE allowedActions.
+The backend SHALL publish at most one journal per author/date, return existingJournalId on duplicate, and provide authorized lists/details and entry detail. New journals SHALL use only today, yesterday or the day before yesterday in the enterprise business timezone. Only the author SHALL edit or delete a journal while the server instant is strictly before published_at plus 24 hours. This window SHALL be independent of workDate, midnight and enterprise timezone changes, and PATCH SHALL NOT reset published_at. Patches SHALL preserve entry IDs, keep omitted entries, and atomically update entries/tags with expectedVersion. Explicit entry or journal deletion SHALL atomically remove personal-important references and advance any affected manual selection version without selecting replacement entries. Journal responses SHALL expose businessToday and author-scoped EDIT/DELETE allowedActions.
 
 #### Scenario: Partial patch preserves other work
 - **WHEN** an author modifies one entry and adds another to today's journal
 - **THEN** the original entry ID remains, omitted entries survive, and one aggregate version advances.
 
-#### Scenario: Backfill remains editable on its creation day
-- **WHEN** an author submits a missing journal for yesterday or the day before yesterday
-- **THEN** POST succeeds once; repeated creation returns 409 DAILY_JOURNAL_EXISTS with existingJournalId, while the author can PATCH or DELETE during the creation business day and receives EDIT/DELETE allowedActions.
+#### Scenario: Backfill remains editable across midnight
+- **WHEN** an author submits yesterday or day-before-yesterday's journal and edits or deletes it after midnight but before 24 hours have elapsed
+- **THEN** the operation succeeds and author responses expose EDIT/DELETE, even if workDate has left the new-journal date range; duplicate creation still returns 409 DAILY_JOURNAL_EXISTS with existingJournalId.
 
-#### Scenario: Earlier creation day is read-only
-- **WHEN** an author attempts to patch or delete a journal created on an earlier enterprise business date
-- **THEN** the server returns 409 JOURNAL_EDIT_WINDOW_EXPIRED and exposes no edit/delete actions, regardless of workDate.
+#### Scenario: Exact deadline and expired journals
+- **WHEN** the server instant reaches or passes published_at plus 24 hours
+- **THEN** PATCH and DELETE return 409 JOURNAL_EDIT_WINDOW_EXPIRED without mutations and list/detail expose no edit/delete actions.
 
-#### Scenario: Company midnight closes editing
-- **WHEN** the company's current business date changes after a journal was submitted
-- **THEN** that journal becomes read-only even if less than 24 hours elapsed, with no dependence on a client timezone or publishedAt duration.
+#### Scenario: Timezone change preserves the deadline
+- **WHEN** the enterprise timezone changes while a journal is less than 24 hours old
+- **THEN** the author retains edit/delete eligibility until the original timestamp plus 24 hours.
+
+#### Scenario: Editing does not extend the window
+- **WHEN** an author patches a journal within the window
+- **THEN** published_at and its edit deadline remain unchanged.
 
 #### Scenario: Invalid create date
 - **WHEN** an author creates a journal outside the last three company business dates, including a future date
