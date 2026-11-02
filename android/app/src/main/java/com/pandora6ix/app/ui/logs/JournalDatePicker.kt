@@ -50,10 +50,6 @@ import androidx.compose.ui.window.DialogProperties
 import com.pandora6ix.app.data.parseIsoDate
 import com.pandora6ix.app.mock.DemoDate
 import com.pandora6ix.app.ui.calendar.WheelColumn
-import com.pandora6ix.app.ui.theme.Ink
-import com.pandora6ix.app.ui.theme.WarmCard
-import com.pandora6ix.app.ui.theme.WarmDashboard
-import com.pandora6ix.app.ui.theme.WarmOrange
 import kotlinx.coroutines.launch
 import java.util.Calendar
 

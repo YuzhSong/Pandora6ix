@@ -37,7 +37,6 @@ import com.pandora6ix.app.data.TagDto
 import com.pandora6ix.app.data.TagPermissions
 import com.pandora6ix.app.data.TagRepository
 import com.pandora6ix.app.ui.calendar.tagHexColor
-import com.pandora6ix.app.ui.theme.Ink
 import kotlinx.coroutines.launch
 
 /** 浅色候选色板：全部适配黑色文字（不同标签可选相同颜色） */

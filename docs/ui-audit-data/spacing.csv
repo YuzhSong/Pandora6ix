@@ -1,328 +1,333 @@
 ﻿file,line,kind,arguments
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,650,padding,padding
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,785,padding,horizontal = 28.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,792,spacedBy,14.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,918,padding,horizontal = 10.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,919,padding,"top = 12.dp, bottom = 4.dp"
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,923,padding,9.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,928,padding,24.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,928,spacedBy,12.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,932,spacedBy,10.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,936,spacedBy,6.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,937,spacedBy,6.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,941,spacedBy,6.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,967,padding,20.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,974,padding,"top = 10.dp, bottom = 12.dp"
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,983,padding,"horizontal = 4.dp, vertical = 10.dp"
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1008,padding,top = 6.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1044,padding,14.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1056,padding,"top = 7.dp, bottom = 4.dp"
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1061,padding,vertical = 14.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1069,padding,vertical = 14.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1073,padding,top = 6.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1076,padding,vertical = 18.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1085,padding,"horizontal = 6.dp, vertical = 8.dp"
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1103,padding,vertical = 8.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1213,padding,18.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1229,spacedBy,10.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1270,padding,"horizontal = 4.dp, vertical = 6.dp"
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1299,padding,"horizontal = 4.dp, vertical = 7.dp"
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1324,padding,top = 6.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1401,padding,20.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1409,padding,24.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1409,spacedBy,20.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1417,padding,vertical = 12.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1417,spacedBy,10.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1421,padding,vertical = 12.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1421,spacedBy,10.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1649,padding,horizontal = 16.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1652,padding,top = 14.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1656,spacedBy,10.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1656,PaddingValues,bottom = 16.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1661,PaddingValues,horizontal = 12.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1668,padding,vertical = 24.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1675,padding,vertical = 16.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1675,spacedBy,10.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1711,padding,20.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1716,padding,vertical = 10.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1716,spacedBy,8.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1722,padding,vertical = 8.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1732,padding,"top = 12.dp, bottom = 6.dp"
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1733,padding,vertical = 2.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1733,spacedBy,6.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1739,PaddingValues,"horizontal = 12.dp, vertical = 6.dp"
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1740,padding,"top = 12.dp, bottom = 6.dp"
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1741,spacedBy,8.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1755,padding,"top = 8.dp, bottom = 4.dp"
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1756,padding,top = 12.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1756,spacedBy,10.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1784,padding,"horizontal = 4.dp, vertical = 4.dp"
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1798,PaddingValues,0.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1820,spacedBy,6.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1861,spacedBy,6.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1862,spacedBy,6.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1869,padding,"horizontal = 7.dp, vertical = 3.dp"
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1898,padding,14.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1924,padding,top = 6.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1928,PaddingValues,horizontal = 14.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1929,PaddingValues,horizontal = 14.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1947,padding,14.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1993,padding,16.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1994,spacedBy,12.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1996,spacedBy,10.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2040,padding,18.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2046,padding,vertical = 16.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2047,padding,vertical = 16.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2048,padding,vertical = 16.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2049,spacedBy,10.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2059,padding,12.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2068,padding,top = 6.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2077,padding,16.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2077,padding,top = 18.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2077,padding,top = 8.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2173,padding,horizontal = 16.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2175,padding,vertical = 8.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2175,spacedBy,16.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2177,padding,20.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2186,padding,start = 16.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2193,padding,horizontal = 40.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2194,padding,"horizontal = 14.dp, vertical = 10.dp"
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2195,padding,bottom = 4.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2196,PaddingValues,"horizontal = 4.dp, vertical = 1.dp"
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2197,PaddingValues,"horizontal = 4.dp, vertical = 1.dp"
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2198,PaddingValues,"horizontal = 4.dp, vertical = 1.dp"
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2199,PaddingValues,"horizontal = 8.dp, vertical = 1.dp"
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2207,spacedBy,10.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2207,spacedBy,10.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2224,spacedBy,8.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2229,spacedBy,6.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2229,spacedBy,6.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2252,padding,"horizontal = 7.dp, vertical = 2.dp"
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2273,padding,20.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2273,spacedBy,14.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2290,spacedBy,16.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2305,padding,14.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2327,padding,20.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2327,spacedBy,12.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2450,padding,16.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2450,spacedBy,16.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2453,padding,16.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2453,spacedBy,12.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2463,spacedBy,6.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2463,spacedBy,6.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2466,padding,"horizontal = 8.dp, vertical = 4.dp"
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2484,padding,16.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2484,spacedBy,12.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2489,spacedBy,10.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2498,spacedBy,12.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2511,spacedBy,8.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2531,padding,12.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2531,spacedBy,6.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2611,padding,"horizontal = 16.dp, vertical = 12.dp"
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2727,padding,20.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2733,padding,"horizontal = 20.dp, vertical = 10.dp"
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2749,padding,vertical = 8.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2794,padding,vertical = 6.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2848,spacedBy,10.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2901,padding,vertical = 8.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2921,spacedBy,8.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2927,spacedBy,10.dp
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2983,padding,"start = 4.dp, bottom = 8.dp"
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,3011,padding,"horizontal = 14.dp, vertical = 14.dp"
-android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,3056,padding,"start = 50.dp, end = 14.dp, top = 4.dp, bottom = 4.dp"
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,107,padding,horizontal = 12.dp
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,127,padding,horizontal = 16.dp
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,139,padding,"horizontal = 16.dp, vertical = 2.dp"
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,139,spacedBy,6.dp
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,147,padding,"horizontal = 12.dp, vertical = 5.dp"
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,156,padding,"horizontal = 16.dp, vertical = 2.dp"
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,157,padding,"horizontal = 16.dp, vertical = 2.dp"
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,157,spacedBy,6.dp
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,163,spacedBy,6.dp
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,167,padding,"horizontal = 8.dp, vertical = 2.dp"
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,170,PaddingValues,horizontal = 8.dp
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,219,spacedBy,10.dp
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,225,spacedBy,12.dp
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,232,padding,"end = 16.dp, bottom = 48.dp"
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,245,PaddingValues,horizontal = 4.dp
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,260,padding,"horizontal = 4.dp, vertical = 9.dp"
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,277,padding,"start = if (dates.size == 1) 40.dp else 8.dp, end = 8.dp, bottom = 8.dp"
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,281,padding,top = 3.dp
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,351,padding,horizontal = 8.dp
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,353,PaddingValues,bottom = 96.dp
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,360,padding,"top = 18.dp, bottom = 6.dp"
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,422,padding,"horizontal = 7.dp, vertical = 1.dp"
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,432,padding,horizontal = 1.dp
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,435,padding,horizontal = 3.dp
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,480,padding,end = 8.dp
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,482,padding,top = 2.dp
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,643,padding,padding
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,765,padding,horizontal = PandoraSpacing.loginHorizontal
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,773,spacedBy,PandoraSpacing.space16
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,901,padding,horizontal = PandoraSpacing.pageHorizontal
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,905,padding,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,910,padding,PandoraSpacing.space24
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,910,spacedBy,PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,914,spacedBy,PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,918,padding,bottom = PandoraSpacing.space16
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,918,spacedBy,PandoraGrid.gutter
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,919,spacedBy,PandoraGrid.gutter
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,923,spacedBy,PandoraGrid.gutter
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,950,padding,horizontal = PandoraSpacing.space24
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,951,padding,PandoraSpacing.dialogPadding
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,956,padding,"top = PandoraSpacing.space4, bottom = PandoraSpacing.space12"
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,965,padding,"horizontal = PandoraSpacing.space4, vertical = PandoraSpacing.space12"
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,990,padding,top = PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1023,PaddingValues,"start = PandoraSpacing.space12, end = PandoraSpacing.space12, top = PandoraSpacing.space8, bottom = PandoraSpacing.space4"
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1035,padding,top = PandoraSpacing.space4
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1040,padding,vertical = PandoraSpacing.space16
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1048,padding,vertical = PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1055,padding,vertical = PandoraSpacing.space16
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1064,padding,"horizontal = PandoraSpacing.space4, vertical = PandoraSpacing.space8"
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1176,padding,horizontal = PandoraSpacing.space16
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1178,padding,PandoraSpacing.dialogPadding
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1194,spacedBy,PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1235,padding,"horizontal = PandoraSpacing.space4, vertical = PandoraSpacing.space8"
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1264,padding,"horizontal = PandoraSpacing.space4, vertical = PandoraSpacing.space8"
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1290,padding,top = PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1353,padding,PandoraSpacing.pageHorizontal
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1355,PaddingValues,0.dp
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1356,padding,PandoraSpacing.space24
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1356,spacedBy,PandoraSpacing.space16
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1364,padding,vertical = PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1364,spacedBy,PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1368,padding,vertical = PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1368,spacedBy,PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1597,padding,horizontal = PandoraSpacing.space16
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1601,spacedBy,PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1601,PaddingValues,bottom = PandoraSpacing.space16
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1613,padding,vertical = PandoraSpacing.space24
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1620,padding,vertical = PandoraSpacing.space16
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1620,spacedBy,PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1655,padding,horizontal = PandoraSpacing.space16
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1656,padding,PandoraSpacing.dialogPadding
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1661,padding,vertical = PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1661,spacedBy,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1667,padding,vertical = PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1675,padding,"top = PandoraSpacing.space12, bottom = PandoraSpacing.space8"
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1676,padding,vertical = PandoraSpacing.space2
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1676,spacedBy,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1681,PaddingValues,"horizontal = PandoraSpacing.space12, vertical = PandoraSpacing.space8"
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1682,padding,"top = PandoraSpacing.space12, bottom = PandoraSpacing.space8"
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1683,spacedBy,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1697,padding,"top = PandoraSpacing.space8, bottom = PandoraSpacing.space4"
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1698,padding,top = PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1698,spacedBy,PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1727,padding,"horizontal = PandoraSpacing.space4, vertical = PandoraSpacing.space4"
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1741,PaddingValues,0.dp
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1763,spacedBy,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1804,spacedBy,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1805,spacedBy,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1831,PaddingValues,0.dp
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1832,padding,"horizontal = PandoraSpacing.space16, vertical = PandoraSpacing.space12"
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1856,padding,top = PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1860,PaddingValues,horizontal = PandoraSpacing.space16
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1861,PaddingValues,horizontal = PandoraSpacing.space16
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1919,padding,PandoraSpacing.space16
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1920,spacedBy,PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1922,spacedBy,PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1964,padding,"horizontal = PandoraSpacing.space16, vertical = PandoraSpacing.space16"
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1970,padding,vertical = PandoraSpacing.space16
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1971,padding,vertical = PandoraSpacing.space16
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1972,padding,vertical = PandoraSpacing.space16
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1973,spacedBy,PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1983,padding,PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,1992,padding,top = PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2004,padding,horizontal = PandoraSpacing.pageHorizontal
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2007,padding,top = PandoraSpacing.space16
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2008,padding,top = PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2106,padding,horizontal = PandoraSpacing.space16
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2108,padding,vertical = PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2108,spacedBy,PandoraSpacing.space16
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2109,PaddingValues,0.dp
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2110,padding,PandoraSpacing.panelPadding
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2119,padding,start = PandoraSpacing.space16
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2125,PaddingValues,vertical = PandoraSpacing.space16
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2127,padding,"horizontal = PandoraSpacing.space24, vertical = PandoraSpacing.space8"
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2128,padding,horizontal = PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2129,padding,horizontal = PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2130,padding,horizontal = PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2131,padding,horizontal = PandoraSpacing.space16
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2140,spacedBy,PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2140,spacedBy,PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2157,spacedBy,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2162,spacedBy,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2162,spacedBy,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2184,padding,"horizontal = PandoraSpacing.space8, vertical = PandoraSpacing.space2"
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2204,PaddingValues,0.dp
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2205,padding,PandoraSpacing.panelPadding
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2205,spacedBy,PandoraSpacing.space16
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2222,spacedBy,PandoraSpacing.space16
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2265,padding,PandoraSpacing.space20
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2265,spacedBy,PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2388,padding,PandoraSpacing.space16
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2388,spacedBy,PandoraSpacing.space16
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2391,padding,PandoraSpacing.space16
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2391,spacedBy,PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2401,spacedBy,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2401,spacedBy,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2421,padding,PandoraSpacing.space16
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2421,spacedBy,PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2426,spacedBy,PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2435,spacedBy,PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2447,spacedBy,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2467,padding,PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2467,spacedBy,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2547,padding,"horizontal = PandoraSpacing.space16, vertical = PandoraSpacing.space12"
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2663,padding,PandoraSpacing.space16
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2679,padding,vertical = PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2724,padding,vertical = PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2778,spacedBy,PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2831,padding,vertical = PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2852,spacedBy,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2858,spacedBy,PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2912,padding,"start = PandoraSpacing.space4, bottom = PandoraSpacing.space8"
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2918,PaddingValues,0.dp
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2932,padding,"horizontal = PandoraSpacing.space16, vertical = PandoraSpacing.space12"
+android/app/src/main/java/com/pandora6ix/app/MainActivity.kt,2978,padding,"start = 68.dp, end = PandoraSpacing.space16, top = PandoraSpacing.space4, bottom = PandoraSpacing.space4"
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,110,padding,horizontal = PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,130,padding,"start = PandoraSpacing.pageHorizontal, end = PandoraSpacing.space4"
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,142,padding,"horizontal = PandoraSpacing.pageHorizontal, vertical = PandoraSpacing.space4"
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,142,spacedBy,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,148,padding,"horizontal = PandoraSpacing.pageHorizontal, vertical = PandoraSpacing.space2"
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,149,padding,"horizontal = PandoraSpacing.pageHorizontal, vertical = PandoraSpacing.space2"
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,149,spacedBy,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,155,spacedBy,PandoraSpacing.space4
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,161,PaddingValues,horizontal = PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,210,spacedBy,PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,216,padding,PandoraSpacing.space24
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,216,spacedBy,PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,223,padding,"end = PandoraSpacing.space16, bottom = PandoraSpacing.space48"
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,237,PaddingValues,horizontal = PandoraSpacing.space4
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,252,padding,horizontal = PandoraSpacing.space4
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,270,padding,"start = if (dates.size == 1) PandoraCalendarDimens.timeAxisWidth else PandoraCalendarDimens.contentHorizontal, end = PandoraCalendarDimens.contentHorizontal, bottom = PandoraSpacing.space8"
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,274,padding,top = PandoraSpacing.space2
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,344,padding,horizontal = PandoraCalendarDimens.contentHorizontal
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,346,PaddingValues,bottom = 96.dp
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,353,padding,"start = PandoraSpacing.space8, top = PandoraSpacing.space16, bottom = PandoraSpacing.space4"
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,415,padding,"horizontal = PandoraSpacing.space8, vertical = PandoraSpacing.space2"
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,426,padding,horizontal = 1.dp
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,429,padding,horizontal = PandoraSpacing.space4
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,478,padding,end = PandoraCalendarDimens.contentHorizontal
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,480,padding,top = PandoraSpacing.space2
 android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,518,padding,1.dp
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,541,padding,"start = 7.dp, end = 4.dp, top = 2.dp, bottom = 2.dp"
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,558,padding,horizontal = 20.dp
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,560,padding,"horizontal = 20.dp, vertical = 8.dp"
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,567,padding,"horizontal = 20.dp, vertical = 12.dp"
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,572,padding,top = 4.dp
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,578,padding,8.dp
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,586,padding,"start = 8.dp, end = 8.dp, top = 8.dp, bottom = 80.dp"
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,595,padding,horizontal = 2.dp
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,595,spacedBy,4.dp
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,604,padding,"start = 4.dp, end = 2.dp, top = 4.dp, bottom = 4.dp"
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,736,padding,horizontal = 8.dp
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,736,PaddingValues,bottom = 96.dp
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,736,spacedBy,6.dp
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,736,spacedBy,6.dp
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,748,padding,4.dp
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,749,padding,horizontal = 2.dp
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,750,padding,top = 1.dp
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/DateWheelDialog.kt,55,spacedBy,12.dp
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/DateWheelDialog.kt,95,PaddingValues,vertical = itemHeight * 2
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,287,padding,horizontal = 20.dp
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,292,spacedBy,12.dp
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,310,spacedBy,8.dp
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,317,spacedBy,8.dp
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,326,spacedBy,4.dp
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,334,spacedBy,8.dp
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,335,PaddingValues,8.dp
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,336,PaddingValues,8.dp
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,338,spacedBy,8.dp
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,347,spacedBy,8.dp
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,351,PaddingValues,"horizontal = 12.dp, vertical = 6.dp"
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,353,PaddingValues,"horizontal = 12.dp, vertical = 6.dp"
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,356,PaddingValues,"horizontal = 12.dp, vertical = 6.dp"
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,361,padding,vertical = 2.dp
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,361,spacedBy,6.dp
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,383,padding,vertical = 4.dp
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,386,padding,12.dp
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,388,padding,"horizontal = 12.dp, vertical = 8.dp"
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,391,padding,"horizontal = 12.dp, vertical = 8.dp"
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,419,padding,vertical = 12.dp
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,456,padding,"horizontal = 4.dp, vertical = 4.dp"
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,470,PaddingValues,0.dp
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,519,padding,"horizontal = 12.dp, vertical = 6.dp"
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,533,padding,"start = 24.dp, end = 12.dp, top = 6.dp, bottom = 6.dp"
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,537,padding,start = 8.dp
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,544,padding,start = 12.dp
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,562,spacedBy,12.dp
-android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,567,padding,top = 20.dp
-android/app/src/main/java/com/pandora6ix/app/ui/logs/JournalDatePicker.kt,136,padding,"horizontal = 12.dp, vertical = 8.dp"
-android/app/src/main/java/com/pandora6ix/app/ui/logs/JournalDatePicker.kt,147,padding,"horizontal = 8.dp, vertical = 6.dp"
-android/app/src/main/java/com/pandora6ix/app/ui/logs/JournalDatePicker.kt,163,padding,"horizontal = 14.dp, vertical = 6.dp"
-android/app/src/main/java/com/pandora6ix/app/ui/logs/JournalDatePicker.kt,205,padding,"horizontal = 12.dp, vertical = 6.dp"
-android/app/src/main/java/com/pandora6ix/app/ui/logs/JournalDatePicker.kt,206,padding,vertical = 8.dp
-android/app/src/main/java/com/pandora6ix/app/ui/logs/JournalDatePicker.kt,209,spacedBy,12.dp
-android/app/src/main/java/com/pandora6ix/app/ui/logs/JournalDatePicker.kt,230,padding,horizontal = 12.dp
-android/app/src/main/java/com/pandora6ix/app/ui/logs/JournalDatePicker.kt,247,padding,"horizontal = 14.dp, vertical = 6.dp"
-android/app/src/main/java/com/pandora6ix/app/ui/logs/JournalDatePicker.kt,252,padding,vertical = 6.dp
-android/app/src/main/java/com/pandora6ix/app/ui/logs/JournalDatePicker.kt,257,padding,2.dp
-android/app/src/main/java/com/pandora6ix/app/ui/logs/JournalDatePicker.kt,271,padding,2.dp
-android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,193,padding,"horizontal = 16.dp, vertical = 4.dp"
-android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,193,spacedBy,8.dp
-android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,200,padding,32.dp
-android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,210,PaddingValues,16.dp
-android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,210,spacedBy,10.dp
-android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,228,padding,vertical = 8.dp
-android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,247,padding,vertical = 10.dp
-android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,256,padding,14.dp
-android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,256,spacedBy,6.dp
-android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,257,spacedBy,8.dp
-android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,262,spacedBy,12.dp
-android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,268,spacedBy,12.dp
-android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,354,PaddingValues,16.dp
-android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,354,spacedBy,14.dp
-android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,358,spacedBy,8.dp
-android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,362,spacedBy,8.dp
-android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,365,spacedBy,6.dp
-android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,405,spacedBy,6.dp
-android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,407,spacedBy,8.dp
-android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,407,spacedBy,8.dp
-android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,415,spacedBy,8.dp
-android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,415,spacedBy,8.dp
-android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,423,padding,"horizontal = 10.dp, vertical = 4.dp"
-android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,439,spacedBy,8.dp
-android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,463,spacedBy,10.dp
-android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,466,padding,"horizontal = 12.dp, vertical = 14.dp"
-android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,479,spacedBy,10.dp
-android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,503,padding,"horizontal = 12.dp, vertical = 8.dp"
-android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,503,spacedBy,8.dp
-android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,513,padding,bottom = 6.dp
-android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,544,spacedBy,8.dp
-android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,547,padding,14.dp
-android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,547,spacedBy,8.dp
-android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,554,spacedBy,12.dp
-android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,563,padding,"horizontal = 10.dp, vertical = 4.dp"
-android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,571,spacedBy,4.dp
-android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,573,spacedBy,10.dp
-android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,576,spacedBy,6.dp
-android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,581,padding,"horizontal = 6.dp, vertical = 2.dp"
-android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,599,spacedBy,10.dp
-android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,602,spacedBy,6.dp
-android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,605,padding,"horizontal = 6.dp, vertical = 2.dp"
-android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,618,padding,"horizontal = 10.dp, vertical = 4.dp"
-android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,142,padding,end = 8.dp
-android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,161,padding,16.dp
-android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,166,spacedBy,10.dp
-android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,171,padding,16.dp
-android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,175,spacedBy,10.dp
-android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,183,PaddingValues,16.dp
-android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,183,spacedBy,16.dp
-android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,187,spacedBy,14.dp
-android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,220,PaddingValues,16.dp
-android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,220,spacedBy,16.dp
-android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,241,spacedBy,12.dp
-android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,243,padding,vertical = 4.dp
-android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,245,padding,top = 6.dp
-android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,297,padding,16.dp
-android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,297,spacedBy,10.dp
-android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,305,PaddingValues,start = 12.dp
-android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,314,padding,vertical = 8.dp
-android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,319,padding,vertical = 5.dp
-android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,319,spacedBy,12.dp
-android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,350,padding,vertical = 5.dp
-android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,350,spacedBy,12.dp
-android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,367,padding,vertical = 12.dp
-android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,367,spacedBy,10.dp
-android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,385,padding,"horizontal = 10.dp, vertical = 8.dp"
-android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,385,spacedBy,5.dp
-android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,386,spacedBy,8.dp
-android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,392,padding,"horizontal = 6.dp, vertical = 3.dp"
-android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,395,spacedBy,5.dp
-android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,395,spacedBy,4.dp
-android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,397,padding,"horizontal = 6.dp, vertical = 2.dp"
-android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,401,padding,"horizontal = 6.dp, vertical = 2.dp"
-android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,403,spacedBy,6.dp
-android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,407,spacedBy,4.dp
-android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,417,padding,12.dp
-android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,417,spacedBy,10.dp
-android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,419,spacedBy,5.dp
-android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,420,spacedBy,8.dp
-android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,433,padding,16.dp
-android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,435,spacedBy,10.dp
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,541,padding,"start = PandoraSpacing.space8, end = PandoraSpacing.space4, top = PandoraSpacing.space2, bottom = PandoraSpacing.space2"
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,557,padding,horizontal = PandoraSpacing.space16
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,559,padding,"horizontal = PandoraSpacing.space16, vertical = PandoraSpacing.space8"
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,566,padding,"horizontal = PandoraSpacing.space16, vertical = PandoraSpacing.space12"
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,571,padding,top = PandoraSpacing.space4
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,577,padding,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,585,padding,"start = PandoraCalendarDimens.contentHorizontal, end = PandoraCalendarDimens.contentHorizontal, top = PandoraSpacing.space8, bottom = 80.dp"
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,594,padding,horizontal = PandoraSpacing.space2
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,594,spacedBy,PandoraSpacing.space4
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,605,padding,"start = PandoraSpacing.space4, end = PandoraSpacing.space2, top = PandoraSpacing.space4, bottom = PandoraSpacing.space4"
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,737,padding,horizontal = PandoraCalendarDimens.contentHorizontal
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,737,PaddingValues,bottom = 96.dp
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,737,spacedBy,PandoraGrid.gutter
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,737,spacedBy,PandoraGrid.gutter
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,750,padding,PandoraSpacing.space4
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/CalendarScreen.kt,751,padding,horizontal = PandoraSpacing.space2
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/DateWheelDialog.kt,55,spacedBy,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/DateWheelDialog.kt,96,PaddingValues,vertical = itemHeight * 2
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,289,padding,horizontal = PandoraSpacing.space20
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,294,spacedBy,PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,312,spacedBy,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,319,spacedBy,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,328,spacedBy,PandoraSpacing.space4
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,336,spacedBy,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,337,PaddingValues,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,338,PaddingValues,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,340,spacedBy,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,349,spacedBy,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,355,PaddingValues,"horizontal = PandoraSpacing.space12, vertical = PandoraSpacing.space8"
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,360,padding,vertical = PandoraSpacing.space2
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,360,spacedBy,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,382,padding,vertical = PandoraSpacing.space4
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,385,padding,PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,387,padding,"horizontal = PandoraSpacing.space12, vertical = PandoraSpacing.space8"
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,390,padding,"horizontal = PandoraSpacing.space12, vertical = PandoraSpacing.space8"
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,418,padding,vertical = PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,455,padding,"horizontal = PandoraSpacing.space4, vertical = PandoraSpacing.space4"
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,469,PaddingValues,0.dp
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,518,padding,"horizontal = PandoraSpacing.space12, vertical = PandoraSpacing.space8"
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,532,padding,"start = PandoraSpacing.space24, end = PandoraSpacing.space12, top = PandoraSpacing.space8, bottom = PandoraSpacing.space8"
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,536,padding,start = PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,543,padding,start = PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,561,spacedBy,PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/ui/calendar/TaskEntrySheet.kt,566,padding,top = PandoraSpacing.space20
+android/app/src/main/java/com/pandora6ix/app/ui/components/PandoraButton.kt,58,spacedBy,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/ui/components/PandoraButton.kt,62,spacedBy,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/ui/components/PandoraButton.kt,122,PaddingValues,"horizontal = horizontal, vertical = 0.dp"
+android/app/src/main/java/com/pandora6ix/app/ui/components/PandoraChips.kt,59,padding,"horizontal = PandoraSpacing.space8, vertical = PandoraSpacing.space2"
+android/app/src/main/java/com/pandora6ix/app/ui/components/PandoraChips.kt,73,padding,"horizontal = PandoraSpacing.space8, vertical = PandoraSpacing.space2"
+android/app/src/main/java/com/pandora6ix/app/ui/components/PandoraChips.kt,90,padding,"horizontal = PandoraSpacing.space12, vertical = PandoraSpacing.space4"
+android/app/src/main/java/com/pandora6ix/app/ui/components/PandoraDialog.kt,91,PaddingValues,PandoraSpacing.dialogPadding
+android/app/src/main/java/com/pandora6ix/app/ui/components/PandoraDialog.kt,96,padding,horizontal = PandoraSpacing.space24
+android/app/src/main/java/com/pandora6ix/app/ui/components/PandoraDialog.kt,98,padding,contentPadding
+android/app/src/main/java/com/pandora6ix/app/ui/components/PandoraNavigation.kt,73,padding,vertical = PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/ui/components/PandoraNavigation.kt,102,padding,vertical = PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/ui/components/PandoraNavigation.kt,125,padding,"horizontal = PandoraSpacing.space16, vertical = PandoraSpacing.space12"
+android/app/src/main/java/com/pandora6ix/app/ui/components/PandoraNavigation.kt,136,spacedBy,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/ui/components/PandoraNavigation.kt,145,padding,"horizontal = PandoraSpacing.space16, vertical = PandoraSpacing.space12"
+android/app/src/main/java/com/pandora6ix/app/ui/components/PandoraNavigation.kt,155,padding,PandoraSpacing.space24
+android/app/src/main/java/com/pandora6ix/app/ui/components/PandoraNavigation.kt,156,spacedBy,PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/ui/components/PandoraPanel.kt,39,PaddingValues,PandoraSpacing.panelPadding
+android/app/src/main/java/com/pandora6ix/app/ui/components/PandoraPanel.kt,47,padding,contentPadding
+android/app/src/main/java/com/pandora6ix/app/ui/components/PandoraPanel.kt,49,padding,contentPadding
+android/app/src/main/java/com/pandora6ix/app/ui/components/PandoraPanel.kt,83,padding,"horizontal = PandoraSpacing.itemHorizontal, vertical = PandoraSpacing.itemVertical"
+android/app/src/main/java/com/pandora6ix/app/ui/components/PandoraPanel.kt,84,spacedBy,PandoraSpacing.space4
+android/app/src/main/java/com/pandora6ix/app/ui/logs/JournalDatePicker.kt,138,padding,"horizontal = PandoraSpacing.space8, vertical = PandoraSpacing.space8"
+android/app/src/main/java/com/pandora6ix/app/ui/logs/JournalDatePicker.kt,149,padding,"horizontal = PandoraSpacing.space8, vertical = PandoraSpacing.space12"
+android/app/src/main/java/com/pandora6ix/app/ui/logs/JournalDatePicker.kt,165,padding,"horizontal = PandoraSpacing.pageHorizontal, vertical = PandoraSpacing.space4"
+android/app/src/main/java/com/pandora6ix/app/ui/logs/JournalDatePicker.kt,207,padding,"horizontal = PandoraSpacing.pageHorizontal, vertical = PandoraSpacing.space8"
+android/app/src/main/java/com/pandora6ix/app/ui/logs/JournalDatePicker.kt,209,padding,vertical = PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/ui/logs/JournalDatePicker.kt,212,padding,horizontal = PandoraSpacing.space16
+android/app/src/main/java/com/pandora6ix/app/ui/logs/JournalDatePicker.kt,212,spacedBy,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/ui/logs/JournalDatePicker.kt,233,padding,horizontal = PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/ui/logs/JournalDatePicker.kt,250,padding,"horizontal = PandoraSpacing.pageHorizontal, vertical = PandoraSpacing.space4"
+android/app/src/main/java/com/pandora6ix/app/ui/logs/JournalDatePicker.kt,254,padding,vertical = PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/ui/logs/JournalDatePicker.kt,259,padding,2.dp
+android/app/src/main/java/com/pandora6ix/app/ui/logs/JournalDatePicker.kt,273,padding,2.dp
+android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,187,padding,horizontal = PandoraSpacing.pageHorizontal
+android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,191,padding,PandoraSpacing.space32
+android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,201,PaddingValues,PandoraSpacing.space16
+android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,201,spacedBy,PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,219,padding,vertical = PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,234,PaddingValues,0.dp
+android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,235,padding,"horizontal = PandoraSpacing.space16, vertical = PandoraSpacing.space12"
+android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,235,spacedBy,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,236,spacedBy,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,241,spacedBy,PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,247,spacedBy,PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,328,PaddingValues,PandoraSpacing.space16
+android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,328,spacedBy,PandoraSpacing.space16
+android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,332,spacedBy,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,336,spacedBy,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,339,spacedBy,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,379,spacedBy,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,381,spacedBy,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,381,spacedBy,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,389,spacedBy,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,389,spacedBy,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,405,spacedBy,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,429,spacedBy,PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,432,padding,"horizontal = PandoraSpacing.space12, vertical = PandoraSpacing.space16"
+android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,445,spacedBy,PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,460,padding,"horizontal = PandoraSpacing.space12, vertical = PandoraSpacing.space8"
+android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,460,spacedBy,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,469,padding,bottom = PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,500,spacedBy,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,503,spacedBy,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,510,spacedBy,PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,519,padding,"horizontal = PandoraSpacing.space8, vertical = PandoraSpacing.space2"
+android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,527,spacedBy,PandoraSpacing.space4
+android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,529,spacedBy,PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,532,spacedBy,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,537,padding,"horizontal = PandoraSpacing.space8, vertical = PandoraSpacing.space2"
+android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,554,spacedBy,PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,557,spacedBy,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/ui/review/ReviewScreen.kt,560,padding,"horizontal = PandoraSpacing.space8, vertical = PandoraSpacing.space2"
+android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,160,padding,PandoraSpacing.space16
+android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,165,spacedBy,PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,170,padding,PandoraSpacing.space16
+android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,174,spacedBy,PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,182,PaddingValues,PandoraSpacing.space16
+android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,182,spacedBy,PandoraSpacing.space16
+android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,186,spacedBy,PandoraSpacing.space16
+android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,219,PaddingValues,PandoraSpacing.space16
+android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,219,spacedBy,PandoraSpacing.space16
+android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,237,spacedBy,PandoraGrid.gutter
+android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,239,padding,vertical = PandoraSpacing.space4
+android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,241,padding,top = PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,296,spacedBy,PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,304,PaddingValues,start = PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,313,padding,vertical = PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,318,padding,vertical = PandoraSpacing.space4
+android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,318,spacedBy,PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,349,padding,vertical = PandoraSpacing.space4
+android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,349,spacedBy,PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,366,padding,vertical = PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,366,spacedBy,PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,384,padding,"horizontal = PandoraSpacing.space12, vertical = PandoraSpacing.space8"
+android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,384,spacedBy,PandoraSpacing.space4
+android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,385,spacedBy,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,397,spacedBy,PandoraSpacing.space4
+android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,397,spacedBy,PandoraSpacing.space4
+android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,403,spacedBy,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,407,spacedBy,PandoraSpacing.space4
+android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,417,padding,PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,417,spacedBy,PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,419,spacedBy,PandoraSpacing.space4
+android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,420,spacedBy,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,433,padding,PandoraSpacing.space16
+android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,435,spacedBy,PandoraSpacing.space12
 android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,438,padding,start = (depth * 12).dp
-android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,440,padding,12.dp
+android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,440,padding,PandoraSpacing.space12
 android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,447,padding,start = (12 + depth * 12).dp
-android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,447,padding,12.dp
-android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,448,spacedBy,10.dp
-android/app/src/main/java/com/pandora6ix/app/ui/tags/TagManageScreen.kt,97,padding,32.dp
-android/app/src/main/java/com/pandora6ix/app/ui/tags/TagManageScreen.kt,103,PaddingValues,16.dp
-android/app/src/main/java/com/pandora6ix/app/ui/tags/TagManageScreen.kt,103,spacedBy,8.dp
-android/app/src/main/java/com/pandora6ix/app/ui/tags/TagManageScreen.kt,106,padding,"horizontal = 14.dp, vertical = 10.dp"
-android/app/src/main/java/com/pandora6ix/app/ui/tags/TagManageScreen.kt,117,padding,8.dp
-android/app/src/main/java/com/pandora6ix/app/ui/tags/TagManageScreen.kt,120,padding,16.dp
-android/app/src/main/java/com/pandora6ix/app/ui/tags/TagManageScreen.kt,200,padding,horizontal = 24.dp
-android/app/src/main/java/com/pandora6ix/app/ui/tags/TagManageScreen.kt,201,padding,16.dp
-android/app/src/main/java/com/pandora6ix/app/ui/tags/TagManageScreen.kt,201,spacedBy,10.dp
-android/app/src/main/java/com/pandora6ix/app/ui/tags/TagManageScreen.kt,209,spacedBy,8.dp
-android/app/src/main/java/com/pandora6ix/app/ui/tags/TagManageScreen.kt,209,spacedBy,8.dp
-android/app/src/main/java/com/pandora6ix/app/ui/tags/TagManageScreen.kt,225,padding,"horizontal = 12.dp, vertical = 8.dp"
-android/app/src/main/java/com/pandora6ix/app/ui/tags/TagManageScreen.kt,229,spacedBy,8.dp
-android/app/src/main/java/com/pandora6ix/app/ui/task/ProgressSheet.kt,102,padding,horizontal = 20.dp
-android/app/src/main/java/com/pandora6ix/app/ui/task/ProgressSheet.kt,102,padding,bottom = 24.dp
-android/app/src/main/java/com/pandora6ix/app/ui/task/ProgressSheet.kt,102,spacedBy,14.dp
-android/app/src/main/java/com/pandora6ix/app/ui/task/ProgressSheet.kt,171,spacedBy,6.dp
-android/app/src/main/java/com/pandora6ix/app/ui/task/ProgressSheet.kt,173,padding,10.dp
-android/app/src/main/java/com/pandora6ix/app/ui/task/ProgressSheet.kt,214,padding,14.dp
-android/app/src/main/java/com/pandora6ix/app/ui/task/ProgressSheet.kt,214,spacedBy,8.dp
-android/app/src/main/java/com/pandora6ix/app/ui/task/ProgressSheet.kt,256,padding,10.dp
-android/app/src/main/java/com/pandora6ix/app/ui/task/ProgressSheet.kt,256,spacedBy,6.dp
-android/app/src/main/java/com/pandora6ix/app/ui/task/ProgressSheet.kt,258,spacedBy,10.dp
-android/app/src/main/java/com/pandora6ix/app/ui/task/ProgressSheet.kt,290,spacedBy,8.dp
+android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,447,padding,PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/ui/summary/TaskSummaryFlow.kt,448,spacedBy,PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/ui/tags/TagManageScreen.kt,89,padding,PandoraSpacing.space32
+android/app/src/main/java/com/pandora6ix/app/ui/tags/TagManageScreen.kt,95,PaddingValues,PandoraSpacing.space16
+android/app/src/main/java/com/pandora6ix/app/ui/tags/TagManageScreen.kt,95,spacedBy,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/ui/tags/TagManageScreen.kt,98,padding,"start = PandoraSpacing.space16, end = PandoraSpacing.space4, top = PandoraSpacing.space4, bottom = PandoraSpacing.space4"
+android/app/src/main/java/com/pandora6ix/app/ui/tags/TagManageScreen.kt,109,padding,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/ui/tags/TagManageScreen.kt,112,padding,PandoraSpacing.space16
+android/app/src/main/java/com/pandora6ix/app/ui/tags/TagManageScreen.kt,193,spacedBy,PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/ui/tags/TagManageScreen.kt,201,spacedBy,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/ui/tags/TagManageScreen.kt,201,spacedBy,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/ui/tags/TagManageScreen.kt,217,padding,"horizontal = PandoraSpacing.space12, vertical = PandoraSpacing.space8"
+android/app/src/main/java/com/pandora6ix/app/ui/tags/TagManageScreen.kt,221,spacedBy,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/ui/task/ProgressSheet.kt,98,padding,horizontal = PandoraSpacing.space16
+android/app/src/main/java/com/pandora6ix/app/ui/task/ProgressSheet.kt,98,padding,bottom = PandoraSpacing.space16
+android/app/src/main/java/com/pandora6ix/app/ui/task/ProgressSheet.kt,98,spacedBy,PandoraSpacing.space16
+android/app/src/main/java/com/pandora6ix/app/ui/task/ProgressSheet.kt,167,spacedBy,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/ui/task/ProgressSheet.kt,169,padding,PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/ui/task/ProgressSheet.kt,211,padding,PandoraSpacing.space16
+android/app/src/main/java/com/pandora6ix/app/ui/task/ProgressSheet.kt,211,spacedBy,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/ui/task/ProgressSheet.kt,246,padding,PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/ui/task/ProgressSheet.kt,246,spacedBy,PandoraSpacing.space8
+android/app/src/main/java/com/pandora6ix/app/ui/task/ProgressSheet.kt,248,spacedBy,PandoraSpacing.space12
+android/app/src/main/java/com/pandora6ix/app/ui/task/ProgressSheet.kt,280,spacedBy,PandoraSpacing.space8

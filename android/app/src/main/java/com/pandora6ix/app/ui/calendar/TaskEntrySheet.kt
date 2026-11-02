@@ -60,7 +60,7 @@ private fun String.date() = split("-").map(String::toInt).let { DemoDate(it[0], 
 
 /** 服务端标签颜色（#RRGGBB）→ Compose Color；非法值回退墨色 */
 internal fun tagHexColor(hex: String): Color =
-    runCatching { Color(android.graphics.Color.parseColor(hex)) }.getOrDefault(Ink)
+    runCatching { Color(android.graphics.Color.parseColor(hex)) }.getOrDefault(WarmColors.neutralContainer)
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
@@ -360,10 +360,10 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
                 if (selectedRecipientIds.isNotEmpty()) FlowRow(Modifier.fillMaxWidth().padding(vertical = PandoraSpacing.space2), horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space8)) {
                     selectedRecipientIds.forEach { id ->
                         if (canDelegate) {
-                            FilterChip(selected = true, onClick = { selectedRecipientIds = selectedRecipientIds - id; error = null }, label = { Text(nameOf(id), style = PandoraTypography.bodyMedium) }, colors = FilterChipDefaults.filterChipColors(containerColor = Color.Transparent, labelColor = PandoraTheme.colors.textPrimary, selectedContainerColor = PandoraTheme.colors.primaryContainer, selectedLabelColor = Ink))
+                            FilterChip(selected = true, onClick = { selectedRecipientIds = selectedRecipientIds - id; error = null }, label = { Text(nameOf(id), style = PandoraTypography.bodyMedium) }, colors = FilterChipDefaults.filterChipColors(containerColor = Color.Transparent, labelColor = PandoraTheme.colors.textPrimary, selectedContainerColor = PandoraTheme.colors.primaryContainer, selectedLabelColor = PandoraTheme.colors.textPrimary))
                         } else {
                             // 无派发权限：接收人锁定为本人，浅蓝底黑字展示且不可更改
-                            FilterChip(selected = true, onClick = { }, enabled = false, label = { Text(nameOf(id), style = PandoraTypography.bodyMedium, color = PandoraTheme.colors.textPrimary) }, colors = FilterChipDefaults.filterChipColors(disabledContainerColor = Color(0xFFD6EAF8), disabledLabelColor = Ink))
+                            FilterChip(selected = true, onClick = { }, enabled = false, label = { Text(nameOf(id), style = PandoraTypography.bodyMedium, color = PandoraTheme.colors.textPrimary) }, colors = FilterChipDefaults.filterChipColors(disabledContainerColor = PandoraTheme.colors.neutralContainer, disabledLabelColor = PandoraTheme.colors.textPrimary))
                         }
                     }
                 }

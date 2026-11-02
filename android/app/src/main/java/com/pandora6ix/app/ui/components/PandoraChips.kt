@@ -53,9 +53,12 @@ fun PandoraTagChip(
     val bg = parseTagColor(colorHex) ?: c.neutralContainer
     val fg = tagContentColor(bg, c.textPrimary)
     val label = if (primary) "主 · $name" else name
+    // 外部给最小高度（如 32dp 可点击标签）时文字保持垂直居中
     val body: @Composable () -> Unit = {
-        Text(label, Modifier.padding(horizontal = PandoraSpacing.space8, vertical = PandoraSpacing.space2),
-            style = PandoraTypography.caption, color = fg, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        androidx.compose.foundation.layout.Box(contentAlignment = Alignment.Center) {
+            Text(label, Modifier.padding(horizontal = PandoraSpacing.space8, vertical = PandoraSpacing.space2),
+                style = PandoraTypography.caption, color = fg, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
     }
     val border = BorderStroke(PandoraDimensions.borderWidth, c.border)
     if (onClick != null) Surface(onClick = onClick, modifier = modifier.widthIn(max = maxWidth), shape = PandoraShapes.pill, color = bg, border = border, content = body)

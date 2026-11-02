@@ -76,9 +76,6 @@ class DesignTokensTest {
             assertEquals(theme.colors.elevatedSurface, scheme.surface)
             assertEquals(theme.colors.elevatedSurface, scheme.surfaceContainerHigh)
             assertEquals(theme.colors.border, scheme.outlineVariant)
-            // 旧别名字段转接到同一语义
-            assertEquals(theme.colors.primary, theme.button)
-            assertEquals(theme.colors.appBackground, theme.dashboard)
         }
     }
 

@@ -108,24 +108,51 @@ summary = {
 }
 # Role-use counts deliberately stay separate from theme variant values: the same
 # call site resolves to a different Hex when the selected theme changes.
-theme = (ROOT / 'android/app/src/main/java/com/pandora6ix/app/ui/theme/Theme.kt').read_text(encoding='utf-8')
+# 2026-11 统一化后：五主题值定义在 ui/theme/Color.kt 的 PandoraColorTokens，Theme.kt 只按 key 绑定。
+theme_dir = ROOT / 'android/app/src/main/java/com/pandora6ix/app/ui/theme'
+color_kt = (theme_dir / 'Color.kt').read_text(encoding='utf-8')
+theme_kt = (theme_dir / 'Theme.kt').read_text(encoding='utf-8')
+token_sets = {m[1]: dict(re.findall(r'(\w+)\s*=\s*(?:Color\(0xFF([A-Fa-f\d]{6})\)|ElevatedWhite)', m[2]))
+              for m in re.finditer(r'val (\w+Colors) = PandoraColorTokens\((.*?)\n\)', color_kt, re.S)}
+for name, values in token_sets.items():
+    for role in list(values):
+        if values[role] == '':
+            values[role] = 'FFFFFF'
 themes = []
 roles = {
-    'background': r'\b(?:theme|t|LocalAppTheme\.current)\.background\b',
-    'backgroundDeep': r'\b(?:theme|t|LocalAppTheme\.current)\.backgroundDeep\b',
-    'dashboard': r'\bWarmDashboard\b|\bLocalAppTheme\.current\.dashboard\b',
-    'card': r'\b(?:Cream|WarmCard)\b',
-    'cardDeep': r'\bCreamDeep\b',
+    'appBackground': r'\b(?:colors|PandoraTheme\.colors|theme\.colors)\.appBackground\b',
+    'surface': r'\b(?:colors|PandoraTheme\.colors|c)\.surface\b',
+    'elevatedSurface': r'\b(?:colors|PandoraTheme\.colors|c)\.(?:elevatedSurface|panelSurface)\b',
+    'primaryContainer': r'\b(?:colors|PandoraTheme\.colors|c)\.primaryContainer\b',
 }
-for match in re.finditer(r'AppTheme\(\s*"([^"]+)"\s*,\s*"([^"]+)"(.*?)\n\s*\)', theme, re.S):
-    values = dict(re.findall(r'(\w+)\s*=\s*Color\(0xFF([A-Fa-f\d]{6})\)', match[3]))
+for key, label, token_name in re.findall(r'AppTheme\("([^"]+)", "([^"]+)", (\w+Colors)\)', theme_kt):
+    values = token_sets[token_name]
     for role, pattern in roles.items():
         uses = [r for r in rows['backgrounds'] if re.search(pattern, r[3])]
-        themes.append([match[1], role, '#' + values[role], len(uses), 'retain identity; consolidate background roles', '; '.join(f'{r[0]}:{r[1]}' for r in uses)])
+        themes.append([key, role, '#' + values[role].upper(), len(uses), 'semantic token; selected theme maps this role', '; '.join(f'{r[0]}:{r[1]}' for r in uses)])
 with (OUT / 'theme-background-uses.csv').open('w', encoding='utf-8-sig', newline='') as f:
     w = csv.writer(f)
     w.writerow(['theme', 'role', 'hex', 'explicit_background_use_sites', 'decision', 'locations'])
     w.writerows(themes)
 summary['base_background_hex_count'] = len({r[2] for r in themes} | {'#FFFFFF'})
+
+# 字面量颜色分类：Token 定义 / 组件 / 业务色板（头像、新建标签候选色）/ 页面硬编码 / 透明
+def color_class(row):
+    file, line, value = row[0], int(row[1]), row[2]
+    if value == 'Color.Transparent':
+        return 'transparent'
+    if '/ui/theme/' in file:
+        return 'token_definition'
+    if '/ui/components/' in file:
+        return 'component'
+    src = (ROOT / file).read_text(encoding='utf-8-sig').split('\n')
+    window = '\n'.join(src[max(0, line - 40):line])
+    if re.search(r'val (AvatarPalette|TagColorPalette) = listOf\((?:(?!\n\)).)*$', window, re.S):
+        return 'business_palette'
+    return 'page_hardcoded'
+summary['literal_color_classes'] = dict(sorted(Counter(color_class(r) for r in rows['colors']).items()))
+summary['page_hardcoded_colors'] = [f'{r[0]}:{r[1]} {r[2]}' for r in rows['colors'] if color_class(r) == 'page_hardcoded']
+summary['text_style_tokens'] = dict(sorted(Counter(r[4] for r in rows['typography'] if r[4].startswith('PandoraTypography')).items()))
+summary['text_literal_font_sizes'] = sum(1 for r in rows['typography'] if r[2] != 'inherited')
 (OUT / 'summary.json').write_text(json.dumps(summary, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
 print(json.dumps({k: v if not isinstance(v, dict) else len(v) for k,v in summary.items()}, ensure_ascii=False, indent=2))

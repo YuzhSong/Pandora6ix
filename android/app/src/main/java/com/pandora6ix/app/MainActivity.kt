@@ -626,7 +626,7 @@ fun PandoraApp(
 
         when {
             // 启动会话检查中的过渡页
-            !authChecked -> Box(Modifier.fillMaxSize().background(theme.background), contentAlignment = Alignment.Center) {
+            !authChecked -> Box(Modifier.fillMaxSize().background(theme.colors.appBackground), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(Icons.Default.GridView, null, Modifier.size(64.dp), tint = PandoraTheme.colors.primary)
                     Spacer(Modifier.height(PandoraSpacing.space12))
@@ -1424,7 +1424,7 @@ private data class EntryDraft(val entryId: String?, val content: String)
     var deletingJournal by remember { mutableStateOf<JournalDto?>(null) }
     var deleteError by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
-    val mutedColors = OutlinedTextFieldDefaults.colors(focusedBorderColor = PandoraTheme.colors.textSecondary, unfocusedBorderColor = PandoraTheme.colors.textDisabled, focusedLabelColor = Ink, cursorColor = PandoraTheme.colors.textPrimary)
+    val mutedColors = pandoraTextFieldColors()
     // 日报草稿（缓存目录）：上次编辑未发布的内容
     val context = LocalContext.current
     val savedJournalDraft = remember {
@@ -1675,8 +1675,7 @@ private data class EntryDraft(val entryId: String?, val content: String)
                         Text("· 标签（可多选，可切换主标签）", style = PandoraTypography.labelLarge, modifier = Modifier.padding(top = PandoraSpacing.space12, bottom = PandoraSpacing.space8))
                         if (tags.isNotEmpty()) FlowRow(Modifier.fillMaxWidth().padding(vertical = PandoraSpacing.space2), horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space8)) {
                             tags.forEach { name ->
-                                val tagColor = availableTags.firstOrNull { it.name == name }?.let { tagHexColor(it.colorHex) } ?: PandoraTheme.colors.primaryContainer
-                                FilterChip(selected = true, onClick = { tags = tags - name }, label = { Text(name, style = PandoraTypography.bodyMedium) }, colors = FilterChipDefaults.filterChipColors(containerColor = tagColor, labelColor = PandoraTheme.colors.textPrimary, selectedContainerColor = tagColor, selectedLabelColor = Ink))
+                                PandoraTagChip(name, availableTags.firstOrNull { it.name == name }?.colorHex, Modifier.heightIn(min = PandoraDimensions.chipButtonHeight), primary = name == tags.first(), onClick = { tags = tags - name })
                             }
                         }
                         OutlinedButton({ journalFocusManager.clearFocus(force = true); showTagPicker = true }, contentPadding = PaddingValues(horizontal = PandoraSpacing.space12, vertical = PandoraSpacing.space8), border = BorderStroke(1.dp, PandoraTheme.colors.border), colors = ButtonDefaults.outlinedButtonColors(contentColor = PandoraTheme.colors.textPrimary)) { Icon(Icons.Default.Add, "选择标签", Modifier.size(16.dp)); Spacer(Modifier.width(PandoraSpacing.space4)); Text("选择标签", style = PandoraTypography.bodyMedium) }

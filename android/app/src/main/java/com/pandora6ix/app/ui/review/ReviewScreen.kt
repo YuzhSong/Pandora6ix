@@ -87,7 +87,6 @@ import com.pandora6ix.app.data.TaskRepository
 import com.pandora6ix.app.data.TaskReviewDto
 import com.pandora6ix.app.data.reviewResultKey
 import com.pandora6ix.app.ui.calendar.tagHexColor
-import com.pandora6ix.app.ui.theme.Ink
 import com.pandora6ix.app.ui.theme.LocalAppTheme
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.MaterialTheme
@@ -436,7 +435,7 @@ private fun ReviewDetail(review: TaskReviewDto, taskRepo: TaskRepository, availa
                         Text(
                             if (comment.isBlank()) "写批注（驳回时建议填写）" else "批注：$comment",
                             Modifier.weight(1f), style = PandoraTypography.bodyMedium,
-                            color = if (comment.isBlank()) PandoraTheme.colors.textTertiary else Ink,
+                            color = if (comment.isBlank()) PandoraTheme.colors.textTertiary else PandoraTheme.colors.textPrimary,
                             maxLines = 1, overflow = TextOverflow.Ellipsis
                         )
                         Spacer(Modifier.width(PandoraSpacing.space8))

@@ -30,7 +30,8 @@
 
 - [全量审计报告](UI_AUDIT_REPORT.md)：当前代码证据、静态数量与验证边界。
 - [Android UI Design System](ANDROID_UI_DESIGN_SYSTEM.md)：后续UI开发的颜色、排版、间距、栅格及组件契约。
-- [UI统一化改造路线](UI_REFACTOR_ROADMAP.md)：P0/P1/P2顺序与验收矩阵；尚未批量实施。
+- [UI统一化改造路线](UI_REFACTOR_ROADMAP.md)：P0/P1/P2顺序与验收矩阵；2026-11-03 已按 P0–P3 实施。
+- [UI统一化改造验收报告](UI_REFACTOR_ACCEPTANCE_REPORT.md)：阶段提交、前后统计、截图验证与人工验收清单。
 - [静态数据](ui-audit-data/summary.json)，重建命令：`python docs/tools/android_ui_inventory.py`。
 
 本节是现有业务基线之上的视觉规范；不据此新增业务或改变权限。上文2026-10-09工程状态是历史记录，不代表当前实现状态。
