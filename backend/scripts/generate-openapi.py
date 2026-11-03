@@ -151,7 +151,9 @@ def read_schemas():
         "clientEntryKey": STRING, "content": STRING, "displayOrder": INTEGER, "recordedAt": INSTANT, "eligible": BOOLEAN})
     journal = obj({**versioned, "journalId": ID, "authorUserId": ID, "workDate": DATE, "publishedAt": INSTANT,
         "businessToday": DATE, "allowedActions": array({"type": "string", "enum": ["EDIT", "DELETE"]}),
-        "primaryTagId": nullable(ID), "entries": array(ref("WorkEntry")), "tags": array(ref("Tag")), "tagIds": array(ID)})
+        "primaryTagId": nullable(ID), "entries": array(ref("WorkEntry")), "tags": array(ref("Tag")), "tagIds": array(ID),
+        # 仅日志详情返回：作者姓名、职位、组织与部门
+        "author": obj({"id": ID, "displayName": nullable(STRING), "jobTitle": nullable(STRING), "organizationName": nullable(STRING), "departmentName": nullable(STRING)}, ("id",))})
     enterprise = obj({**versioned, "name": STRING, "loginDomain": STRING, "businessTimezone": nullable(STRING), "status": STRING,
         "createdAt": INSTANT, "rootOrgUnitId": ID, "adminUserId": ID})
     org = obj({**versioned, "name": STRING, "kind": {"type": "string", "enum": ["COMPANY", "DEPARTMENT", "TEAM"]}, "parentId": nullable(ID)})
@@ -246,6 +248,12 @@ def read_schemas():
         "topTags": array(named_count), "overview": STRING,
         "scenarios": array(obj({"key": {"type": "string", "enum": ["RAPID", "STEADY", "CHALLENGE"]}, "title": STRING, "developments": STRING,
             "signals": array(STRING), "preparations": array(STRING)}))}, ("empty", "stats", "topTags")))
+    comment = obj({"id": ID, "journalId": ID, "authorUserId": ID, "authorName": nullable(STRING), "authorJobTitle": nullable(STRING),
+        "content": STRING, "createdAt": INSTANT, "allowedActions": array({"type": "string", "enum": ["DELETE"]})},
+        ("id", "journalId", "authorUserId", "content", "createdAt", "allowedActions"))
+    schemas["JournalCommentView"] = comment
+    schemas["JournalCommentPage"] = obj({"items": array(ref("JournalCommentView")), "canComment": BOOLEAN}, ("items", "canComment"))
+    schemas["JournalCommentDeleted"] = obj({"commentId": ID}, ("commentId",))
     schemas["Dashboard"] = obj({"companyImportantItems": ref("CompanyItemPage"), "companyTasks": ref("TaskPage"), "personalImportantEntries": ref("ImportantSelection"), "workEntries": ref("WorkEntryPage"), "statistics": ref("Statistics")})
     return schemas
 
@@ -282,6 +290,8 @@ RESPONSES = {
     ("GET", "/dashboard"): "Dashboard", ("GET", "/dashboard/task-items"): "TaskPage", ("GET", "/statistics"): "Statistics",
     ("GET", "/notifications"): "NotificationPage", ("GET", "/notifications/unread-count"): "UnreadCount",
     ("POST", "/notifications/{id}/read"): "Notification",
+    ("GET", "/work-logs/{id}/comments"): "JournalCommentPage", ("POST", "/work-logs/{id}/comments"): "JournalCommentView",
+    ("DELETE", "/work-log-comments/{id}"): "JournalCommentDeleted",
     ("GET", "/ai/fortune"): "AiFortune", ("GET", "/ai/personality/questions"): "AiPersonalityQuestions",
     ("POST", "/ai/personality"): "AiPersonality", ("POST", "/ai/tarot"): "AiTarot",
     ("POST", "/ai/career-map"): "AiCareerMap", ("POST", "/ai/company-outlook"): "AiCompanyOutlook",

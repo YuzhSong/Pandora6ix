@@ -134,8 +134,41 @@ data class JournalDto(
     val primaryTagId: String? = null,
     val entries: List<WorkEntryDto> = emptyList(),
     val tags: List<TagDto> = emptyList(),
-    val tagIds: List<String> = emptyList()
+    val tagIds: List<String> = emptyList(),
+    /** 仅日志详情返回：作者姓名、职位、组织与部门 */
+    val author: JournalAuthorDto? = null
 )
+
+@Serializable
+data class JournalAuthorDto(
+    val id: String = "",
+    val displayName: String? = null,
+    val jobTitle: String? = null,
+    val organizationName: String? = null,
+    val departmentName: String? = null
+)
+
+/** 上级留言；allowedActions 含 DELETE 表示本人写的留言 */
+@Serializable
+data class JournalCommentDto(
+    val id: String,
+    val journalId: String = "",
+    val authorUserId: String = "",
+    val authorName: String? = null,
+    val authorJobTitle: String? = null,
+    val content: String = "",
+    val createdAt: String? = null,
+    val allowedActions: List<String> = emptyList()
+)
+
+@Serializable
+data class JournalCommentPageDto(val items: List<JournalCommentDto> = emptyList(), val canComment: Boolean = false)
+
+@Serializable
+data class JournalCommentBody(val content: String)
+
+@Serializable
+data class JournalCommentDeletedDto(val commentId: String = "")
 
 @Serializable
 data class StatisticsDto(

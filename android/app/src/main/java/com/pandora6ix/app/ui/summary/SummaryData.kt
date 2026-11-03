@@ -62,6 +62,13 @@ internal fun responsibleTasks(tasks: List<TaskDto>, userId: String) = tasks.filt
 
 internal fun executorIds(task: TaskDto) = task.authorizedAssignments.map { it.recipientUserId }.filter { it.isNotBlank() }.distinct()
 
+/**
+ * 执行人姓名：优先用任务执行记录自带的 recipientName（同级、上级等不在下属名单里的人也有真实姓名），
+ * 其次再按本人/下属名单查找；避免头像退化成占位文字“成员 xxxx”的首字“成”。
+ */
+internal fun executorName(task: TaskDto, userId: String, fallback: (String) -> String): String =
+    task.authorizedAssignments.firstOrNull { it.recipientUserId == userId }?.recipientName?.takeIf { it.isNotBlank() } ?: fallback(userId)
+
 internal fun summaryTaskStatus(task: TaskDto): String {
     if (task.reviewStatus != "APPROVED") return reviewStatusLabel(task.reviewStatus)
     val states = task.authorizedAssignments.map { assignment ->

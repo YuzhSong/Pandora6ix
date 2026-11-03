@@ -405,7 +405,7 @@ private fun SummaryTaskRow(task: TaskDto, name: (String) -> String, userRepo: Us
             Text("截止 ${task.endDate}" + if (task.timeKind == "TIMED") " ${task.endTime.orEmpty()}" else "", Modifier.weight(1f), style = PandoraTypography.caption, color = PandoraTheme.colors.textSecondary)
             val executors = executorIds(task)
             LazyRow(Modifier.widthIn(max = 112.dp), horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space4)) {
-                items(executors, key = { it }) { id -> RemoteAvatar(id, name(id), PandoraDimensions.avatarSmall, 10.sp, userRepo) }
+                items(executors, key = { it }) { id -> RemoteAvatar(id, executorName(task, id, name), PandoraDimensions.avatarSmall, 10.sp, userRepo) }
             }
             if (executors.isEmpty()) Text("暂无可见执行人", style = PandoraTypography.caption, color = PandoraTheme.colors.textSecondary)
         }

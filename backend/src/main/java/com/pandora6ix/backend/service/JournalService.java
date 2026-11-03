@@ -150,7 +150,81 @@ public class JournalService implements com.pandora6ix.backend.application.journa
         a.business();
         var row = db.entity("work_log", a.enterpriseId(), id);
         scope.read(a, str(row, "author_user_id"));
-        return journalView(a, row);
+        var result = journalView(a, row);
+        result.put("author", authorProfile(a, str(row, "author_user_id")));
+        return result;
+    }
+
+    /** 日志作者：姓名、职位、所属组织与部门（组织向上最近的 DEPARTMENT 节点） */
+    private Map<String, Object> authorProfile(IdentityService.Actor a, String userId) {
+        var row = db.one(
+                "SELECT u.id,u.display_name,u.job_title,u.org_unit_id,o.name AS organization_name FROM app_user u"
+                        + " LEFT JOIN org_unit o ON o.enterprise_id=u.enterprise_id AND o.id=u.org_unit_id"
+                        + " WHERE u.enterprise_id=? AND u.id=?",
+                a.enterpriseId(), userId);
+        String department = null, org = str(row, "org_unit_id");
+        Set<String> seen = new HashSet<>();
+        while (org != null && seen.add(org)) {
+            var unit = db.entity("org_unit", a.enterpriseId(), org);
+            if ("DEPARTMENT".equals(unit.get("kind"))) { department = str(unit, "name"); break; }
+            org = str(unit, "parent_id");
+        }
+        return fields("id", userId, "displayName", str(row, "display_name"), "jobTitle", str(row, "job_title"),
+                "organizationName", str(row, "organization_name"), "departmentName", department);
+    }
+
+    // ---------- 上级留言 ----------
+
+    /** 能读日志即可看留言；能读且不是作者（作者在管理范围内）才可留言 */
+    public Map<String, Object> comments(IdentityService.Actor a, String journalId) {
+        a.business();
+        var journal = db.entity("work_log", a.enterpriseId(), journalId);
+        scope.read(a, str(journal, "author_user_id"));
+        var items = db.rows(
+                        "SELECT c.*,u.display_name AS author_name,u.job_title AS author_job_title FROM work_log_comment c"
+                                + " JOIN app_user u ON u.enterprise_id=c.enterprise_id AND u.id=c.author_user_id"
+                                + " WHERE c.enterprise_id=? AND c.work_log_id=? ORDER BY c.created_at,c.id",
+                        a.enterpriseId(), journalId)
+                .stream().map(r -> commentView(a, r)).toList();
+        return fields("items", items, "canComment", !a.id().equals(journal.get("author_user_id")));
+    }
+
+    @Transactional
+    public Map<String, Object> addComment(IdentityService.Actor a, String journalId, Contracts.JournalComment c) {
+        a.business();
+        var journal = db.entity("work_log", a.enterpriseId(), journalId);
+        scope.read(a, str(journal, "author_user_id"));
+        if (a.id().equals(journal.get("author_user_id"))) throw BusinessException.forbidden();
+        String content = c.content().strip();
+        if (content.isEmpty() || content.codePointCount(0, content.length()) > 500)
+            throw BusinessException.invalid("Comment must contain 1-500 characters.");
+        String id = BusinessDb.id();
+        db.update("INSERT INTO work_log_comment(id,enterprise_id,work_log_id,author_user_id,content) VALUES(?,?,?,?,?)",
+                id, a.enterpriseId(), journalId, a.id(), content);
+        return commentView(a, db.one(
+                "SELECT c.*,u.display_name AS author_name,u.job_title AS author_job_title FROM work_log_comment c"
+                        + " JOIN app_user u ON u.enterprise_id=c.enterprise_id AND u.id=c.author_user_id"
+                        + " WHERE c.enterprise_id=? AND c.id=?",
+                a.enterpriseId(), id));
+    }
+
+    @Transactional
+    public Map<String, Object> deleteComment(IdentityService.Actor a, String commentId) {
+        a.business();
+        var comment = db.entity("work_log_comment", a.enterpriseId(), commentId);
+        var journal = db.entity("work_log", a.enterpriseId(), str(comment, "work_log_id"));
+        scope.read(a, str(journal, "author_user_id"));
+        if (!a.id().equals(comment.get("author_user_id"))) throw BusinessException.forbidden();
+        db.update("DELETE FROM work_log_comment WHERE enterprise_id=? AND id=?", a.enterpriseId(), commentId);
+        return Map.of("commentId", commentId);
+    }
+
+    private Map<String, Object> commentView(IdentityService.Actor a, Map<String, Object> row) {
+        return fields("id", str(row, "id"), "journalId", str(row, "work_log_id"), "authorUserId", str(row, "author_user_id"),
+                "authorName", str(row, "author_name"), "authorJobTitle", str(row, "author_job_title"),
+                // 与其他接口一致输出 UTC ISO 时间（view 的转换规则），客户端按业务时区显示
+                "content", str(row, "content"), "createdAt", view(Map.of("created_at", row.get("created_at"))).get("createdAt"),
+                "allowedActions", a.id().equals(row.get("author_user_id")) ? List.of("DELETE") : List.of());
     }
 
     public Map<String, Object> entry(IdentityService.Actor a, String id) {
@@ -263,6 +337,7 @@ public class JournalService implements com.pandora6ix.backend.application.journa
                 "DELETE FROM work_log_tag WHERE enterprise_id=? AND work_log_id=?",
                 a.enterpriseId(),
                 id);
+        db.update("DELETE FROM work_log_comment WHERE enterprise_id=? AND work_log_id=?", a.enterpriseId(), id);
         db.update("DELETE FROM work_log WHERE enterprise_id=? AND id=?", a.enterpriseId(), id);
         audit.record(a,id,"WORK_LOG","WORK_LOG","DELETE","删除工作日报",auditBefore,null);
         return Map.of("journalId", id);

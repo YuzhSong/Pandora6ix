@@ -51,6 +51,24 @@ public class JournalController {
         return journals.detail(identity.current(), id);
     }
 
+    /** 日志留言：能读该日志即可查看；上级（能读且非作者）可留言 */
+    @GetMapping("/work-logs/{id}/comments")
+    public Object comments(@PathVariable String id) {
+        return journals.comments(identity.current(), id);
+    }
+
+    @PostMapping("/work-logs/{id}/comments")
+    @ResponseStatus(HttpStatus.CREATED)
+    public Object addComment(@PathVariable String id, @Valid @RequestBody Contracts.JournalComment c) {
+        return journals.addComment(identity.current(), id, c);
+    }
+
+    /** 只能删除自己写的留言 */
+    @DeleteMapping("/work-log-comments/{id}")
+    public Object deleteComment(@PathVariable String id) {
+        return journals.deleteComment(identity.current(), id);
+    }
+
     @GetMapping("/work-log-entries/{id}")
     public Object entry(@PathVariable String id) {
         return journals.entry(identity.current(), id);

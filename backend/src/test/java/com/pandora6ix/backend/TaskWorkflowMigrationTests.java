@@ -22,7 +22,8 @@ class TaskWorkflowMigrationTests {
             sql.executeUpdate("INSERT INTO task(id,enterprise_id,creator_user_id,task_kind,title,priority_level,start_date,end_date,time_kind) VALUES('pending','company','user','PERSONAL','Pending task',3,CURRENT_DATE,CURRENT_DATE,'ALL_DAY')");
             sql.executeUpdate("INSERT INTO task_assignment(id,enterprise_id,task_id,recipient_user_id) VALUES('waiting','company','pending','user')");
         }
-        assertEquals(5, Flyway.configure().dataSource(url, "sa", "").load().migrate().migrationsExecuted);
+        // V11–V16 在 V10 之后执行
+        assertEquals(6, Flyway.configure().dataSource(url, "sa", "").load().migrate().migrationsExecuted);
         try (var connection = DriverManager.getConnection(url, "sa", ""); var sql = connection.createStatement()) {
             try (var row = sql.executeQuery("SELECT company_wide FROM task WHERE id='task'")) {
                 assertTrue(row.next()); assertFalse(row.getBoolean(1));

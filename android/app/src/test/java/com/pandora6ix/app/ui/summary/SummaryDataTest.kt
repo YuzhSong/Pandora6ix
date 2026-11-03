@@ -43,6 +43,16 @@ class SummaryDataTest {
         assertEquals("成员 1234", summaryPersonName("missing1234", me, people))
     }
 
+    @Test fun executorNamePrefersAssignmentRecipientName() {
+        val me = UserDto("me", displayName = "本人")
+        val task = TaskDto("t", authorizedAssignments = listOf(
+            AssignmentDto("a1", recipientUserId = "peer5678", recipientName = "李同级"),
+            AssignmentDto("a2", recipientUserId = "ghost9999")))
+        val fallback: (String) -> String = { summaryPersonName(it, me, emptyList()) }
+        assertEquals("李同级", executorName(task, "peer5678", fallback))
+        assertEquals("成员 9999", executorName(task, "ghost9999", fallback))
+    }
+
     @Test fun realWorkStateIsUsedWithoutConflatingApprovalAndExecution() {
         val pending = TaskDto("pending", reviewStatus = "PENDING")
         val active = TaskDto("active", reviewStatus = "APPROVED", authorizedAssignments = listOf(
