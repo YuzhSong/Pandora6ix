@@ -120,6 +120,12 @@ class ApiClient(private val session: SessionStore, private val baseUrl: String =
 
     private val http: OkHttpClient = OkHttpClient.Builder().build()
 
+    /** AI 生成接口：后端总预算 40 秒，读超时放宽到 45 秒；其余请求保持默认超时 */
+    private val slowHttp: OkHttpClient = http.newBuilder()
+        .readTimeout(45, java.util.concurrent.TimeUnit.SECONDS)
+        .callTimeout(50, java.util.concurrent.TimeUnit.SECONDS)
+        .build()
+
     suspend fun <T> get(path: String, dataSerializer: DeserializationStrategy<T>): T =
         call("GET", path, null, null, dataSerializer)
 
@@ -134,6 +140,13 @@ class ApiClient(private val session: SessionStore, private val baseUrl: String =
 
     suspend fun <T> put(path: String, body: String, dataSerializer: DeserializationStrategy<T>): T =
         call("PUT", path, body, null, dataSerializer)
+
+    /** 长耗时读取/生成（AI 探索馆），使用 [slowHttp] */
+    suspend fun <T> getSlow(path: String, dataSerializer: DeserializationStrategy<T>): T =
+        call("GET", path, null, null, dataSerializer, slowHttp)
+
+    suspend fun <T> postSlow(path: String, body: String? = null, dataSerializer: DeserializationStrategy<T>): T =
+        call("POST", path, body, null, dataSerializer, slowHttp)
 
     /** 携带 Idempotency-Key 的非幂等命令；同一动作重试必须复用原键，新动作用新键 */
     suspend fun <T> postIdempotent(
@@ -175,7 +188,8 @@ class ApiClient(private val session: SessionStore, private val baseUrl: String =
         path: String,
         body: String?,
         idempotencyKey: String?,
-        dataSerializer: DeserializationStrategy<T>
+        dataSerializer: DeserializationStrategy<T>,
+        client: OkHttpClient = http
     ): T = withContext(Dispatchers.IO) {
         val tokenAtRequest = session.token
         val builder = Request.Builder().header("X-Client-Source", "ANDROID")
@@ -184,7 +198,7 @@ class ApiClient(private val session: SessionStore, private val baseUrl: String =
                 ?.toRequestBody("application/json".toMediaType()))
         tokenAtRequest?.let { builder.header("Authorization", "Bearer $it") }
         idempotencyKey?.let { builder.header("Idempotency-Key", it) }
-        http.newCall(builder.build()).execute().use { resp ->
+        client.newCall(builder.build()).execute().use { resp ->
             // A previous account's in-flight response must never update the new account's UI.
             if (session.token != tokenAtRequest) throw SessionExpiredException()
             val text = resp.body?.string().orEmpty()

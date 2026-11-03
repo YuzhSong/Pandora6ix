@@ -84,6 +84,7 @@ import androidx.core.content.FileProvider
 import com.pandora6ix.app.data.*
 import com.pandora6ix.app.mock.*
 import com.pandora6ix.app.ui.calendar.*
+import com.pandora6ix.app.ui.ai.AiExplorerScreen
 import com.pandora6ix.app.ui.review.ReviewScreen
 import com.pandora6ix.app.ui.task.ProgressSheet
 import com.pandora6ix.app.ui.summary.TaskSummaryFlow
@@ -455,6 +456,7 @@ fun PandoraApp(
         val taskRepo = remember { TaskRepository(api) }
         val userRepo = remember(currentUser?.id) { UserRepository(api) }
         val tagRepo = remember { TagRepository(api) }
+        val aiRepo = remember { AiRepository(api) }
         val appScope = rememberCoroutineScope()
         fun refreshTags() {
             appScope.launch {
@@ -712,7 +714,7 @@ fun PandoraApp(
                             }) }
                             Route.VIEW -> calendarUiState.SaveableStateProvider("calendar") { CalendarScreen(CalendarMode.valueOf(modeName), date, taskItems, canCreatePersonal, canCreateDelegated, serverTags, taskRepo, { modeName = it.name }, { dateKey = "${it.year}-${it.month}-${it.day}" }, { calRetry++ }, { detail = it.id }, taskScope = taskScope, onTaskScopeChange = { taskScope = it; calNotice = null }, currentUser = currentUser, canReviewTasks = canReviewTasks, businessTimezone = currentUser?.businessTimezone, loading = calLoading, error = calError, onRetry = { calRetry++ }, notice = calNotice, onOpenSummary = { showTaskSummary = true }) }
                             Route.LOGS -> LogsScreen(journalRepo, serverTags.toList(), currentUser?.businessTimezone, currentUser, userRepo) { journalDetailId = it }
-                            Route.AI -> AiMapScreen()
+                            Route.AI -> AiExplorerScreen(aiRepo, currentUser!!.id)
                             Route.ME -> ProfileScreen(currentUser!!, notifyMaster, showReviewCenter, reviewBadgeCount, tagManager, userRepo, scrollState = profileScrollState, onOpenTagManage = { showTagManage = true }, onOpenReviews = { showReviews = true }, onOpenSettings = { showSettings = true })
                         }
                     }
@@ -1999,15 +2001,6 @@ private fun JournalDetailScreen(repo: JournalRepository, journalId: String, busi
     }
 }
 /** AI 地图：保持规划中占位，不扩展业务；占位插图 64dp、品牌 Coral 仅作小面积装饰 */
-@Composable private fun AiMapScreen() {
-    Column(Modifier.fillMaxSize()) {
-        PandoraPageTitle("AI地图", Modifier.padding(horizontal = PandoraSpacing.pageHorizontal))
-        Spacer(Modifier.height(PandoraSpacing.space48))
-        Icon(Icons.Default.Info, null, Modifier.size(PandoraDimensions.placeholderIcon).align(Alignment.CenterHorizontally), tint = PandoraTheme.colors.brandCoral)
-        Text("AI 地图", Modifier.fillMaxWidth().padding(top = PandoraSpacing.space16), textAlign = TextAlign.Center, style = PandoraTypography.titleMedium, color = PandoraTheme.colors.textPrimary)
-        Text("功能规划中", Modifier.fillMaxWidth().padding(top = PandoraSpacing.space8), textAlign = TextAlign.Center, style = PandoraTypography.bodyMedium, color = PandoraTheme.colors.textSecondary)
-    }
-}
 @Composable private fun ProfileScreen(user: UserDto, notificationsEnabled: Boolean, showReviewCenter: Boolean, pendingReviewCount: Int, canManageTags: Boolean, userRepo: UserRepository, scrollState: ScrollState, onOpenTagManage: () -> Unit, onOpenReviews: () -> Unit, onOpenSettings: () -> Unit) {
     val context = LocalContext.current
     val avatarScope = rememberCoroutineScope()

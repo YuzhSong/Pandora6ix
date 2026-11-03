@@ -220,6 +220,32 @@ def read_schemas():
     schemas["OperationLogPage"] = obj({"items": array(log_record), "nextCursor": nullable(STRING), "total": INTEGER, "snapshotToken": STRING}, ("items", "nextCursor", "total", "snapshotToken"))
     schemas["OperationLogDetail"] = log_detail
     schemas["ManagerReplacementResult"] = obj({"items": array(ref("User"))}, ("items",))
+    # AI 探索馆：统一包装；data 内为确定性字段 + 模型或兜底字段
+    def ai_result(feature, data):
+        return obj({"feature": {"type": "string", "const": feature}, "aiGenerated": BOOLEAN, "quotaExceeded": BOOLEAN,
+            "disclaimer": STRING, "generatedAt": INSTANT, "data": data}, ("feature", "aiGenerated", "quotaExceeded", "disclaimer", "generatedAt", "data"))
+    named_count = obj({"name": STRING, "count": INTEGER}, ("name", "count"))
+    schemas["AiFortune"] = ai_result("fortune", obj({"date": DATE, "zodiac": nullable(STRING), "zodiacName": nullable(STRING),
+        "stars": {"type": "integer", "minimum": 1, "maximum": 5}, "luckyColor": obj({"name": STRING, "hex": STRING}), "keyword": STRING,
+        "luckyAction": STRING, "workStars": INTEGER, "socialStars": INTEGER, "inspirationStars": INTEGER,
+        "slackIndex": {"type": "integer", "minimum": 0, "maximum": 100}, "message": STRING, "workTip": STRING, "socialTip": STRING, "inspirationTip": STRING}))
+    schemas["AiPersonalityQuestions"] = obj({"version": STRING, "questions": array(obj({"id": STRING, "text": STRING,
+        "options": array(obj({"id": STRING, "text": STRING}, ("id", "text")))}, ("id", "text", "options")))}, ("version", "questions"))
+    schemas["AiPersonality"] = ai_result("personality", obj({"archetype": obj({"key": STRING, "name": STRING, "code": STRING, "emoji": STRING, "tagline": STRING}),
+        "dimensions": array(obj({"key": STRING, "name": STRING, "score": {"type": "integer", "minimum": 0, "maximum": 100}})),
+        "slackTalent": INTEGER, "headline": STRING, "portrait": STRING, "strengths": array(STRING), "watchouts": array(STRING), "workStyleTip": STRING}))
+    schemas["AiTarot"] = ai_result("tarot", obj({"question": nullable(STRING), "cards": array(obj({"position": STRING, "number": INTEGER, "name": STRING,
+        "upright": BOOLEAN, "keywords": array(STRING), "reading": STRING})), "summary": STRING, "advice": STRING}))
+    schemas["AiCareerMap"] = ai_result("career-map", obj({"empty": BOOLEAN, "guidance": STRING,
+        "stats": obj({"windowDays": INTEGER, "journalCount": INTEGER, "entryCount": INTEGER, "taskCount": INTEGER, "completedTaskCount": INTEGER}),
+        "topTags": array(named_count), "label": STRING, "summary": STRING,
+        "abilities": array(obj({"name": STRING, "level": {"type": "string", "enum": ["HIGH", "MEDIUM", "LOW", "INSUFFICIENT"]}, "evidence": STRING})),
+        "routes": array(obj({"key": {"type": "string", "enum": ["A", "B", "C"]}, "title": STRING, "description": STRING, "actions": array(STRING)}))}, ("empty", "stats", "topTags")))
+    schemas["AiCompanyOutlook"] = ai_result("company-outlook", obj({"empty": BOOLEAN, "guidance": STRING,
+        "stats": obj({"windowDays": INTEGER, "importantItemCount": INTEGER, "taskCount": INTEGER, "completedCount": INTEGER, "inProgressCount": INTEGER, "overdueCount": INTEGER}),
+        "topTags": array(named_count), "overview": STRING,
+        "scenarios": array(obj({"key": {"type": "string", "enum": ["RAPID", "STEADY", "CHALLENGE"]}, "title": STRING, "developments": STRING,
+            "signals": array(STRING), "preparations": array(STRING)}))}, ("empty", "stats", "topTags")))
     schemas["Dashboard"] = obj({"companyImportantItems": ref("CompanyItemPage"), "companyTasks": ref("TaskPage"), "personalImportantEntries": ref("ImportantSelection"), "workEntries": ref("WorkEntryPage"), "statistics": ref("Statistics")})
     return schemas
 
@@ -256,6 +282,9 @@ RESPONSES = {
     ("GET", "/dashboard"): "Dashboard", ("GET", "/dashboard/task-items"): "TaskPage", ("GET", "/statistics"): "Statistics",
     ("GET", "/notifications"): "NotificationPage", ("GET", "/notifications/unread-count"): "UnreadCount",
     ("POST", "/notifications/{id}/read"): "Notification",
+    ("GET", "/ai/fortune"): "AiFortune", ("GET", "/ai/personality/questions"): "AiPersonalityQuestions",
+    ("POST", "/ai/personality"): "AiPersonality", ("POST", "/ai/tarot"): "AiTarot",
+    ("POST", "/ai/career-map"): "AiCareerMap", ("POST", "/ai/company-outlook"): "AiCompanyOutlook",
 }
 
 # 二进制响应（不套 {data, requestId} 信封）

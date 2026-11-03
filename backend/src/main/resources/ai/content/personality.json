@@ -1,0 +1,123 @@
+{
+  "version": "v1",
+  "dimensions": [
+    {"key": "plan", "name": "规划力"},
+    {"key": "collab", "name": "协作力"},
+    {"key": "innovate", "name": "创新力"},
+    {"key": "focus", "name": "专注力"}
+  ],
+  "questions": [
+    {"id": "q01", "text": "老板突然要求你明天交一份报告，你的第一反应是？", "options": [
+      {"id": "a", "text": "列个提纲，排好今晚的时间表", "scores": {"plan": 3}},
+      {"id": "b", "text": "先拉上相关同事对一下口径", "scores": {"collab": 3}},
+      {"id": "c", "text": "看看有没有 AI 或模板能帮忙提速", "scores": {"innovate": 3, "focus": 1}},
+      {"id": "d", "text": "关掉消息提醒，一口气写完", "scores": {"focus": 3}}
+    ]},
+    {"id": "q02", "text": "周一早上打开电脑，你最先做什么？", "options": [
+      {"id": "a", "text": "把本周待办按优先级排一遍", "scores": {"plan": 3, "focus": 1}},
+      {"id": "b", "text": "回复群消息，看看大家都在忙什么", "scores": {"collab": 3}},
+      {"id": "c", "text": "浏览一下新工具和行业新闻", "scores": {"innovate": 3}},
+      {"id": "d", "text": "直接接着上周没做完的事干", "scores": {"focus": 3}}
+    ]},
+    {"id": "q03", "text": "项目讨论会上，你通常扮演什么角色？", "options": [
+      {"id": "a", "text": "整理结论、确认分工和时间点", "scores": {"plan": 3, "collab": 1}},
+      {"id": "b", "text": "照顾每个人的意见，让讨论顺利进行", "scores": {"collab": 3}},
+      {"id": "c", "text": "抛出一个大家没想到的点子", "scores": {"innovate": 3}},
+      {"id": "d", "text": "安静记录，会后把自己那部分搞定", "scores": {"focus": 3}}
+    ]},
+    {"id": "q04", "text": "离截止日期只剩一天，任务还差一半，你会？", "options": [
+      {"id": "a", "text": "重新拆分剩余工作，砍掉非必要部分", "scores": {"plan": 3}},
+      {"id": "b", "text": "找队友分担，一起冲刺", "scores": {"collab": 3}},
+      {"id": "c", "text": "换一种更快的做法试试", "scores": {"innovate": 3}},
+      {"id": "d", "text": "进入战斗状态，今晚通宵也要完成", "scores": {"focus": 3, "plan": 1}}
+    ]},
+    {"id": "q05", "text": "你理想中的工位是什么样的？", "options": [
+      {"id": "a", "text": "桌面整洁，便签和日程一目了然", "scores": {"plan": 3}},
+      {"id": "b", "text": "离同事近，随时可以聊两句", "scores": {"collab": 3}},
+      {"id": "c", "text": "放满各种好玩的小物件和灵感板", "scores": {"innovate": 3}},
+      {"id": "d", "text": "安静角落 + 降噪耳机", "scores": {"focus": 3}}
+    ]},
+    {"id": "q06", "text": "接到一个完全陌生领域的任务，你会？", "options": [
+      {"id": "a", "text": "先列出需要了解的知识点和步骤", "scores": {"plan": 3}},
+      {"id": "b", "text": "找做过类似事情的人请教", "scores": {"collab": 3}},
+      {"id": "c", "text": "兴奋！终于可以试点新东西了", "scores": {"innovate": 3}},
+      {"id": "d", "text": "啃资料，直到自己能搞懂为止", "scores": {"focus": 3, "innovate": 1}}
+    ]},
+    {"id": "q07", "text": "午休时间你最可能在做什么？", "options": [
+      {"id": "a", "text": "顺手规划一下下午和晚上", "scores": {"plan": 3}},
+      {"id": "b", "text": "和同事一起吃饭聊天", "scores": {"collab": 3}},
+      {"id": "c", "text": "刷点有意思的视频或文章找灵感", "scores": {"innovate": 3}},
+      {"id": "d", "text": "趁人少处理掉一件小事", "scores": {"focus": 3}}
+    ]},
+    {"id": "q08", "text": "同事向你求助一个和你无关的问题，你会？", "options": [
+      {"id": "a", "text": "帮他梳理一下思路和步骤", "scores": {"plan": 3, "collab": 1}},
+      {"id": "b", "text": "放下手头的事，陪他一起解决", "scores": {"collab": 3}},
+      {"id": "c", "text": "给他推荐一个更巧妙的办法", "scores": {"innovate": 3}},
+      {"id": "d", "text": "先说明手上有急事，稍后再帮", "scores": {"focus": 3}}
+    ]},
+    {"id": "q09", "text": "你最有成就感的时刻是？", "options": [
+      {"id": "a", "text": "计划中的事情一项项按时完成", "scores": {"plan": 3}},
+      {"id": "b", "text": "团队一起把难题攻下来", "scores": {"collab": 3}},
+      {"id": "c", "text": "自己的新想法被大家采纳", "scores": {"innovate": 3, "collab": 1}},
+      {"id": "d", "text": "长时间专注后终于搞定一个难点", "scores": {"focus": 3}}
+    ]},
+    {"id": "q10", "text": "计划被临时打乱了，你的心情是？", "options": [
+      {"id": "a", "text": "有点难受，马上重新排一版计划", "scores": {"plan": 3}},
+      {"id": "b", "text": "先问问大家怎么调整比较好", "scores": {"collab": 3}},
+      {"id": "c", "text": "还挺刺激，说不定有新机会", "scores": {"innovate": 3}},
+      {"id": "d", "text": "无所谓，把眼前这件做好就行", "scores": {"focus": 3}}
+    ]},
+    {"id": "q11", "text": "如果可以给自己的工作加一个超能力，你选？", "options": [
+      {"id": "a", "text": "预知每个项目的风险点", "scores": {"plan": 3}},
+      {"id": "b", "text": "瞬间读懂每个人的需求", "scores": {"collab": 3}},
+      {"id": "c", "text": "灵感永不枯竭", "scores": {"innovate": 3}},
+      {"id": "d", "text": "随时进入心流状态", "scores": {"focus": 3}}
+    ]},
+    {"id": "q12", "text": "周五下班前，你通常会？", "options": [
+      {"id": "a", "text": "写好下周计划再走", "scores": {"plan": 3}},
+      {"id": "b", "text": "和同事约周末活动或聚餐", "scores": {"collab": 3}},
+      {"id": "c", "text": "记下这周冒出来的新点子", "scores": {"innovate": 3, "plan": 1}},
+      {"id": "d", "text": "把手上的事收尾，干干净净下班", "scores": {"focus": 3}}
+    ]}
+  ],
+  "pairing": {
+    "plan>collab": "STRATEGIST", "plan>innovate": "STRATEGIST", "plan>focus": "EFFICIENCY",
+    "collab>plan": "MEETING", "collab>innovate": "CONNECTOR", "collab>focus": "MEETING",
+    "innovate>plan": "AI_WIZARD", "innovate>collab": "IDEA", "innovate>focus": "AI_WIZARD",
+    "focus>plan": "OBSERVER", "focus>collab": "DEADLINE", "focus>innovate": "DEADLINE"
+  },
+  "archetypes": {
+    "STRATEGIST": {"name": "战略指挥官", "code": "PLAN", "emoji": "🦁", "tagline": "先想清楚路线，再出发",
+      "portrait": "你喜欢在行动之前把事情规划清楚，最擅长的不是埋头苦干，而是找到最有效的解决路线。团队混乱时，你往往是那个把大家拉回正轨的人。",
+      "strengths": ["全局视野", "善于拆解复杂问题", "让团队有方向感"], "watchouts": ["计划太满时容易焦虑", "偶尔忽视临场变化"],
+      "workStyleTip": "给计划留 20% 的弹性空间，你会更从容。"},
+    "EFFICIENCY": {"name": "效率狂魔", "code": "FAST", "emoji": "⚡", "tagline": "清单划完的那一刻最爽",
+      "portrait": "你对时间特别敏感，喜欢把任务排好顺序然后高效完成。在你手里，再长的待办清单也会一项项变短。",
+      "strengths": ["执行速度快", "时间管理出色", "说到做到"], "watchouts": ["容易对慢节奏不耐烦", "忘记给自己放假"],
+      "workStyleTip": "完成一件大事后，奖励自己一段真正的休息。"},
+    "MEETING": {"name": "会议生存专家", "code": "SYNC", "emoji": "🗣️", "tagline": "再难的会也能开出结论",
+      "portrait": "你擅长在多方之间协调沟通，能让不同意见找到共同点。别人觉得头疼的会议，在你这里往往能顺利收尾。",
+      "strengths": ["沟通协调能力强", "情绪稳定", "善于凝聚共识"], "watchouts": ["时间容易被会议切碎", "不好意思拒绝别人"],
+      "workStyleTip": "每天留一段不开会的整块时间给自己。"},
+    "CONNECTOR": {"name": "协作连接者", "code": "LINK", "emoji": "🤝", "tagline": "把对的人连在一起",
+      "portrait": "你天生擅长连接资源和人，知道谁能帮上什么忙，也乐于分享新的想法。有你在，团队的点子总能流动起来。",
+      "strengths": ["人缘好", "信息灵通", "善于促成合作"], "watchouts": ["精力容易分散", "自己的事情被往后排"],
+      "workStyleTip": "帮别人之前，先确认自己今天最重要的一件事。"},
+    "AI_WIZARD": {"name": "AI 魔法师", "code": "MAGE", "emoji": "🧙", "tagline": "能让工具干的绝不手动",
+      "portrait": "你热爱尝试新工具和新方法，总能找到更聪明的做事方式。别人加班做的事，你可能一个脚本就搞定了。",
+      "strengths": ["学习新东西快", "善用工具提效", "敢于尝试"], "watchouts": ["容易沉迷折腾工具", "新方案落地前要多验证"],
+      "workStyleTip": "把好用的方法写下来分享给团队，影响力翻倍。"},
+    "IDEA": {"name": "灵感制造机", "code": "IDEA", "emoji": "💡", "tagline": "脑洞是我的生产力",
+      "portrait": "你的脑子里总有源源不断的新点子，喜欢和人碰撞想法。很多有意思的方案，最初都来自你随口一说。",
+      "strengths": ["创意丰富", "感染力强", "不怕打破常规"], "watchouts": ["点子多但落地少", "对重复工作缺乏耐心"],
+      "workStyleTip": "每周挑一个点子认真落地，你会惊讶于它的效果。"},
+    "OBSERVER": {"name": "冷静观察员", "code": "CALM", "emoji": "🦉", "tagline": "看清楚了再出手",
+      "portrait": "你沉稳细致，习惯先观察再行动，很少被情绪左右。关键时刻，你的判断往往最靠谱。",
+      "strengths": ["细节把控好", "情绪稳定", "判断冷静"], "watchouts": ["有时想得太多出手偏慢", "好想法别藏着不说"],
+      "workStyleTip": "试着在会上早一点分享你的观察，大家会受益。"},
+    "DEADLINE": {"name": "DDL 战神", "code": "DDL", "emoji": "🔥", "tagline": "截止日期就是我的超能力",
+      "portrait": "你在压力下反而状态最好，越临近截止日期越能爆发惊人的专注力。别人慌的时候，正是你发光的时候。",
+      "strengths": ["抗压能力强", "爆发力惊人", "关键时刻靠得住"], "watchouts": ["容易把事情拖到最后", "长期冲刺注意身体"],
+      "workStyleTip": "试着给自己设一个“假截止日期”，提前开启战神模式。"}
+  }
+}
