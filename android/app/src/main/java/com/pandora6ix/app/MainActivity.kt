@@ -1947,10 +1947,19 @@ private fun JournalDetailScreen(repo: JournalRepository, journalId: String, busi
                 Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(PandoraSpacing.space16),
                 verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space12)
             ) {
+                // 作者：姓名 + 部门/组织 + 职位（详情接口返回 author；旧数据回退到本人或占位名）
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space12)) {
-                    val authorName = if (j.authorUserId == currentUser?.id) currentUser.displayName.ifBlank { currentUser.name } else "成员 ${j.authorUserId.takeLast(4)}"
+                    val author = j.author
+                    val authorName = author?.displayName?.takeIf { it.isNotBlank() }
+                        ?: if (j.authorUserId == currentUser?.id) currentUser.displayName.ifBlank { currentUser.name } else "成员 ${j.authorUserId.takeLast(4)}"
                     RemoteAvatar(j.authorUserId, authorName, 40.dp, 17.sp, userRepo)
-                    Text(authorName, style = PandoraTypography.labelLarge)
+                    Column(Modifier.weight(1f)) {
+                        Text(authorName, style = PandoraTypography.titleSmall, color = PandoraTheme.colors.textPrimary)
+                        val unit = listOfNotNull(author?.departmentName, author?.organizationName?.takeIf { it != author.departmentName })
+                            .filter { it.isNotBlank() }.joinToString(" · ")
+                        val line = listOf(unit.ifBlank { "未分配部门" }, author?.jobTitle.orEmpty()).filter { it.isNotBlank() }.joinToString("  |  ")
+                        if (author != null) Text(line, style = PandoraTypography.bodyMedium, color = PandoraTheme.colors.textSecondary)
+                    }
                 }
                 JournalSection("创建时间") {
                     val created = com.pandora6ix.app.data.businessDateTimeLabel(j.publishedAt, businessTimezone)
@@ -1966,6 +1975,8 @@ private fun JournalDetailScreen(repo: JournalRepository, journalId: String, busi
                         if (i < entries.lastIndex) Spacer(Modifier.height(PandoraSpacing.space12))
                     }
                 }
+                // 上级留言：放在内容下方，上级有大输入框，作者只读
+                com.pandora6ix.app.ui.logs.JournalCommentsSection(repo, j.id, businessTimezone, userRepo)
             }
         }
     }

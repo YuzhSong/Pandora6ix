@@ -223,6 +223,9 @@ public final class Contracts {
     public record PersonalityAnswers(
             @NotEmpty @Size(max = 12) List<@NotBlank @Size(max = 16) String> optionIds) {}
 
+    /** 上级对日志的留言；去除首尾空白后 1-500 字 */
+    public record JournalComment(@NotBlank @Size(max = 500) String content) {}
+
     /** AI 塔罗屋：问题可为空；问题文字会发送给第三方模型 */
     public record TarotDraw(@Size(max = 100) String question) {}
 }

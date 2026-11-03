@@ -60,5 +60,15 @@ class JournalRepository(private val api: ApiClient) {
     suspend fun delete(journalId: String): JournalDeletedDto =
         api.delete("/work-logs/$journalId", JournalDeletedDto.serializer())
 
+    /** 日志留言：能读即可查看；canComment 表示当前用户（上级）可留言 */
+    suspend fun comments(journalId: String): JournalCommentPageDto =
+        api.get("/work-logs/$journalId/comments", JournalCommentPageDto.serializer())
+
+    suspend fun addComment(journalId: String, content: String): JournalCommentDto =
+        api.post("/work-logs/$journalId/comments", api.json.encodeToString(JournalCommentBody.serializer(), JournalCommentBody(content)), JournalCommentDto.serializer())
+
+    suspend fun deleteComment(commentId: String): JournalCommentDeletedDto =
+        api.delete("/work-log-comments/$commentId", JournalCommentDeletedDto.serializer())
+
     private fun url(value: String) = URLEncoder.encode(value, "UTF-8")
 }
