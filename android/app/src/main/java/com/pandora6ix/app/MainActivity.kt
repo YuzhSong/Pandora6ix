@@ -359,8 +359,8 @@ fun PandoraApp(
         val date = dateKey.split("-").map(String::toInt).let { DemoDate(it[0], it[1], it[2]) }
         val current = Route.valueOf(route)
         val nav = listOf(
-            NavItem(Route.HOME, "导图", Icons.Default.GridView),
-            NavItem(Route.VIEW, "视图", Icons.Default.CalendarMonth),
+            NavItem(Route.HOME, "首页", Icons.Default.GridView),
+            NavItem(Route.VIEW, "公司", Icons.Default.CalendarMonth),
             NavItem(Route.LOGS, "日志", Icons.Default.NoteAlt),
             NavItem(Route.AI, "AI地图", Icons.Default.Psychology),
             NavItem(Route.ME, "我的", Icons.Default.PersonOutline)
@@ -373,6 +373,8 @@ fun PandoraApp(
         val notifyPrefs = remember(currentUser?.id) { NotificationPrefs(appContext, currentUser?.id) }
         val pushDeviceRepo = remember { PushDeviceRepository(appContext, api) }
         val notificationRepo = remember { NotificationRepository(api) }
+        // 每日事项：本地按账号隔离存储（服务端接口后续接入时替换）
+        val dailyStore = remember(currentUser?.id) { DailyItemsStore(appContext, currentUser?.id) }
         var notifyMaster by remember(currentUser?.id) { mutableStateOf(notifyPrefs.master) }
         var notifyNewTask by remember(currentUser?.id) { mutableStateOf(notifyPrefs.newTask) }
         var notifyDeadline by remember(currentUser?.id) { mutableStateOf(notifyPrefs.deadline) }
@@ -473,7 +475,6 @@ fun PandoraApp(
         }
         val calendarRepo = remember { CalendarRepository(api) }
         val journalRepo = remember { JournalRepository(api) }
-        val selectionRepo = remember { SelectionRepository(api) }
         val taskRepo = remember { TaskRepository(api) }
         val userRepo = remember(currentUser?.id) { UserRepository(api) }
         val tagRepo = remember { TagRepository(api) }
@@ -727,7 +728,7 @@ fun PandoraApp(
                       theme.art?.let { art -> ThemeScene(art, calendar = current == Route.VIEW, modifier = Modifier.align(Alignment.BottomCenter)) }
                       AnimatedContent(current, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "page") { target ->
                         when (target) {
-                            Route.HOME -> calendarUiState.SaveableStateProvider("home") { HomeScreen(dashboardRepo, selectionRepo, notificationRepo, openedNotificationId, notificationOpenSequence, notificationReadRevision, pendingPushNotificationId = pendingPushNotificationId, onPushNotificationConsumed = { pendingPushNotificationId = null }, onDrawerClosed = { openedNotificationId = null }, onOpenHome = { homeDetail = it }, onOpenNotification = { item ->
+                            Route.HOME -> calendarUiState.SaveableStateProvider("home") { HomeScreen(dashboardRepo, calendarRepo, notificationRepo, dailyStore, openedNotificationId, notificationOpenSequence, notificationReadRevision, pendingPushNotificationId = pendingPushNotificationId, onPushNotificationConsumed = { pendingPushNotificationId = null }, onDrawerClosed = { openedNotificationId = null }, onOpenHome = { homeDetail = it }, onOpenNotification = { item ->
                                 // 只有仍在「待我审批」队列里的审批申请才进审批中心并展开该条；
                                 // 已审批/驳回的消息（含「审批结果」）队列里查不到，直接看对应任务详情
                                 val awaitingReview = item.reviewId != null && item.eventType == "REVIEW_REQUEST" && !item.resolved
@@ -825,7 +826,7 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
     }
 }
 
-@Composable private fun HomeScreen(dashboardRepo: DashboardRepository, selectionRepo: SelectionRepository, notificationRepo: NotificationRepository, openedNotificationId: String?, notificationOpenSequence: Int, notificationReadRevision: Int, pendingPushNotificationId: String?, onPushNotificationConsumed: () -> Unit, onDrawerClosed: () -> Unit, onOpenHome: (HomeDetail) -> Unit, onOpenNotification: (NotificationDto) -> Unit) {
+@Composable private fun HomeScreen(dashboardRepo: DashboardRepository, calendarRepo: CalendarRepository, notificationRepo: NotificationRepository, dailyStore: DailyItemsStore, openedNotificationId: String?, notificationOpenSequence: Int, notificationReadRevision: Int, pendingPushNotificationId: String?, onPushNotificationConsumed: () -> Unit, onDrawerClosed: () -> Unit, onOpenHome: (HomeDetail) -> Unit, onOpenNotification: (NotificationDto) -> Unit) {
     var expandedPanel by rememberSaveable { mutableStateOf<String?>(null) }
     var notifications by rememberSaveable { mutableStateOf(false) }
     // 只有「点推送进来」这一次会自动打开抽屉；消费后立刻清空挂在首页之外的待处理状态
@@ -839,14 +840,18 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
     LaunchedEffect(notifications, notificationOpenSequence, notificationReadRevision) {
         unreadCount = runCatching { notificationRepo.unreadCount() }.getOrDefault(0)
     }
-    var editingPersonal by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     var dashboard by remember { mutableStateOf<DashboardDto?>(null) }
     var dashLoading by remember { mutableStateOf(true) }
     var dashError by remember { mutableStateOf<String?>(null) }
     val companyPager = remember { HomePanelPager<CompanyItemDto>() }
     val taskPager = remember { HomePanelPager<TaskDto>() }
-    val entryPager = remember { HomePanelPager<WorkEntryDto>() }
+    // 每日事项：会话内列表 + 本地持久化（按账号隔离）
+    val dailyItems = remember { mutableStateListOf<DailyItem>().apply { addAll(dailyStore.load()) } }
+    fun mutateDaily(change: MutableList<DailyItem>.() -> Unit) {
+        dailyItems.change()
+        dailyStore.save(dailyItems)
+    }
     fun loadDashboard() {
         dashLoading = true; dashError = null
         scope.launch {
@@ -856,18 +861,47 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
                 companyPager.items.clear(); companyPager.items.addAll(d.companyImportantItems.items)
                 companyPager.nextCursor = d.companyImportantItems.nextCursor
                 companyPager.moreUrl = d.companyImportantItems.moreUrl
-                taskPager.items.clear(); taskPager.items.addAll(d.companyTasks.items)
-                taskPager.nextCursor = d.companyTasks.nextCursor
-                taskPager.moreUrl = d.companyTasks.moreUrl
-                entryPager.items.clear(); entryPager.items.addAll(d.workEntries.items)
-                entryPager.nextCursor = d.workEntries.nextCursor
-                entryPager.moreUrl = d.workEntries.moreUrl
             } catch (e: SessionExpiredException) {
                 // 401 已由全局回调处理，回到登录页
             } catch (e: Exception) {
                 dashError = (e as? ApiException)?.friendlyMessage() ?: "加载失败，请重试"
             } finally {
                 dashLoading = false
+            }
+        }
+    }
+    // 任务看板：执行人视角，展示被派发给我的任务（scope=mine）
+    var taskBoardLoading by remember { mutableStateOf(true) }
+    var taskBoardError by remember { mutableStateOf<String?>(null) }
+    fun loadTaskBoard() {
+        taskBoardLoading = true; taskBoardError = null
+        scope.launch {
+            try {
+                val page = calendarRepo.tasks(scope = "mine", limit = 20)
+                taskPager.items.clear(); taskPager.items.addAll(page.items)
+                taskPager.nextCursor = page.nextCursor
+                taskPager.moreUrl = null
+            } catch (e: SessionExpiredException) {
+            } catch (e: Exception) {
+                taskBoardError = (e as? ApiException)?.friendlyMessage() ?: "加载失败，请重试"
+            } finally {
+                taskBoardLoading = false
+            }
+        }
+    }
+    fun loadMoreTasks() {
+        val cursor = taskPager.nextCursor ?: return
+        if (taskPager.loadingMore) return
+        taskPager.loadingMore = true
+        scope.launch {
+            try {
+                val page = calendarRepo.tasks(scope = "mine", cursor = cursor, limit = 20)
+                taskPager.items.addAll(page.items)
+                taskPager.nextCursor = page.nextCursor
+            } catch (_: Exception) {
+                // 翻页失败：保留已加载内容，用户可再次点击重试
+            } finally {
+                taskPager.loadingMore = false
             }
         }
     }
@@ -892,21 +926,11 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
         val page = dashboardRepo.more(companyPager.moreUrl ?: "/api/v1/company-important-items", cursor, CompanyItemPageDto.serializer())
         page.items to page.nextCursor
     }
-    fun loadMoreTasks() = loadMore(taskPager, "/api/v1/dashboard/task-items") { cursor ->
-        val page = dashboardRepo.more(taskPager.moreUrl ?: "/api/v1/dashboard/task-items", cursor, TaskPageDto.serializer())
-        page.items to page.nextCursor
-    }
-    fun loadMoreEntries() = loadMore(entryPager, "/api/v1/me/important-entry-candidates") { cursor ->
-        val page = dashboardRepo.more(entryPager.moreUrl ?: "/api/v1/me/important-entry-candidates", cursor, WorkEntryPageDto.serializer())
-        page.items to page.nextCursor
-    }
-    LaunchedEffect(Unit) { loadDashboard() }
+    LaunchedEffect(Unit) { loadDashboard(); loadTaskBoard() }
     val d = dashboard
     val panels = listOf(
-        HomePanelDef("公司十大重要事项", companyPager.items.map { it.title }, "暂无公司重要事项"),
-        HomePanelDef("公司十大派发任务", taskPager.items.map { it.title }, "暂无任务"),
-        HomePanelDef("个人十大重要事项", d?.personalImportantEntries?.entries?.map { it.content } ?: emptyList(), "暂无个人重要事项"),
-        HomePanelDef("个人日志", entryPager.items.map { it.content }, "暂无日志")
+        HomePanelDef("事件纪", companyPager.items.map { it.title }, "暂无事件"),
+        HomePanelDef("任务看板", taskPager.items.map { it.title }, "暂无任务")
     )
     val panelAccent = PandoraTheme.colors.primary
     fun openItem(panelIndex: Int, index: Int, text: String) {
@@ -915,8 +939,6 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
         when (panelIndex) {
             0 -> { kind = "COMPANY_ITEM"; id = companyPager.items.getOrNull(index)?.id }
             1 -> { kind = "TASK"; id = taskPager.items.getOrNull(index)?.id }
-            2 -> { kind = "WORK_ENTRY"; id = d?.personalImportantEntries?.entries?.getOrNull(index)?.id }
-            3 -> { kind = "WORK_ENTRY"; id = entryPager.items.getOrNull(index)?.id }
             else -> { kind = null; id = null }
         }
         // 进入详情前收起展开浮层，返回后不会叠着一层
@@ -944,29 +966,17 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
                     Text("正在加载…", style = PandoraTypography.bodyMedium, color = colors.textSecondary)
                 }
                 else -> Column(Modifier.fillMaxSize().padding(bottom = PandoraSpacing.space16), verticalArrangement = Arrangement.spacedBy(PandoraGrid.gutter)) {
-            Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(PandoraGrid.gutter)) {
+            Row(Modifier.fillMaxWidth().weight(0.9f), horizontalArrangement = Arrangement.spacedBy(PandoraGrid.gutter)) {
                 HomePanel(panels[0], Modifier.weight(1f).fillMaxHeight(), loading = dashLoading, error = dashError, onRetry = { loadDashboard() }, onExpand = { expandedPanel = panels[0].title }, onItemClick = { i, t -> openItem(0, i, t) })
-                HomePanel(panels[1], Modifier.weight(1f).fillMaxHeight(), loading = dashLoading, error = dashError, onRetry = { loadDashboard() }, onExpand = { expandedPanel = panels[1].title }, onItemClick = { i, t -> openItem(1, i, t) })
+                HomePanel(panels[1], Modifier.weight(1f).fillMaxHeight(), loading = taskBoardLoading, error = taskBoardError, onRetry = { loadTaskBoard() }, onExpand = { expandedPanel = panels[1].title }, onItemClick = { i, t -> openItem(1, i, t) })
             }
-            Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(PandoraGrid.gutter)) {
-                HomePanel(
-                    panels[2],
-                    Modifier.weight(1f).fillMaxHeight(),
-                    loading = dashLoading,
-                    error = dashError,
-                    onRetry = { loadDashboard() },
-                    trailing = {
-                        IconButton(onClick = { editingPersonal = true }, Modifier.size(40.dp)) {
-                            Box(Modifier.size(32.dp).clip(PandoraShapes.circle).background(colors.primaryContainer), contentAlignment = Alignment.Center) {
-                                Icon(Icons.Default.Edit, "编辑个人事项", Modifier.size(PandoraDimensions.iconSmall), tint = colors.textPrimary)
-                            }
-                        }
-                    },
-                    onExpand = { expandedPanel = panels[2].title },
-                    onItemClick = { i, t -> openItem(2, i, t) }
-                )
-                HomePanel(panels[3], Modifier.weight(1f).fillMaxHeight(), loading = dashLoading, error = dashError, onRetry = { loadDashboard() }, onExpand = { expandedPanel = panels[3].title }, onItemClick = { i, t -> openItem(3, i, t) })
-            }
+            DailyItemsPanel(
+                Modifier.fillMaxWidth().weight(1.1f).padding(bottom = PandoraSpacing.space4),
+                items = dailyItems,
+                onAdd = { date, content -> mutateDaily { add(DailyItem(UUID.randomUUID().toString(), date.toString(), content)) } },
+                onToggle = { item -> mutateDaily { val i = indexOfFirst { it.id == item.id }; if (i >= 0) this[i] = this[i].copy(done = !this[i].done) } },
+                onDelete = { item -> mutateDaily { removeAll { it.id == item.id } } }
+            )
                 }
             }
         }
@@ -1001,11 +1011,10 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
                           }
                           if (i < list.lastIndex) PandoraDivider()
                       }
-                      // 分页：nextCursor 非空时提供“加载更多”（个人重要事项面板为当前选择，无分页）
+                      // 分页：nextCursor 非空时提供“加载更多”
                       val pagerState = when (selected.title) {
                           panels[0].title -> companyPager.nextCursor to companyPager.loadingMore
                           panels[1].title -> taskPager.nextCursor to taskPager.loadingMore
-                          panels[3].title -> entryPager.nextCursor to entryPager.loadingMore
                           else -> null to false
                       }
                       if (pagerState.first != null) {
@@ -1013,7 +1022,6 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
                               when (selected.title) {
                                   panels[0].title -> loadMoreCompany()
                                   panels[1].title -> loadMoreTasks()
-                                  panels[3].title -> loadMoreEntries()
                               }
                           }, Modifier.fillMaxWidth().padding(top = PandoraSpacing.space8)) {
                               Text(if (pagerState.second) "加载中…" else "加载更多", style = PandoraTypography.labelLarge, color = colors.primary)
@@ -1022,10 +1030,6 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
                   }
               }
           }
-      }
-      if (editingPersonal) {
-          Box(Modifier.fillMaxSize().background(colors.scrim).clickable { editingPersonal = false })
-          PersonalImportantEditor(repo = selectionRepo, onClose = { editingPersonal = false }, onSaved = { loadDashboard() })
       }
       if (notifications) {
           androidx.activity.compose.BackHandler { notifications = false; onDrawerClosed() }
