@@ -218,4 +218,11 @@ public final class Contracts {
     public record Selection(
             @NotNull @Min(0) Long expectedVersion,
             @NotNull @Size(max = 10) List<@NotBlank String> entryIds) {}
+
+    /** 职场人格盲盒：每题一个选项，形如 q01-a */
+    public record PersonalityAnswers(
+            @NotEmpty @Size(max = 12) List<@NotBlank @Size(max = 16) String> optionIds) {}
+
+    /** AI 塔罗屋：问题可为空；问题文字会发送给第三方模型 */
+    public record TarotDraw(@Size(max = 100) String question) {}
 }

@@ -18,8 +18,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import com.pandora6ix.app.data.UserRepository
-import com.pandora6ix.app.ui.theme.Ink
-import com.pandora6ix.app.ui.theme.WarmOrange
+import com.pandora6ix.app.ui.theme.PandoraTheme
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -38,9 +37,9 @@ fun RemoteAvatar(userId: String, name: String, size: Dp, fontSize: TextUnit, use
             delay(15_000)
         }
     }
-    Box(Modifier.size(size).clip(CircleShape).background(WarmOrange.copy(alpha = .18f)), contentAlignment = Alignment.Center) {
+    Box(Modifier.size(size).clip(CircleShape).background(PandoraTheme.colors.primaryContainer), contentAlignment = Alignment.Center) {
         if (photo != null) Image(photo!!.asImageBitmap(), "$name 的头像", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
         else if (fallback != null) fallback()
-        else Text(name.take(1).ifBlank { "?" }, fontSize = fontSize, fontWeight = FontWeight.Bold, color = Ink)
+        else Text(name.take(1).ifBlank { "?" }, fontSize = fontSize, fontWeight = FontWeight.SemiBold, color = PandoraTheme.colors.textPrimary)
     }
 }

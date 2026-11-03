@@ -17,3 +17,11 @@ pandora:
   jpush:
     app-key: ${PANDORA_JPUSH_APP_KEY:}
     master-secret: ${PANDORA_JPUSH_MASTER_SECRET:}
+  # AI 探索馆：密钥只在服务器环境变量中；未配置时各功能返回兜底内容
+  deepseek:
+    api-key: ${PANDORA_DEEPSEEK_API_KEY:}
+    base-url: ${PANDORA_DEEPSEEK_BASE_URL:https://api.deepseek.com}
+    model: ${PANDORA_DEEPSEEK_MODEL:deepseek-chat}
+    timeout-seconds: ${PANDORA_DEEPSEEK_TIMEOUT_SECONDS:25}
+  ai:
+    daily-quota: ${PANDORA_AI_DAILY_QUOTA:30}

@@ -1,5 +1,7 @@
 package com.pandora6ix.app.ui.calendar
 
+import com.pandora6ix.app.ui.theme.*
+import com.pandora6ix.app.ui.components.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
@@ -26,8 +28,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pandora6ix.app.mock.DemoDate
 import com.pandora6ix.app.mock.todayDate
-import com.pandora6ix.app.ui.theme.CreamDeep
-import com.pandora6ix.app.ui.theme.Ink
 
 /**
  * 滚轮选择器共用组件（添加任务与视图页头部共用）：
@@ -48,35 +48,36 @@ internal fun DateWheelDialog(initial: DemoDate, onDismiss: () -> Unit, onConfirm
         if (day > max) day = max
     }
     val dayValues = (1..daysInMonth(year, month)).map { "%02d".format(it) }
-    AlertDialog(
+    PandoraAlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("选择日期", fontWeight = FontWeight.Bold) },
+        title = { Text("选择日期") },
         text = {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space8), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1.2f), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("年", fontSize = 13.sp, color = Ink.copy(alpha = .6f))
+                    Text("年", style = PandoraTypography.caption, color = PandoraTheme.colors.textSecondary)
                     WheelColumn(years.map { it.toString() }, (year - years.first()).coerceIn(0, years.size - 1), { year = years[it] })
                 }
                 Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("月", fontSize = 13.sp, color = Ink.copy(alpha = .6f))
+                    Text("月", style = PandoraTypography.caption, color = PandoraTheme.colors.textSecondary)
                     WheelColumn((1..12).map { "%02d".format(it) }, month - 1, { month = it + 1 })
                 }
                 Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("日", fontSize = 13.sp, color = Ink.copy(alpha = .6f))
+                    Text("日", style = PandoraTypography.caption, color = PandoraTheme.colors.textSecondary)
                     // 日列数量随年月变化：以年月为 key 重建滚轮，定位到收敛后的日
                     key(year, month) { WheelColumn(dayValues, (day - 1).coerceIn(0, dayValues.size - 1), { day = it + 1 }) }
                 }
             }
         },
-        confirmButton = { TextButton({ onConfirm(DemoDate(year, month, day)) }) { Text("确定", color = Ink, fontWeight = FontWeight.Bold) } },
-        dismissButton = { TextButton(onDismiss) { Text("取消", color = Ink.copy(alpha = .6f)) } }
+        confirmButton = { PandoraDialogConfirm("确定", { onConfirm(DemoDate(year, month, day)) }) },
+        dismissButton = { PandoraDialogDismiss("取消", onDismiss) }
     )
 }
 
-/** 单列滚轮：固定 5 行视口、吸附停位，中间行为选中值；点击直接选中 */
+/** 单列滚轮：5 行×48dp=240dp 视口、按父级权重分宽、吸附停位，中间行为选中值；点击直接选中 */
 @Composable
 internal fun WheelColumn(values: List<String>, selected: Int, onSelected: (Int) -> Unit) {
-    val itemHeight = 40.dp
+    val itemHeight = PandoraDimensions.wheelRowHeight
+    val colors = PandoraTheme.colors
     val state = rememberLazyListState(initialFirstVisibleItemIndex = selected)
     // 滚动停位即选中值
     LaunchedEffect(state) {
@@ -86,8 +87,8 @@ internal fun WheelColumn(values: List<String>, selected: Int, onSelected: (Int) 
     LaunchedEffect(selected) {
         if (state.firstVisibleItemIndex != selected || state.firstVisibleItemScrollOffset != 0) state.scrollToItem(selected)
     }
-    Box(Modifier.height(itemHeight * 5).width(72.dp), contentAlignment = Alignment.Center) {
-        Box(Modifier.fillMaxWidth().height(itemHeight).clip(RoundedCornerShape(10.dp)).background(CreamDeep))
+    Box(Modifier.height(itemHeight * 5).fillMaxWidth(), contentAlignment = Alignment.Center) {
+        Box(Modifier.fillMaxWidth().height(itemHeight).clip(PandoraShapes.medium).background(colors.primaryContainer))
         LazyColumn(
             state = state,
             modifier = Modifier.fillMaxWidth(),
@@ -99,9 +100,10 @@ internal fun WheelColumn(values: List<String>, selected: Int, onSelected: (Int) 
                 Box(Modifier.fillMaxWidth().height(itemHeight).clickable { onSelected(index) }, contentAlignment = Alignment.Center) {
                     Text(
                         values[index],
-                        fontSize = if (index == selected) 18.sp else 15.sp,
-                        fontWeight = if (index == selected) FontWeight.Bold else FontWeight.Normal,
-                        color = if (index == selected) Ink else Ink.copy(alpha = .35f)
+                        style = if (index == selected) PandoraTypography.titleSmall else PandoraTypography.bodyLarge,
+                        fontWeight = if (index == selected) FontWeight.SemiBold else FontWeight.Normal,
+                        color = if (index == selected) colors.textPrimary else colors.textTertiary,
+                        maxLines = 1
                     )
                 }
             }

@@ -1,5 +1,7 @@
 package com.pandora6ix.app.ui.logs
 
+import com.pandora6ix.app.ui.theme.*
+import com.pandora6ix.app.ui.components.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -12,6 +14,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.border
+import com.pandora6ix.app.ui.components.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -45,17 +50,13 @@ import androidx.compose.ui.window.DialogProperties
 import com.pandora6ix.app.data.parseIsoDate
 import com.pandora6ix.app.mock.DemoDate
 import com.pandora6ix.app.ui.calendar.WheelColumn
-import com.pandora6ix.app.ui.theme.Ink
-import com.pandora6ix.app.ui.theme.WarmCard
-import com.pandora6ix.app.ui.theme.WarmDashboard
-import com.pandora6ix.app.ui.theme.WarmOrange
 import kotlinx.coroutines.launch
 import java.util.Calendar
 
-/** 今天：固定语义绿，不随主题变化 */
-private val TodayGreen = Color(0xFF2E7D32)
-/** 无日志日期：灰 */
-private val EmptyDay = Color(0xFF9E9E9E)
+/** 今天：Success 语义色，不随主题变化 */
+private val TodayGreen = WarmColors.success
+/** 无日志日期：不可选，使用 TextDisabled */
+private val EmptyDay = WarmColors.textDisabled
 private const val WEEK_HEADER = "日 一 二 三 四 五 六"
 
 private fun daysInMonth(year: Int, month: Int): Int =
@@ -130,25 +131,26 @@ fun JournalDatePickerDialog(
     }
 
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(Modifier.fillMaxSize(), color = WarmDashboard) {
-            Column(Modifier.fillMaxSize()) {
+        // 全屏模态编辑工具：白色浮层，自行处理系统栏 insets（规范第 7 节）
+        Surface(Modifier.fillMaxSize(), color = PandoraTheme.colors.elevatedSurface, contentColor = PandoraTheme.colors.textPrimary) {
+            Column(Modifier.fillMaxSize().systemBarsPadding()) {
                 Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                    Modifier.fillMaxWidth().padding(horizontal = PandoraSpacing.space8, vertical = PandoraSpacing.space8),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     // 左上角年月：点开选年/月后跳转
                     Text(
                         "${focused.monthLabel()} ${if (panelOpen) "▲" else "▼"}",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.clip(RoundedCornerShape(8.dp))
+                        style = PandoraTypography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.clip(PandoraShapes.small)
                             // 没有任何有日志的月份时不展开（滚轮无内容可滑）
                             .clickable(enabled = journaledMonths.isNotEmpty()) { panelOpen = !panelOpen }
-                            .padding(horizontal = 8.dp, vertical = 6.dp)
+                            .padding(horizontal = PandoraSpacing.space8, vertical = PandoraSpacing.space12)
                     )
                     Spacer(Modifier.weight(1f))
-                    TextButton({ onSelect(null) }) { Text("全部日期", color = Ink) }
-                    IconButton(onDismiss) { Icon(Icons.Default.Close, "关闭") }
+                    TextButton({ onSelect(null) }) { Text("全部日期", style = PandoraTypography.labelLarge, color = PandoraTheme.colors.primary) }
+                    IconButton(onDismiss) { Icon(Icons.Default.Close, "关闭", tint = PandoraTheme.colors.textSecondary) }
                 }
                 if (panelOpen) {
                     // 与视图页左上角一致的滚轮选择（仅年、月两列），且只列有日志的年月
@@ -160,11 +162,11 @@ fun JournalDatePickerDialog(
                         onConfirm = { y, m -> jumpTo(y, m) }
                     )
                 }
-                Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp)) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = PandoraSpacing.pageHorizontal, vertical = PandoraSpacing.space4)) {
                     WEEK_HEADER.split(" ").forEach { w ->
                         Text(
                             w, Modifier.weight(1f), textAlign = TextAlign.Center,
-                            fontSize = 11.sp, color = EmptyDay
+                            style = PandoraTypography.caption, color = PandoraTheme.colors.textTertiary
                         )
                     }
                 }
@@ -202,13 +204,14 @@ private fun YearMonthWheelPanel(
     val months = remember(journaled, pickedYear) { journaled.filter { it.year == pickedYear }.map { it.month } }
     var pickedMonth by remember(pickedYear, month) { mutableStateOf(month.takeIf { it in months } ?: months.first()) }
     Column(
-        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)
-            .clip(RoundedCornerShape(16.dp)).background(WarmCard).padding(vertical = 8.dp),
+        Modifier.fillMaxWidth().padding(horizontal = PandoraSpacing.pageHorizontal, vertical = PandoraSpacing.space8)
+            .clip(PandoraShapes.large).background(PandoraTheme.colors.surface)
+            .border(PandoraDimensions.borderWidth, PandoraTheme.colors.border, PandoraShapes.large).padding(vertical = PandoraSpacing.space8),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.padding(horizontal = PandoraSpacing.space16), horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space8), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1.2f), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("年", fontSize = 13.sp, color = EmptyDay)
+                Text("年", style = PandoraTypography.caption, color = PandoraTheme.colors.textSecondary)
                 WheelColumn(
                     years.map { it.toString() },
                     years.indexOf(pickedYear).coerceAtLeast(0),
@@ -216,7 +219,7 @@ private fun YearMonthWheelPanel(
                 )
             }
             Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("月", fontSize = 13.sp, color = EmptyDay)
+                Text("月", style = PandoraTypography.caption, color = PandoraTheme.colors.textSecondary)
                 // 月列随所选年份变化：以年份为 key 重建滚轮，只列该年有日志的月份
                 key(pickedYear) {
                     WheelColumn(
@@ -227,10 +230,10 @@ private fun YearMonthWheelPanel(
                 }
             }
         }
-        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.End) {
-            TextButton(onCancel) { Text("取消", color = Ink.copy(alpha = .6f)) }
-            Spacer(Modifier.width(8.dp))
-            TextButton({ onConfirm(pickedYear, pickedMonth) }) { Text("确定", color = Ink, fontWeight = FontWeight.Bold) }
+        Row(Modifier.fillMaxWidth().padding(horizontal = PandoraSpacing.space12), horizontalArrangement = Arrangement.End) {
+            PandoraDialogDismiss("取消", onCancel)
+            Spacer(Modifier.width(PandoraSpacing.space8))
+            PandoraDialogConfirm("确定", { onConfirm(pickedYear, pickedMonth) })
         }
     }
 }
@@ -244,12 +247,11 @@ private fun MonthBlock(
     onPick: (String) -> Unit
 ) {
     val rows = remember(month.year, month.month) { monthCells(month.year, month.month) }
-    Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp)) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = PandoraSpacing.pageHorizontal, vertical = PandoraSpacing.space4)) {
         Text(
             month.monthLabel(),
-            fontSize = 14.sp,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.padding(vertical = 6.dp)
+            style = PandoraTypography.labelLarge,
+            modifier = Modifier.padding(vertical = PandoraSpacing.space8)
         )
         rows.forEach { week ->
             Row(Modifier.fillMaxWidth()) {
@@ -261,19 +263,19 @@ private fun MonthBlock(
                             val isToday = iso == today
                             val color = when {
                                 isToday -> TodayGreen
-                                hasLog -> Ink
+                                hasLog -> PandoraTheme.colors.textPrimary
                                 else -> EmptyDay
                             }
                             Box(
                                 Modifier.fillMaxSize().clip(CircleShape)
-                                    .background(if (iso == selected) WarmOrange.copy(alpha = .22f) else Color.Transparent)
+                                    .background(if (iso == selected) PandoraTheme.colors.primaryContainer else Color.Transparent)
                                     .clickable(enabled = hasLog) { onPick(iso) }
                                     .padding(2.dp),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
                                     "$day",
-                                    fontSize = 14.sp,
+                                    style = PandoraTypography.bodyMedium,
                                     color = color,
                                     fontWeight = if (isToday || iso == selected) FontWeight.Bold else FontWeight.Normal
                                 )

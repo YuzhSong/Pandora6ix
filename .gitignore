@@ -30,6 +30,7 @@ android/.kotlin/
 *.jks
 secrets.properties
 sshkey.md
+deepseek.md
 
 # OS files and logs
 .DS_Store

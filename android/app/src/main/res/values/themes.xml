@@ -1,4 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.Pandora6ix" parent="android:style/Theme.Material.Light.NoActionBar" />
+    <style name="Theme.Pandora6ix" parent="android:style/Theme.Material.Light.NoActionBar">
+        <!-- 浅色背景上使用深色状态栏图标；运行时 PandoraTheme 再同步导航栏图标 -->
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowBackground">#FFFBF2</item>
+        <!-- 所有 Dialog 窗口统一 40% 黑遮罩（规范第 7 节） -->
+        <item name="android:backgroundDimAmount">0.4</item>
+    </style>
 </resources>

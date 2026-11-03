@@ -1,6 +1,8 @@
 # Pandora Android UI Design System
 
-版本1.0，2026-10-31。设计依据与现状见 [审计](UI_AUDIT_REPORT.md)，迁移见 [路线](UI_REFACTOR_ROADMAP.md)。**这是后续开发的规范契约，尚未批量实现到现有页面。** 不将本文件当作新增业务、路由或后端权限的授权。
+版本1.1，2026-11-03（1.0 为 2026-10-31）。设计依据与现状见 [审计](UI_AUDIT_REPORT.md)，迁移见 [路线](UI_REFACTOR_ROADMAP.md)，落地结果见 [验收报告](UI_REFACTOR_ACCEPTANCE_REPORT.md)。**1.1 起本规范已实现到 Android 工程（OpenSpec `unify-android-ui-design-system`）**；新页面必须使用 `ui/theme` Token 与 `ui/components` 组件。不将本文件当作新增业务、路由或后端权限的授权。
+
+1.1 修订：对比度验算后修正 TextTertiary、Error、薄荷 Primary 三个值（见 2 节）；选中淡底上的文字统一用 TextPrimary；第 10 节改为实际工程映射。
 
 ## 1. 原则与产品边界
 
@@ -21,7 +23,7 @@ Pandora服务员工日常任务与日志，管理者在权限范围内浏览。�
 | ElevatedSurface | #FFFFFF | 全部Dialog/Sheet/Menu；已确认白色功能面板 | 按主题改紫/黄、加色调叠层 |
 | TextPrimary | #302B2A | 正文与标题 | 在深色按钮上 |
 | TextSecondary | #615B59 | 次级正文、字段标签 | 任意降低alpha代替Token |
-| TextTertiary | #76706E | 时间/说明/placeholder | 用更淡灰显示可读内容 |
+| TextTertiary | #6F6967 | 时间/说明/placeholder | 用更淡灰显示可读内容 |
 | TextDisabled | #9A9490 | 真正禁用的文字 | 普通时间/正文 |
 | TextOnPrimary | #FFFFFF | 深色主按钮 | 浅色品牌Coral底 |
 | BrandCoral | #FF8377 | 保留品牌标识/小面积装饰 | 普通白字按钮/正文链接 |
@@ -38,7 +40,7 @@ Pandora服务员工日常任务与日志，管理者在权限范围内浏览。�
 | SuccessContainer | #DDEEDC | 成功小标签 | 页面背景 |
 | Warning | #78580B | 待审批/待验收/重要 | 普通主要按钮 |
 | WarningContainer | #FFF2C9 | 警告小标签 | 审批页面大背景 |
-| Error | #B34E4A | 错误/驳回/危险动作 | 通常操作/未选中控件 |
+| Error | #A84844 | 错误/驳回/危险动作 | 通常操作/未选中控件 |
 | ErrorContainer | #FFE0D8 | 错误小标签/inline提示 | 整页背景 |
 | Info | #355F7A | 进行中/提示 | 通用主按钮 |
 | InfoContainer | #DCECF2 | 信息小标签 | 日志正文背景 |
@@ -48,7 +50,7 @@ Pandora服务员工日常任务与日志，管理者在权限范围内浏览。�
 | SnackbarContent | #FFFFFF | 提示正文 | 浅色底正文 |
 | Ripple | #1F302B2A | Ink约12%的点击反馈 | 永久染色 |
 
-白字/默认Primary对比约4.86:1；TextTertiary/暖米背景约4.71:1。其他组合包括状态标签也须验算，普通文字≥4.5:1，大字及必要非文字边界≥3:1；禁用控件不承担正常内容可读性职责。输入框不能只有低对比卡片Border，必须用InputBorder、标签和Focus。
+白字/默认Primary对比约4.86:1；TextTertiary/暖米背景约5.22:1，五主题背景上最低4.68:1。1.0 原值 TextTertiary #76706E 在薄荷/晴空/紫藤背景仅4.23–4.37:1、Error #B34E4A 在 ErrorContainer 上仅4.12:1，1.1 已修正；默认 Primary 文字在 PrimaryContainer 上仅3.90:1，故选中淡底（胶囊、Tab 选中底、今天标记）上的文字一律用 TextPrimary，Primary 只作图标/指示/下划线。由 `DesignTokensTest` 守护。其他组合包括状态标签也须验算，普通文字≥4.5:1，大字及必要非文字边界≥3:1；禁用控件不承担正常内容可读性职责。输入框不能只有低对比卡片Border，必须用InputBorder、标签和Focus。
 
 ### 2.1 五主题兼容
 
@@ -57,12 +59,12 @@ Pandora服务员工日常任务与日志，管理者在权限范围内浏览。�
 | key | AppBackground | Surface | ElevatedSurface | Primary / Focus | PrimaryPressed | PrimaryContainer |
 |---|---|---|---|---|---|---|
 | warm | #FFFBF2 | #FFFCF4 | #FFFFFF | #A65E49 | #8D4C3B | #F3E3DC |
-| mint | #E8F4EC | #F4FBF7 | #FFFFFF | #4C7A5C | #3D634A | #DDEEDC |
+| mint | #E8F4EC | #F4FBF7 | #FFFFFF | #487657 | #3D634A | #DDEEDC |
 | sky | #E9F1FA | #F6FAFF | #FFFFFF | #3F6F96 | #335B7C | #DCECF2 |
 | sakura | #FBF0F3 | #FDF8FA | #FFFFFF | #9E526A | #834257 | #F6E2E9 |
 | lilac | #F1EDFA | #FAF8FF | #FFFFFF | #6E5B99 | #59487E | #E7DDF4 |
 
-每主题PrimaryDisabled统一#E8DDD7，Secondary/状态等沿主表。底部导航采用AppBackground，indicator用PrimaryContainer小面积。删除dashboard/backgroundDeep作为额外大面积背景角色；旧值只能在适配过渡期保留，不能供新页面直接使用。白色汇总、成员及任务详情面板复用ElevatedSurface的**同一白色值**，不创造第四底色；工程可用 `panelSurface` 语义别名指向该Token，不附加浮层阴影。
+每主题PrimaryDisabled统一#E8DDD7，Secondary/状态等沿主表。薄荷 Primary 1.0 为 #4C7A5C，作文字时在薄荷背景上仅4.38:1，1.1 改为 #487657（4.64:1，白字5.24:1）。底部导航采用AppBackground，indicator用PrimaryContainer小面积。删除dashboard/backgroundDeep作为额外大面积背景角色；旧值只能在适配过渡期保留，不能供新页面直接使用。白色汇总、成员及任务详情面板复用ElevatedSurface的**同一白色值**，不创造第四底色；工程可用 `panelSurface` 语义别名指向该Token，不附加浮层阴影。
 
 ### 2.2 状态与优先级
 
@@ -207,22 +209,24 @@ BottomNavigation视觉内容高80dp+系统手势insets，五等分；图标24、
 
 ## 10. Compose工程映射与命名
 
-当前仅Theme.kt集中AppTheme/别名/Material，通用RemoteAvatar，其他基础容器分散。以下是未来迁移文件，**本次不创建Kotlin实现，也不移动现有页面目录**：
+以下为 1.1 实际工程映射（路径相对 `android/app/src/main/java/com/pandora6ix/app/`）。旧颜色别名（Cream/WarmOrange/ThemeButton 等）与 AppTheme 旧字段已在迁移完成后删除：
 
 | 文件（ui/下） | 职责与Token |
 |---|---|
-| theme/Color.kt | `PandoraColorTokens`：lowerCamel字段appBackground/surface/elevatedSurface/textPrimary/primary等；五主题表；标签色数据适配 |
-| theme/Type.kt | `PandoraTypography`八级+calendarMicro，映射完整M3 Typography |
-| theme/Dimens.kt | `PandoraSpacing.space2…space48`、`PandoraDimensions.touchTarget/icon…`、`PandoraGrid`规则 |
-| theme/Shape.kt | `PandoraShapes.small/medium/large/xLarge/dialog/pill/circle`，M3 Shapes映射 |
-| theme/Theme.kt（现有） | 主题选择→统一Token→MaterialTheme；保留旧别名作为deprecated转接，逐批迁移后删除 |
-| components/PandoraButton.kt | 明确variant、loading、enabled，禁止调用者自由指定主操作containerColor |
-| components/PandoraPanel.kt | 基础Surface+内距/边框；业务Panel调用 |
-| components/PandoraDialog.kt | Confirm/Alert/Sheet外观与安全区包装，支持已有内容 |
-| components/PandoraTagChip.kt | 原色/主标签顺序/对比度/边框；与StatusChip分离 |
-| components/PandoraTextField.kt | 错误/标签/IME/单多行一致 |
-| components/PandoraListItem.kt | 人员/设置的共享基础；不硬塞任务模型 |
-| components/RemoteAvatar.kt（现有） | 保留仓库/缓存逻辑，接入尺寸Token与语义 |
+| ui/theme/Color.kt | `PandoraColorTokens`（appBackground/surface/elevatedSurface/primary…/scrim/ripple，`panelSurface`、`focus` 别名）；`WarmColors/MintColors/SkyColors/SakuraColors/LilacColors`；`LocalPandoraColors`；`contrastRatio` |
+| ui/theme/Type.kt | `PandoraTypography` 八级 + `calendarMicro`；`PandoraMaterialTypography` 映射全部 M3 槽位 |
+| ui/theme/Dimens.kt | `PandoraSpacing`（space2…space48 及 pageHorizontal/panelPadding/section 等语义）、`PandoraDimensions`（touchTarget/icon/buttonHeight/avatar*…）、`PandoraGrid.columnWidth()`、`PandoraCalendarDimens`（日历例外几何） |
+| ui/theme/Shape.kt | `PandoraShapes.small/medium/large/xLarge/dialog/sheet/pill/circle`；`PandoraMaterialShapes` |
+| ui/theme/StatusColors.kt | `StatusTone`、`reviewStatusTone`、`executionStatusTone`、`priorityTone/priorityLabel`、`statusColors()`：唯一的状态/优先级颜色映射 |
+| ui/theme/Theme.kt | `AppTheme(key,label,colors)`、`appThemes`、`PandoraTheme(theme){}` 同时提供 LocalAppTheme/LocalPandoraColors/Material3 并设置深色系统栏图标；`PandoraTheme.colors` 取值入口 |
+| ui/components/PandoraButton.kt | `PandoraButton` 六种 variant（Primary/Secondary/Outline/Text/Destructive/DestructiveFilled）× 三种尺寸，含 loading |
+| ui/components/PandoraPanel.kt | `PandoraPanel`/`PandoraCard`（Surface 或白色功能面板）、`PandoraPanelHeader`、`PandoraItemContainer` |
+| ui/components/PandoraDialog.kt | `PandoraAlertDialog`（与 M3 参数一致）、`PandoraDialogConfirm/Dismiss`、`PandoraDialog`、`PandoraBottomSheet`、`PandoraDropdownMenu` |
+| ui/components/PandoraChips.kt | `PandoraTagChip`（原色/主标签/对比度取字色）、`PandoraStatusChip`、`PandoraChoiceChip`、`tagContentColor` |
+| ui/components/PandoraTextField.kt | `PandoraTextField`（与 OutlinedTextField 参数一致）、`pandoraTextFieldColors` |
+| ui/components/PandoraNavigation.kt | `PandoraTopBar`、`PandoraPageTitle`（一级页面）、`PandoraTabRow`、`PandoraListItem`、`PandoraToast`、`PandoraEmptyState`、`PandoraIconButton` |
+| ui/components/PandoraSurfaces.kt | `PandoraOverlaySurface`（自制浮层外壳）、`PandoraDivider` |
+| ui/components/RemoteAvatar.kt | 保留仓库/缓存逻辑，占位底与首字改用 Token |
 
 M3映射：primary=Primary、onPrimary=TextOnPrimary、secondary=Secondary、primaryContainer=PrimaryContainer、background=AppBackground、surface/surfaceContainer*=ElevatedSurface（确保默认浮层白）、surfaceTint=Transparent、onSurface/onBackground=TextPrimary、error=Error、outline=InputBorder、outlineVariant=Border、scrim=Scrim。普通Card显式用自有Surface，不能靠surfaceContainer默认推测。AppTheme/MaterialTheme必须由同一已选key生成，不能再固定另一个Coral Scheme。
 

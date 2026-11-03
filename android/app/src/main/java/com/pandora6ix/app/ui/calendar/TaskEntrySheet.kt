@@ -1,5 +1,6 @@
 package com.pandora6ix.app.ui.calendar
 
+import com.pandora6ix.app.ui.components.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -59,7 +60,7 @@ private fun String.date() = split("-").map(String::toInt).let { DemoDate(it[0], 
 
 /** 服务端标签颜色（#RRGGBB）→ Compose Color；非法值回退墨色 */
 internal fun tagHexColor(hex: String): Color =
-    runCatching { Color(android.graphics.Color.parseColor(hex)) }.getOrDefault(Ink)
+    runCatching { Color(android.graphics.Color.parseColor(hex)) }.getOrDefault(WarmColors.neutralContainer)
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
@@ -206,9 +207,10 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
     })
     val requestClose = { if (dirty) confirmExit = true else onDismiss() }
     val sheetScope = rememberCoroutineScope()
-    val fieldColors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Ink.copy(alpha = .65f), unfocusedBorderColor = Ink.copy(alpha = .25f), focusedLabelColor = Ink, cursorColor = Ink)
-    val buttonColors = ButtonDefaults.outlinedButtonColors(contentColor = Ink)
-    val buttonBorder = BorderStroke(1.dp, HairLine)
+    val fieldColors = pandoraTextFieldColors()
+    // 日期/时间选择按钮：Outline 变体（透明底、中性 1dp 边框、12 角）
+    val buttonColors = ButtonDefaults.outlinedButtonColors(contentColor = PandoraTheme.colors.textPrimary)
+    val buttonBorder = BorderStroke(PandoraDimensions.borderWidth, PandoraTheme.colors.inputBorder)
     var editVersions by remember { mutableStateOf<List<ScopeVersionDto>?>(null) }
     var editLoadError by remember { mutableStateOf(false) }
     var scopeOpen by remember { mutableStateOf(false) }
@@ -283,88 +285,85 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
             }
         }
     }
-    ModalBottomSheet(onDismissRequest = requestClose, sheetState = sheetState, containerColor = Color.White) {
-        Column(Modifier.fillMaxWidth().fillMaxHeight(.88f).padding(horizontal = 20.dp)) {
+    PandoraBottomSheet(onDismissRequest = requestClose, sheetState = sheetState) {
+        Column(Modifier.fillMaxWidth().fillMaxHeight(.88f).padding(horizontal = PandoraSpacing.space20)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(if (editingTask == null) "添加任务" else "编辑任务", fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                Text(if (editingTask == null) "添加任务" else "编辑任务", style = PandoraTypography.titleMedium, modifier = Modifier.weight(1f))
                 IconButton(requestClose) { Icon(Icons.Default.Close, "关闭任务填写") }
             }
-            Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space12)) {
                 if (currentUser?.roles?.contains("FOUNDER") == true && kind == "DELEGATED") {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Text("全公司可见", Modifier.weight(1f))
                         Switch(companyWide, { companyWide = it }, colors = com.pandora6ix.app.ui.theme.pandoraSwitchColors())
                     }
                 }
-                OutlinedTextField(title, { title = it; error = null }, Modifier.fillMaxWidth(), label = { Text("任务名称（必填）") }, placeholder = { Text("我计划做…") }, singleLine = true, colors = fieldColors)
-                OutlinedTextField(note, { note = it }, Modifier.fillMaxWidth().heightIn(min = 112.dp), label = { Text("备注 / 简介（选填）") }, colors = fieldColors, minLines = 3)
+                PandoraTextField(title, { title = it; error = null }, Modifier.fillMaxWidth(), label = { Text("任务名称（必填）") }, placeholder = { Text("我计划做…") }, singleLine = true, colors = fieldColors)
+                PandoraTextField(note, { note = it }, Modifier.fillMaxWidth().heightIn(min = 112.dp), label = { Text("备注 / 简介（选填）") }, colors = fieldColors, minLines = 3)
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text("全天任务", Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
+                    Text("全天任务", Modifier.weight(1f), style = PandoraTypography.labelLarge)
                     Switch(allDay, { allDay = it; error = null }, colors = com.pandora6ix.app.ui.theme.pandoraSwitchColors())
                 }
                 if (editingTask == null) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text("重复安排", Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
+                    Text("重复安排", Modifier.weight(1f), style = PandoraTypography.labelLarge)
                     Switch(repeating, { repeating = it; error = null }, colors = com.pandora6ix.app.ui.theme.pandoraSwitchColors())
                 }
                 if (repeating) {
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space8)) {
                         listOf("DAILY" to "每天", "WEEKLY" to "每周", "MONTHLY" to "每月").forEach { (value, label) ->
                             FilterChip(selected = !customRepeat && repeatFrequency == value, onClick = { customRepeat = false; repeatFrequency = value; error = null }, label = { Text(label) })
                         }
                         FilterChip(selected = customRepeat, onClick = { customRepeat = true; error = null }, label = { Text("自定义") })
                     }
                     if (customRepeat) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space8)) {
                         listOf("DAILY" to "天", "WEEKLY" to "周", "MONTHLY" to "月").forEach { (value, label) ->
                             FilterChip(selected = repeatFrequency == value, onClick = { repeatFrequency = value; error = null }, label = { Text(label) })
                         }
                     }
-                    OutlinedTextField(repeatInterval, { if (it.length <= 3 && it.all(Char::isDigit)) repeatInterval = it },
+                    PandoraTextField(repeatInterval, { if (it.length <= 3 && it.all(Char::isDigit)) repeatInterval = it },
                         Modifier.fillMaxWidth(), singleLine = true, colors = fieldColors,
                         label = { Text("自定义间隔：每 N ${when (repeatFrequency) { "DAILY" -> "天"; "WEEKLY" -> "周"; else -> "个月" }}（1–365）") })
                     }
-                    if (repeatFrequency == "WEEKLY") FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (repeatFrequency == "WEEKLY") FlowRow(horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space4)) {
                         (1..7).forEach { day ->
                             FilterChip(selected = day in repeatWeekdays, onClick = { repeatWeekdays = if (day in repeatWeekdays) repeatWeekdays - day else repeatWeekdays + day },
                                 label = { Text("周" + listOf("一", "二", "三", "四", "五", "六", "日")[day - 1]) })
                         }
                     }
                 }
-                Text(if (repeating) "重复生效日期范围（包含结束日）" else "连续时段的开始与结束", Modifier.fillMaxWidth(), fontWeight = FontWeight.SemiBold)
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton({ pickDate("start") }, Modifier.weight(1f), colors = buttonColors, border = buttonBorder, contentPadding = PaddingValues(8.dp)) { Text(startKey.date().let { "开始\n${it.year}/${it.month}/${it.day}" }, fontSize = 13.sp) }
-                    OutlinedButton({ pickDate("end") }, Modifier.weight(1f), colors = buttonColors, border = buttonBorder, contentPadding = PaddingValues(8.dp)) { Text(endKey.date().let { "结束\n${it.year}/${it.month}/${it.day}" }, fontSize = 13.sp) }
+                Text(if (repeating) "重复生效日期范围（包含结束日）" else "连续时段的开始与结束", Modifier.fillMaxWidth(), style = PandoraTypography.labelLarge)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space8)) {
+                    OutlinedButton({ pickDate("start") }, Modifier.weight(1f), colors = buttonColors, border = buttonBorder, shape = PandoraShapes.medium, contentPadding = PaddingValues(PandoraSpacing.space8)) { Text(startKey.date().let { "开始\n${it.year}/${it.month}/${it.day}" }, style = PandoraTypography.bodyMedium) }
+                    OutlinedButton({ pickDate("end") }, Modifier.weight(1f), colors = buttonColors, border = buttonBorder, shape = PandoraShapes.medium, contentPadding = PaddingValues(PandoraSpacing.space8)) { Text(endKey.date().let { "结束\n${it.year}/${it.month}/${it.day}" }, style = PandoraTypography.bodyMedium) }
                 }
-                if (!allDay) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton({ pickTime("start") }, Modifier.weight(1f), colors = buttonColors, border = buttonBorder) { Text("${if (repeating) "每次开始" else "开始"} ${minuteLabel(startMinute)}") }
-                    OutlinedButton({ pickTime("end") }, Modifier.weight(1f), colors = buttonColors, border = buttonBorder) { Text("${if (repeating) "每次结束" else "结束"} ${minuteLabel(endMinute)}") }
+                if (!allDay) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space8)) {
+                    OutlinedButton({ pickTime("start") }, Modifier.weight(1f), colors = buttonColors, border = buttonBorder, shape = PandoraShapes.medium) { Text("${if (repeating) "每次开始" else "开始"} ${minuteLabel(startMinute)}") }
+                    OutlinedButton({ pickTime("end") }, Modifier.weight(1f), colors = buttonColors, border = buttonBorder, shape = PandoraShapes.medium) { Text("${if (repeating) "每次结束" else "结束"} ${minuteLabel(endMinute)}") }
                 }
-                if (repeating) repeatPreview?.getOrNull()?.let { Text("共 ${it.size} 次", fontWeight = FontWeight.SemiBold) }
+                if (repeating) repeatPreview?.getOrNull()?.let { Text("共 ${it.size} 次", style = PandoraTypography.labelLarge) }
                 // 星级文字含义：与审批规则一致——星级越高越优先处理
-                Text("重要程度 · $priority 星 · ${priorityLabel(priority)}", fontWeight = FontWeight.SemiBold)
-                Row { (1..5).forEach { level -> IconButton({ priority = level }, Modifier.size(40.dp)) { Icon(if (level <= priority) Icons.Default.Star else Icons.Default.StarBorder, "$level 星", tint = Ink) } } }
-                Text("标签", fontWeight = FontWeight.SemiBold)
-                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("重要程度 · $priority 星 · ${priorityLabel(priority)}", style = PandoraTypography.labelLarge)
+                Row { (1..5).forEach { level -> IconButton({ priority = level }) { Icon(if (level <= priority) Icons.Default.Star else Icons.Default.StarBorder, "$level 星", tint = if (level <= priority) PandoraTheme.colors.statusColors(priorityTone(priority)).content else PandoraTheme.colors.textTertiary) } } }
+                Text("标签", style = PandoraTypography.titleSmall)
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space8), verticalAlignment = Alignment.CenterVertically) {
+                    // 已选标签：业务原色 + 中性边框，主标签前置并标注；点击移除
                     tags.forEachIndexed { i, name ->
-                        val tagColor = availableTags.firstOrNull { it.name == name }?.let { androidx.compose.ui.graphics.lerp(tagHexColor(it.colorHex), Ink, .10f) } ?: Ink
-                        if (i == 0) {
-                            Button({ tags = tags - name }, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), colors = ButtonDefaults.buttonColors(containerColor = tagColor, contentColor = Ink)) { Text("$name · 主", fontSize = 13.sp) }
-                        } else {
-                            OutlinedButton({ tags = tags - name }, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), colors = ButtonDefaults.outlinedButtonColors(containerColor = tagColor, contentColor = Ink)) { Text(name, fontSize = 13.sp) }
-                        }
+                        PandoraTagChip(name, availableTags.firstOrNull { it.name == name }?.colorHex, Modifier.heightIn(min = PandoraDimensions.chipButtonHeight),
+                            primary = i == 0, onClick = { tags = tags - name })
                     }
-                    OutlinedButton({ showTagPicker = true }, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp), border = BorderStroke(1.dp, HairLine), colors = ButtonDefaults.outlinedButtonColors(contentColor = Ink)) { Icon(Icons.Default.Add, "选择标签", Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("选择标签", fontSize = 13.sp) }
+                    OutlinedButton({ showTagPicker = true }, contentPadding = PaddingValues(horizontal = PandoraSpacing.space12, vertical = PandoraSpacing.space8), border = BorderStroke(1.dp, PandoraTheme.colors.border), colors = ButtonDefaults.outlinedButtonColors(contentColor = PandoraTheme.colors.textPrimary)) { Icon(Icons.Default.Add, "选择标签", Modifier.size(16.dp)); Spacer(Modifier.width(PandoraSpacing.space4)); Text("选择标签", style = PandoraTypography.bodyMedium) }
                 }
                 run {
-                Text("接收人", fontWeight = FontWeight.SemiBold)
-                if (namesFailed) TextButton({ namesRetry++ }) { Text("姓名加载失败，重试", color = ThemeButton) }
-                if (selectedRecipientIds.isNotEmpty()) FlowRow(Modifier.fillMaxWidth().padding(vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("接收人", style = PandoraTypography.titleSmall)
+                if (namesFailed) TextButton({ namesRetry++ }) { Text("姓名加载失败，重试", style = PandoraTypography.labelLarge, color = PandoraTheme.colors.primary) }
+                if (selectedRecipientIds.isNotEmpty()) FlowRow(Modifier.fillMaxWidth().padding(vertical = PandoraSpacing.space2), horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space8)) {
                     selectedRecipientIds.forEach { id ->
                         if (canDelegate) {
-                            FilterChip(selected = true, onClick = { selectedRecipientIds = selectedRecipientIds - id; error = null }, label = { Text(nameOf(id), fontSize = 13.sp) }, colors = FilterChipDefaults.filterChipColors(containerColor = Color.Transparent, labelColor = Ink, selectedContainerColor = CreamDeep, selectedLabelColor = Ink))
+                            FilterChip(selected = true, onClick = { selectedRecipientIds = selectedRecipientIds - id; error = null }, label = { Text(nameOf(id), style = PandoraTypography.bodyMedium) }, colors = FilterChipDefaults.filterChipColors(containerColor = Color.Transparent, labelColor = PandoraTheme.colors.textPrimary, selectedContainerColor = PandoraTheme.colors.primaryContainer, selectedLabelColor = PandoraTheme.colors.textPrimary))
                         } else {
                             // 无派发权限：接收人锁定为本人，浅蓝底黑字展示且不可更改
-                            FilterChip(selected = true, onClick = { }, enabled = false, label = { Text(nameOf(id), fontSize = 13.sp, color = Ink) }, colors = FilterChipDefaults.filterChipColors(disabledContainerColor = Color(0xFFD6EAF8), disabledLabelColor = Ink))
+                            FilterChip(selected = true, onClick = { }, enabled = false, label = { Text(nameOf(id), style = PandoraTypography.bodyMedium, color = PandoraTheme.colors.textPrimary) }, colors = FilterChipDefaults.filterChipColors(disabledContainerColor = PandoraTheme.colors.neutralContainer, disabledLabelColor = PandoraTheme.colors.textPrimary))
                         }
                     }
                 }
@@ -373,22 +372,22 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
                     queryWidth = coordinates.size.width
                     queryTop = coordinates.boundsInWindow().top.toInt()
                 }) {
-                    OutlinedTextField(recipientQuery, { recipientQuery = it; candidateOpen = it.contains("@") }, Modifier.fillMaxWidth(), placeholder = { Text("@ 检索接收人，勾选候选") }, singleLine = true, colors = fieldColors)
+                    PandoraTextField(recipientQuery, { recipientQuery = it; candidateOpen = it.contains("@") }, Modifier.fillMaxWidth(), placeholder = { Text("@ 检索接收人，勾选候选") }, singleLine = true, colors = fieldColors)
                     if (candidateOpen && queryWidth > 0) Popup(
                         popupPositionProvider = candidatePosition,
                         onDismissRequest = { candidateOpen = false },
                         properties = PopupProperties(focusable = false)
                     ) {
                         val maxCandidateHeight = with(density) { (queryTop - candidateGap - candidateInset).coerceAtLeast(0).toDp() }.coerceAtMost(280.dp)
-                        Column(Modifier.width(with(density) { queryWidth.toDp() }).heightIn(max = maxCandidateHeight).clip(RoundedCornerShape(12.dp)).background(CreamDeep).border(1.dp, Ink.copy(alpha = .12f), RoundedCornerShape(12.dp)).padding(vertical = 4.dp)) {
+                        Column(Modifier.width(with(density) { queryWidth.toDp() }).heightIn(max = maxCandidateHeight).clip(PandoraShapes.medium).background(PandoraTheme.colors.primaryContainer).border(1.dp, PandoraTheme.colors.border, PandoraShapes.medium).padding(vertical = PandoraSpacing.space4)) {
                             Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
                                 when {
-                                    candidateLoading -> Text("正在加载成员…", Modifier.padding(12.dp), fontSize = 13.sp)
+                                    candidateLoading -> Text("正在加载成员…", Modifier.padding(PandoraSpacing.space12), style = PandoraTypography.bodyMedium)
                                     candidateError -> {
-                                        Text("成员加载失败，请重试", Modifier.padding(horizontal = 12.dp, vertical = 8.dp), fontSize = 13.sp)
-                                        TextButton({ candidateRetry++ }) { Text("重试", color = Ink) }
+                                        Text("成员加载失败，请重试", Modifier.padding(horizontal = PandoraSpacing.space12, vertical = PandoraSpacing.space8), style = PandoraTypography.bodyMedium)
+                                        TextButton({ candidateRetry++ }) { Text("重试", color = PandoraTheme.colors.textPrimary) }
                                     }
-                                    candidates.isEmpty() -> Text("无匹配成员", Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), fontSize = 13.sp, color = Ink.copy(alpha = .5f))
+                                    candidates.isEmpty() -> Text("无匹配成员", Modifier.fillMaxWidth().padding(horizontal = PandoraSpacing.space12, vertical = PandoraSpacing.space8), style = PandoraTypography.bodyMedium, color = PandoraTheme.colors.textTertiary)
                                 }
                                 candidateGroups.forEach { group ->
                                     key(group.key) {
@@ -407,7 +406,7 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
                                     }
                                 }
                             }
-                            TextButton({ candidateOpen = false }, Modifier.fillMaxWidth()) { Text("完成", fontSize = 13.sp, color = Ink) }
+                            TextButton({ candidateOpen = false }, Modifier.fillMaxWidth()) { Text("完成", style = PandoraTypography.bodyMedium, color = PandoraTheme.colors.textPrimary) }
                         }
                     }
                 }
@@ -415,11 +414,11 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
                 }
             }
             // 标签已改为可选：无可用标签不再阻断提交
-            error?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp) }
-            Button(onClick = { submit() }, Modifier.fillMaxWidth().padding(vertical = 12.dp), enabled = !submitting, colors = ButtonDefaults.buttonColors(containerColor = ThemeButton, contentColor = OnThemeButton)) { Text(if (submitting) "保存中…" else if (editingTask != null) "保存" else "提交审批") }
+            error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = PandoraTypography.bodyMedium) }
+            PandoraButton(if (editingTask != null) "保存" else "提交审批", { submit() }, Modifier.fillMaxWidth().padding(vertical = PandoraSpacing.space12), loading = submitting)
         }
     }
-    if (confirmExit) AlertDialog(onDismissRequest = { confirmExit = false; sheetScope.launch { sheetState.show() } }, title = { Text("放弃未保存的任务？") }, text = { Text("关闭后，本次填写的内容会清空。") }, confirmButton = { TextButton({ confirmExit = false; AppCache.deleteDraft(context, draftKey); onDismiss() }) { Text("放弃") } }, dismissButton = { TextButton({ confirmExit = false; sheetScope.launch { sheetState.show() } }) { Text("继续填写") } })
+    if (confirmExit) PandoraAlertDialog(onDismissRequest = { confirmExit = false; sheetScope.launch { sheetState.show() } }, title = { Text("放弃未保存的任务？") }, text = { Text("关闭后，本次填写的内容会清空。") }, confirmButton = { PandoraDialogConfirm("放弃", { confirmExit = false; AppCache.deleteDraft(context, draftKey); onDismiss() }, destructive = true) }, dismissButton = { TextButton({ confirmExit = false; sheetScope.launch { sheetState.show() } }) { Text("继续填写", style = PandoraTypography.labelLarge, color = PandoraTheme.colors.textSecondary) } })
     timePickTarget?.let { target ->
         TimeWheelDialog(
             initialMinute = if (target == "start") startMinute else endMinute,
@@ -442,7 +441,7 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
             }
         )
     }
-    if (showTagPicker) AlertDialog(
+    if (showTagPicker) PandoraAlertDialog(
         onDismissRequest = { showTagPicker = false },
         title = { Text("选择标签") },
         text = {
@@ -453,38 +452,38 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
                         val isPrimary = selected && tags.first() == tag.name
                         Row(
                             // 用勾选表示选择状态，操作区始终占位，避免选中后变色或撑宽弹窗。
-                            Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { tags = if (selected) tags - tag.name else tags + tag.name }.padding(horizontal = 4.dp, vertical = 4.dp),
+                            Modifier.fillMaxWidth().clip(PandoraShapes.small).clickable { tags = if (selected) tags - tag.name else tags + tag.name }.padding(horizontal = PandoraSpacing.space4, vertical = PandoraSpacing.space4),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Box(Modifier.size(22.dp).clip(CircleShape).background(androidx.compose.ui.graphics.lerp(tagHexColor(tag.colorHex), Ink, .10f)).border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape))
-                            Spacer(Modifier.width(10.dp))
-                            Text(tag.name, Modifier.weight(1f), fontSize = 15.sp)
+                            Box(Modifier.size(PandoraDimensions.icon).clip(PandoraShapes.circle).background(tagHexColor(tag.colorHex)).border(PandoraDimensions.borderWidth, PandoraTheme.colors.border, PandoraShapes.circle))
+                            Spacer(Modifier.width(PandoraSpacing.space12))
+                            Text(tag.name, Modifier.weight(1f), style = PandoraTypography.bodyMedium)
                             Box(Modifier.width(72.dp).height(40.dp), contentAlignment = Alignment.Center) {
                                 if (selected) {
                                     if (isPrimary) {
-                                        Text("主标签", fontSize = 12.sp, color = Ink.copy(alpha = .6f))
+                                        Text("主标签", style = PandoraTypography.caption, color = PandoraTheme.colors.textTertiary)
                                     } else {
                                         TextButton(
                                             { tags = listOf(tag.name) + (tags - tag.name) },
                                             modifier = Modifier.fillMaxSize(),
                                             contentPadding = PaddingValues(0.dp),
-                                            colors = ButtonDefaults.textButtonColors(contentColor = Ink.copy(alpha = .65f))
-                                        ) { Text("设为主", fontSize = 12.sp) }
+                                            colors = ButtonDefaults.textButtonColors(contentColor = PandoraTheme.colors.textSecondary)
+                                        ) { Text("设为主", style = PandoraTypography.caption) }
                                     }
                                 }
                             }
-                            Spacer(Modifier.width(6.dp))
+                            Spacer(Modifier.width(PandoraSpacing.space8))
                             Box(Modifier.size(18.dp), contentAlignment = Alignment.Center) {
-                                if (selected) Icon(Icons.Default.Check, "已选", Modifier.size(18.dp), tint = Ink)
+                                if (selected) Icon(Icons.Default.Check, "已选", Modifier.size(18.dp), tint = PandoraTheme.colors.textPrimary)
                             }
                         }
                     }
                 }
             }
         },
-        confirmButton = { TextButton({ showTagPicker = false }) { Text("完成") } }
+        confirmButton = { PandoraDialogConfirm("完成", { showTagPicker = false }) }
     )
-    if (createdTask != null) AlertDialog(
+    if (createdTask != null) PandoraAlertDialog(
         onDismissRequest = { },
         title = { Text("已提交") },
         text = { Text("${createdTask?.occurrenceCount ?: 1} 次任务") },
@@ -494,7 +493,7 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
                 createdTask = null
                 onDismiss()
                 if (created != null) onCreated(created)
-            }) { Text("知道了", color = Ink, fontWeight = FontWeight.Bold) }
+            }) { Text("知道了", style = PandoraTypography.labelLarge, color = PandoraTheme.colors.primary) }
         }
     )
     if (scopeOpen && editingTask != null) com.pandora6ix.app.ui.task.ChangeScopeDialog(
@@ -516,13 +515,13 @@ private fun RecipientGroupRows(
             Modifier.fillMaxWidth().heightIn(min = 44.dp)
                 .semantics { stateDescription = if (collapsed) "已折叠" else "已展开" }
                 .clickable { onToggleGroup(group.key) }
-                .padding(horizontal = 12.dp, vertical = 6.dp),
+                .padding(horizontal = PandoraSpacing.space12, vertical = PandoraSpacing.space8),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(if (collapsed) Icons.Default.ExpandMore else Icons.Default.ExpandLess, if (collapsed) "展开" else "收起", Modifier.size(16.dp), tint = Ink.copy(alpha = .55f))
-            Spacer(Modifier.width(4.dp))
-            Text(group.name, Modifier.weight(1f), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-            Text("${group.memberCount} 人", fontSize = 11.sp, color = Ink.copy(alpha = .5f))
+            Icon(if (collapsed) Icons.Default.ExpandMore else Icons.Default.ExpandLess, if (collapsed) "展开" else "收起", Modifier.size(16.dp), tint = PandoraTheme.colors.textTertiary)
+            Spacer(Modifier.width(PandoraSpacing.space4))
+            Text(group.name, Modifier.weight(1f), style = PandoraTypography.labelLarge)
+            Text("${group.memberCount} 人", style = PandoraTypography.caption, color = PandoraTheme.colors.textTertiary)
         }
         if (!collapsed) {
             group.members.forEach { candidate ->
@@ -530,18 +529,18 @@ private fun RecipientGroupRows(
                     val selected = candidate.id in selectedIds
                     Row(
                         Modifier.fillMaxWidth().heightIn(min = 44.dp).clickable { onTogglePerson(candidate) }
-                            .padding(start = 24.dp, end = 12.dp, top = 6.dp, bottom = 6.dp),
+                            .padding(start = PandoraSpacing.space24, end = PandoraSpacing.space12, top = PandoraSpacing.space8, bottom = PandoraSpacing.space8),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(if (selected) Icons.Default.CheckBox else Icons.Default.CheckBoxOutlineBlank, if (selected) "已选" else "未选", tint = Ink)
-                        Column(Modifier.padding(start = 8.dp).weight(1f)) {
-                            Text(candidate.displayName.ifBlank { "成员 ${candidate.id.takeLast(4)}" }, fontSize = 14.sp)
-                            candidate.jobTitle?.takeIf { it.isNotBlank() }?.let { Text(it, fontSize = 11.sp, color = Ink.copy(alpha = .5f)) }
+                        Icon(if (selected) Icons.Default.CheckBox else Icons.Default.CheckBoxOutlineBlank, if (selected) "已选" else "未选", tint = PandoraTheme.colors.textPrimary)
+                        Column(Modifier.padding(start = PandoraSpacing.space8).weight(1f)) {
+                            Text(candidate.displayName.ifBlank { "成员 ${candidate.id.takeLast(4)}" }, style = PandoraTypography.bodyMedium)
+                            candidate.jobTitle?.takeIf { it.isNotBlank() }?.let { Text(it, style = PandoraTypography.caption, color = PandoraTheme.colors.textTertiary) }
                         }
                     }
                 }
             }
-            Column(Modifier.padding(start = 12.dp)) {
+            Column(Modifier.padding(start = PandoraSpacing.space12)) {
                 group.children.forEach { child ->
                     key(child.key) { RecipientGroupRows(child, collapsedGroups, selectedIds, onToggleGroup, onTogglePerson) }
                 }
@@ -555,23 +554,23 @@ private fun RecipientGroupRows(
 private fun TimeWheelDialog(initialMinute: Int, onDismiss: () -> Unit, onConfirm: (Int) -> Unit) {
     var hour by remember { mutableStateOf(initialMinute / 60) }
     var minute by remember { mutableStateOf(initialMinute % 60) }
-    AlertDialog(
+    PandoraAlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("选择时间", fontWeight = FontWeight.Bold) },
+        title = { Text("选择时间") },
         text = {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space12), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("时", fontSize = 13.sp, color = Ink.copy(alpha = .6f))
+                    Text("时", style = PandoraTypography.bodyMedium, color = PandoraTheme.colors.textTertiary)
                     WheelColumn((0..23).map { "%02d".format(it) }, hour, { hour = it })
                 }
-                Text(":", Modifier.padding(top = 20.dp), fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Ink.copy(alpha = .55f))
+                Text(":", Modifier.padding(top = PandoraSpacing.space20), style = PandoraTypography.titleLarge, color = PandoraTheme.colors.textTertiary)
                 Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("分", fontSize = 13.sp, color = Ink.copy(alpha = .6f))
+                    Text("分", style = PandoraTypography.bodyMedium, color = PandoraTheme.colors.textTertiary)
                     WheelColumn((0..59).map { "%02d".format(it) }, minute, { minute = it })
                 }
             }
         },
-        confirmButton = { TextButton({ onConfirm(hour * 60 + minute) }) { Text("确定", color = Ink, fontWeight = FontWeight.Bold) } },
-        dismissButton = { TextButton(onDismiss) { Text("取消", color = Ink.copy(alpha = .6f)) } }
+        confirmButton = { PandoraDialogConfirm("确定", { onConfirm(hour * 60 + minute) }) },
+        dismissButton = { PandoraDialogDismiss("取消", onDismiss) }
     )
 }

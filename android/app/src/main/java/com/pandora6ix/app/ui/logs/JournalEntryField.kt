@@ -29,7 +29,8 @@ import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
-import com.pandora6ix.app.ui.theme.Ink
+import com.pandora6ix.app.ui.theme.PandoraTheme
+import com.pandora6ix.app.ui.theme.PandoraTypography
 
 /** 与表单共用一个滚动视口，按实际光标行定位，避免整个长输入框遮住末尾。 */
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
@@ -74,8 +75,8 @@ internal fun JournalEntryField(
             if (changed) onValueChange(next.text)
         },
         modifier = modifier.onFocusChanged { focused = it.isFocused },
-        textStyle = MaterialTheme.typography.bodyLarge.copy(color = Ink),
-        cursorBrush = SolidColor(Ink),
+        textStyle = PandoraTypography.bodyLarge.copy(color = PandoraTheme.colors.textPrimary),
+        cursorBrush = SolidColor(PandoraTheme.colors.primary),
         minLines = 2,
         interactionSource = interaction,
         onTextLayout = { layout = it },

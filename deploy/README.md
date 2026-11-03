@@ -61,6 +61,20 @@ python3 deploy/package-release.py --sha "$(git rev-parse HEAD)" --run-number 0 -
 ```
 
 Windows 可运行 8 项归档/缓存校验测试，3 项真实软链接/回滚测试只在 Linux 运行。云端和 Actions 均须完整通过 11 项。安装、域名和真实 CI 发布结果见本目录 VALIDATION.md。
+# AI 探索馆（DeepSeek）
+
+后端在 root-only 的 `/opt/Pandora/config/backend.env` 读取以下变量，修改后需重启后端（每次 CI 发布会自动重启）：
+
+| 变量 | 说明 |
+|---|---|
+| `PANDORA_DEEPSEEK_API_KEY` | DeepSeek 密钥；为空时五项 AI 功能返回基础版兜底内容，不对外请求 |
+| `PANDORA_DEEPSEEK_BASE_URL` | 默认 `https://api.deepseek.com` |
+| `PANDORA_DEEPSEEK_MODEL` | 默认 `deepseek-chat` |
+| `PANDORA_DEEPSEEK_TIMEOUT_SECONDS` | 单次请求超时，默认 25；整体预算 40 秒，低于 Nginx `/api/` 的 60 秒 |
+| `PANDORA_AI_DAILY_QUOTA` | 每人每个业务日的模型调用上限，默认 30（内存计数，重启清零） |
+
+密钥不得进入 Git、GitHub Secrets、APK 或日志；后端日志只记录功能名、耗时和结果类别。服务器需能出站访问 `api.deepseek.com:443`。紧急关闭：清空密钥并重启后端。
+
 # JPush Android notifications
 
 Create an Android application in the JPush console using the package name `com.pandora6ix.app`. Put its AppKey in the Android build environment as `JPUSH_APP_KEY` or in the local Gradle property `JPUSH_APP_KEY`; the value is public application configuration, but do not commit local property files. Builds without an AppKey remain supported and use in-app notifications only.

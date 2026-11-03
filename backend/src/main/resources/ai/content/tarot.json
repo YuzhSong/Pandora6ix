@@ -1,0 +1,27 @@
+{
+  "positions": ["过去", "现在", "未来"],
+  "cards": [
+    {"number": 0, "name": "愚者", "upright": ["新的开始", "好奇", "轻装上阵"], "reversed": ["冲动", "准备不足"], "uprightMeaning": "像刚出发的旅人，对未知保持好奇，适合迈出第一步。", "reversedMeaning": "热情很足但计划偏少，出发前先确认一下方向。"},
+    {"number": 1, "name": "魔术师", "upright": ["行动力", "资源整合", "创造"], "reversed": ["分心", "方法不对"], "uprightMeaning": "手里的工具已经够用，关键是把想法真正动手做出来。", "reversedMeaning": "想做的事情太多，先挑一件最有把握的落地。"},
+    {"number": 2, "name": "女祭司", "upright": ["直觉", "观察", "沉淀"], "reversed": ["信息不足", "犹豫"], "uprightMeaning": "安静观察会带来答案，留意那些容易被忽略的细节。", "reversedMeaning": "有些信息还没浮出水面，不妨多问一句再做决定。"},
+    {"number": 3, "name": "女皇", "upright": ["滋养", "丰收", "舒适"], "reversed": ["透支", "忽视自己"], "uprightMeaning": "持续投入的事情正在慢慢开花，记得也照顾好自己。", "reversedMeaning": "给别人的时间很多，给自己的偏少，适当休息一下。"},
+    {"number": 4, "name": "皇帝", "upright": ["秩序", "规划", "掌控"], "reversed": ["僵硬", "控制过度"], "uprightMeaning": "清晰的结构和规则能帮你稳住局面，适合定计划。", "reversedMeaning": "计划很好，但也要给变化留一点弹性。"},
+    {"number": 5, "name": "教皇", "upright": ["经验", "学习", "指引"], "reversed": ["墨守成规", "质疑"], "uprightMeaning": "向有经验的人请教会事半功倍，也适合系统学习。", "reversedMeaning": "老办法不一定适合新问题，可以试试自己的思路。"},
+    {"number": 6, "name": "恋人", "upright": ["选择", "默契", "价值一致"], "reversed": ["摇摆", "沟通错位"], "uprightMeaning": "面前有值得认真对待的选择，跟随你真正在意的东西。", "reversedMeaning": "双方理解可能不一致，把期待说清楚会轻松很多。"},
+    {"number": 7, "name": "战车", "upright": ["推进", "意志", "胜利"], "reversed": ["方向分散", "急躁"], "uprightMeaning": "目标明确、全力推进，阻力会在前进中被化解。", "reversedMeaning": "力气使在了不同方向，先统一目标再加速。"},
+    {"number": 8, "name": "力量", "upright": ["耐心", "温和的坚持", "自信"], "reversed": ["自我怀疑", "急于证明"], "uprightMeaning": "温和而坚定的态度比硬碰硬更有效。", "reversedMeaning": "你比自己想象中更有能力，别急着否定自己。"},
+    {"number": 9, "name": "隐士", "upright": ["独处", "思考", "专注"], "reversed": ["封闭", "孤立"], "uprightMeaning": "适合给自己一段不被打扰的时间，想清楚真正重要的事。", "reversedMeaning": "想得够多了，可以找人聊聊，换个角度看看。"},
+    {"number": 10, "name": "命运之轮", "upright": ["转机", "循环", "顺势"], "reversed": ["节奏被打乱", "等待"], "uprightMeaning": "局面正在转动，抓住顺风的时机会有惊喜。", "reversedMeaning": "暂时的不顺只是周期的一部分，稳住节奏等待转机。"},
+    {"number": 11, "name": "正义", "upright": ["平衡", "公平", "理性"], "reversed": ["偏颇", "回避责任"], "uprightMeaning": "用事实和规则来判断，会得到让自己安心的结果。", "reversedMeaning": "某些事情需要更客观地看待，先把情绪放一放。"},
+    {"number": 12, "name": "倒吊人", "upright": ["换位思考", "暂停", "放下"], "reversed": ["拖延", "无谓坚持"], "uprightMeaning": "暂时停下来换个视角，卡住的地方可能突然想通。", "reversedMeaning": "等待得有点久了，可以考虑主动推一把。"},
+    {"number": 13, "name": "死神", "upright": ["结束与开始", "转变", "告别"], "reversed": ["抗拒改变", "停滞"], "uprightMeaning": "一个阶段即将结束，为新的阶段腾出空间。", "reversedMeaning": "旧习惯有点难舍，但放手之后会更轻松。"},
+    {"number": 14, "name": "节制", "upright": ["调和", "节奏", "耐心"], "reversed": ["失衡", "过度"], "uprightMeaning": "张弛有度是关键，慢慢调配就能找到最舒服的节奏。", "reversedMeaning": "某一方面用力过猛了，适当减一减负。"},
+    {"number": 15, "name": "恶魔", "upright": ["诱惑", "执念", "欲望"], "reversed": ["解脱", "觉察"], "uprightMeaning": "留意那些让你停不下来的习惯，它们未必真的有益。", "reversedMeaning": "你正在意识到什么在牵绊自己，这是松绑的开始。"},
+    {"number": 16, "name": "高塔", "upright": ["突变", "打破", "觉醒"], "reversed": ["虚惊", "延迟的变化"], "uprightMeaning": "意料之外的变化可能出现，但它会清掉不稳固的部分。", "reversedMeaning": "担心的事情未必会发生，提前做点准备就好。"},
+    {"number": 17, "name": "星星", "upright": ["希望", "灵感", "疗愈"], "reversed": ["失去信心", "迷茫"], "uprightMeaning": "新的可能正在出现，保持耐心，留意被忽略的机会。", "reversedMeaning": "暂时看不清方向没关系，先照顾好状态。"},
+    {"number": 18, "name": "月亮", "upright": ["不确定", "想象", "潜意识"], "reversed": ["真相浮现", "释然"], "uprightMeaning": "事情还在雾里，别急着下结论，先多收集信息。", "reversedMeaning": "困扰你的疑问正在变得清晰。"},
+    {"number": 19, "name": "太阳", "upright": ["成功", "活力", "坦率"], "reversed": ["小阴天", "过度乐观"], "uprightMeaning": "能量充足、结果明朗，适合展示成果和分享喜悦。", "reversedMeaning": "整体向好，只是需要多一点耐心等云散开。"},
+    {"number": 20, "name": "审判", "upright": ["复盘", "觉醒", "召唤"], "reversed": ["自我苛责", "错过时机"], "uprightMeaning": "适合回顾过去的经验，你会听到内心真正的声音。", "reversedMeaning": "复盘是为了前进，不必对过去太严格。"},
+    {"number": 21, "name": "世界", "upright": ["完成", "圆满", "新旅程"], "reversed": ["差一点", "收尾拖延"], "uprightMeaning": "一个阶段圆满收官，新的旅程已经在门口。", "reversedMeaning": "离完成只差最后一步，把收尾做完会很有成就感。"}
+  ]
+}

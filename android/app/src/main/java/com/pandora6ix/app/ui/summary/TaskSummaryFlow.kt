@@ -1,5 +1,6 @@
 package com.pandora6ix.app.ui.summary
 
+import com.pandora6ix.app.ui.components.*
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
@@ -139,9 +140,7 @@ fun TaskSummaryFlow(
                     "organization" -> "组织架构"; "member" -> "成员详情"
                     "tasks" -> "任务列表"; "journals" -> "日志列表"; else -> "任务汇总"
                 }
-                Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    IconButton({ back() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
-                    Text(title, Modifier.weight(1f), fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Ink)
+                PandoraTopBar(title, onBack = { back() }) {
                     IconButton({
                         when (page) {
                             "organization" -> if (canManage) scope.launch { people.load(refresh = true) }
@@ -154,25 +153,25 @@ fun TaskSummaryFlow(
                                 if (canRead) scope.launch { journals.load(refresh = true) }
                             }
                         }
-                    }) { Icon(Icons.Default.Refresh, "刷新") }
+                    }) { Icon(Icons.Default.Refresh, "刷新", tint = PandoraTheme.colors.textSecondary) }
                 }
                 when (page) {
                     "organization" -> OrganizationContent(people, canManage, userRepo, { openMember(it) }, { scope.launch { people.load() } })
-                    "tasks" -> SummaryPanel(Modifier.weight(1f).padding(16.dp)) {
+                    "tasks" -> SummaryPanel(Modifier.weight(1f).padding(PandoraSpacing.space16)) {
                         val allowed = canRead && (listTaskScope != "managed" || canManage)
                         val records = listMemberId?.let { responsibleTasks(fullTasks.items, it) } ?: fullTasks.items
                         PanelHeading(listMemberId?.let { "${name(it)} · 负责的任务" } ?: TaskScopes.first { it.first == listTaskScope }.second)
                         if (!allowed) Note("当前账号没有相关任务查看权限")
-                        else LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        else LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space12)) {
                             items(records, key = { it.id }) { task -> SummaryTaskRow(task, name, userRepo) { taskId = task.id } }
                             item { CollectionFooter(fullTasks, records.isEmpty(), "暂无相关任务", filtered = listMemberId != null) { scope.launch { fullTasks.load() } } }
                         }
                     }
-                    "journals" -> SummaryPanel(Modifier.weight(1f).padding(16.dp)) {
+                    "journals" -> SummaryPanel(Modifier.weight(1f).padding(PandoraSpacing.space16)) {
                         val records = listMemberId?.let { memberJournals(journals.items, it) } ?: journals.items
                         PanelHeading(listMemberId?.let { "${name(it)} · 日志" } ?: if (canManage) "下属日志" else "我的日志")
                         if (!canRead) Note("当前账号没有日志查看权限")
-                        else LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        else LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space12)) {
                             items(records, key = { it.id }) { journal -> JournalRow(journal, name(journal.authorUserId), user.businessTimezone, userRepo) { journalId = journal.id } }
                             item { CollectionFooter(journals, records.isEmpty(), "暂无相关日志", filtered = listMemberId != null) { scope.launch { journals.load() } } }
                         }
@@ -180,15 +179,15 @@ fun TaskSummaryFlow(
                     "member" -> {
                         val member = people.items.firstOrNull { it.id == memberId }
                         if (member == null || !canManage) Note("成员信息不可用，请返回组织架构重新加载。")
-                        else LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        else LazyColumn(contentPadding = PaddingValues(PandoraSpacing.space16), verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space16)) {
                             item {
                                 SummaryPanel {
                                     PanelHeading("个人信息")
-                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                                        RemoteAvatar(member.id, name(member.id), 56.dp, 23.sp, userRepo)
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space16)) {
+                                        RemoteAvatar(member.id, name(member.id), PandoraDimensions.avatarProfile, 24.sp, userRepo)
                                         Column(Modifier.weight(1f)) {
-                                            Text(name(member.id), fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                                            Text(member.organizationName ?: "未提供所属组织", color = Ink.copy(alpha = .75f))
+                                            Text(name(member.id), style = PandoraTypography.titleMedium)
+                                            Text(member.organizationName ?: "未提供所属组织", color = PandoraTheme.colors.textSecondary)
                                         }
                                     }
                                     InfoLine("部门", member.departmentName ?: "未提供")
@@ -217,15 +216,10 @@ fun TaskSummaryFlow(
                             }
                         }
                     }
-                    else -> LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    else -> LazyColumn(contentPadding = PaddingValues(PandoraSpacing.space16), verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space16)) {
                         item {
                             SummaryPanel {
-                                TabRow(selectedTabIndex = TaskScopes.indexOfFirst { it.first == taskScope }, containerColor = MaterialTheme.colorScheme.surface, contentColor = Ink) {
-                                    TaskScopes.forEach { (value, label) ->
-                                        Tab(selected = taskScope == value, onClick = { taskScope = value }, selectedContentColor = ThemeButton,
-                                            unselectedContentColor = Ink.copy(alpha = .75f), text = { Text(label, maxLines = 2) })
-                                    }
-                                }
+                                PandoraTabRow(TaskScopes.map { it.second }, TaskScopes.indexOfFirst { it.first == taskScope }.coerceAtLeast(0), { taskScope = TaskScopes[it].first })
                                 if (!canRead || (taskScope == "managed" && !canManage)) Note(if (!canRead) "当前账号没有业务任务查看权限" else "当前账号没有下属任务查看权限")
                                 else {
                                     TaskPreview(selectedTasks, selectedTasks.items, name, userRepo, { taskId = it }, { openTasks() }, { scope.launch { selectedTasks.load() } })
@@ -238,13 +232,16 @@ fun TaskSummaryFlow(
                                 if (!canManage) Note("当前账号没有下属查看权限")
                                 else {
                                     val reports = directReports(people.items)
-                                    LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                        items(reports.take(PeoplePreviewLimit), key = { it.id }) { person ->
-                                            Column(Modifier.width(68.dp).clip(RoundedCornerShape(8.dp)).clickable { openMember(person) }.padding(vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                                                RemoteAvatar(person.id, name(person.id), 44.dp, 18.sp, userRepo)
-                                                Text(name(person.id), Modifier.padding(top = 6.dp), fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    // 直属四人按面板内可用宽等分（规范 4 节栅格），360dp 屏也能完整显示，不再写死 68dp 宽
+                                    val shown = reports.take(PeoplePreviewLimit)
+                                    if (shown.isNotEmpty()) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(PandoraGrid.gutter)) {
+                                        shown.forEach { person ->
+                                            Column(Modifier.weight(1f).heightIn(min = PandoraDimensions.touchTarget).clip(PandoraShapes.small).clickable(onClickLabel = "查看${name(person.id)}") { openMember(person) }.padding(vertical = PandoraSpacing.space4), horizontalAlignment = Alignment.CenterHorizontally) {
+                                                RemoteAvatar(person.id, name(person.id), PandoraDimensions.avatarList, 16.sp, userRepo)
+                                                Text(name(person.id), Modifier.padding(top = PandoraSpacing.space8), style = PandoraTypography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                             }
                                         }
+                                        repeat(PeoplePreviewLimit - shown.size) { Spacer(Modifier.weight(1f)) }
                                     }
                                     CollectionFooter(people, reports.isEmpty(), "暂无直属下属", filtered = true, showMore = false,
                                         partialEmptyText = "已加载范围暂无直属下属，可查看完整组织架构") { scope.launch { people.load() } }
@@ -279,46 +276,48 @@ private fun TaskPreview(
     CollectionFooter(pager, records.isEmpty(), "暂无相关任务", filtered, showMore = false,
         partialEmptyText = "已加载范围暂无相关任务，可查看全部任务", onMore = onRetry)
     TextButton(onAll, Modifier.fillMaxWidth()) {
-        Text("查看全部任务", color = ThemeButton)
-        Icon(Icons.Default.ChevronRight, null, Modifier.size(18.dp), tint = ThemeButton)
+        Text("查看全部任务", style = PandoraTypography.labelLarge, color = PandoraTheme.colors.primary)
+        Icon(Icons.Default.ChevronRight, null, Modifier.size(18.dp), tint = PandoraTheme.colors.primary)
     }
 }
 
 @Composable
 private fun Modifier.summaryEntry(onClick: () -> Unit): Modifier {
-    val shape = RoundedCornerShape(10.dp)
-    return clip(shape).background(LocalAppTheme.current.backgroundDeep.copy(alpha = .25f))
-        .border(BorderStroke(.75.dp, Ink.copy(alpha = .12f)), shape).clickable(onClick = onClick)
+    val shape = PandoraShapes.medium
+    // 任务/日志独立条目：Surface 底 + 1dp 中性边框 + 12 角（规范 8 节 TaskItem/JournalItem）
+    return clip(shape).background(PandoraTheme.colors.surface)
+        .border(BorderStroke(PandoraDimensions.borderWidth, PandoraTheme.colors.border), shape).clickable(onClick = onClick)
 }
 
 @Composable
 private fun SummaryPanel(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
-    Surface(modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(16.dp), border = BorderStroke(1.dp, HairLine.copy(alpha = .8f))) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp), content = content)
+    // 用户确认的白色功能面板：panelSurface（与浮层同一白色值），0 阴影 + 1dp 边框
+    PandoraPanel(modifier.fillMaxWidth(), tone = PandoraPanelTone.White) {
+        Column(verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space12), content = content)
     }
 }
 
 @Composable
 private fun PanelHeading(title: String, onMore: (() -> Unit)? = null) {
     Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(title, Modifier.weight(1f), fontWeight = FontWeight.Bold, fontSize = 17.sp)
-        if (onMore != null) TextButton(onMore, contentPadding = PaddingValues(start = 12.dp)) {
-            Text("查看全部", color = Ink, maxLines = 1)
-            Icon(Icons.Default.ChevronRight, null, Modifier.size(18.dp), tint = Ink)
+        Text(title, Modifier.weight(1f), style = PandoraTypography.titleSmall)
+        if (onMore != null) TextButton(onMore, contentPadding = PaddingValues(start = PandoraSpacing.space12)) {
+            Text("查看全部", style = PandoraTypography.labelLarge, color = PandoraTheme.colors.primary, maxLines = 1)
+            Icon(Icons.Default.ChevronRight, null, Modifier.size(PandoraDimensions.iconSmall + 2.dp), tint = PandoraTheme.colors.primary)
         }
     }
 }
 
 @Composable
 private fun Note(text: String) {
-    Text(text, Modifier.padding(vertical = 8.dp), fontSize = 13.sp, lineHeight = 20.sp, color = Ink.copy(alpha = .75f))
+    Text(text, Modifier.padding(vertical = PandoraSpacing.space8), style = PandoraTypography.bodyMedium, color = PandoraTheme.colors.textSecondary)
 }
 
 @Composable
 private fun InfoLine(label: String, value: String) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(label, Modifier.widthIn(min = 42.dp), fontSize = 13.sp, color = Ink.copy(alpha = .75f))
-        Text(value, Modifier.weight(1f), fontSize = 14.sp)
+    Row(Modifier.fillMaxWidth().padding(vertical = PandoraSpacing.space4), horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space12)) {
+        Text(label, Modifier.widthIn(min = 42.dp), style = PandoraTypography.bodyMedium, color = PandoraTheme.colors.textSecondary)
+        Text(value, Modifier.weight(1f), style = PandoraTypography.bodyMedium)
     }
 }
 
@@ -347,14 +346,14 @@ private fun MemberPhone(memberId: String, userRepo: UserRepository, refresh: Int
             })
         }
     }
-    Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text("电话", Modifier.widthIn(min = 42.dp), fontSize = 13.sp, color = Ink.copy(alpha = .75f))
+    Row(Modifier.fillMaxWidth().padding(vertical = PandoraSpacing.space4), horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space12), verticalAlignment = Alignment.CenterVertically) {
+        Text("电话", Modifier.widthIn(min = 42.dp), style = PandoraTypography.bodyMedium, color = PandoraTheme.colors.textSecondary)
         Text(when (val current = state) {
             MemberPhoneState.Loading -> "加载中…"
             is MemberPhoneState.Loaded -> current.phone?.takeIf { it.isNotBlank() } ?: "未填写"
             is MemberPhoneState.Failed -> current.text
-        }, Modifier.weight(1f), fontSize = 14.sp)
-        if (state is MemberPhoneState.Failed) TextButton({ attempt++ }) { Text("重试", color = ThemeButton) }
+        }, Modifier.weight(1f), style = PandoraTypography.bodyMedium)
+        if (state is MemberPhoneState.Failed) TextButton({ attempt++ }) { Text("重试", style = PandoraTypography.labelLarge, color = PandoraTheme.colors.primary) }
     }
 }
 
@@ -364,17 +363,17 @@ private fun <T> CollectionFooter(
     showMore: Boolean = true, partialEmptyText: String = "已加载范围暂无相关内容，可继续加载", onMore: () -> Unit
 ) {
     when {
-        pager.loading || !pager.initialized -> Row(Modifier.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            CircularProgressIndicator(Modifier.size(18.dp), color = ThemeButton, strokeWidth = 2.dp)
+        pager.loading || !pager.initialized -> Row(Modifier.padding(vertical = PandoraSpacing.space12), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space12)) {
+            CircularProgressIndicator(Modifier.size(18.dp), color = PandoraTheme.colors.primary, strokeWidth = 2.dp)
             Note("正在加载…")
         }
         pager.error != null -> Column {
-            Text(pager.error!!, color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
-            TextButton(onMore) { Text("重试", color = ThemeButton) }
+            Text(pager.error!!, color = MaterialTheme.colorScheme.error, style = PandoraTypography.bodyMedium)
+            TextButton(onMore) { Text("重试", style = PandoraTypography.labelLarge, color = PandoraTheme.colors.primary) }
         }
         else -> {
             if (empty) Note(if (filtered && pager.nextCursor != null) partialEmptyText else emptyText)
-            if (showMore && pager.nextCursor != null) TextButton(onMore) { Text("加载更多", color = ThemeButton) }
+            if (showMore && pager.nextCursor != null) TextButton(onMore) { Text("加载更多", style = PandoraTypography.labelLarge, color = PandoraTheme.colors.primary) }
         }
     }
 }
@@ -382,46 +381,47 @@ private fun <T> CollectionFooter(
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SummaryTaskRow(task: TaskDto, name: (String) -> String, userRepo: UserRepository, onOpen: () -> Unit) {
-    Column(Modifier.fillMaxWidth().summaryEntry(onOpen).padding(horizontal = 10.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-        Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(task.title, Modifier.weight(1f), fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            val states = task.authorizedAssignments.map { it.executionStatus }.distinct()
-            val completed = states.isNotEmpty() && states.all { it == "COMPLETED" }
+    Column(Modifier.fillMaxWidth().summaryEntry(onOpen).padding(horizontal = PandoraSpacing.space12, vertical = PandoraSpacing.space8), verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space4)) {
+        Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space8)) {
+            Text(task.title, Modifier.weight(1f), style = PandoraTypography.labelLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            // 状态色由集中映射给出，文字仍沿用汇总规则（多执行人显示“多种执行状态”）
             val label = summaryTaskStatus(task)
-            val bg = when { completed -> Mint; task.reviewStatus == "REJECTED" -> Peach; else -> CreamDeep }
-            Text(label, Modifier.widthIn(max = 96.dp).clip(RoundedCornerShape(6.dp)).background(bg).padding(horizontal = 6.dp, vertical = 3.dp),
-                fontSize = 10.sp, lineHeight = 14.sp, color = if (completed) MintDeep else Ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        }
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            task.tags.forEach { tag ->
-                Text(tag.name, Modifier.widthIn(max = 180.dp).clip(RoundedCornerShape(6.dp)).background(tagHexColor(tag.colorHex).copy(alpha = .35f)).padding(horizontal = 6.dp, vertical = 2.dp),
-                    fontSize = 11.sp, lineHeight = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            val assignmentStates = task.authorizedAssignments.map { it.executionStatus to it.workStatus }.distinct()
+            val tone = when {
+                task.reviewStatus != "APPROVED" -> reviewStatusTone(task.reviewStatus)
+                assignmentStates.size == 1 -> executionStatusTone(assignmentStates.single().first, assignmentStates.single().second)
+                else -> StatusTone.NEUTRAL
             }
-            val priority = priorityMeta(task.priorityLevel)
-            Text("★ ${priority.second}", Modifier.clip(RoundedCornerShape(6.dp)).background(CreamDeep).padding(horizontal = 6.dp, vertical = 2.dp), fontSize = 11.sp, lineHeight = 14.sp, color = Ink)
+            PandoraStatusChip(label, tone, maxWidth = 96.dp)
         }
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Icon(Icons.Default.Event, null, Modifier.size(13.dp), tint = Ink.copy(alpha = .75f))
-            Text("截止 ${task.endDate}" + if (task.timeKind == "TIMED") " ${task.endTime.orEmpty()}" else "", Modifier.weight(1f), fontSize = 11.sp, lineHeight = 16.sp, color = Ink.copy(alpha = .75f))
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space4), verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space4)) {
+            task.tags.sortedBy { if (it.id == task.primaryTagId) 0 else 1 }.forEach { tag ->
+                PandoraTagChip(tag.name, tag.colorHex, primary = tag.id == task.primaryTagId)
+            }
+            PandoraStatusChip("★ ${priorityLabel(task.priorityLevel)}", priorityTone(task.priorityLevel))
+        }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space8)) {
+            Icon(Icons.Default.Event, null, Modifier.size(PandoraDimensions.iconSmall), tint = PandoraTheme.colors.textSecondary)
+            Text("截止 ${task.endDate}" + if (task.timeKind == "TIMED") " ${task.endTime.orEmpty()}" else "", Modifier.weight(1f), style = PandoraTypography.caption, color = PandoraTheme.colors.textSecondary)
             val executors = executorIds(task)
-            LazyRow(Modifier.widthIn(max = 112.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                items(executors, key = { it }) { id -> RemoteAvatar(id, name(id), 22.dp, 10.sp, userRepo) }
+            LazyRow(Modifier.widthIn(max = 112.dp), horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space4)) {
+                items(executors, key = { it }) { id -> RemoteAvatar(id, name(id), PandoraDimensions.avatarSmall, 10.sp, userRepo) }
             }
-            if (executors.isEmpty()) Text("暂无可见执行人", fontSize = 11.sp, color = Ink.copy(alpha = .75f))
+            if (executors.isEmpty()) Text("暂无可见执行人", style = PandoraTypography.caption, color = PandoraTheme.colors.textSecondary)
         }
     }
 }
 
 @Composable
 private fun JournalRow(journal: JournalDto, name: String, timezone: String?, userRepo: UserRepository, onOpen: () -> Unit) {
-    Row(Modifier.fillMaxWidth().summaryEntry(onOpen).padding(12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        RemoteAvatar(journal.authorUserId, name, 36.dp, 15.sp, userRepo)
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(name, Modifier.weight(1f), fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(businessDateTimeLabel(journal.publishedAt, timezone).ifBlank { journal.workDate }, fontSize = 11.sp, color = Ink.copy(alpha = .75f))
+    Row(Modifier.fillMaxWidth().summaryEntry(onOpen).padding(PandoraSpacing.space12), horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space12)) {
+        RemoteAvatar(journal.authorUserId, name, PandoraDimensions.avatarList, 16.sp, userRepo)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space4)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space8)) {
+                Text(name, Modifier.weight(1f), style = PandoraTypography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(businessDateTimeLabel(journal.publishedAt, timezone).ifBlank { journal.workDate }, style = PandoraTypography.caption, color = PandoraTheme.colors.textSecondary)
             }
-            Text(journalSummary(journal), maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 13.sp, color = Ink.copy(alpha = .8f))
+            Text(journalSummary(journal), maxLines = 1, overflow = TextOverflow.Ellipsis, style = PandoraTypography.bodyMedium, color = PandoraTheme.colors.textSecondary)
         }
     }
 }
@@ -430,26 +430,26 @@ private fun JournalRow(journal: JournalDto, name: String, timezone: String?, use
 private fun OrganizationContent(people: SummaryPager<RecipientDto>, canManage: Boolean, userRepo: UserRepository, onMember: (RecipientDto) -> Unit, onMore: () -> Unit) {
     var expanded by rememberSaveable { mutableStateOf(listOf<String>()) }
     val groups = remember(people.items) { recipientOrganizationTree(people.items) }
-    SummaryPanel(Modifier.fillMaxSize().padding(16.dp)) {
+    SummaryPanel(Modifier.fillMaxSize().padding(PandoraSpacing.space16)) {
         if (!canManage) Note("当前账号没有组织架构查看权限")
-        else LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        else LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space12)) {
             fun androidx.compose.foundation.lazy.LazyListScope.group(node: RecipientOrganizationGroup, depth: Int) {
                 item(key = node.key) {
                     Row(Modifier.fillMaxWidth().padding(start = (depth * 12).dp).summaryEntry {
                         expanded = if (node.key in expanded) expanded - node.key else expanded + node.key
-                    }.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    }.padding(PandoraSpacing.space12), verticalAlignment = Alignment.CenterVertically) {
                         Icon(if (node.key in expanded) Icons.Default.ExpandMore else Icons.Default.ChevronRight, if (node.key in expanded) "收起" else "展开")
-                        Text(node.name, Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
+                        Text(node.name, Modifier.weight(1f), style = PandoraTypography.labelLarge)
                     }
                 }
                 if (node.key in expanded) {
                     items(node.members, key = { "member:${it.id}" }) { person ->
-                        Row(Modifier.fillMaxWidth().padding(start = (12 + depth * 12).dp).summaryEntry { onMember(person) }.padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            RemoteAvatar(person.id, person.displayName, 36.dp, 15.sp, userRepo)
+                        Row(Modifier.fillMaxWidth().padding(start = (12 + depth * 12).dp).summaryEntry { onMember(person) }.padding(PandoraSpacing.space12),
+                            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space12)) {
+                            RemoteAvatar(person.id, person.displayName, PandoraDimensions.avatarList, 16.sp, userRepo)
                             Column(Modifier.weight(1f)) {
                                 Text(person.displayName.ifBlank { "成员 ${person.id.takeLast(4)}" }, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
-                                person.jobTitle?.takeIf { it.isNotBlank() }?.let { Text(it, fontSize = 12.sp, color = Ink.copy(alpha = .75f)) }
+                                person.jobTitle?.takeIf { it.isNotBlank() }?.let { Text(it, style = PandoraTypography.caption, color = PandoraTheme.colors.textSecondary) }
                             }
                             Icon(Icons.Default.ChevronRight, "成员详情", Modifier.size(18.dp))
                         }

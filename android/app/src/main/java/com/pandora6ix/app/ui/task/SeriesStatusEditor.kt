@@ -1,5 +1,7 @@
 package com.pandora6ix.app.ui.task
 
+import com.pandora6ix.app.ui.theme.*
+import com.pandora6ix.app.ui.components.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
@@ -27,8 +29,8 @@ fun SeriesStatusEditor(task: TaskDto, repo: TaskRepository, status: String, time
         } catch (e: Exception) { error = (e as? ApiException)?.friendlyMessage() ?: "加载失败" }
     }
     when {
-        error != null -> AlertDialog(onDismissRequest = onDismiss, title = { Text("未能保存") }, text = { Text(error!!) }, confirmButton = { TextButton(onDismiss) { Text("关闭") } })
-        busy || versions == null -> AlertDialog(onDismissRequest = { if (!busy) onDismiss() }, title = { Text(if (busy) "保存中…" else "加载中…") }, confirmButton = {})
+        error != null -> PandoraAlertDialog(onDismissRequest = onDismiss, title = { Text("未能保存") }, text = { Text(error!!) }, confirmButton = { PandoraDialogConfirm("关闭", onDismiss) })
+        busy || versions == null -> PandoraAlertDialog(onDismissRequest = { if (!busy) onDismiss() }, title = { Text(if (busy) "保存中…" else "加载中…") }, confirmButton = {})
         else -> ChangeScopeDialog(task.occurrenceDate ?: task.startDate, timezone, onDismiss = onDismiss, onSelect = { choice ->
             busy = true
             scope.launch {
