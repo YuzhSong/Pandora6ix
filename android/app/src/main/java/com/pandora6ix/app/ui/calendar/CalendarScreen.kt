@@ -220,7 +220,16 @@ fun CalendarScreen(
                 }
             }
         }
-        if (canCreatePersonal || canCreateDelegated) FloatingActionButton(onClick = { adding = true }, modifier = Modifier.align(Alignment.BottomEnd).padding(end = PandoraSpacing.space16, bottom = PandoraSpacing.space48), shape = PandoraShapes.circle, containerColor = colors.primary, contentColor = colors.textOnPrimary) { Icon(Icons.Default.Add, "添加任务", Modifier.size(PandoraDimensions.icon)) }
+        val art = com.pandora6ix.app.ui.theme.LocalAppTheme.current.art
+        if ((canCreatePersonal || canCreateDelegated) && art != null) {
+            // 卡通主题：手绘“+”按钮，触区不小于 64dp，保留读屏文字
+            androidx.compose.foundation.Image(
+                androidx.compose.ui.res.painterResource(art.fab), "添加任务",
+                Modifier.align(Alignment.BottomEnd).padding(end = PandoraSpacing.space16, bottom = PandoraSpacing.space48)
+                    .size(PandoraDimensions.avatarProfile).clip(PandoraShapes.circle)
+                    .clickable(role = androidx.compose.ui.semantics.Role.Button, onClickLabel = "添加任务") { adding = true }
+            )
+        } else if (canCreatePersonal || canCreateDelegated) FloatingActionButton(onClick = { adding = true }, modifier = Modifier.align(Alignment.BottomEnd).padding(end = PandoraSpacing.space16, bottom = PandoraSpacing.space48), shape = PandoraShapes.circle, containerColor = colors.primary, contentColor = colors.textOnPrimary) { Icon(Icons.Default.Add, "添加任务", Modifier.size(PandoraDimensions.icon)) }
         val atToday = when (mode) {
             CalendarMode.DAY -> cursor == today
             CalendarMode.WEEK -> mondayOfWeek(cursor) == mondayOfWeek(today)

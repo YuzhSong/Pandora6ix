@@ -25,6 +25,8 @@ data class PandoraColorTokens(
     val brandCoral: Color = Color(0xFFFF8377),
     val secondary: Color = Color(0xFF615B59),
     val border: Color = Color(0xFFD8D3CF),
+    /** 卡片描边：原主题同 border；卡通主题为深色手绘描边 */
+    val cardBorder: Color = Color(0xFFD8D3CF),
     val inputBorder: Color = Color(0xFF827A75),
     val divider: Color = Color(0xFFE8E3DF),
     val success: Color = Color(0xFF386345),
@@ -67,6 +69,30 @@ val SakuraColors = PandoraColorTokens(
 val LilacColors = PandoraColorTokens(
     appBackground = Color(0xFFF1EDFA), surface = Color(0xFFFAF8FF), elevatedSurface = ElevatedWhite,
     primary = Color(0xFF6E5B99), primaryPressed = Color(0xFF59487E), primaryContainer = Color(0xFFE7DDF4)
+)
+
+// ---- 卡通主题：配色取自参考素材，按钮/链接主色加深以满足 4.5:1 ----
+private val ToonOutline = Color(0xFF3A322E)
+
+val ToonCreamColors = PandoraColorTokens(
+    appBackground = Color(0xFFFFFEF2), surface = Color(0xFFFFFCEB), elevatedSurface = ElevatedWhite,
+    primary = Color(0xFFB04A3A), primaryPressed = Color(0xFF943C2F), primaryContainer = Color(0xFFFFE4DC),
+    cardBorder = ToonOutline
+)
+val ToonBreezeColors = PandoraColorTokens(
+    appBackground = Color(0xFFF1FBFF), surface = Color(0xFFF8FDFF), elevatedSurface = ElevatedWhite,
+    primary = Color(0xFF2D6A88), primaryPressed = Color(0xFF24566F), primaryContainer = Color(0xFFD9EFFA),
+    cardBorder = ToonOutline
+)
+val ToonFarmColors = PandoraColorTokens(
+    appBackground = Color(0xFFFFF6C5), surface = Color(0xFFFFFBE6), elevatedSurface = ElevatedWhite,
+    primary = Color(0xFF96541C), primaryPressed = Color(0xFF7C4517), primaryContainer = Color(0xFFFFE7B0),
+    cardBorder = ToonOutline
+)
+val ToonSpringColors = PandoraColorTokens(
+    appBackground = Color(0xFFEAF6C2), surface = Color(0xFFF7FBE6), elevatedSurface = ElevatedWhite,
+    primary = Color(0xFF44702A), primaryPressed = Color(0xFF385D22), primaryContainer = Color(0xFFDDEDB4),
+    cardBorder = ToonOutline
 )
 
 val LocalPandoraColors = staticCompositionLocalOf { WarmColors }

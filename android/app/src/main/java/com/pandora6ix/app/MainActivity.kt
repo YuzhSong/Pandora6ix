@@ -276,13 +276,34 @@ private fun leadLabel(minutes: Int): String {
 /** 底部导航图标：待审批与未读结果在“我的”图标上挂数字角标（99+ 封顶） */
 @Composable
 private fun MeNavIcon(item: NavItem, badgeCount: Int) {
+    // 卡通主题用手绘位图（不着色）；原主题保持矢量图标
+    val art = LocalAppTheme.current.art
+    val glyph: @Composable () -> Unit = {
+        if (art != null) androidx.compose.foundation.Image(
+            androidx.compose.ui.res.painterResource(art.navIcons[item.route.ordinal]), item.label,
+            Modifier.size(PandoraDimensions.icon + 4.dp)
+        ) else Icon(item.icon, item.label)
+    }
     if (item.route == Route.ME && badgeCount > 0) {
         androidx.compose.material3.BadgedBox(badge = { androidx.compose.material3.Badge { Text(if (badgeCount >= 99) "99+" else "$badgeCount") } }) {
-            Icon(item.icon, item.label)
+            glyph()
         }
     } else {
-        Icon(item.icon, item.label)
+        glyph()
     }
+}
+
+/** 卡通主题场景插画：底部对齐、铺满宽度；视图页优先用专属淡彩插画，否则降低透明度 */
+@Composable
+private fun ThemeScene(art: ThemeArt, calendar: Boolean, modifier: Modifier = Modifier) {
+    val backdrop = art.calendarBackdrop
+    if (calendar && backdrop != null) androidx.compose.foundation.Image(
+        androidx.compose.ui.res.painterResource(backdrop), null,
+        modifier.fillMaxWidth(0.8f).padding(bottom = PandoraSpacing.space8), contentScale = androidx.compose.ui.layout.ContentScale.FillWidth
+    ) else androidx.compose.foundation.Image(
+        androidx.compose.ui.res.painterResource(art.scene), null,
+        modifier.fillMaxWidth(), contentScale = androidx.compose.ui.layout.ContentScale.FillWidth, alpha = if (calendar) 0.35f else 1f
+    )
 }
 
 @Composable
@@ -641,7 +662,7 @@ fun PandoraApp(
                 route = Route.HOME.name; detail = null; homeDetail = null; showSettings = false; showReviews = false
             }
             else -> PandoraTheme(theme) { CompositionLocalProvider(LocalDensity provides scaledDensity) {
-        Scaffold(containerColor = theme.colors.appBackground, bottomBar = { NavigationBar(containerColor = theme.colors.appBackground) { nav.forEach { item -> NavigationBarItem(selected = current == item.route, onClick = { route = item.route.name; detail = null; homeDetail = null; journalDetailId = null; showSettings = false; showReviews = false; showTagManage = false; progressTaskId = null; showTaskSummary = false }, icon = { MeNavIcon(item, reviewBadgeCount) }, label = { Text(item.label, style = PandoraTypography.caption) }, colors = NavigationBarItemDefaults.colors(selectedIconColor = theme.colors.primary, selectedTextColor = theme.colors.primary, indicatorColor = theme.colors.primaryContainer, unselectedIconColor = theme.colors.textSecondary, unselectedTextColor = theme.colors.textSecondary)) } } }) { padding ->
+        Scaffold(containerColor = theme.colors.appBackground, bottomBar = { NavigationBar(containerColor = theme.art?.navBand ?: theme.colors.appBackground) { nav.forEach { item -> NavigationBarItem(selected = current == item.route, onClick = { route = item.route.name; detail = null; homeDetail = null; journalDetailId = null; showSettings = false; showReviews = false; showTagManage = false; progressTaskId = null; showTaskSummary = false }, icon = { MeNavIcon(item, reviewBadgeCount) }, label = { Text(item.label, style = PandoraTypography.caption) }, colors = NavigationBarItemDefaults.colors(selectedIconColor = theme.colors.primary, selectedTextColor = theme.colors.primary, indicatorColor = theme.colors.primaryContainer, unselectedIconColor = theme.colors.textSecondary, unselectedTextColor = theme.colors.textSecondary)) } } }) { padding ->
             Surface(Modifier.padding(padding).fillMaxSize(), color = theme.colors.appBackground) {
                 when {
                     homeDetail?.kind == "TASK" && homeDetail?.id != null -> FullTaskDetail(
@@ -701,7 +722,10 @@ fun PandoraApp(
                     ) { showTagManage = false }
                     detail != null -> FullTaskDetail(detail!!, taskRepo, serverTags, currentUser?.businessTimezone,
                         currentUser, userRepo, onBack = { detail = null }, onChanged = { calRetry++ })
-                    else -> AnimatedContent(current, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "page") { target ->
+                    else -> Box(Modifier.fillMaxSize()) {
+                      // 卡通主题：一级页面底部的场景插画在内容下层；视图页淡化，不影响日历可读性
+                      theme.art?.let { art -> ThemeScene(art, calendar = current == Route.VIEW, modifier = Modifier.align(Alignment.BottomCenter)) }
+                      AnimatedContent(current, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "page") { target ->
                         when (target) {
                             Route.HOME -> calendarUiState.SaveableStateProvider("home") { HomeScreen(dashboardRepo, selectionRepo, notificationRepo, openedNotificationId, notificationOpenSequence, notificationReadRevision, pendingPushNotificationId = pendingPushNotificationId, onPushNotificationConsumed = { pendingPushNotificationId = null }, onDrawerClosed = { openedNotificationId = null }, onOpenHome = { homeDetail = it }, onOpenNotification = { item ->
                                 // 只有仍在「待我审批」队列里的审批申请才进审批中心并展开该条；
@@ -717,6 +741,7 @@ fun PandoraApp(
                             Route.AI -> AiExplorerScreen(aiRepo, currentUser!!.id)
                             Route.ME -> ProfileScreen(currentUser!!, notifyMaster, showReviewCenter, reviewBadgeCount, tagManager, userRepo, scrollState = profileScrollState, onOpenTagManage = { showTagManage = true }, onOpenReviews = { showReviews = true }, onOpenSettings = { showSettings = true })
                         }
+                      }
                     }
                 }
                 // 提醒弹窗：逐条展示，关闭后显示下一条
@@ -899,7 +924,8 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
         onOpenHome(HomeDetail(panels[panelIndex].title, index, text, panelAccent, kind, id))
     }
     val colors = PandoraTheme.colors
-    Box(Modifier.fillMaxSize().background(colors.appBackground)) {
+    // 背景由外层容器绘制，卡通主题的场景插画才能显示在页面下层
+    Box(Modifier.fillMaxSize()) {
       Column(Modifier.fillMaxSize().padding(horizontal = PandoraSpacing.pageHorizontal)) {
         PandoraPageTitle(todayDate().shortLabelWithWeekday()) {
             // 与「我的」页红点同一实现：未读消息数角标（99+ 封顶）
@@ -2818,20 +2844,26 @@ private fun SettingsScreen(
             onDismissRequest = { showThemeDialog = false },
             title = { Text("切换主题") },
             text = {
-                Column {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
                     appThemes.forEach { t ->
                         Row(
                             Modifier.fillMaxWidth().clip(PandoraShapes.small).clickable { onThemeChange(t.key); showThemeDialog = false }.padding(vertical = PandoraSpacing.space8),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            // 色块：主题背景 + 主题主色描边，便于区分五套主题
-                            Box(Modifier.size(PandoraDimensions.icon).clip(PandoraShapes.circle).background(t.colors.appBackground).border(PandoraDimensions.focusWidth, t.colors.primary, PandoraShapes.circle))
+                            // 卡通主题显示场景缩略图；原主题为背景色 + 主色描边的色块
+                            val art = t.art
+                            if (art != null) androidx.compose.foundation.Image(
+                                androidx.compose.ui.res.painterResource(art.scene), null,
+                                Modifier.size(width = PandoraDimensions.avatarProfile, height = PandoraDimensions.icon + 8.dp).clip(PandoraShapes.small)
+                                    .background(t.colors.appBackground).border(PandoraDimensions.borderWidth, t.colors.cardBorder, PandoraShapes.small),
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                            ) else Box(Modifier.size(PandoraDimensions.icon).clip(PandoraShapes.circle).background(t.colors.appBackground).border(PandoraDimensions.focusWidth, t.colors.primary, PandoraShapes.circle))
                             Spacer(Modifier.width(PandoraSpacing.space12))
                             Text(t.label, Modifier.weight(1f), style = PandoraTypography.bodyMedium)
                             RadioButton(selected = t.key == themeKey, onClick = { onThemeChange(t.key); showThemeDialog = false }, colors = RadioButtonDefaults.colors(selectedColor = PandoraTheme.colors.primary))
                         }
                     }
-                    Text("切换后仅更改界面配色，数据不受影响。", style = PandoraTypography.caption, color = PandoraTheme.colors.textTertiary)
+                    Text("切换后仅更改界面外观（配色、图标与插画），数据不受影响。", style = PandoraTypography.caption, color = PandoraTheme.colors.textTertiary)
                 }
             },
             confirmButton = { PandoraDialogConfirm("关闭", { showThemeDialog = false }) }

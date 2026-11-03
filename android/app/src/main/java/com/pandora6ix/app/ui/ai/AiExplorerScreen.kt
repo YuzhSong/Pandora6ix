@@ -58,6 +58,7 @@ import com.pandora6ix.app.ui.components.PandoraPageTitle
 import com.pandora6ix.app.ui.components.PandoraPanel
 import com.pandora6ix.app.ui.components.PandoraPanelTone
 import com.pandora6ix.app.ui.components.PandoraTopBar
+import com.pandora6ix.app.ui.theme.LocalAppTheme
 import com.pandora6ix.app.ui.theme.PandoraColorTokens
 import com.pandora6ix.app.ui.theme.PandoraDimensions
 import com.pandora6ix.app.ui.theme.PandoraShapes
@@ -131,7 +132,8 @@ private fun AiHome(onOpen: (AiFeature) -> Unit) {
         Spacer(Modifier.height(PandoraSpacing.space16))
         Text("所有内容由 AI 或预设规则生成，仅供娱乐与参考，不构成任何评价、预测或建议。",
             style = PandoraTypography.caption, color = c.textTertiary)
-        Spacer(Modifier.height(PandoraSpacing.space24))
+        // 卡通主题底部有场景插画：留出空间，滚到底时文字不压在插画上
+        Spacer(Modifier.height(if (LocalAppTheme.current.art != null) 160.dp else PandoraSpacing.space24))
     }
 }
 

@@ -8,9 +8,21 @@ class DesignTokensTest {
     private val themes = appThemes.associate { it.key to it.colors }
 
     @Test
-    fun fiveThemesKeepTheirKeysAndOrder() {
-        assertEquals(listOf("warm", "mint", "sky", "sakura", "lilac"), appThemes.map { it.key })
-        assertEquals(listOf("暖米", "薄荷", "晴空", "樱花", "紫藤"), appThemes.map { it.label })
+    fun originalThemesKeepTheirKeysAndCartoonThemesFollow() {
+        assertEquals(listOf("warm", "mint", "sky", "sakura", "lilac", "toon_cream", "toon_breeze", "toon_farm", "toon_spring"), appThemes.map { it.key })
+        assertEquals(listOf("暖米", "薄荷", "晴空", "樱花", "紫藤", "奶油单车", "凉风习习", "农场乐园", "春日郊游"), appThemes.map { it.label })
+        // 原五套没有卡通素材，渲染路径保持不变
+        assertTrue(appThemes.take(5).all { it.art == null && it.colors.cardBorder == it.colors.border })
+    }
+
+    @Test
+    fun cartoonThemesProvideCompleteArt() {
+        appThemes.drop(5).forEach { theme ->
+            val art = requireNotNull(theme.art) { theme.key }
+            assertEquals("${theme.key} 导航图标数量", 5, art.navIcons.size)
+            assertEquals("${theme.key} 导航图标不重复", 5, art.navIcons.toSet().size)
+            assertTrue("${theme.key} 卡片描边对比度", contrastRatio(theme.colors.cardBorder, theme.colors.surface) >= 4.5)
+        }
     }
 
     @Test

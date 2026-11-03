@@ -21,15 +21,22 @@ import android.content.ContextWrapper
 fun priorityMeta(level: Int): Pair<Color, String> =
     PandoraTheme.colors.statusColors(priorityTone(level)).content to priorityLabel(level)
 
-/** 应用主题：key/名称/按账号保存方式不变，颜色统一由 [PandoraColorTokens] 提供 */
-data class AppTheme(val key: String, val label: String, val colors: PandoraColorTokens)
+/**
+ * 应用主题：key/名称/按账号保存方式不变，颜色统一由 [PandoraColorTokens] 提供；
+ * [art] 非空即卡通主题（手绘导航图标、场景插画、深色卡片描边）。
+ */
+data class AppTheme(val key: String, val label: String, val colors: PandoraColorTokens, val art: ThemeArt? = null)
 
 val appThemes = listOf(
     AppTheme("warm", "暖米", WarmColors),
     AppTheme("mint", "薄荷", MintColors),
     AppTheme("sky", "晴空", SkyColors),
     AppTheme("sakura", "樱花", SakuraColors),
-    AppTheme("lilac", "紫藤", LilacColors)
+    AppTheme("lilac", "紫藤", LilacColors),
+    AppTheme("toon_cream", "奶油单车", ToonCreamColors, ToonCreamArt),
+    AppTheme("toon_breeze", "凉风习习", ToonBreezeColors, ToonBreezeArt),
+    AppTheme("toon_farm", "农场乐园", ToonFarmColors, ToonFarmArt),
+    AppTheme("toon_spring", "春日郊游", ToonSpringColors, ToonSpringArt)
 )
 
 fun appThemeFor(key: String?): AppTheme = appThemes.firstOrNull { it.key == key } ?: appThemes.first()
@@ -89,7 +96,7 @@ fun PandoraColorTokens.toMaterialColorScheme(): ColorScheme = lightColorScheme(
  */
 @Composable
 fun PandoraTheme(theme: AppTheme = appThemes.first(), content: @Composable () -> Unit) {
-    // 五套主题都是浅色背景：系统栏图标统一深色（targetSdk 35 强制 edge-to-edge，默认图标为白色）
+    // 全部主题都是浅色背景：系统栏图标统一深色（targetSdk 35 强制 edge-to-edge，默认图标为白色）
     val view = LocalView.current
     if (!view.isInEditMode) SideEffect {
         view.context.findActivity()?.window?.let { window ->

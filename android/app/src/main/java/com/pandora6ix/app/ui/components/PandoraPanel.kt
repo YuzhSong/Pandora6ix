@@ -18,11 +18,20 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import com.pandora6ix.app.ui.theme.LocalAppTheme
 import com.pandora6ix.app.ui.theme.PandoraDimensions
 import com.pandora6ix.app.ui.theme.PandoraShapes
 import com.pandora6ix.app.ui.theme.PandoraSpacing
 import com.pandora6ix.app.ui.theme.PandoraTheme
 import com.pandora6ix.app.ui.theme.PandoraTypography
+
+/** 卡片描边：原主题 1dp 中性边框；卡通主题 2dp 深色手绘描边 */
+@Composable
+fun pandoraCardBorder(): BorderStroke {
+    val c = PandoraTheme.colors
+    return if (LocalAppTheme.current.art != null) BorderStroke(PandoraDimensions.focusWidth, c.cardBorder)
+    else BorderStroke(PandoraDimensions.borderWidth, c.border)
+}
 
 /** 面板底色：普通 Surface 或用户确认的白色功能面板 */
 enum class PandoraPanelTone { Surface, White }
@@ -42,7 +51,7 @@ fun PandoraPanel(
 ) {
     val c = PandoraTheme.colors
     val color = if (tone == PandoraPanelTone.White) c.panelSurface else c.surface
-    val border = BorderStroke(PandoraDimensions.borderWidth, c.border)
+    val border = pandoraCardBorder()
     if (onClick != null) Surface(onClick = onClick, modifier = modifier, shape = shape, color = color, contentColor = c.textPrimary, border = border) {
         Column(Modifier.padding(contentPadding), content = content)
     } else Surface(modifier = modifier, shape = shape, color = color, contentColor = c.textPrimary, border = border) {
@@ -77,7 +86,7 @@ fun PandoraItemContainer(
     content: @Composable ColumnScope.() -> Unit
 ) {
     val c = PandoraTheme.colors
-    val border = BorderStroke(PandoraDimensions.borderWidth, c.border)
+    val border = pandoraCardBorder()
     val body: @Composable () -> Unit = {
         Column(
             Modifier.padding(horizontal = PandoraSpacing.itemHorizontal, vertical = PandoraSpacing.itemVertical),
