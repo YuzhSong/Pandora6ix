@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
-### Requirement: Nine selectable themes
-The Android client SHALL offer the five existing themes (warm, mint, sky, sakura, lilac) followed by four cartoon themes (toon_cream 奶油单车, toon_breeze 凉风习习, toon_farm 农场乐园, toon_spring 春日郊游), all selectable in settings and saved per account as before.
+### Requirement: Original and cartoon themes are selectable
+The Android client SHALL offer the five existing themes (warm, mint, sky, sakura, lilac) followed by seven cartoon themes (toon_cream 奶油单车, toon_breeze 凉风习习, toon_farm 农场乐园, toon_spring 春日郊游, toon_winter 冬日乐园, toon_study 专心致志, toon_fairy 童话公主), all selectable in settings and saved per account as before.
 
 #### Scenario: Select a cartoon theme
 - **WHEN** a user selects 凉风习习 in the theme dialog
@@ -16,10 +16,10 @@ Each cartoon theme SHALL derive its semantic color tokens from its reference art
 
 #### Scenario: Contrast check
 - **WHEN** the design token unit tests run
-- **THEN** all nine themes pass every contrast assertion.
+- **THEN** all twelve themes pass every contrast assertion, including navigation labels on each cartoon navigation band.
 
 ### Requirement: Hand-drawn navigation and action art
-In a cartoon theme the bottom navigation SHALL show that theme's five hand-drawn icons in navigation order with the unchanged labels 导图、视图、日志、AI地图、我的; the selected item SHALL be indicated by the primary-colored label and a soft indicator, and unselected icons SHALL remain fully visible. The calendar add-task button SHALL use the theme's hand-drawn "+" artwork with the content description 添加任务.
+In a cartoon theme the bottom navigation SHALL show that theme's five hand-drawn icons in navigation order with the unchanged labels 导图、视图、日志、AI地图、我的; the selected item SHALL be indicated by the primary-colored label and a soft indicator, and unselected icons SHALL remain fully visible. Navigation labels SHALL have at least 4.5:1 contrast on the navigation band; a theme with a dark band SHALL use its own label color (white for 童话公主) with the selected label in semibold. The calendar add-task button SHALL use the theme's hand-drawn "+" artwork with the content description 添加任务.
 
 #### Scenario: Navigation icons
 - **WHEN** the user switches to 农场乐园

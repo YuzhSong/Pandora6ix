@@ -95,6 +95,22 @@ val ToonSpringColors = PandoraColorTokens(
     cardBorder = ToonOutline
 )
 
+val ToonWinterColors = PandoraColorTokens(
+    appBackground = Color(0xFFEAF8FF), surface = Color(0xFFF5FCFF), elevatedSurface = ElevatedWhite,
+    primary = Color(0xFF2A6890), primaryPressed = Color(0xFF22567A), primaryContainer = Color(0xFFD3EEFB),
+    cardBorder = ToonOutline
+)
+val ToonStudyColors = PandoraColorTokens(
+    appBackground = Color(0xFFFEF4EF), surface = Color(0xFFFFF9F6), elevatedSurface = ElevatedWhite,
+    primary = Color(0xFFA6444C), primaryPressed = Color(0xFF8C3940), primaryContainer = Color(0xFFFDE0E0),
+    cardBorder = ToonOutline
+)
+val ToonFairyColors = PandoraColorTokens(
+    appBackground = Color(0xFFEFEEFF), surface = Color(0xFFF8F7FF), elevatedSurface = ElevatedWhite,
+    primary = Color(0xFF5650A6), primaryPressed = Color(0xFF47428C), primaryContainer = Color(0xFFE3E0FA),
+    cardBorder = ToonOutline
+)
+
 val LocalPandoraColors = staticCompositionLocalOf { WarmColors }
 
 /** sRGB 相对亮度（WCAG 2.x），用于对比度校验与标签文字取色 */

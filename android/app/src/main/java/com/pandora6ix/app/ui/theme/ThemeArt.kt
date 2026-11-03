@@ -13,7 +13,9 @@ data class ThemeArt(
     val navIcons: List<Int>,
     @DrawableRes val fab: Int,
     val navBand: Color,
-    @DrawableRes val calendarBackdrop: Int? = null
+    @DrawableRes val calendarBackdrop: Int? = null,
+    /** 深色导航条（如童话公主）上的文字色；为空时沿用主题的 primary/textSecondary */
+    val navLabel: Color? = null
 )
 
 val ToonCreamArt = ThemeArt(
@@ -40,4 +42,24 @@ val ToonSpringArt = ThemeArt(
     navIcons = listOf(R.drawable.toon_spring_nav_0, R.drawable.toon_spring_nav_1, R.drawable.toon_spring_nav_2, R.drawable.toon_spring_nav_3, R.drawable.toon_spring_nav_4),
     fab = R.drawable.toon_spring_fab,
     navBand = Color(0xFFD4EA94)
+)
+val ToonWinterArt = ThemeArt(
+    scene = R.drawable.toon_winter_scene,
+    navIcons = listOf(R.drawable.toon_winter_nav_0, R.drawable.toon_winter_nav_1, R.drawable.toon_winter_nav_2, R.drawable.toon_winter_nav_3, R.drawable.toon_winter_nav_4),
+    fab = R.drawable.toon_winter_fab,
+    navBand = Color(0xFFFFFFFF)
+)
+val ToonStudyArt = ThemeArt(
+    scene = R.drawable.toon_study_scene,
+    navIcons = listOf(R.drawable.toon_study_nav_0, R.drawable.toon_study_nav_1, R.drawable.toon_study_nav_2, R.drawable.toon_study_nav_3, R.drawable.toon_study_nav_4),
+    fab = R.drawable.toon_study_fab,
+    navBand = Color(0xFFFEDADA)
+)
+// 导航条比插画水面略深（#827FD8 → #6E6AC8），白字对比度 4.6:1
+val ToonFairyArt = ThemeArt(
+    scene = R.drawable.toon_fairy_scene,
+    navIcons = listOf(R.drawable.toon_fairy_nav_0, R.drawable.toon_fairy_nav_1, R.drawable.toon_fairy_nav_2, R.drawable.toon_fairy_nav_3, R.drawable.toon_fairy_nav_4),
+    fab = R.drawable.toon_fairy_fab,
+    navBand = Color(0xFF6E6AC8),
+    navLabel = Color(0xFFFFFFFF)
 )

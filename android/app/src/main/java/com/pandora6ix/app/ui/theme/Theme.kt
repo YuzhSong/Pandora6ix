@@ -36,7 +36,10 @@ val appThemes = listOf(
     AppTheme("toon_cream", "奶油单车", ToonCreamColors, ToonCreamArt),
     AppTheme("toon_breeze", "凉风习习", ToonBreezeColors, ToonBreezeArt),
     AppTheme("toon_farm", "农场乐园", ToonFarmColors, ToonFarmArt),
-    AppTheme("toon_spring", "春日郊游", ToonSpringColors, ToonSpringArt)
+    AppTheme("toon_spring", "春日郊游", ToonSpringColors, ToonSpringArt),
+    AppTheme("toon_winter", "冬日乐园", ToonWinterColors, ToonWinterArt),
+    AppTheme("toon_study", "专心致志", ToonStudyColors, ToonStudyArt),
+    AppTheme("toon_fairy", "童话公主", ToonFairyColors, ToonFairyArt)
 )
 
 fun appThemeFor(key: String?): AppTheme = appThemes.firstOrNull { it.key == key } ?: appThemes.first()

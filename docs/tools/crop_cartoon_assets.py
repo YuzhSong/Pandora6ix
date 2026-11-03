@@ -29,11 +29,16 @@ def close(a, b, tol):
     return abs(a[0] - b[0]) <= tol and abs(a[1] - b[1]) <= tol and abs(a[2] - b[2]) <= tol
 
 
-def knockout(im, tol=26):
-    """Flood-fill background from every border pixel; the dark outlines of the art stop the fill."""
+def knockout(im, tol=26, seed=False):
+    """Flood-fill background from every border pixel; the dark outlines of the art stop the fill.
+
+    seed=True: treat pixels close to the median border colour as background (for dark bands such as 童话公主's purple).
+    """
     im = im.copy()
     w, h = im.size
     p = im.load()
+    border = sorted([p[x, 0][:3] for x in range(w)] + [p[x, h - 1][:3] for x in range(w)], key=sum)
+    ground = border[len(border) // 2]
     seen = bytearray(w * h)
     q = deque()
     for x in range(w):
@@ -48,7 +53,7 @@ def knockout(im, tol=26):
         seen[i] = 1
         c = p[x, y]
         # background = light pixels close to any neighbouring background colour (handles gradients/grass)
-        if c[0] + c[1] + c[2] < 3 * 150:
+        if (not close(c, ground, 60)) if seed else (c[0] + c[1] + c[2] < 3 * 150):
             continue
         p[x, y] = (c[0], c[1], c[2], 0)
         for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
@@ -135,6 +140,7 @@ def save(img, name, max_w=None, quality=92):
 
 
 picker = load("主题选择.png")
+picker2 = load("主题选择2.png")  # 农场乐园完整卡片及冬日乐园/专心致志/童话公主
 home = load("首页.png")
 view = load("视图页背景.png")
 previews = {"breeze": load("主题2.png"), "farm": load("主题3.png"), "spring": load("主题4.png")}
@@ -143,8 +149,10 @@ previews = {"breeze": load("主题2.png"), "farm": load("主题3.png"), "spring"
 save(fade_top(picker.crop(box(62, 982, 862, 1212))), "toon_cream_scene")
 save(fade_top(picker.crop(box(72, 578, 851, 818))), "toon_spring_scene")
 save(fade_top(picker.crop(box(62, 1422, 862, 1712))), "toon_breeze_scene")
-# 农场只在预览里完整出现：截到加号按钮左侧
-save(fade_top(previews["farm"].crop(box(141, 1352, 664, 1590))), "toon_farm_scene")
+save(fade_top(picker2.crop(box(62, 272, 862, 566))), "toon_farm_scene")
+save(fade_top(picker2.crop(box(62, 714, 862, 1010))), "toon_winter_scene")
+save(fade_top(picker2.crop(box(62, 1160, 862, 1455))), "toon_study_scene")
+save(fade_top(picker2.crop(box(62, 1604, 862, 1898))), "toon_fairy_scene")
 
 # ---- 默认主题：首页的大图标与加号 ----
 for i, x in enumerate((92, 277, 461, 645, 829)):
@@ -159,6 +167,15 @@ for key, im in previews.items():
         top = 1606 if key == "spring" else 1598
         save(knockout(im.crop(box(x - 36, top, x + 36, 1668))), f"toon_{key}_nav_{i}")
     save(circle(im.crop(box(*fab_box[key]))), f"toon_{key}_fab")
+
+# ---- 冬日乐园 / 专心致志 / 童话公主：预览里的底部图标与加号（按导航条底色去背景）----
+for key, name in (("winter", "主题5.png"), ("study", "主题6.png"), ("fairy", "主题7.png")):
+    im = load(name)
+    for i, x in enumerate((202, 331, 461, 591, 721)):
+        # 专心致志的场景地板线紧贴图标上沿，起点下移避免带入弧线
+        top = 1606 if key == "study" else 1598
+        save(knockout(im.crop(box(x - 36, top, x + 36, 1668)), seed=True), f"toon_{key}_nav_{i}")
+    save(circle(im.crop(box(667, 1477, 763, 1573))), f"toon_{key}_fab")
 
 # ---- 视图页淡彩插画（默认主题）----
 save(lighten_alpha(view.crop(box(200, 1418, 660, 1708))), "toon_cream_calendar")

@@ -9,8 +9,10 @@ class DesignTokensTest {
 
     @Test
     fun originalThemesKeepTheirKeysAndCartoonThemesFollow() {
-        assertEquals(listOf("warm", "mint", "sky", "sakura", "lilac", "toon_cream", "toon_breeze", "toon_farm", "toon_spring"), appThemes.map { it.key })
-        assertEquals(listOf("暖米", "薄荷", "晴空", "樱花", "紫藤", "奶油单车", "凉风习习", "农场乐园", "春日郊游"), appThemes.map { it.label })
+        assertEquals(listOf("warm", "mint", "sky", "sakura", "lilac", "toon_cream", "toon_breeze", "toon_farm", "toon_spring",
+            "toon_winter", "toon_study", "toon_fairy"), appThemes.map { it.key })
+        assertEquals(listOf("暖米", "薄荷", "晴空", "樱花", "紫藤", "奶油单车", "凉风习习", "农场乐园", "春日郊游",
+            "冬日乐园", "专心致志", "童话公主"), appThemes.map { it.label })
         // 原五套没有卡通素材，渲染路径保持不变
         assertTrue(appThemes.take(5).all { it.art == null && it.colors.cardBorder == it.colors.border })
     }
@@ -22,6 +24,9 @@ class DesignTokensTest {
             assertEquals("${theme.key} 导航图标数量", 5, art.navIcons.size)
             assertEquals("${theme.key} 导航图标不重复", 5, art.navIcons.toSet().size)
             assertTrue("${theme.key} 卡片描边对比度", contrastRatio(theme.colors.cardBorder, theme.colors.surface) >= 4.5)
+            // 导航文字落在 navBand 上：自定义 navLabel 或默认的次要文字色都要可读
+            val label = art.navLabel ?: theme.colors.textSecondary
+            assertTrue("${theme.key} 导航文字对比度", contrastRatio(label, art.navBand) >= 4.5)
         }
     }
 
