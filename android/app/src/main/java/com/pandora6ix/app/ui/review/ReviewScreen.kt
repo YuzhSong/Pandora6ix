@@ -92,6 +92,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.MaterialTheme
 import com.pandora6ix.app.ui.theme.priorityMeta
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
@@ -179,6 +180,8 @@ fun ReviewScreen(taskRepo: TaskRepository, availableTags: List<TagDto>, business
         return
     }
 
+    // 列表页与详情页一致：系统返回关闭审批中心，而不是直接退出应用
+    androidx.activity.compose.BackHandler(onBack = onBack)
     Column(Modifier.fillMaxSize().background(PandoraTheme.colors.appBackground)) {
         PandoraTopBar("审批中心", onBack = onBack)
         // 两个审批队列统一为标准 Tab（48dp、Primary 2dp 下划线）
@@ -571,9 +574,10 @@ private fun DecisionBadge(decision: String) {
 /** submittedSnapshot 宽松解析：新快照字段与 TaskCreateDto 对应，旧快照可能缺字段或含历史字段 */
 private fun parseSnapshot(snapshot: JsonObject?): SnapshotInfo {
     val obj = snapshot ?: return SnapshotInfo(null, "", null, null, null, null, null, null, null, emptyList(), emptyList(), null)
-    fun str(key: String): String? = runCatching { obj[key]?.jsonPrimitive?.content }.getOrNull()
+    // JsonNull.content 会返回字符串 "null"，这里按缺省处理
+    fun str(key: String): String? = runCatching { obj[key]?.jsonPrimitive?.takeUnless { it is JsonNull }?.content }.getOrNull()
     fun int(key: String): Int? = runCatching { obj[key]?.jsonPrimitive?.intOrNull }.getOrNull()
-    fun strings(key: String): List<String> = runCatching { obj[key]?.jsonArray?.map { it.jsonPrimitive.content } }.getOrNull().orEmpty()
+    fun strings(key: String): List<String> = runCatching { obj[key]?.jsonArray?.mapNotNull { e -> e.jsonPrimitive.takeUnless { it is JsonNull }?.content } }.getOrNull().orEmpty()
     return SnapshotInfo(
         kind = str("kind"),
         title = str("title").orEmpty(),

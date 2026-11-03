@@ -9,7 +9,7 @@
 | P0 | Color/Type/Dimens/Shape/StatusColors Token；同一主题 key 生成 LocalAppTheme 与 Material3；PandoraButton/Panel/Chips/OverlaySurface/Divider；导图、视图试点；深色系统栏图标 | `ff9c5a1` | 构建、122 项单测、OpenSpec 严格校验、五主题×导图/视图与日周月年截图 |
 | P1 | PandoraAlertDialog/Dialog/BottomSheet/DropdownMenu/TextField/TopBar/TabRow/ListItem/Toast/IconButton；全部 AlertDialog、OutlinedTextField、ModalBottomSheet、DropdownMenu 改用统一组件；主要按钮改 PandoraButton；40% 遮罩 | `c765e62` | 同上；对话框、Sheet、Tab 截图，紫藤下弹窗取色为纯白 |
 | P2 | 其余页面字体/颜色/圆角/间距 Token 化；卡片 0 阴影 + 1dp 边框；虚线改 Divider；Tag/Status Chip；直属四人等分；一级页面统一标题行 | `b80527f` | 同上；五个一级页面与主要二级页截图 |
-| P3 | 重跑静态盘点并分类；删除旧颜色别名；补齐残留硬编码；360/393dp 与大字号、IME 检查；本报告与文档更新 | 见本次提交 | 见第 4 节 |
+| P3 | 重跑静态盘点并分类；删除旧颜色别名；补齐残留硬编码；360/393dp 与大字号、IME 检查；本报告与文档更新 | `c63e02c` | 见第 4 节 |
 
 ## 2. 改造前后静态统计
 
@@ -65,9 +65,10 @@
 ## 5. 未执行或遗留
 
 - 系统字体 1.3/2.0、TalkBack、横屏、三键导航、600dp 宽屏未在本轮执行。
-- 发现两处**改造前即存在**的问题，按“不改变业务逻辑”约束未修改：
-  1. 审批中心列表页没有系统返回处理，按返回键会直接退出应用（审批详情页有处理）。
-  2. 审批详情的快照字段为 JSON null 时显示字符串“null”（`parseSnapshot` 用 `jsonPrimitive.content` 读取 JsonNull）。
+- 验收中发现两处**改造前即存在**的问题，P3 后经确认单独修复（仅 `ReviewScreen.kt`，不涉及接口与业务语义）：
+  1. 审批中心列表页没有系统返回处理，按返回键会直接退出应用 → 列表页增加 `BackHandler`，返回关闭审批中心。
+  2. 审批详情的快照字段为 JSON null 时显示字符串“null” → `parseSnapshot` 将 JsonNull 视为缺省。
+  修复后构建与 122 项单测通过；未在模拟器上复测。
 - `mock/MockData.kt` 的示例标签色未接入界面，保留原样。
 - 日历时间块 4dp、月条 3dp 圆角与 `calendarMicro` 为登记在案的日历例外。
 
@@ -82,4 +83,4 @@
 7. 日历：日/周/月/年切换、捏合缩放、滑动切换、跨日连续条、+N 下钻、回到今天、现在线（蓝色）。
 8. 任务与日志：新建/编辑任务、标签主标签前置、审批通过/驳回、执行进度与验收；日志新增/编辑/删除/历史日期/详情。
 9. 窄屏：360dp 设备上任务汇总“直属下属”四人可见，长名字省略。
-10. 页面导航：各二级页面返回关系与改造前一致（注意第 5 节已知问题 1）。
+10. 页面导航：各二级页面返回关系与改造前一致；审批中心列表页按系统返回回到上一页，审批详情空字段不再显示“null”。
