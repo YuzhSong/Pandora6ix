@@ -222,6 +222,12 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
     }
     fun pickDate(target: String) { datePickTarget = target }
     fun pickTime(target: String) { timePickTarget = target }
+    // 改开始日期/时间时，结束不再晚于开始就按原时长顺延（见 followStart）
+    fun applyStart(date: DemoDate, minute: Int) {
+        val span = followStart(TaskSpan(startKey.date(), startMinute, endKey.date(), endMinute), date, minute, allDay, repeating)
+        startKey = span.startDate.key(); startMinute = span.startMinute
+        endKey = span.endDate.key(); endMinute = span.endMinute
+    }
     fun nameOf(id: String): String = candidateNames[id]?.ifBlank { null }
         ?: selfRecipient?.takeIf { it.id == id }?.displayName?.ifBlank { null }
         ?: if (namesLoading) "加载姓名…" else "姓名暂不可用"
@@ -424,7 +430,7 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
             initialMinute = if (target == "start") startMinute else endMinute,
             onDismiss = { timePickTarget = null },
             onConfirm = { value ->
-                if (target == "start") startMinute = value else endMinute = value
+                if (target == "start") applyStart(startKey.date(), value) else endMinute = value
                 error = null
                 timePickTarget = null
             }
@@ -435,7 +441,7 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
             initial = (if (target == "start") startKey else endKey).date(),
             onDismiss = { datePickTarget = null },
             onConfirm = { d ->
-                if (target == "start") startKey = d.key() else endKey = d.key()
+                if (target == "start") applyStart(d, startMinute) else endKey = d.key()
                 error = null
                 datePickTarget = null
             }

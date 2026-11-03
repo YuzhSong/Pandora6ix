@@ -147,6 +147,35 @@ fun staggerTimedTasks(tasks: List<TaskItem>, date: DemoDate): List<TimedTaskPlac
     }
 }
 
+/** 任务时段：日期 + 当天分钟（全天任务忽略分钟） */
+data class TaskSpan(val startDate: DemoDate, val startMinute: Int, val endDate: DemoDate, val endMinute: Int)
+
+/**
+ * 开始日期/时间改动后让结束保持在开始之后：只有结束不再晚于开始时才顺延，
+ * 顺延量取改动前的时长（无有效时长时按 1 小时 / 同一天）；用户已设好的更晚结束不被改动。
+ * 重复任务的结束日期是系列截止日，每次时段限制在同一天内。
+ */
+fun followStart(previous: TaskSpan, newStart: DemoDate, newStartMinute: Int, allDay: Boolean, repeating: Boolean): TaskSpan {
+    val moved = previous.copy(startDate = newStart, startMinute = newStartMinute)
+    if (repeating) {
+        val endDate = maxOf(previous.endDate, newStart)
+        if (allDay || previous.endMinute > newStartMinute) return moved.copy(endDate = endDate)
+        val perOccurrence = (previous.endMinute - previous.startMinute).takeIf { it > 0 } ?: 60
+        return moved.copy(endDate = endDate, endMinute = (newStartMinute + perOccurrence).coerceAtMost(23 * 60 + 59))
+    }
+    if (allDay) {
+        if (previous.endDate >= newStart) return moved
+        val days = (previous.endDate.ordinal() - previous.startDate.ordinal()).coerceAtLeast(0)
+        return moved.copy(endDate = newStart.plusDays(days))
+    }
+    fun absolute(date: DemoDate, minute: Int) = date.ordinal().toLong() * 1440 + minute
+    val start = absolute(newStart, newStartMinute)
+    if (absolute(previous.endDate, previous.endMinute) > start) return moved
+    val duration = (absolute(previous.endDate, previous.endMinute) - absolute(previous.startDate, previous.startMinute)).takeIf { it > 0 } ?: 60
+    val end = start + duration
+    return moved.copy(endDate = newStart.plusDays((end / 1440 - newStart.ordinal()).toInt()), endMinute = (end % 1440).toInt())
+}
+
 fun validTaskInterval(start: DemoDate, end: DemoDate, startMinute: Int?, endMinute: Int?): Boolean {
     if (end < start || (startMinute == null) != (endMinute == null)) return false
     if (startMinute == null) return true
