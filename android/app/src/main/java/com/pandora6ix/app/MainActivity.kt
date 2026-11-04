@@ -401,8 +401,6 @@ fun PandoraApp(
         // 任意带 token 请求返回 401：清理会话并回登录（切换到主线程更新状态）
         var openedNotificationId by rememberSaveable { mutableStateOf<String?>(null) }
         var notificationOpenSequence by rememberSaveable { mutableIntStateOf(0) }
-        // 待处理的「点推送进入」：首页消费后立刻清空，避免之后每次回到「导图」都自动拉开抽屉
-        var pendingPushNotificationId by rememberSaveable { mutableStateOf<String?>(null) }
         // 推送前台到达事件：id 由 PandoraPushReceiver 广播过来，交给统一提醒队列处理
         val pushArrivedEvents = remember { kotlinx.coroutines.channels.Channel<PushArrival>(kotlinx.coroutines.channels.Channel.UNLIMITED) }
         // 会话内已处理过的通知 id：推送弹过的轮询不再重复弹，反之亦然
@@ -411,7 +409,7 @@ fun PandoraApp(
             notificationOpenEvents.collect { id ->
                 openedNotificationId = id
                 notificationOpenSequence++
-                pendingPushNotificationId = id
+                // 只切到首页并高亮该消息，不再自动拉开消息抽屉
                 route = Route.HOME.name
                 detail = null
                 homeDetail = null
@@ -727,11 +725,9 @@ fun PandoraApp(
                       theme.art?.let { art -> ThemeScene(art, calendar = current == Route.VIEW, modifier = Modifier.align(Alignment.BottomCenter)) }
                       AnimatedContent(current, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "page") { target ->
                         when (target) {
-                            Route.HOME -> calendarUiState.SaveableStateProvider("home") { HomeScreen(dashboardRepo, selectionRepo, notificationRepo, openedNotificationId, notificationOpenSequence, notificationReadRevision, pendingPushNotificationId = pendingPushNotificationId, onPushNotificationConsumed = { pendingPushNotificationId = null }, onDrawerClosed = { openedNotificationId = null }, onOpenHome = { homeDetail = it }, onOpenNotification = { item ->
-                                // 只有仍在「待我审批」队列里的审批申请才进审批中心并展开该条；
-                                // 已审批/驳回的消息（含「审批结果」）队列里查不到，直接看对应任务详情
-                                val awaitingReview = item.reviewId != null && item.eventType == "REVIEW_REQUEST" && !item.resolved
-                                if (awaitingReview) {
+                            Route.HOME -> calendarUiState.SaveableStateProvider("home") { HomeScreen(dashboardRepo, selectionRepo, notificationRepo, openedNotificationId, notificationOpenSequence, notificationReadRevision, businessTimezone = currentUser?.businessTimezone, onDrawerClosed = { openedNotificationId = null }, onOpenHome = { homeDetail = it }, onOpenNotification = { item ->
+                                // 带 reviewId 的消息（审批申请 / 审批结果）都进审批中心并展开对应审批详情；仅带任务的消息才进任务详情
+                                if (item.reviewId != null) {
                                     reviewFocusId = item.reviewId
                                     showReviews = true
                                 } else if (item.taskId.isNotBlank()) detail = item.taskId
@@ -739,7 +735,7 @@ fun PandoraApp(
                             Route.VIEW -> calendarUiState.SaveableStateProvider("calendar") { CalendarScreen(CalendarMode.valueOf(modeName), date, taskItems, canCreatePersonal, canCreateDelegated, serverTags, taskRepo, { modeName = it.name }, { dateKey = "${it.year}-${it.month}-${it.day}" }, { calRetry++ }, { detail = it.id }, taskScope = taskScope, onTaskScopeChange = { taskScope = it; calNotice = null }, currentUser = currentUser, canReviewTasks = canReviewTasks, businessTimezone = currentUser?.businessTimezone, loading = calLoading, error = calError, onRetry = { calRetry++ }, notice = calNotice, onOpenSummary = { showTaskSummary = true }) }
                             Route.LOGS -> LogsScreen(journalRepo, serverTags.toList(), currentUser?.businessTimezone, currentUser, userRepo) { journalDetailId = it }
                             Route.AI -> AiExplorerScreen(aiRepo, currentUser!!.id)
-                            Route.ME -> ProfileScreen(currentUser!!, notifyMaster, showReviewCenter, reviewBadgeCount, tagManager, userRepo, scrollState = profileScrollState, onOpenTagManage = { showTagManage = true }, onOpenReviews = { showReviews = true }, onOpenSettings = { showSettings = true })
+                            Route.ME -> ProfileScreen(currentUser!!, notifyMaster, showReviewCenter, reviewBadgeCount, tagManager, userRepo, scrollState = profileScrollState, onOpenTagManage = { showTagManage = true }, onOpenReviews = { reviewFocusId = null; showReviews = true }, onOpenSettings = { showSettings = true })
                         }
                       }
                     }
@@ -825,15 +821,9 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
     }
 }
 
-@Composable private fun HomeScreen(dashboardRepo: DashboardRepository, selectionRepo: SelectionRepository, notificationRepo: NotificationRepository, openedNotificationId: String?, notificationOpenSequence: Int, notificationReadRevision: Int, pendingPushNotificationId: String?, onPushNotificationConsumed: () -> Unit, onDrawerClosed: () -> Unit, onOpenHome: (HomeDetail) -> Unit, onOpenNotification: (NotificationDto) -> Unit) {
+@Composable private fun HomeScreen(dashboardRepo: DashboardRepository, selectionRepo: SelectionRepository, notificationRepo: NotificationRepository, openedNotificationId: String?, notificationOpenSequence: Int, notificationReadRevision: Int, businessTimezone: String? = null, onDrawerClosed: () -> Unit, onOpenHome: (HomeDetail) -> Unit, onOpenNotification: (NotificationDto) -> Unit) {
     var expandedPanel by rememberSaveable { mutableStateOf<String?>(null) }
     var notifications by rememberSaveable { mutableStateOf(false) }
-    // 只有「点推送进来」这一次会自动打开抽屉；消费后立刻清空挂在首页之外的待处理状态
-    LaunchedEffect(pendingPushNotificationId) {
-        if (pendingPushNotificationId == null) return@LaunchedEffect
-        notifications = true
-        onPushNotificationConsumed()
-    }
     // 信封角标：未读消息数（99+ 封顶）；打开抽屉、关闭抽屉、收到推送打开、以及任何地方把消息置为已读时刷新
     var unreadCount by remember { mutableStateOf(0) }
     LaunchedEffect(notifications, notificationOpenSequence, notificationReadRevision) {
@@ -1030,7 +1020,7 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
       if (notifications) {
           androidx.activity.compose.BackHandler { notifications = false; onDrawerClosed() }
           Box(Modifier.fillMaxSize().background(colors.scrim).clickable { notifications = false; expandedPanel = null; onDrawerClosed() })
-          NotificationDrawer(notificationRepo, openedNotificationId, onClose = { notifications = false; onDrawerClosed() }, onOpen = { onDrawerClosed(); onOpenNotification(it) })
+          NotificationDrawer(notificationRepo, openedNotificationId, businessTimezone = businessTimezone, onClose = { notifications = false; onDrawerClosed() }, onOpen = { onDrawerClosed(); onOpenNotification(it) })
       }
     }
 }
@@ -1982,7 +1972,7 @@ private fun JournalDetailScreen(repo: JournalRepository, journalId: String, busi
     }
 }
 
-@Composable private fun BoxScope.NotificationDrawer(repository: NotificationRepository, requestedId: String?, onClose: () -> Unit, onOpen: (NotificationDto) -> Unit) {
+@Composable private fun BoxScope.NotificationDrawer(repository: NotificationRepository, requestedId: String?, businessTimezone: String? = null, onClose: () -> Unit, onOpen: (NotificationDto) -> Unit) {
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
     var records by remember { mutableStateOf<List<NotificationDto>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
@@ -2028,7 +2018,8 @@ private fun JournalDetailScreen(repo: JournalRepository, journalId: String, busi
                                 }
                                 Spacer(Modifier.height(PandoraSpacing.space4))
                                 Text(item.body, color = PandoraTheme.colors.textPrimary, style = PandoraTypography.bodyMedium)
-                                Text(item.createdAt.replace('T', ' ').take(16), color = PandoraTheme.colors.textPrimary, style = PandoraTypography.caption, modifier = Modifier.padding(top = PandoraSpacing.space8))
+                                // createdAt 是 UTC 时间戳，按业务时区换算显示（否则东八区差 8 小时）
+                                Text(com.pandora6ix.app.data.businessDateTimeLabel(item.createdAt, businessTimezone).ifBlank { item.createdAt.replace('T', ' ').take(16) }, color = PandoraTheme.colors.textPrimary, style = PandoraTypography.caption, modifier = Modifier.padding(top = PandoraSpacing.space8))
                             }
                         }
                     }
@@ -2421,7 +2412,9 @@ private fun FullTaskDetail(id: String, repo: TaskRepository, tags: List<TagDto>,
                     Column(Modifier.padding(PandoraSpacing.space16), verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space12)) {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Text("任务信息", Modifier.weight(1f), style = PandoraTypography.titleSmall)
-                            if (dto.allowedActions.any { it == "EDIT_TASK" || it == "EDIT_PENDING" }) {
+                            // 有修改待上级审批（pendingEditReviewId 非空）或任务已完成时锁定编辑
+                            val taskCompleted = dto.authorizedAssignments.isNotEmpty() && dto.authorizedAssignments.all { it.executionStatus == "COMPLETED" }
+                            if (dto.pendingEditReviewId == null && !taskCompleted && dto.allowedActions.any { it == "EDIT_TASK" || it == "EDIT_PENDING" }) {
                                 TextButton({ editOpen = true }) { Text("编辑", style = PandoraTypography.labelLarge, color = PandoraTheme.colors.primary) }
                             }
                         }
@@ -2442,7 +2435,6 @@ private fun FullTaskDetail(id: String, repo: TaskRepository, tags: List<TagDto>,
                         Text("${item.start.year}/${item.start.month}/${item.start.day}—${item.end.year}/${item.end.month}/${item.end.day}\n${taskTimeLabel(item)}", style = PandoraTypography.bodyLarge)
                         item.recurrenceLabel?.let { Text("重复安排 · $it", style = PandoraTypography.bodyLarge) }
                         HorizontalDivider(color = PandoraTheme.colors.border)
-                        Text("${kindLabelOf(dto.kind)} · ${reviewStatusLabel(dto.reviewStatus)}")
                         Text("重要程度 · ${priorityMeta(dto.priorityLevel).second}")
                         if (dto.companyWide) Text("全公司可见", style = PandoraTypography.labelLarge, color = PandoraTheme.colors.primary)
                     }
@@ -2456,7 +2448,10 @@ private fun FullTaskDetail(id: String, repo: TaskRepository, tags: List<TagDto>,
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space12)) {
                                 val name = executionNames[assignment.recipientUserId]?.takeIf { it.isNotBlank() } ?: "姓名暂不可用"
                                 RemoteAvatar(assignment.recipientUserId, name, 32.dp, 14.sp, userRepo)
-                                Text("$name · ${executionStatusLabel(assignment.executionStatus)}", style = PandoraTypography.bodyLarge)
+                                // 被驳回的任务执行关系仍停在「待审批」态，展示为「被驳回」更符合用户预期
+                                val execLabel = if (dto.reviewStatus == "REJECTED" && assignment.executionStatus == "PENDING_APPROVAL") "被驳回"
+                                    else executionStatusLabel(assignment.executionStatus)
+                                Text("$name · $execLabel", style = PandoraTypography.bodyLarge)
                             }
 
                             val pending = dto.completionRequests.lastOrNull { it.assignmentId == assignment.id && it.decision == "PENDING" }

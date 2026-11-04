@@ -66,7 +66,7 @@ import java.util.UUID
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ProgressSheet(task: TaskDto, taskRepo: TaskRepository, onDismiss: () -> Unit, onChanged: () -> Unit) {
+fun ProgressSheet(task: TaskDto, taskRepo: TaskRepository, onDismiss: () -> Unit, onChanged: () -> Unit, businessTimezone: String? = null) {
     var current by remember { mutableStateOf(task) }
     var refreshing by remember { mutableStateOf(false) }
     val keys = remember { mutableStateMapOf<String, String>() }
@@ -168,7 +168,8 @@ fun ProgressSheet(task: TaskDto, taskRepo: TaskRepository, onDismiss: () -> Unit
                     current.progressRecords.sortedByDescending { it.recordedAt }.take(5).forEach { record ->
                         Column(Modifier.fillMaxWidth().clip(PandoraShapes.medium).background(PandoraTheme.colors.primaryContainer).padding(PandoraSpacing.space12)) {
                             Text("${record.progressPercent}%${record.note?.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""}", style = PandoraTypography.bodyMedium)
-                            record.recordedAt?.let { Text(it.substring(0, minOf(16, it.length)).replace("T", " "), style = PandoraTypography.caption, color = PandoraTheme.colors.textTertiary) }
+                            // recordedAt 是 UTC 时间戳，按业务时区换算显示
+                            record.recordedAt?.let { Text(com.pandora6ix.app.data.businessDateTimeLabel(it, businessTimezone).ifBlank { it.substring(0, minOf(16, it.length)).replace("T", " ") }, style = PandoraTypography.caption, color = PandoraTheme.colors.textTertiary) }
                         }
                     }
                 }
