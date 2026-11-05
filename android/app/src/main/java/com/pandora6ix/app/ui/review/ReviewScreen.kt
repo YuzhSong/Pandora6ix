@@ -168,11 +168,14 @@ fun ReviewScreen(taskRepo: TaskRepository, availableTags: List<TagDto>, business
     LaunchedEffect(scope, loadRetry, refreshRevision, selected?.id) {
         if (selected == null) load(append = false)
     }
-    // 从消息进入：本页列表里能找到该条审批时，直接展开它的详情
+    // 从消息进入：本页列表里能找到该条审批时，直接展开它的详情；
+    // 找不到（如审批结果在「我提交的申请」里）时切换到 created 范围再找
     LaunchedEffect(focusReviewId, items) {
         val target = focusReviewId ?: return@LaunchedEffect
         if (selected?.id == target) return@LaunchedEffect
-        items.firstOrNull { it.id == target }?.let { selected = it }
+        val found = items.firstOrNull { it.id == target }
+        if (found != null) selected = found
+        else if (scope != "created") scope = "created"
     }
 
     selected?.let { review ->
