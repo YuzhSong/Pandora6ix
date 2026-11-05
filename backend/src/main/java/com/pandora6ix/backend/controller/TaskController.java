@@ -168,6 +168,20 @@ public class TaskController {
                 a, "POST /requests/" + id + "/decision", key, c, () -> tasks.decide(a, id, c));
     }
 
+    /** 完成申请队列：scope=pending（待我验收）| created（我提交的） */
+    @GetMapping("/task-completion-requests")
+    public Object completionRequests(
+            @RequestParam(defaultValue = "pending") String scope,
+            @RequestParam(required = false) String cursor,
+            @RequestParam(defaultValue = "20") int limit) {
+        return tasks.completionRequestList(identity.current(), scope, cursor, limit);
+    }
+
+    @GetMapping("/task-completion-requests/pending-count")
+    public Object completionPendingCount() {
+        return tasks.completionPendingCount(identity.current());
+    }
+
     @GetMapping("/calendar")
     public Object calendar(
             @RequestParam String mode,

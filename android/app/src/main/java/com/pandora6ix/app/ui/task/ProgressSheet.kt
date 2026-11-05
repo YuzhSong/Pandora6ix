@@ -233,12 +233,13 @@ private fun AssignmentActions(
 
         if (actions.contains("COMPLETE_PERSONAL")) {
             PandoraButton("完成任务", { confirm = "complete" }, Modifier.fillMaxWidth(), enabled = !busy)
-            Text("确认后本人执行关系标记为已完成，计入任务统计。", style = PandoraTypography.caption, color = PandoraTheme.colors.textTertiary)
+            // 个人任务由本人发起，但完成需审批：有上级审批人时提交完成申请，审批通过后才计为已完成
+            Text("确认后提交完成申请，需发起人（发起人即本人时为其任务审批人）审批通过后才计为已完成。", style = PandoraTypography.caption, color = PandoraTheme.colors.textTertiary)
         }
 
         if (actions.contains("REQUEST_COMPLETION")) {
             PandoraButton("申请验收", { confirm = "request" }, Modifier.fillMaxWidth(), enabled = !busy)
-            Text("提交后创建者将收到完成确认申请，确认前任务保持进行中。", style = PandoraTypography.caption, color = PandoraTheme.colors.textTertiary)
+            Text("提交后发起人（执行人即发起人时为任务审批人）会收到完成申请，确认前任务保持进行中。", style = PandoraTypography.caption, color = PandoraTheme.colors.textTertiary)
         }
 
         if (actions.contains("DECIDE_COMPLETION") && pendingRequests.isNotEmpty()) {

@@ -491,7 +491,9 @@ fun PandoraApp(
         var reviewRefreshRevision by remember(reviewReads) { mutableIntStateOf(0) }
         // 两项独立刷新：查询失败保留上次成功结果。
         var pendingReviewCount by remember(currentUser?.id, currentUser?.capabilities?.reviewTasks) { mutableStateOf(0) }
-        val reviewBadgeCount = (pendingReviewCount + (unreadReviewKeys - readReviewKeys).size).coerceAtMost(99)
+        // 完成验收待办：发起人（派发任务）与任务审批人（个人 / 自派任务）都可能有待验收申请
+        var pendingCompletionCount by remember(currentUser?.id) { mutableStateOf(0) }
+        val reviewBadgeCount = (pendingReviewCount + pendingCompletionCount + (unreadReviewKeys - readReviewKeys).size).coerceAtMost(99)
         LaunchedEffect(currentUser?.id, authChecked, currentUser?.capabilities?.reviewTasks, current, showReviews) {
             if (currentUser == null || !authChecked) return@LaunchedEffect
             (appContext as ComponentActivity).lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -505,6 +507,12 @@ fun PandoraApp(
                             throw cancelled
                         } catch (_: Exception) { }
                     }
+                    try {
+                        pendingCompletionCount = taskRepo.completionPendingCount().count.coerceIn(0, 99).toInt()
+                        coroutineContext.ensureActive()
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) { }
                     try {
                         val keys = unreadReviewResults(reviewReads.keys()) { cursor ->
                             taskRepo.reviews("created", cursor = cursor, limit = 100)
@@ -711,7 +719,8 @@ fun PandoraApp(
                             onResultRead = { review ->
                                 reviewReads.markRead(review)
                                 readReviewKeys = reviewReads.keys()
-                            }) { showReviews = false; reviewFocusId = null }
+                            },
+                            onOpenTask = { taskId -> showReviews = false; reviewFocusId = null; detail = taskId }) { showReviews = false; reviewFocusId = null }
                     }
                     showTagManage -> TagManageScreen(
                         tagRepo,
@@ -727,8 +736,10 @@ fun PandoraApp(
                       AnimatedContent(current, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "page") { target ->
                         when (target) {
                             Route.HOME -> calendarUiState.SaveableStateProvider("home") { HomeScreen(dashboardRepo, calendarRepo, notificationRepo, dailyStore, openedNotificationId, notificationOpenSequence, notificationReadRevision, businessTimezone = currentUser?.businessTimezone, onDrawerClosed = { openedNotificationId = null }, onOpenHome = { homeDetail = it }, onOpenNotification = { item ->
-                                // 带 reviewId 的消息（审批申请 / 审批结果）都进审批中心并展开对应审批详情；仅带任务的消息才进任务详情
-                                if (item.reviewId != null) {
+                                // 只有仍在「待我审批」队列里的审批申请才进审批中心并展开该条；
+                                // 审批结果 / 完成验收结果等消息直接看对应任务详情
+                                val awaitingReview = item.reviewId != null && item.eventType == "REVIEW_REQUEST" && !item.resolved
+                                if (awaitingReview) {
                                     reviewFocusId = item.reviewId
                                     showReviews = true
                                 } else if (item.taskId.isNotBlank()) detail = item.taskId
@@ -824,7 +835,8 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
 
 @Composable private fun HomeScreen(dashboardRepo: DashboardRepository, calendarRepo: CalendarRepository, notificationRepo: NotificationRepository, dailyStore: DailyItemsStore, openedNotificationId: String?, notificationOpenSequence: Int, notificationReadRevision: Int, businessTimezone: String? = null, onDrawerClosed: () -> Unit, onOpenHome: (HomeDetail) -> Unit, onOpenNotification: (NotificationDto) -> Unit) {
     var expandedPanel by rememberSaveable { mutableStateOf<String?>(null) }
-    var notifications by rememberSaveable { mutableStateOf(false) }
+    // 消息抽屉开关用 remember：切走 tab 再回来不应恢复上次打开状态（rememberSaveable 会把 true 带回来，造成「一点首页就开消息」）
+    var notifications by remember { mutableStateOf(false) }
     // 信封角标：未读消息数（99+ 封顶）；打开抽屉、关闭抽屉、收到推送打开、以及任何地方把消息置为已读时刷新
     var unreadCount by remember { mutableStateOf(0) }
     LaunchedEffect(notifications, notificationOpenSequence, notificationReadRevision) {
@@ -1853,7 +1865,7 @@ private fun JournalCard(
     PandoraPanel(Modifier.fillMaxWidth(), shape = PandoraShapes.medium, contentPadding = PaddingValues(0.dp), onClick = onOpen) {
         Column(Modifier.padding(horizontal = PandoraSpacing.space16, vertical = PandoraSpacing.space12)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                RemoteAvatar(journal.authorUserId, currentUser?.displayName.orEmpty(), 32.dp, 14.sp, userRepo)
+                RemoteAvatar(journal.authorUserId, journal.author?.displayName?.takeIf { it.isNotBlank() } ?: currentUser?.displayName.orEmpty(), 32.dp, 14.sp, userRepo)
                 Spacer(Modifier.width(PandoraSpacing.space12))
                 Text(isoLabel(journal.workDate), style = PandoraTypography.labelLarge, modifier = Modifier.weight(1f))
                 if (created.isNotBlank()) Text(created, style = PandoraTypography.caption, color = PandoraTheme.colors.textTertiary)

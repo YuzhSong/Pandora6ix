@@ -414,11 +414,13 @@ private fun SummaryTaskRow(task: TaskDto, name: (String) -> String, userRepo: Us
 
 @Composable
 private fun JournalRow(journal: JournalDto, name: String, timezone: String?, userRepo: UserRepository, onOpen: () -> Unit) {
+    // 列表接口返回作者资料时优先使用（本地成员名单可能不包含停用/跨部门作者，退化成「成员 xxxx」）
+    val shownName = journal.author?.displayName?.takeIf { it.isNotBlank() } ?: name
     Row(Modifier.fillMaxWidth().summaryEntry(onOpen).padding(PandoraSpacing.space12), horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space12)) {
-        RemoteAvatar(journal.authorUserId, name, PandoraDimensions.avatarList, 16.sp, userRepo)
+        RemoteAvatar(journal.authorUserId, shownName, PandoraDimensions.avatarList, 16.sp, userRepo)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space4)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space8)) {
-                Text(name, Modifier.weight(1f), style = PandoraTypography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(shownName, Modifier.weight(1f), style = PandoraTypography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(businessDateTimeLabel(journal.publishedAt, timezone).ifBlank { journal.workDate }, style = PandoraTypography.caption, color = PandoraTheme.colors.textSecondary)
             }
             Text(journalSummary(journal), maxLines = 1, overflow = TextOverflow.Ellipsis, style = PandoraTypography.bodyMedium, color = PandoraTheme.colors.textSecondary)
