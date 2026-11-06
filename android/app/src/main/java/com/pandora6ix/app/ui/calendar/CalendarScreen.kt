@@ -27,14 +27,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -43,11 +47,14 @@ import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.LayoutDirection
 import com.pandora6ix.app.mock.*
 import com.pandora6ix.app.ui.theme.*
 import com.pandora6ix.app.ui.components.*
@@ -91,6 +98,8 @@ fun CalendarScreen(
     var gridJumpTarget by remember { mutableStateOf<DemoDate?>(null) }
     var monthAnchorYear by rememberSaveable { mutableIntStateOf(cursor.year) }
     var yearNavigationVersion by rememberSaveable { mutableIntStateOf(0) }
+    var yearViewport by rememberSaveable { mutableIntStateOf(cursor.year) }
+    LaunchedEffect(mode, yearNavigationVersion, cursor.year) { yearViewport = cursor.year }
     fun jumpToDate(date: DemoDate) {
         if (mode == CalendarMode.MONTH) monthAnchorYear = date.year
         if (mode == CalendarMode.YEAR) yearNavigationVersion++
@@ -128,7 +137,7 @@ fun CalendarScreen(
             val dates = (0..6).map { weekStart.plusDays(it) }
             var showDatePick by rememberSaveable { mutableStateOf(false) }
             Row(Modifier.fillMaxWidth().heightIn(min = PandoraDimensions.touchTarget).padding(start = PandoraSpacing.pageHorizontal, end = PandoraSpacing.space4), verticalAlignment = Alignment.CenterVertically) {
-                Text(calendarPeriodTitle(mode, cursor), style = PandoraTypography.titleMedium, color = colors.textPrimary, modifier = Modifier.weight(1f).clickable(onClickLabel = "选择日期") { showDatePick = true })
+                Text(if (mode == CalendarMode.YEAR) "${yearViewport}年" else calendarPeriodTitle(mode, cursor), style = PandoraTypography.titleMedium, color = colors.textPrimary, modifier = Modifier.weight(1f).clickable(onClickLabel = "选择日期") { showDatePick = true })
                 IconButton({ showTagFilter = true }) {
                     Icon(Icons.Default.Search, "按标签筛选任务", tint = if (filterTags.isEmpty()) colors.textSecondary else colors.primary)
                 }
@@ -184,6 +193,9 @@ fun CalendarScreen(
                         val displayedVersion = yearNavigationVersion
                         YearGrid(cursor, visibleTasks, today,
                             onYearChange = { year ->
+                                if (yearNavigationVersion == displayedVersion) yearViewport = year
+                            },
+                            onSettledYear = { year ->
                                 // 确认新日期后、下一次重组前，旧网格的滚动回调也必须失效。
                                 if (yearNavigationVersion == displayedVersion) onCursorChange(cursor.plusYears(year - cursor.year))
                             },
@@ -234,7 +246,7 @@ fun CalendarScreen(
             CalendarMode.DAY -> cursor == today
             CalendarMode.WEEK -> mondayOfWeek(cursor) == mondayOfWeek(today)
             CalendarMode.MONTH -> cursor.year == today.year && cursor.month == today.month
-            CalendarMode.YEAR -> cursor.year == today.year
+            CalendarMode.YEAR -> yearViewport == today.year
         }
         val returnToCurrentLabel = when (mode) {
             CalendarMode.YEAR -> "回到今年"
@@ -719,6 +731,7 @@ private fun Modifier.swipeNavigate(mode: CalendarMode, onAdvance: (Boolean) -> U
     tasks: List<TaskItem>,
     today: DemoDate,
     onYearChange: (Int) -> Unit,
+    onSettledYear: (Int) -> Unit,
     onSelectDate: (DemoDate) -> Unit,
     onSelectMonth: (DemoDate) -> Unit
 ) {
@@ -729,21 +742,24 @@ private fun Modifier.swipeNavigate(mode: CalendarMode, onAdvance: (Boolean) -> U
     val taskSnapshot = tasks.toList()
     val currentCursor by rememberUpdatedState(cursor)
     val reportYear by rememberUpdatedState(onYearChange)
+    val reportSettledYear by rememberUpdatedState(onSettledYear)
     key(window) {
         val activeWindow = window
         // 显式日期导航由父级 key 重建窗口；二级页面返回则恢复当前窗口的精确滚动位置。
         val state = rememberSaveable(saver = LazyGridState.Saver) { LazyGridState(activeWindow.initialIndex, activeWindow.scrollOffset) }
         LaunchedEffect(state) {
-            snapshotFlow { state.layoutInfo.visibleItemsInfo.firstOrNull()?.index }
-                .collect { index ->
-                    if (index == null) return@collect
+            snapshotFlow { state.firstVisibleItemIndex to state.isScrollInProgress }
+                .collect { (index, scrolling) ->
                     val year = activeWindow.monthAt(index).year
-                    if (year != currentCursor.year) reportYear(year)
-                    window = activeWindow.recenteredAt(state.firstVisibleItemIndex, state.firstVisibleItemScrollOffset)
+                    reportYear(year)
+                    if (!scrolling) {
+                        if (year != currentCursor.year) reportSettledYear(year)
+                        window = activeWindow.recenteredAt(index, state.firstVisibleItemScrollOffset)
+                    }
                 }
         }
         LazyVerticalGrid(state = state, columns = GridCells.Fixed(2), modifier = Modifier.fillMaxSize().padding(horizontal = PandoraCalendarDimens.contentHorizontal), contentPadding = PaddingValues(bottom = 96.dp), horizontalArrangement = Arrangement.spacedBy(PandoraGrid.gutter), verticalArrangement = Arrangement.spacedBy(PandoraGrid.gutter)) {
-            items(activeWindow.itemCount, key = { monthKey(activeWindow.monthAt(it)) }) { index ->
+            items(activeWindow.itemCount, key = { monthKey(activeWindow.monthAt(it)) }, contentType = { "year-month" }) { index ->
                 val month = activeWindow.monthAt(index)
                 val weeks = remember(month) { monthWeeks(month) }
                 val dayTaskColors = remember(month, taskSnapshot) {
@@ -758,20 +774,66 @@ private fun Modifier.swipeNavigate(mode: CalendarMode, onAdvance: (Boolean) -> U
                 Column(Modifier.fillMaxWidth().clip(PandoraShapes.small).background(colors.surface).border(PandoraDimensions.borderWidth, colors.border, PandoraShapes.small).padding(PandoraSpacing.space4)) {
                     Text(if (month.month == 1) "${month.year}年1月" else "${month.month}月", style = PandoraTypography.labelLarge, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.fillMaxWidth().clickable(onClickLabel = "打开${month.month}月") { onSelectMonth(month) }.padding(horizontal = PandoraSpacing.space2))
                     Row(Modifier.fillMaxWidth()) { listOf("一", "二", "三", "四", "五", "六", "日").forEach { Text(it, Modifier.weight(1f), style = PandoraTypography.calendarMicro, textAlign = TextAlign.Center, color = colors.textTertiary) } }
-                    weeks.forEach { week ->
-                        Row(Modifier.fillMaxWidth()) {
-                            week.forEach { date ->
-                                val inMonth = date.month == month.month
-                                val marker = if (inMonth) dayTaskColors.getValue(date.day) else Color.Transparent
-                                Box(Modifier.weight(1f).height(24.dp).clickable { onSelectDate(date) }.drawBehind {
-                                    if (date == today) drawCircle(colors.primaryContainer, radius = 10.dp.toPx(), center = Offset(size.width / 2, 10.dp.toPx()))
-                                    if (marker != Color.Transparent) drawCircle(marker, radius = 2.dp.toPx(), center = Offset(size.width / 2, 22.dp.toPx()))
-                                }, contentAlignment = Alignment.TopCenter) {
-                                    Text("${date.day}", Modifier.height(20.dp).wrapContentHeight(Alignment.CenterVertically), style = PandoraTypography.calendarMicro, fontWeight = if (date == today) FontWeight.SemiBold else FontWeight.Normal, color = if (inMonth) colors.textPrimary else colors.textDisabled)
-                                }
-                            }
+                    YearMonthDates(month, weeks, dayTaskColors, today, onSelectDate)
+                }
+            }
+        }
+    }
+}
+
+/** One cached date layer per month; transparent cells retain independent accessible actions. */
+@Composable private fun YearMonthDates(
+    month: DemoDate,
+    weeks: List<List<DemoDate>>,
+    dayTaskColors: Map<Int, Color>,
+    today: DemoDate,
+    onSelectDate: (DemoDate) -> Unit
+) {
+    val colors = PandoraTheme.colors
+    val dates = remember(weeks) { weeks.flatten() }
+    val labels = remember(dates) { dates.map { it.day.toString() } }
+    val fontSize = PandoraTypography.calendarMicro.fontSize
+    val rightToLeft = LocalLayoutDirection.current == LayoutDirection.Rtl
+    Column(Modifier.fillMaxWidth().drawWithCache {
+        val normal = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            textSize = fontSize.toPx()
+            textAlign = android.graphics.Paint.Align.CENTER
+            typeface = android.graphics.Typeface.DEFAULT
+        }
+        val emphasized = android.graphics.Paint(normal).apply {
+            typeface = if (android.os.Build.VERSION.SDK_INT >= 28)
+                android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, 600, false)
+            else android.graphics.Typeface.DEFAULT_BOLD
+        }
+        val rowHeight = 24.dp.toPx()
+        val columnWidth = size.width / 7
+        val normalBaseline = (20.dp.toPx() - normal.fontMetrics.ascent - normal.fontMetrics.descent) / 2
+        val emphasizedBaseline = (20.dp.toPx() - emphasized.fontMetrics.ascent - emphasized.fontMetrics.descent) / 2
+        onDrawBehind {
+            dates.forEachIndexed { index, date ->
+                val column = if (rightToLeft) 6 - index % 7 else index % 7
+                val x = (column + .5f) * columnWidth
+                val y = (index / 7) * rowHeight
+                val inMonth = date.month == month.month
+                val isToday = date == today
+                if (isToday) drawCircle(colors.primaryContainer, 10.dp.toPx(), Offset(x, y + 10.dp.toPx()))
+                val marker = if (inMonth) dayTaskColors[date.day] ?: Color.Transparent else Color.Transparent
+                if (marker != Color.Transparent) drawCircle(marker, 2.dp.toPx(), Offset(x, y + 22.dp.toPx()))
+                val paint = if (isToday) emphasized else normal
+                paint.color = (if (inMonth) colors.textPrimary else colors.textDisabled).toArgb()
+                drawContext.canvas.nativeCanvas.drawText(labels[index], x, y + if (isToday) emphasizedBaseline else normalBaseline, paint)
+            }
+        }
+    }) {
+        weeks.forEach { week ->
+            Row(Modifier.fillMaxWidth()) {
+                week.forEach { date ->
+                    Box(Modifier.weight(1f).height(24.dp)
+                        .semantics {
+                            contentDescription = "${date.year}年${date.month}月${date.day}日"
+                            if (date == today) stateDescription = "今天"
                         }
-                    }
+                        .clickable(role = Role.Button) { onSelectDate(date) })
                 }
             }
         }

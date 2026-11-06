@@ -119,6 +119,10 @@ class ApiClient(private val session: SessionStore, private val baseUrl: String =
     var onSessionExpired: (() -> Unit)? = null
 
     private val http: OkHttpClient = OkHttpClient.Builder().build()
+    // 启动认证不可无限等待 DNS/连接/响应；超时由恢复页提供显式重试。
+    private val sessionHttp: OkHttpClient = http.newBuilder()
+        .callTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+        .build()
 
     /** AI 生成接口：后端总预算 40 秒，读超时放宽到 45 秒；其余请求保持默认超时 */
     private val slowHttp: OkHttpClient = http.newBuilder()
@@ -128,6 +132,9 @@ class ApiClient(private val session: SessionStore, private val baseUrl: String =
 
     suspend fun <T> get(path: String, dataSerializer: DeserializationStrategy<T>): T =
         call("GET", path, null, null, dataSerializer)
+
+    suspend fun <T> getSessionProfile(dataSerializer: DeserializationStrategy<T>): T =
+        call("GET", "/me", null, null, dataSerializer, sessionHttp)
 
     suspend fun <T> post(path: String, body: String? = null, dataSerializer: DeserializationStrategy<T>): T =
         call("POST", path, body, null, dataSerializer)

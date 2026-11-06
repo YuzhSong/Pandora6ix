@@ -17,22 +17,22 @@ class HomeTaskBoardTest {
         )
     )
 
-    @Test fun filtersOnlyMyCompletedAssignmentAndPreservesOrderAndIds() = runBlocking {
+    @Test fun filtersTaskWideCompletedStateAndPreservesOrderAndIds() = runBlocking {
         val tasks = listOf(
             task("my-completed", "COMPLETED"),
-            task("active", "ACTIVE", "COMPLETED"),
-            task("awaiting", "AWAITING_ACCEPTANCE", "COMPLETED"),
+            task("active", "ACTIVE"),
+            task("awaiting", "AWAITING_ACCEPTANCE"),
             task("rejected", "REJECTED"),
             task("missing-own-assignment", null, "COMPLETED")
         )
-        val result = loadHomeTaskBoardPage("me") { TaskPageDto(tasks, "next") }
-        assertEquals(tasks.drop(1), result.items)
+        val result = loadHomeTaskBoardPage { TaskPageDto(tasks, "next") }
+        assertEquals(tasks.subList(1,4), result.items)
         assertEquals("next", result.nextCursor)
     }
 
     @Test fun skipsConsecutiveCompletedPagesOnInitialLoad() = runBlocking {
         val calls = mutableListOf<String?>()
-        val result = loadHomeTaskBoardPage("me") { cursor ->
+        val result = loadHomeTaskBoardPage { cursor ->
             calls.add(cursor)
             when (cursor) {
                 null -> TaskPageDto(listOf(task("done1", "COMPLETED")), "second")
@@ -47,7 +47,7 @@ class HomeTaskBoardTest {
 
     @Test fun loadMoreSkipsCompletedPageAndReturnsVisibleTasks() = runBlocking {
         val calls = mutableListOf<String?>()
-        val result = loadHomeTaskBoardPage("me", "more") { cursor ->
+        val result = loadHomeTaskBoardPage("more") { cursor ->
             calls.add(cursor)
             if (cursor == "more") TaskPageDto(listOf(task("done", "COMPLETED")), "last")
             else TaskPageDto(listOf(task("pending", "AWAITING_ACCEPTANCE")))
@@ -59,7 +59,7 @@ class HomeTaskBoardTest {
 
     @Test fun allCompletedReachesEmptyTerminalPage() = runBlocking {
         var calls = 0
-        val result = loadHomeTaskBoardPage("me") { cursor ->
+        val result = loadHomeTaskBoardPage { cursor ->
             calls++
             TaskPageDto(listOf(task("done", "COMPLETED")), if (cursor == null) "last" else null)
         }
@@ -80,25 +80,32 @@ class HomeTaskBoardTest {
             }
         }
         try {
-            loadHomeTaskBoardPage("me", "start", fetch)
+            loadHomeTaskBoardPage("start", fetch)
             fail("Expected fetch failure")
         } catch (expected: IllegalStateException) {
             assertEquals("network", expected.message)
         }
         shouldFail = false
-        val result = loadHomeTaskBoardPage("me", "start", fetch)
+        val result = loadHomeTaskBoardPage("start", fetch)
         assertEquals(listOf("start", "later", "start", "later"), calls)
         assertEquals("active", result.items.single().id)
     }
 
     @Test fun repeatedCursorFailsInsteadOfLooping() = runBlocking {
         try {
-            loadHomeTaskBoardPage("me", "loop") {
+            loadHomeTaskBoardPage("loop") {
                 TaskPageDto(listOf(task("done", "COMPLETED")), "loop")
             }
             fail("Expected repeated cursor failure")
         } catch (expected: IllegalStateException) {
             assertTrue(expected.message!!.contains("游标"))
         }
+    }
+
+    @Test fun authoritativeTaskStateWinsAndPendingRemainsVisible() = runBlocking {
+        val completed = task("done", "ACTIVE").copy(completionStatus = "COMPLETED")
+        val pending = task("pending", "ACTIVE").copy(completionStatus = "AWAITING_ACCEPTANCE")
+        val active = task("active", "COMPLETED").copy(completionStatus = "NOT_COMPLETED")
+        assertEquals(listOf(pending,active), loadHomeTaskBoardPage { TaskPageDto(listOf(completed,pending,active)) }.items)
     }
 }

@@ -49,14 +49,16 @@
 
 `expectedVersion` 取执行关系的版本，不能使用任务或审批版本。状态值为 `NOT_STARTED`（未开始）、`IN_PROGRESS`（进行中）、`COMPLETED`（完成申请）；只有实际执行人可更新已生效且可执行的关系。
 
-响应为 `{"assignment":{...},"completionRequest":null}`。派发任务选择 `COMPLETED` 时，响应包含新建的 `completionRequest`，执行状态为 `AWAITING_ACCEPTANCE`，工作状态仍为 `IN_PROGRESS`。创建者作为派发上级，通过原有接口验收：
+响应为 `{"assignment":{...},"completionRequest":null}`。选择 `COMPLETED` 后按任务整体提交：所有当前接收人的执行状态同步为 `AWAITING_ACCEPTANCE`、工作状态为 `COMPLETED`，任务 `completionStatus=AWAITING_ACCEPTANCE`，只新增一条完成申请，全员及验收人收到通知。派发任务的验收人为创建者；若创建者也在当前接收人中，则统一由任务最近一次审批人验收，不能通过换一个提交人绕过验收。通过原有接口验收：
 
 ```text
 POST /task-completion-requests/{requestId}/decision
 {"expectedVersion":0,"decision":"ACCEPT","comment":"已确认完成"}
 ```
 
-验收版本取完成申请自身的 `version`；`REJECT` 表示驳回并恢复进行中。验收通过后才设置 `executionStatus=COMPLETED`、`workStatus=COMPLETED`。待验收期间不能再次改状态或提交进度，完成后不能自行重新打开。旧个人任务的本人完成接口保持兼容。
+验收版本取完成申请自身的 `version`；`REJECT` 表示所有当前接收人一起恢复未完成（`ACTIVE/IN_PROGRESS`，任务 `completionStatus=NOT_COMPLETED`）。通过后全员 `executionStatus=COMPLETED`、`workStatus=COMPLETED`，任务 `completionStatus=COMPLETED`。每次提交和决定递增全员执行关系版本并通知全员，旧版本请求冲突；幂等重试复用原键。待验收不能再次提交进度或完成，且待验收/已完成时禁止更改接收人集合。个人任务最高权限无审批人的自完成及重复个人任务范围恢复保持既有例外。
+
+V17 会统一既有混合状态：已有一个当前接收人完成，则全员继承该真实完成结果；否则已有待验收则全员待验收。旧申请与个人记录不删除，多条旧待验收申请由一次任务级决定解决。上线需先备份并发布后端，再发布 Android；本次代码修改不代表已部署。
 
 任务详情中每条执行关系新增 `workStatus`、`allowedWorkStatuses`。后者为空表示当前不能通过新接口改状态。新状态接口、原进度/完成申请接口支持原有 `Idempotency-Key`，网络重试应复用相同键和内容。
 

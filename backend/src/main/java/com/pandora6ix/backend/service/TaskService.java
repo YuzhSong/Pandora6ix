@@ -387,6 +387,14 @@ public class TaskService
                                 .toList());
             }
             v.put("progressRecords", history);
+            if (a.id().equals(completionApprover(a,task))) {
+                var sharedPending = db.rows("SELECT r.* FROM task_completion_request r JOIN task_assignment s ON s.enterprise_id=r.enterprise_id AND s.id=r.assignment_id WHERE r.enterprise_id=? AND s.task_id=? AND s.current_member=TRUE AND r.decision='PENDING' ORDER BY r.requested_at,r.id FETCH FIRST 1 ROW ONLY",
+                        a.enterpriseId(),task.get("id"));
+                if (!sharedPending.isEmpty()) {
+                    var pending = view(sharedPending.getFirst());
+                    if (requests.stream().noneMatch(r -> Objects.equals(r.get("id"),pending.get("id")))) requests.add(pending);
+                }
+            }
             v.put("completionRequests", requests);
         } else v.remove("description");
         return v;
@@ -403,7 +411,7 @@ public class TaskService
                             ? "COMPLETE_PERSONAL"
                             : "REQUEST_COMPLETION");
         if ("AWAITING_ACCEPTANCE".equals(assignment.get("execution_status"))
-                && a.id().equals(completionApprover(a, task, assignment)))
+                && a.id().equals(completionApprover(a, task)))
             return List.of("DECIDE_COMPLETION");
         return List.of();
     }
@@ -615,6 +623,9 @@ public class TaskService
         var creator=identity.actor(str(owner,"id"),actor.enterpriseId(),str(owner,"org_unit_id"),null);
         var recipients=List.copyOf(new LinkedHashSet<>((List<String>)content.get("recipientIds")));
         validateRecipients(creator,task,recipients);
+        if (!"NOT_COMPLETED".equals(task.get("completion_status"))
+                && !new HashSet<>(recipients).equals(new HashSet<>(assignments(actor,taskId).stream().map(r -> str(r,"recipient_user_id")).toList())))
+            throw new BusinessException(409,"INVALID_WORKFLOW_STATE","Recipients cannot change while task completion is pending or final.");
         for (var old: assignments(actor,taskId)) {
             if (!recipients.contains(str(old,"recipient_user_id")))
                 db.update("UPDATE task_assignment SET current_member=FALSE,version=version+1 WHERE enterprise_id=? AND id=?",actor.enterpriseId(),old.get("id"));
@@ -624,7 +635,8 @@ public class TaskService
             if (old.isEmpty()) {
                 db.update("INSERT INTO task_assignment(id,enterprise_id,task_id,recipient_user_id,execution_status,activated_at) VALUES(?,?,?,?,?,CURRENT_TIMESTAMP)",id(),actor.enterpriseId(),taskId,recipient,"APPROVED".equals(task.get("review_status"))?"ACTIVE":"PENDING_APPROVAL");
             } else if (Boolean.FALSE.equals(old.get().get("current_member"))) {
-                db.update("UPDATE task_assignment SET current_member=TRUE,version=version+1 WHERE enterprise_id=? AND id=?",actor.enterpriseId(),old.get().get("id"));
+                db.update("UPDATE task_assignment SET current_member=TRUE,execution_status=?,work_status='IN_PROGRESS',completion_source=NULL,completed_by_user_id=NULL,completed_at=NULL,version=version+1 WHERE enterprise_id=? AND id=?",
+                        "APPROVED".equals(task.get("review_status"))?"ACTIVE":"PENDING_APPROVAL",actor.enterpriseId(),old.get().get("id"));
             }
         }
     }
@@ -705,6 +717,7 @@ public class TaskService
                 var old=audit.assignment(a,str(assignment,"id"));
                 checkVersion(db.update("UPDATE task_assignment SET execution_status='ACTIVE',work_status=?,progress_percent=0,completion_source=NULL,completed_by_user_id=NULL,completed_at=NULL,version=version+1 WHERE enterprise_id=? AND id=? AND version=?",
                         c.workStatus(),a.enterpriseId(),assignment.get("id"),assignment.get("version")));
+                db.update("UPDATE task SET completion_status='NOT_COMPLETED' WHERE enterprise_id=? AND id=?",a.enterpriseId(),task.get("id"));
                 audit.record(a,str(assignment,"id"),"TASK_ASSIGNMENT","TASK","PROGRESS","更新重复任务状态",old,audit.assignment(a,str(assignment,"id")));
             } else setWorkStatus(a,str(assignment,"id"),new Contracts.AssignmentStatus(number(assignment,"version"),c.workStatus(),c.note()));
         }
@@ -771,11 +784,12 @@ public class TaskService
     @Transactional
     public Map<String,Object> setWorkStatus(IdentityService.Actor a,String id,Contracts.AssignmentStatus c) {
         a.business();
+        var original=db.entity("task_assignment",a.enterpriseId(),id);
+        var task=db.lock("task",a.enterpriseId(),str(original,"task_id"));
         var assignment=db.lock("task_assignment",a.enterpriseId(),id);
         if (Boolean.FALSE.equals(assignment.get("current_member"))) throw BusinessException.missing();
         if(!a.id().equals(assignment.get("recipient_user_id"))) throw BusinessException.missing();
         if(number(assignment,"version")!=c.expectedVersion()) checkVersion(0);
-        var task=db.entity("task",a.enterpriseId(),str(assignment,"task_id"));
         active(task,assignment);
         if("COMPLETED".equals(c.workStatus())) {
             Map<String,Object> result;
@@ -804,7 +818,7 @@ public class TaskService
     public Map<String, Object> complete(
             IdentityService.Actor a, String taskId, Contracts.Complete c) {
         a.business();
-        var task = db.entity("task", a.enterpriseId(), taskId);
+        var task = db.lock("task", a.enterpriseId(), taskId);
         if (!a.id().equals(task.get("creator_user_id"))) throw BusinessException.missing();
         if (!"PERSONAL".equals(task.get("task_kind")))
             throw new BusinessException(
@@ -820,7 +834,7 @@ public class TaskService
                         a.id());
         active(task, assignment);
         // 个人任务执行人即发起人：按规则改由该任务的审批人审批，存在审批人时转为完成申请而不是直接标记完成
-        String approver = completionApprover(a, task, assignment);
+        String approver = completionApprover(a, task);
         if (approver != null && !approver.equals(a.id())) {
             var requested =
                     submitCompletion(
@@ -837,6 +851,7 @@ public class TaskService
                         a.enterpriseId(),
                         assignment.get("id"),
                         c.expectedAssignmentVersion()));
+        db.update("UPDATE task SET completion_status='COMPLETED' WHERE enterprise_id=? AND id=?",a.enterpriseId(),taskId);
         notifications.statusChanged(
                 a.enterpriseId(),
                 a.id(),
@@ -853,13 +868,14 @@ public class TaskService
     public Map<String, Object> requestCompletion(
             IdentityService.Actor a, String id, Contracts.CompletionRequest c) {
         a.business();
+        var original = db.entity("task_assignment", a.enterpriseId(), id);
+        var task = db.lock("task", a.enterpriseId(), str(original,"task_id"));
         var assignment = db.lock("task_assignment", a.enterpriseId(), id);
         if (Boolean.FALSE.equals(assignment.get("current_member"))) throw BusinessException.missing();
         if (!a.id().equals(assignment.get("recipient_user_id"))) throw BusinessException.missing();
-        var task = db.entity("task", a.enterpriseId(), str(assignment, "task_id"));
         active(task, assignment);
         // 派发任务由发起人验收；执行人就是发起人（自派）时改由该任务的审批人审批
-        String approver = completionApprover(a, task, assignment);
+        String approver = completionApprover(a, task);
         if (approver == null || approver.equals(a.id()))
             throw new BusinessException(
                     409, "INVALID_WORKFLOW_STATE", "No approver is available for this completion.");
@@ -871,9 +887,11 @@ public class TaskService
      * 由该任务的审批人（最近一次任务审批 / 修改申请的 reviewer）审批；创始人任务无审批人时返回 null。
      */
     private String completionApprover(
-            IdentityService.Actor a, Map<String, Object> task, Map<String, Object> assignment) {
+            IdentityService.Actor a, Map<String, Object> task) {
         String creator = str(task, "creator_user_id");
-        if (creator != null && !creator.equals(str(assignment, "recipient_user_id"))) return creator;
+        boolean creatorExecutes = db.optional("SELECT id FROM task_assignment WHERE enterprise_id=? AND task_id=? AND recipient_user_id=? AND current_member=TRUE",
+                a.enterpriseId(),task.get("id"),creator).isPresent();
+        if (creator != null && !creatorExecutes) return creator;
         return db.optional(
                         "SELECT reviewer_user_id FROM task_review WHERE enterprise_id=? AND"
                                 + " task_id=? AND reviewer_user_id IS NOT NULL ORDER BY attempt_no DESC",
@@ -892,15 +910,15 @@ public class TaskService
             long expectedVersion,
             String note) {
         String assignmentId = str(assignment, "id");
+        if (number(assignment,"version") != expectedVersion) checkVersion(0);
+        if (!"NOT_COMPLETED".equals(task.get("completion_status")))
+            throw new BusinessException(409,"INVALID_WORKFLOW_STATE","Task completion is already pending or final.");
+        var members = assignments(a,str(task,"id"));
+        var before = members.stream().map(member -> audit.assignment(a,str(member,"id"))).toList();
         var auditBefore = audit.assignment(a, assignmentId);
-        checkVersion(
-                db.update(
-                        "UPDATE task_assignment SET"
-                                + " execution_status='AWAITING_ACCEPTANCE',work_status='IN_PROGRESS',version=version+1 WHERE"
-                                + " enterprise_id=? AND id=? AND version=?",
-                        a.enterpriseId(),
-                        assignmentId,
-                        expectedVersion));
+        db.update("UPDATE task SET completion_status='AWAITING_ACCEPTANCE' WHERE enterprise_id=? AND id=?",a.enterpriseId(),task.get("id"));
+        db.update("UPDATE task_assignment SET execution_status='AWAITING_ACCEPTANCE',work_status='COMPLETED',version=version+1 WHERE enterprise_id=? AND task_id=? AND current_member=TRUE",
+                a.enterpriseId(),task.get("id"));
         String request = id();
         db.update(
                 "INSERT INTO"
@@ -911,17 +929,14 @@ public class TaskService
                 assignmentId,
                 a.id(),
                 note);
-        notifications.statusChanged(
-                a.enterpriseId(),
-                approver,
-                str(task, "id"),
-                assignmentId,
-                str(task, "title"),
-                "已提交完成申请，等待验收",
-                request + "|STATUS|REQUESTED");
+        notifyCompletionMembers(a,task,members,approver,"已由接收人标注完成，等待验收",request + "|STATUS|REQUESTED");
         var auditAfter = audit.assignment(a, assignmentId);
         auditAfter.put("note", note);
         audit.record(a, assignmentId, "TASK_ASSIGNMENT", "TASK", "SUBMIT", "提交任务完成申请", auditBefore, auditAfter);
+        for (int i=0;i<members.size();i++) {
+            String memberId=str(members.get(i),"id");
+            if (!memberId.equals(assignmentId)) audit.record(a,memberId,"TASK_ASSIGNMENT","TASK","SUBMIT","同步任务整体完成申请",before.get(i),audit.assignment(a,memberId));
+        }
         return fields(
                 "request",
                 view(db.entity("task_completion_request", a.enterpriseId(), request)),
@@ -934,17 +949,24 @@ public class TaskService
         return (Map<String, Object>) requested.get("assignment");
     }
 
+    private void notifyCompletionMembers(IdentityService.Actor a, Map<String,Object> task,
+            List<Map<String,Object>> members, String verifier, String text, String key) {
+        for (var member:members) notifications.statusChanged(a.enterpriseId(),verifier,str(task,"id"),str(member,"id"),str(task,"title"),text,key);
+    }
+
     @Transactional
     public Map<String, Object> decide(IdentityService.Actor a, String id, Contracts.Decision c) {
         a.business();
+        var originalRequest = db.entity("task_completion_request",a.enterpriseId(),id);
+        var originalAssignment = db.entity("task_assignment",a.enterpriseId(),str(originalRequest,"assignment_id"));
+        var task = db.lock("task",a.enterpriseId(),str(originalAssignment,"task_id"));
         var request = db.lock("task_completion_request", a.enterpriseId(), id);
         String assignmentId = str(request, "assignment_id");
         var assignment = db.lock("task_assignment", a.enterpriseId(), assignmentId);
         if (Boolean.FALSE.equals(assignment.get("current_member"))) throw BusinessException.missing();
         var auditBefore=audit.assignment(a,assignmentId);
-        var task = db.entity("task", a.enterpriseId(), str(assignment, "task_id"));
         // 只有该任务的完成审批人可以验收：派发任务为发起人，个人 / 自派任务为任务审批人
-        String approver = completionApprover(a, task, assignment);
+        String approver = completionApprover(a, task);
         if (approver == null || !a.id().equals(approver)) throw BusinessException.missing();
         if (!"APPROVED".equals(task.get("review_status"))
                 || !"PENDING".equals(request.get("decision"))
@@ -954,6 +976,8 @@ public class TaskService
                     "INVALID_WORKFLOW_STATE",
                     "A pending completion request is required.");
         boolean accept = "ACCEPT".equals(c.decision());
+        var members = assignments(a,str(task,"id"));
+        var before = members.stream().map(member -> audit.assignment(a,str(member,"id"))).toList();
         checkVersion(
                 db.update(
                         "UPDATE task_completion_request SET"
@@ -965,32 +989,33 @@ public class TaskService
                         a.enterpriseId(),
                         id,
                         c.expectedVersion()));
+        // Resolve any retained legacy per-person requests with this one task-wide decision.
+        db.update("UPDATE task_completion_request SET decision=?,decided_by_user_id=?,decision_note=?,decided_at=CURRENT_TIMESTAMP,version=version+1 WHERE enterprise_id=? AND decision='PENDING' AND assignment_id IN (SELECT id FROM task_assignment WHERE enterprise_id=? AND task_id=? AND current_member=TRUE)",
+                accept?"ACCEPTED":"REJECTED",a.id(),c.comment(),a.enterpriseId(),a.enterpriseId(),task.get("id"));
+        db.update("UPDATE task SET completion_status=? WHERE enterprise_id=? AND id=?",accept?"COMPLETED":"NOT_COMPLETED",a.enterpriseId(),task.get("id"));
         if (accept)
             db.update(
                     "UPDATE task_assignment SET"
                         + " execution_status='COMPLETED',work_status='COMPLETED',completion_source='CREATOR_ACCEPTANCE',completed_by_user_id=?,completed_at=CURRENT_TIMESTAMP,version=version+1"
-                        + " WHERE enterprise_id=? AND id=?",
+                        + " WHERE enterprise_id=? AND task_id=? AND current_member=TRUE",
                     a.id(),
                     a.enterpriseId(),
-                    assignmentId);
+                    task.get("id"));
         else
             db.update(
                     "UPDATE task_assignment SET execution_status='ACTIVE',work_status='IN_PROGRESS',version=version+1 WHERE"
-                            + " enterprise_id=? AND id=?",
+                            + " enterprise_id=? AND task_id=? AND current_member=TRUE",
                     a.enterpriseId(),
-                    assignmentId);
+                    task.get("id"));
         String statusText = accept ? "的完成申请已验收通过" : "的完成申请被驳回，请继续处理";
-        notifications.statusChanged(
-                a.enterpriseId(),
-                str(assignment, "recipient_user_id"),
-                str(task, "id"),
-                assignmentId,
-                str(task, "title"),
-                statusText,
-                id + "|STATUS|" + (accept ? "ACCEPTED" : "REJECTED"));
+        notifyCompletionMembers(a,task,members,approver,statusText,id + "|STATUS|" + (accept ? "ACCEPTED" : "REJECTED"));
         var auditAfter=audit.assignment(a,assignmentId);
         auditAfter.put("note",c.comment());
         audit.record(a,assignmentId,"TASK_ASSIGNMENT","TASK",accept?"ACCEPT":"REJECT","验收任务完成结果",auditBefore,auditAfter);
+        for (int i=0;i<members.size();i++) {
+            String memberId=str(members.get(i),"id");
+            if (!memberId.equals(assignmentId)) audit.record(a,memberId,"TASK_ASSIGNMENT","TASK",accept?"ACCEPT":"REJECT","同步任务整体验收结果",before.get(i),audit.assignment(a,memberId));
+        }
         return fields(
                 "request",
                 view(db.entity("task_completion_request", a.enterpriseId(), id)),
@@ -998,13 +1023,19 @@ public class TaskService
                 view(db.entity("task_assignment", a.enterpriseId(), assignmentId)));
     }
 
-    /** 当前用户作为完成审批人的判定条件：派发任务=发起人；个人/自派任务=任务最近一次审批的 reviewer */
+    /** 完成验收人对同一任务固定，不因哪个接收人提交而变化。 */
     private static final String APPROVER_CONDITION =
-            " ((t.creator_user_id <> s.recipient_user_id AND t.creator_user_id=?)"
-                    + " OR (t.creator_user_id = s.recipient_user_id AND EXISTS (SELECT 1 FROM task_review rv"
+            " ((NOT EXISTS (SELECT 1 FROM task_assignment own WHERE own.enterprise_id=t.enterprise_id AND own.task_id=t.id AND own.recipient_user_id=t.creator_user_id AND own.current_member=TRUE) AND t.creator_user_id=?)"
+                    + " OR (EXISTS (SELECT 1 FROM task_assignment own WHERE own.enterprise_id=t.enterprise_id AND own.task_id=t.id AND own.recipient_user_id=t.creator_user_id AND own.current_member=TRUE) AND EXISTS (SELECT 1 FROM task_review rv"
                     + " WHERE rv.enterprise_id=r.enterprise_id AND rv.task_id=t.id AND rv.reviewer_user_id=?"
                     + " AND rv.attempt_no=(SELECT MAX(x.attempt_no) FROM task_review x"
                     + " WHERE x.enterprise_id=rv.enterprise_id AND x.task_id=rv.task_id))))";
+
+    private static final String CANONICAL_PENDING_COMPLETION =
+            " s.current_member=TRUE AND t.completion_status='AWAITING_ACCEPTANCE' AND NOT EXISTS ("
+                    + "SELECT 1 FROM task_completion_request earlier JOIN task_assignment ea ON ea.enterprise_id=earlier.enterprise_id AND ea.id=earlier.assignment_id "
+                    + "WHERE earlier.enterprise_id=r.enterprise_id AND ea.task_id=t.id AND ea.current_member=TRUE AND earlier.decision='PENDING' "
+                    + "AND (earlier.requested_at<r.requested_at OR (earlier.requested_at=r.requested_at AND earlier.id<r.id)))";
 
     /**
      * 完成申请队列（审批中心「完成验收」分区）：
@@ -1024,7 +1055,7 @@ public class TaskService
                         + " WHERE r.enterprise_id=?";
         List<Object> args = new ArrayList<>(List.of(a.enterpriseId()));
         if ("pending".equals(requestedScope)) {
-            query += " AND r.decision='PENDING' AND" + APPROVER_CONDITION;
+            query += " AND r.decision='PENDING' AND" + CANONICAL_PENDING_COMPLETION + " AND" + APPROVER_CONDITION;
             args.add(a.id());
             args.add(a.id());
         } else {
@@ -1056,7 +1087,7 @@ public class TaskService
                 "SELECT COUNT(*) AS request_count FROM task_completion_request r"
                         + " JOIN task_assignment s ON s.enterprise_id=r.enterprise_id AND s.id=r.assignment_id"
                         + " JOIN task t ON t.enterprise_id=r.enterprise_id AND t.id=s.task_id"
-                        + " WHERE r.enterprise_id=? AND r.decision='PENDING' AND" + APPROVER_CONDITION,
+                        + " WHERE r.enterprise_id=? AND r.decision='PENDING' AND" + CANONICAL_PENDING_COMPLETION + " AND" + APPROVER_CONDITION,
                 a.enterpriseId(), a.id(), a.id());
         return fields("count", number(result, "request_count"));
     }

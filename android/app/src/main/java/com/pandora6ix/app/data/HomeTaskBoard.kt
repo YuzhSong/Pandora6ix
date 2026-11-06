@@ -1,8 +1,7 @@
 package com.pandora6ix.app.data
 
-/** 首页专用过滤：只判断本人的执行状态，不改变其他任务列表。 */
+/** 首页只隐藏任务整体已通过验收的完成结果，待验收任务继续显示。 */
 internal suspend fun loadHomeTaskBoardPage(
-    currentUserId: String,
     cursor: String? = null,
     fetch: suspend (String?) -> TaskPageDto
 ): TaskPageDto {
@@ -12,11 +11,7 @@ internal suspend fun loadHomeTaskBoardPage(
         check(visited.add(next)) { "任务分页游标重复，请重试" }
         val page = fetch(next)
         check(page.nextCursor == null || page.nextCursor !in visited) { "任务分页游标重复，请重试" }
-        val visible = page.items.filterNot { task ->
-            task.authorizedAssignments.any {
-                it.recipientUserId == currentUserId && it.executionStatus == "COMPLETED"
-            }
-        }
+        val visible = page.items.filterNot { it.taskCompletionState() == "COMPLETED" }
         if (visible.isNotEmpty() || page.nextCursor == null) return page.copy(items = visible)
         next = page.nextCursor
     }

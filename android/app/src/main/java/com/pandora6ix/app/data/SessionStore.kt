@@ -48,7 +48,11 @@ class SessionStore internal constructor(private val prefs: SharedPreferences) {
     val savedLoginName: String?
         get() = prefs.getString("login_name", null)
 
-    fun bindOwner(ownerId: String) = prefs.edit().putString("owner_id", ownerId).apply()
+    @Synchronized fun bindOwnerIfCurrent(expectedToken: String, ownerId: String): Boolean {
+        if (token != expectedToken) return false
+        prefs.edit().putString("owner_id", ownerId).apply()
+        return true
+    }
 
     @Synchronized fun clear() { renewingToken = null; prefs.edit().clear().apply() }
 
