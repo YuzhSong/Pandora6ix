@@ -1355,6 +1355,7 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
 
 @Composable private fun HomeItemDetailScreen(repo: DashboardRepository, detail: HomeDetail, onBack: () -> Unit) {
     androidx.activity.compose.BackHandler(onBack = onBack)
+    var eventTitle by remember(detail.id, detail.text) { mutableStateOf(detail.text) }
     var content by remember(detail.id) { mutableStateOf<String?>(null) }
     var loading by remember(detail.id) { mutableStateOf(detail.id != null) }
     var error by remember(detail.id) { mutableStateOf<String?>(null) }
@@ -1365,7 +1366,10 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
         try {
             content = when (detail.kind) {
                 // 公司重要事项全文
-                "COMPANY_ITEM" -> repo.companyItem(id).let { it.content.ifBlank { it.title } }
+                "COMPANY_ITEM" -> repo.companyItem(id).let {
+                    eventTitle = it.title
+                    it.content
+                }
                 // 任务详情：标题 + 说明（说明全文仅在详情中提供）
                 "TASK" -> repo.task(id).let { t -> buildString {
                     append(t.title)
@@ -1403,6 +1407,21 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
                         error != null -> Column(Modifier.fillMaxWidth().padding(vertical = PandoraSpacing.space12), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space12)) {
                             Text(error!!, color = MaterialTheme.colorScheme.error)
                             PandoraButton("重试", { attempt++ })
+                        }
+                        detail.kind == "COMPANY_ITEM" -> {
+                            Text(
+                                eventTitle,
+                                style = PandoraTypography.titleLarge,
+                                modifier = Modifier.fillMaxWidth().semantics { heading() }
+                            )
+                            content?.takeIf { it.isNotBlank() }?.let { body ->
+                                Text(
+                                    body,
+                                    style = PandoraTypography.bodyLarge,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    softWrap = true
+                                )
+                            }
                         }
                         else -> {
                             // 详情正文前补上面板里的标题：面板只看到标题，点开后仍是「标题：全文」
