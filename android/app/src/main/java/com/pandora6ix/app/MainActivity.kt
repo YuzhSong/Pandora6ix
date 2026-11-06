@@ -336,6 +336,8 @@ fun PandoraApp(
         var progressTaskId by remember { mutableStateOf<String?>(null) }
         var fontScale by rememberSaveable { mutableStateOf(1f) }
         var currentUser by remember { mutableStateOf<UserDto?>(null) }
+        // 详情替换首页时仍保留消息列表；账号变化或底栏导航会重置。
+        var notificationListOpen by rememberSaveable(currentUser?.id) { mutableStateOf(false) }
         val appearanceContext = LocalContext.current
         val themePreferences = remember(appearanceContext) {
             val prefs = appearanceContext.getSharedPreferences("pandora_appearance", Context.MODE_PRIVATE)
@@ -670,7 +672,7 @@ fun PandoraApp(
                 route = Route.HOME.name; detail = null; homeDetail = null; showSettings = false; showReviews = false
             }
             else -> PandoraTheme(theme) { CompositionLocalProvider(LocalDensity provides scaledDensity) {
-        Scaffold(containerColor = theme.colors.appBackground, bottomBar = { NavigationBar(containerColor = theme.art?.navBand ?: theme.colors.appBackground) { nav.forEach { item -> NavigationBarItem(selected = current == item.route, onClick = { route = item.route.name; detail = null; homeDetail = null; journalDetailId = null; showSettings = false; showReviews = false; showTagManage = false; progressTaskId = null; showTaskSummary = false }, icon = { MeNavIcon(item, reviewBadgeCount) }, label = { Text(item.label, style = if (current == item.route && theme.art?.navLabel != null) PandoraTypography.caption.copy(fontWeight = FontWeight.SemiBold) else PandoraTypography.caption) }, colors = NavigationBarItemDefaults.colors(selectedIconColor = theme.colors.primary, selectedTextColor = theme.art?.navLabel ?: theme.colors.primary, indicatorColor = theme.colors.primaryContainer, unselectedIconColor = theme.colors.textSecondary, unselectedTextColor = theme.art?.navLabel ?: theme.colors.textSecondary)) } } }) { padding ->
+        Scaffold(containerColor = theme.colors.appBackground, bottomBar = { NavigationBar(containerColor = theme.art?.navBand ?: theme.colors.appBackground) { nav.forEach { item -> NavigationBarItem(selected = current == item.route, onClick = { notificationListOpen = false; route = item.route.name; detail = null; homeDetail = null; journalDetailId = null; showSettings = false; showReviews = false; showTagManage = false; progressTaskId = null; showTaskSummary = false }, icon = { MeNavIcon(item, reviewBadgeCount) }, label = { Text(item.label, style = if (current == item.route && theme.art?.navLabel != null) PandoraTypography.caption.copy(fontWeight = FontWeight.SemiBold) else PandoraTypography.caption) }, colors = NavigationBarItemDefaults.colors(selectedIconColor = theme.colors.primary, selectedTextColor = theme.art?.navLabel ?: theme.colors.primary, indicatorColor = theme.colors.primaryContainer, unselectedIconColor = theme.colors.textSecondary, unselectedTextColor = theme.art?.navLabel ?: theme.colors.textSecondary)) } } }) { padding ->
             Surface(Modifier.padding(padding).fillMaxSize(), color = theme.colors.appBackground) {
                 when {
                     homeDetail?.kind == "TASK" && homeDetail?.id != null -> FullTaskDetail(
@@ -736,7 +738,7 @@ fun PandoraApp(
                       theme.art?.let { art -> ThemeScene(art, calendar = current == Route.VIEW, modifier = Modifier.align(Alignment.BottomCenter)) }
                       AnimatedContent(current, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "page") { target ->
                         when (target) {
-                            Route.HOME -> calendarUiState.SaveableStateProvider("home") { HomeScreen(dashboardRepo, calendarRepo, notificationRepo, dailyStore, openedNotificationId, notificationOpenSequence, notificationReadRevision, businessTimezone = currentUser?.businessTimezone, onDrawerClosed = { openedNotificationId = null }, onOpenHome = { homeDetail = it }, onOpenNotification = { item ->
+                            Route.HOME -> calendarUiState.SaveableStateProvider("home") { HomeScreen(dashboardRepo, calendarRepo, notificationRepo, dailyStore, openedNotificationId, notificationOpenSequence, notificationReadRevision, currentUserId = currentUser!!.id, notifications = notificationListOpen, onNotificationsChange = { notificationListOpen = it }, businessTimezone = currentUser?.businessTimezone, onDrawerClosed = { openedNotificationId = null }, onOpenHome = { homeDetail = it }, onOpenNotification = { item ->
                                 // 只有仍在「待我审批」队列里的审批申请才进审批中心并展开该条；
                                 // 审批结果 / 完成验收结果等消息直接看对应任务详情
                                 val awaitingReview = item.reviewId != null && item.eventType == "REVIEW_REQUEST" && !item.resolved
@@ -834,10 +836,8 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
     }
 }
 
-@Composable private fun HomeScreen(dashboardRepo: DashboardRepository, calendarRepo: CalendarRepository, notificationRepo: NotificationRepository, dailyStore: DailyItemsStore, openedNotificationId: String?, notificationOpenSequence: Int, notificationReadRevision: Int, businessTimezone: String? = null, onDrawerClosed: () -> Unit, onOpenHome: (HomeDetail) -> Unit, onOpenNotification: (NotificationDto) -> Unit) {
+@Composable private fun HomeScreen(dashboardRepo: DashboardRepository, calendarRepo: CalendarRepository, notificationRepo: NotificationRepository, dailyStore: DailyItemsStore, openedNotificationId: String?, notificationOpenSequence: Int, notificationReadRevision: Int, currentUserId: String, notifications: Boolean, onNotificationsChange: (Boolean) -> Unit, businessTimezone: String? = null, onDrawerClosed: () -> Unit, onOpenHome: (HomeDetail) -> Unit, onOpenNotification: (NotificationDto) -> Unit) {
     var expandedPanel by rememberSaveable { mutableStateOf<String?>(null) }
-    // 消息抽屉开关用 remember：切走 tab 再回来不应恢复上次打开状态（rememberSaveable 会把 true 带回来，造成「一点首页就开消息」）
-    var notifications by remember { mutableStateOf(false) }
     // 信封角标：未读消息数（99+ 封顶）；打开抽屉、关闭抽屉、收到推送打开、以及任何地方把消息置为已读时刷新
     var unreadCount by remember { mutableStateOf(0) }
     LaunchedEffect(notifications, notificationOpenSequence, notificationReadRevision) {
@@ -873,14 +873,16 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
             }
         }
     }
-    // 任务看板：执行人视角，展示被派发给我的任务（scope=mine）
+    // 任务看板：执行人视角，展示被派发给我且本人尚未完成的任务。
     var taskBoardLoading by remember { mutableStateOf(true) }
     var taskBoardError by remember { mutableStateOf<String?>(null) }
     fun loadTaskBoard() {
         taskBoardLoading = true; taskBoardError = null
         scope.launch {
             try {
-                val page = calendarRepo.tasks(scope = "mine", limit = 20)
+                val page = loadHomeTaskBoardPage(currentUserId) { cursor ->
+                    calendarRepo.tasks(scope = "mine", cursor = cursor, limit = 20)
+                }
                 taskPager.items.clear(); taskPager.items.addAll(page.items)
                 taskPager.nextCursor = page.nextCursor
                 taskPager.moreUrl = null
@@ -898,7 +900,9 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
         taskPager.loadingMore = true
         scope.launch {
             try {
-                val page = calendarRepo.tasks(scope = "mine", cursor = cursor, limit = 20)
+                val page = loadHomeTaskBoardPage(currentUserId, cursor) { next ->
+                    calendarRepo.tasks(scope = "mine", cursor = next, limit = 20)
+                }
                 taskPager.items.addAll(page.items)
                 taskPager.nextCursor = page.nextCursor
             } catch (_: Exception) {
@@ -955,7 +959,7 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
         PandoraPageTitle(todayDate().shortLabelWithWeekday()) {
             // 与「我的」页红点同一实现：未读消息数角标（99+ 封顶）
             BadgedBox(badge = { if (unreadCount > 0) Badge { Text(if (unreadCount >= 99) "99+" else "$unreadCount") } }) {
-                IconButton(onClick = { notifications = true }) { Surface(shape = PandoraShapes.circle, color = colors.primaryContainer) { Icon(Icons.Default.Email, "邮箱", Modifier.padding(PandoraSpacing.space8).size(PandoraDimensions.icon), tint = colors.textPrimary) } }
+                IconButton(onClick = { onNotificationsChange(true) }) { Surface(shape = PandoraShapes.circle, color = colors.primaryContainer) { Icon(Icons.Default.Email, "邮箱", Modifier.padding(PandoraSpacing.space8).size(PandoraDimensions.icon), tint = colors.textPrimary) } }
             }
         }
         Box(Modifier.fillMaxWidth().weight(1f)) {
@@ -1035,9 +1039,9 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
           }
       }
       if (notifications) {
-          androidx.activity.compose.BackHandler { notifications = false; onDrawerClosed() }
-          Box(Modifier.fillMaxSize().background(colors.scrim).clickable { notifications = false; expandedPanel = null; onDrawerClosed() })
-          NotificationDrawer(notificationRepo, openedNotificationId, businessTimezone = businessTimezone, onClose = { notifications = false; onDrawerClosed() }, onOpen = { onDrawerClosed(); onOpenNotification(it) })
+          androidx.activity.compose.BackHandler { onNotificationsChange(false); onDrawerClosed() }
+          Box(Modifier.fillMaxSize().background(colors.scrim).clickable { onNotificationsChange(false); expandedPanel = null; onDrawerClosed() })
+          NotificationDrawer(notificationRepo, openedNotificationId, businessTimezone = businessTimezone, onClose = { onNotificationsChange(false); onDrawerClosed() }, onOpen = { onDrawerClosed(); onOpenNotification(it) })
       }
     }
 }
