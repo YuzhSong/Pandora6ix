@@ -91,6 +91,7 @@ import com.pandora6ix.app.ui.summary.TaskSummaryFlow
 import com.pandora6ix.app.ui.tags.TagManageScreen
 import com.pandora6ix.app.ui.logs.JournalDatePickerDialog
 import com.pandora6ix.app.ui.logs.JournalEntryField
+import com.pandora6ix.app.ui.logs.initialJournalEntries
 import com.pandora6ix.app.ui.theme.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -227,7 +228,7 @@ private enum class Route { HOME, VIEW, LOGS, AI, ME }
 private val PROGRESS_ENTRY_ACTIONS = setOf("UPDATE_PROGRESS", "COMPLETE_PERSONAL", "REQUEST_COMPLETION")
 private data class NavItem(val route: Route, val label: String, val icon: ImageVector)
 /** emptyText：该面板为空时的提示（四个面板语义不同，分别给出「暂无任务」「暂无日志」等） */
-private data class HomePanelDef(val title: String, val items: List<String>, val emptyText: String)
+private data class HomePanelDef(val title: String, val items: List<String>, val emptyText: String, val statuses: List<String> = emptyList())
 
 /** 导图面板分页状态：items 为已加载条目；nextCursor 非空表示还有更多可加载 */
 private class HomePanelPager<T> {
@@ -314,6 +315,39 @@ fun PandoraApp(
     notificationOpenEvents: Flow<String>,
     approvalPromptEvents: Flow<ApprovalPrompt>
 ) {
+    // 认证属于应用根节点，不能随主题内容或首页的重建重新进入启动流程。
+    var currentUser by remember(session) { mutableStateOf<UserDto?>(null) }
+    var authChecked by remember(session) { mutableStateOf(false) }
+    var sessionRestoreAttempt by remember(session) { mutableIntStateOf(0) }
+    var sessionRestoreError by remember(session) { mutableStateOf<String?>(null) }
+    LaunchedEffect(session, auth, sessionRestoreAttempt) {
+        if (currentUser != null && session.token != null && currentUser?.id == session.ownerId) {
+            authChecked = true
+            return@LaunchedEffect
+        }
+        android.util.Log.i("PandoraAuth", "Session restore started")
+        authChecked = false
+        sessionRestoreError = null
+        when (val restored = restoreSession({ session.token }) { auth.me() }) {
+            is SessionRestoreResult.Authenticated -> {
+                currentUser = restored.user
+                android.util.Log.i("PandoraAuth", "Session restore authenticated")
+            }
+            SessionRestoreResult.SignedOut -> {
+                currentUser = null
+                android.util.Log.i("PandoraAuth", "Session restore signed out")
+            }
+            SessionRestoreResult.Superseded -> {
+                android.util.Log.i("PandoraAuth", "Session restore superseded")
+                sessionRestoreAttempt++; return@LaunchedEffect
+            }
+            is SessionRestoreResult.Unavailable -> {
+                sessionRestoreError = restored.message
+                android.util.Log.w("PandoraAuth", "Session restore unavailable (${restored.failureKind})")
+            }
+        }
+        authChecked = true
+    }
     PandoraTheme {
         var route by rememberSaveable { mutableStateOf(Route.HOME.name) }
         var modeName by rememberSaveable { mutableStateOf(CalendarMode.WEEK.name) }
@@ -334,7 +368,9 @@ fun PandoraApp(
         // 进度记录浮层：从任务详情进入，显示当前任务的执行关系
         var progressTaskId by remember { mutableStateOf<String?>(null) }
         var fontScale by rememberSaveable { mutableStateOf(1f) }
-        var currentUser by remember { mutableStateOf<UserDto?>(null) }
+        // 详情替换首页时仍保留消息列表；账号变化或底栏导航会重置。
+        var notificationListOpen by rememberSaveable(currentUser?.id) { mutableStateOf(false) }
+        var taskRefreshRevision by remember(currentUser?.id) { mutableIntStateOf(0) }
         val appearanceContext = LocalContext.current
         val themePreferences = remember(appearanceContext) {
             val prefs = appearanceContext.getSharedPreferences("pandora_appearance", Context.MODE_PRIVATE)
@@ -348,7 +384,6 @@ fun PandoraApp(
         val calendarUiState = key(currentUser?.id) { rememberSaveableStateHolder() }
         // 子页面替换“我的”时仍保留滚动位置，退出登录或切换账号时重置。
         val profileScrollState = rememberSaveable(currentUser?.id, saver = ScrollState.Saver) { ScrollState(0) }
-        var authChecked by remember { mutableStateOf(false) }
         // 标签增改删权限：与服务端一致（仅 FOUNDER/DEPARTMENT_MANAGER）；未来接入 capabilities 后再细分
         val tagManager = currentUser?.capabilities?.createTags == true
         val theme = appThemes.firstOrNull { it.key == themeKey } ?: appThemes.first()
@@ -395,11 +430,6 @@ fun PandoraApp(
             if (NotificationHelper.needsRuntimePermission()) notifyPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
 
-        // 启动恢复会话：已有 token 时用 GET /me 校验；失败（含 401）回到登录页
-        LaunchedEffect(Unit) {
-            currentUser = if (session.token != null) runCatching { auth.me() }.getOrNull() else null
-            authChecked = true
-        }
         // 任意带 token 请求返回 401：清理会话并回登录（切换到主线程更新状态）
         var openedNotificationId by rememberSaveable { mutableStateOf<String?>(null) }
         var notificationOpenSequence by rememberSaveable { mutableIntStateOf(0) }
@@ -468,7 +498,13 @@ fun PandoraApp(
         }
         DisposableEffect(api) {
             val main = Handler(Looper.getMainLooper())
-            api.onSessionExpired = { main.post { currentUser = null; showSettings = false } }
+            api.onSessionExpired = { main.post {
+                // 旧请求的回调排队期间可能已有替换登录，不能把新会话踢出。
+                if (session.token == null) {
+                    currentUser = null; showSettings = false
+                    sessionRestoreError = null; authChecked = true
+                }
+            } }
             onDispose { api.onSessionExpired = null }
         }
         val calendarRepo = remember { CalendarRepository(api) }
@@ -553,23 +589,25 @@ fun PandoraApp(
         // repeatOnLifecycle(STARTED)：退到后台暂停轮询，回到前台立刻补一次检查
         LaunchedEffect(currentUser?.id, notifyMaster, notifyNewTask, notifyDeadline, notifyStatus) {
             // 权限只在用户主动开启提醒时申请（见设置页），进入软件不打扰
-            if (currentUser == null || !notifyMaster) return@LaunchedEffect
-            NotificationHelper.createChannel(appContext)
+            if (currentUser == null) return@LaunchedEffect
+            if (notifyMaster) NotificationHelper.createChannel(appContext)
             // 本轮会话已登记的消息 id：首次只把现有消息作为基线，避免把历史消息一次性弹出来
             var baselineReady = false
             (appContext as ComponentActivity).lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                taskRefreshRevision++
                 while (true) {
                     val fresh = runCatching { notificationRepo.recent() }.getOrElse {
                         if (it is kotlinx.coroutines.CancellationException) throw it
                         emptyList()
                     }
                     coroutineContext.ensureActive()
+                    if (fresh.any { it.id !in announcedNotifications && it.taskId.isNotBlank() && it.kind == ReminderKind.STATUS }) taskRefreshRevision++
                     if (!baselineReady) {
                         baselineReady = true
                         announcedNotifications.addAll(fresh.map { it.id })
                     } else {
                         val pending = fresh.filter {
-                            it.readAt == null && it.id !in announcedNotifications &&
+                            notifyMaster && it.readAt == null && it.id !in announcedNotifications &&
                                 it.alertEnabled(notifyNewTask, notifyDeadline, notifyStatus)
                         }
                         announcedNotifications.addAll(fresh.map { it.id })
@@ -597,6 +635,7 @@ fun PandoraApp(
                 // 前台收到推送：SDK 也会往通知栏塞一条，这里清掉，只保留页内弹窗
                 if (arrival.notifyId >= 0) runCatching { JPushInterface.clearNotificationById(appContext, arrival.notifyId) }
                 val id = arrival.notificationId
+                if (currentUser != null) taskRefreshRevision++
                 if (currentUser == null || !notifyMaster || id in announcedNotifications) continue
                 val n = runCatching { notificationRepo.recent() }.getOrNull()?.firstOrNull { it.id == id } ?: continue
                 // 请求期间审批广播可能已先展示该消息，不再重复入队。
@@ -614,7 +653,7 @@ fun PandoraApp(
         // 所有视图任务范围：mine=我的任务 / managed=我管理的 / created=我创建的
         var taskScope by rememberSaveable { mutableStateOf("mine") }
         val calendarAnchor = calendarQueryDate(CalendarMode.valueOf(modeName), date)
-        LaunchedEffect(current, modeName, calendarAnchor, currentUser?.id, calRetry, taskScope) {
+        LaunchedEffect(current, modeName, calendarAnchor, currentUser?.id, calRetry, taskScope, taskRefreshRevision) {
             if (current != Route.VIEW || currentUser == null) return@LaunchedEffect
             calLoading = true; calError = null
             val anchor = "%04d-%02d-%02d".format(calendarAnchor.year, calendarAnchor.month, calendarAnchor.day)
@@ -663,13 +702,22 @@ fun PandoraApp(
                     Text("正在恢复会话…", color = PandoraTheme.colors.textTertiary)
                 }
             }
+            sessionRestoreError != null -> Column(
+                Modifier.fillMaxSize().background(theme.colors.appBackground).padding(PandoraSpacing.space24),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space16, Alignment.CenterVertically)
+            ) {
+                Text("暂时无法恢复登录", style = PandoraTypography.titleMedium, color = theme.colors.textPrimary)
+                Text(sessionRestoreError!!, style = PandoraTypography.bodyLarge, color = theme.colors.textSecondary)
+                PandoraButton("重试", { sessionRestoreAttempt++ })
+            }
             // 未登录：登录页，禁止进入保护页
             currentUser == null -> LoginScreen(auth) { user ->
                 currentUser = user
                 route = Route.HOME.name; detail = null; homeDetail = null; showSettings = false; showReviews = false
             }
-            else -> PandoraTheme(theme) { CompositionLocalProvider(LocalDensity provides scaledDensity) {
-        Scaffold(containerColor = theme.colors.appBackground, bottomBar = { NavigationBar(containerColor = theme.art?.navBand ?: theme.colors.appBackground) { nav.forEach { item -> NavigationBarItem(selected = current == item.route, onClick = { route = item.route.name; detail = null; homeDetail = null; journalDetailId = null; showSettings = false; showReviews = false; showTagManage = false; progressTaskId = null; showTaskSummary = false }, icon = { MeNavIcon(item, reviewBadgeCount) }, label = { Text(item.label, style = if (current == item.route && theme.art?.navLabel != null) PandoraTypography.caption.copy(fontWeight = FontWeight.SemiBold) else PandoraTypography.caption) }, colors = NavigationBarItemDefaults.colors(selectedIconColor = theme.colors.primary, selectedTextColor = theme.art?.navLabel ?: theme.colors.primary, indicatorColor = theme.colors.primaryContainer, unselectedIconColor = theme.colors.textSecondary, unselectedTextColor = theme.art?.navLabel ?: theme.colors.textSecondary)) } } }) { padding ->
+            else -> PandoraTheme(theme) { CompositionLocalProvider(LocalDensity provides scaledDensity, LocalTaskRefreshRevision provides taskRefreshRevision) {
+        Scaffold(containerColor = theme.colors.appBackground, bottomBar = { NavigationBar(containerColor = theme.art?.navBand ?: theme.colors.appBackground) { nav.forEach { item -> NavigationBarItem(selected = current == item.route, onClick = { notificationListOpen = false; route = item.route.name; detail = null; homeDetail = null; journalDetailId = null; showSettings = false; showReviews = false; showTagManage = false; progressTaskId = null; showTaskSummary = false }, icon = { MeNavIcon(item, reviewBadgeCount) }, label = { Text(item.label, style = if (current == item.route && theme.art?.navLabel != null) PandoraTypography.caption.copy(fontWeight = FontWeight.SemiBold) else PandoraTypography.caption) }, colors = NavigationBarItemDefaults.colors(selectedIconColor = theme.colors.primary, selectedTextColor = theme.art?.navLabel ?: theme.colors.primary, indicatorColor = theme.colors.primaryContainer, unselectedIconColor = theme.colors.textSecondary, unselectedTextColor = theme.art?.navLabel ?: theme.colors.textSecondary)) } } }) { padding ->
             Surface(Modifier.padding(padding).fillMaxSize(), color = theme.colors.appBackground) {
                 when {
                     homeDetail?.kind == "TASK" && homeDetail?.id != null -> FullTaskDetail(
@@ -735,7 +783,7 @@ fun PandoraApp(
                       theme.art?.let { art -> ThemeScene(art, calendar = current == Route.VIEW, modifier = Modifier.align(Alignment.BottomCenter)) }
                       AnimatedContent(current, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "page") { target ->
                         when (target) {
-                            Route.HOME -> calendarUiState.SaveableStateProvider("home") { HomeScreen(dashboardRepo, calendarRepo, notificationRepo, dailyStore, openedNotificationId, notificationOpenSequence, notificationReadRevision, businessTimezone = currentUser?.businessTimezone, onDrawerClosed = { openedNotificationId = null }, onOpenHome = { homeDetail = it }, onOpenNotification = { item ->
+                            Route.HOME -> calendarUiState.SaveableStateProvider("home") { HomeScreen(dashboardRepo, calendarRepo, notificationRepo, dailyStore, openedNotificationId, notificationOpenSequence, notificationReadRevision, currentUserId = currentUser!!.id, notifications = notificationListOpen, onNotificationsChange = { notificationListOpen = it }, businessTimezone = currentUser?.businessTimezone, onDrawerClosed = { openedNotificationId = null }, onOpenHome = { homeDetail = it }, onOpenNotification = { item ->
                                 // 只有仍在「待我审批」队列里的审批申请才进审批中心并展开该条；
                                 // 审批结果 / 完成验收结果等消息直接看对应任务详情
                                 val awaitingReview = item.reviewId != null && item.eventType == "REVIEW_REQUEST" && !item.resolved
@@ -745,7 +793,7 @@ fun PandoraApp(
                                 } else if (item.taskId.isNotBlank()) detail = item.taskId
                             }) }
                             Route.VIEW -> calendarUiState.SaveableStateProvider("calendar") { CalendarScreen(CalendarMode.valueOf(modeName), date, taskItems, canCreatePersonal, canCreateDelegated, serverTags, taskRepo, { modeName = it.name }, { dateKey = "${it.year}-${it.month}-${it.day}" }, { calRetry++ }, { detail = it.id }, taskScope = taskScope, onTaskScopeChange = { taskScope = it; calNotice = null }, currentUser = currentUser, canReviewTasks = canReviewTasks, businessTimezone = currentUser?.businessTimezone, loading = calLoading, error = calError, onRetry = { calRetry++ }, notice = calNotice, onOpenSummary = { showTaskSummary = true }) }
-                            Route.LOGS -> LogsScreen(journalRepo, serverTags.toList(), currentUser?.businessTimezone, currentUser, userRepo) { journalDetailId = it }
+                            Route.LOGS -> LogsScreen(journalRepo, serverTags.toList(), currentUser?.businessTimezone, currentUser, userRepo, dailyStore) { journalDetailId = it }
                             Route.AI -> AiExplorerScreen(aiRepo, currentUser!!.id)
                             Route.ME -> ProfileScreen(currentUser!!, notifyMaster, showReviewCenter, reviewBadgeCount, tagManager, userRepo, scrollState = profileScrollState, onOpenTagManage = { showTagManage = true }, onOpenReviews = { reviewFocusId = null; showReviews = true }, onOpenSettings = { showSettings = true })
                         }
@@ -833,10 +881,8 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
     }
 }
 
-@Composable private fun HomeScreen(dashboardRepo: DashboardRepository, calendarRepo: CalendarRepository, notificationRepo: NotificationRepository, dailyStore: DailyItemsStore, openedNotificationId: String?, notificationOpenSequence: Int, notificationReadRevision: Int, businessTimezone: String? = null, onDrawerClosed: () -> Unit, onOpenHome: (HomeDetail) -> Unit, onOpenNotification: (NotificationDto) -> Unit) {
+@Composable private fun HomeScreen(dashboardRepo: DashboardRepository, calendarRepo: CalendarRepository, notificationRepo: NotificationRepository, dailyStore: DailyItemsStore, openedNotificationId: String?, notificationOpenSequence: Int, notificationReadRevision: Int, currentUserId: String, notifications: Boolean, onNotificationsChange: (Boolean) -> Unit, businessTimezone: String? = null, onDrawerClosed: () -> Unit, onOpenHome: (HomeDetail) -> Unit, onOpenNotification: (NotificationDto) -> Unit) {
     var expandedPanel by rememberSaveable { mutableStateOf<String?>(null) }
-    // 消息抽屉开关用 remember：切走 tab 再回来不应恢复上次打开状态（rememberSaveable 会把 true 带回来，造成「一点首页就开消息」）
-    var notifications by remember { mutableStateOf(false) }
     // 信封角标：未读消息数（99+ 封顶）；打开抽屉、关闭抽屉、收到推送打开、以及任何地方把消息置为已读时刷新
     var unreadCount by remember { mutableStateOf(0) }
     LaunchedEffect(notifications, notificationOpenSequence, notificationReadRevision) {
@@ -847,7 +893,7 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
     var dashLoading by remember { mutableStateOf(true) }
     var dashError by remember { mutableStateOf<String?>(null) }
     val companyPager = remember { HomePanelPager<CompanyItemDto>() }
-    val taskPager = remember { HomePanelPager<TaskDto>() }
+    val taskPager = remember(currentUserId) { HomePanelPager<TaskDto>() }
     // 每日事项：会话内列表 + 本地持久化（按账号隔离）
     val dailyItems = remember { mutableStateListOf<DailyItem>().apply { addAll(dailyStore.load()) } }
     fun mutateDaily(change: MutableList<DailyItem>.() -> Unit) {
@@ -872,32 +918,41 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
             }
         }
     }
-    // 任务看板：执行人视角，展示被派发给我的任务（scope=mine）
+    // 任务看板：执行人视角，展示被派发给我且本人尚未完成的任务。
     var taskBoardLoading by remember { mutableStateOf(true) }
     var taskBoardError by remember { mutableStateOf<String?>(null) }
+    var taskBoardRequestRevision by remember(currentUserId) { mutableIntStateOf(0) }
     fun loadTaskBoard() {
+        val requestRevision = ++taskBoardRequestRevision
         taskBoardLoading = true; taskBoardError = null
         scope.launch {
             try {
-                val page = calendarRepo.tasks(scope = "mine", limit = 20)
+                val page = loadHomeTaskBoardPage { cursor ->
+                    calendarRepo.tasks(scope = "mine", cursor = cursor, limit = 20)
+                }
+                if (requestRevision != taskBoardRequestRevision) return@launch
                 taskPager.items.clear(); taskPager.items.addAll(page.items)
                 taskPager.nextCursor = page.nextCursor
                 taskPager.moreUrl = null
             } catch (e: SessionExpiredException) {
             } catch (e: Exception) {
-                taskBoardError = (e as? ApiException)?.friendlyMessage() ?: "加载失败，请重试"
+                if (requestRevision == taskBoardRequestRevision) taskBoardError = (e as? ApiException)?.friendlyMessage() ?: "加载失败，请重试"
             } finally {
-                taskBoardLoading = false
+                if (requestRevision == taskBoardRequestRevision) taskBoardLoading = false
             }
         }
     }
     fun loadMoreTasks() {
         val cursor = taskPager.nextCursor ?: return
         if (taskPager.loadingMore) return
+        val requestRevision = taskBoardRequestRevision
         taskPager.loadingMore = true
         scope.launch {
             try {
-                val page = calendarRepo.tasks(scope = "mine", cursor = cursor, limit = 20)
+                val page = loadHomeTaskBoardPage(cursor) { next ->
+                    calendarRepo.tasks(scope = "mine", cursor = next, limit = 20)
+                }
+                if (requestRevision != taskBoardRequestRevision) return@launch
                 taskPager.items.addAll(page.items)
                 taskPager.nextCursor = page.nextCursor
             } catch (_: Exception) {
@@ -928,11 +983,13 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
         val page = dashboardRepo.more(companyPager.moreUrl ?: "/api/v1/company-important-items", cursor, CompanyItemPageDto.serializer())
         page.items to page.nextCursor
     }
-    LaunchedEffect(Unit) { loadDashboard(); loadTaskBoard() }
+    LaunchedEffect(Unit) { loadDashboard() }
+    val taskRefreshRevision = LocalTaskRefreshRevision.current
+    LaunchedEffect(currentUserId, taskRefreshRevision) { loadTaskBoard() }
     val d = dashboard
     val panels = listOf(
         HomePanelDef("事件纪", companyPager.items.map { it.title }, "暂无事件"),
-        HomePanelDef("任务看板", taskPager.items.map { it.title }, "暂无任务")
+        HomePanelDef("任务看板", taskPager.items.map { it.title }, "暂无任务", taskPager.items.map { if (it.taskCompletionState() == "AWAITING_ACCEPTANCE") "待验收" else "" })
     )
     val panelAccent = PandoraTheme.colors.primary
     fun openItem(panelIndex: Int, index: Int, text: String) {
@@ -954,7 +1011,7 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
         PandoraPageTitle(todayDate().shortLabelWithWeekday()) {
             // 与「我的」页红点同一实现：未读消息数角标（99+ 封顶）
             BadgedBox(badge = { if (unreadCount > 0) Badge { Text(if (unreadCount >= 99) "99+" else "$unreadCount") } }) {
-                IconButton(onClick = { notifications = true }) { Surface(shape = PandoraShapes.circle, color = colors.primaryContainer) { Icon(Icons.Default.Email, "邮箱", Modifier.padding(PandoraSpacing.space8).size(PandoraDimensions.icon), tint = colors.textPrimary) } }
+                IconButton(onClick = { onNotificationsChange(true) }) { Surface(shape = PandoraShapes.circle, color = colors.primaryContainer) { Icon(Icons.Default.Email, "邮箱", Modifier.padding(PandoraSpacing.space8).size(PandoraDimensions.icon), tint = colors.textPrimary) } }
             }
         }
         Box(Modifier.fillMaxWidth().weight(1f)) {
@@ -1009,7 +1066,10 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
                                   Text("${i + 1}", style = PandoraTypography.labelLarge, color = colors.textPrimary)
                               }
                               Spacer(Modifier.width(PandoraSpacing.space12))
-                              Text(item, style = PandoraTypography.bodyLarge, color = colors.textPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                              Column(Modifier.weight(1f)) {
+                                  Text(item, style = PandoraTypography.bodyLarge, color = colors.textPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                  selected.statuses.getOrNull(i)?.takeIf { it.isNotBlank() }?.let { Text(it, style = PandoraTypography.caption, color = colors.textSecondary) }
+                              }
                           }
                           if (i < list.lastIndex) PandoraDivider()
                       }
@@ -1034,9 +1094,9 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
           }
       }
       if (notifications) {
-          androidx.activity.compose.BackHandler { notifications = false; onDrawerClosed() }
-          Box(Modifier.fillMaxSize().background(colors.scrim).clickable { notifications = false; expandedPanel = null; onDrawerClosed() })
-          NotificationDrawer(notificationRepo, openedNotificationId, businessTimezone = businessTimezone, onClose = { notifications = false; onDrawerClosed() }, onOpen = { onDrawerClosed(); onOpenNotification(it) })
+          androidx.activity.compose.BackHandler { onNotificationsChange(false); onDrawerClosed() }
+          Box(Modifier.fillMaxSize().background(colors.scrim).clickable { onNotificationsChange(false); expandedPanel = null; onDrawerClosed() })
+          NotificationDrawer(notificationRepo, openedNotificationId, businessTimezone = businessTimezone, onClose = { onNotificationsChange(false); onDrawerClosed() }, onOpen = { onDrawerClosed(); onOpenNotification(it) })
       }
     }
 }
@@ -1098,14 +1158,17 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
                             .padding(horizontal = PandoraSpacing.space4, vertical = PandoraSpacing.space8),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            "${i + 1}. $text",
-                            style = PandoraTypography.bodyMedium,
-                            color = colors.textPrimary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f)
-                        )
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                "${i + 1}. $text",
+                                style = PandoraTypography.bodyMedium,
+                                color = colors.textPrimary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            panel.statuses.getOrNull(i)?.takeIf { it.isNotBlank() }?.let { Text(it, style = PandoraTypography.caption, color = colors.textSecondary) }
+                        }
                     }
                     if (i < list.lastIndex) PandoraDivider()
                 }
@@ -1354,6 +1417,7 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
 
 @Composable private fun HomeItemDetailScreen(repo: DashboardRepository, detail: HomeDetail, onBack: () -> Unit) {
     androidx.activity.compose.BackHandler(onBack = onBack)
+    var eventTitle by remember(detail.id, detail.text) { mutableStateOf(detail.text) }
     var content by remember(detail.id) { mutableStateOf<String?>(null) }
     var loading by remember(detail.id) { mutableStateOf(detail.id != null) }
     var error by remember(detail.id) { mutableStateOf<String?>(null) }
@@ -1364,7 +1428,10 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
         try {
             content = when (detail.kind) {
                 // 公司重要事项全文
-                "COMPANY_ITEM" -> repo.companyItem(id).let { it.content.ifBlank { it.title } }
+                "COMPANY_ITEM" -> repo.companyItem(id).let {
+                    eventTitle = it.title
+                    it.content
+                }
                 // 任务详情：标题 + 说明（说明全文仅在详情中提供）
                 "TASK" -> repo.task(id).let { t -> buildString {
                     append(t.title)
@@ -1403,6 +1470,21 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
                             Text(error!!, color = MaterialTheme.colorScheme.error)
                             PandoraButton("重试", { attempt++ })
                         }
+                        detail.kind == "COMPANY_ITEM" -> {
+                            Text(
+                                eventTitle,
+                                style = PandoraTypography.titleLarge,
+                                modifier = Modifier.fillMaxWidth().semantics { heading() }
+                            )
+                            content?.takeIf { it.isNotBlank() }?.let { body ->
+                                Text(
+                                    body,
+                                    style = PandoraTypography.bodyLarge,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    softWrap = true
+                                )
+                            }
+                        }
                         else -> {
                             // 详情正文前补上面板里的标题：面板只看到标题，点开后仍是「标题：全文」
                             val text = content ?: detail.text
@@ -1418,10 +1500,10 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
 
 
 /** 编辑中的一条工作条目：entryId 非空表示修改已有条目，空表示新增（发布时生成 clientEntryKey） */
-private data class EntryDraft(val entryId: String?, val content: String)
+private typealias EntryDraft = JournalDraftEntryDto
 
 @OptIn(ExperimentalLayoutApi::class)
-@Composable private fun LogsScreen(repo: JournalRepository, availableTags: List<TagDto>, businessTimezone: String?, currentUser: UserDto?, userRepo: UserRepository, onOpen: (String) -> Unit) {
+@Composable private fun LogsScreen(repo: JournalRepository, availableTags: List<TagDto>, businessTimezone: String?, currentUser: UserDto?, userRepo: UserRepository, dailyStore: DailyItemsStore, onOpen: (String) -> Unit) {
     var expandedLogs by rememberSaveable { mutableStateOf(false) }
     var filterOpen by rememberSaveable { mutableStateOf(false) }
     // null = 全部日期；否则为具体业务日期（iso），避免用展示文案做筛选键
@@ -1461,18 +1543,21 @@ private data class EntryDraft(val entryId: String?, val content: String)
     val mutedColors = pandoraTextFieldColors()
     // 日报草稿（缓存目录）：上次编辑未发布的内容
     val context = LocalContext.current
-    val savedJournalDraft = remember {
-        AppCache.readDraft(context, "journal_draft.json")?.let { s -> runCatching { AppCache.json.decodeFromString<JournalDraftDto>(s) }.getOrNull() }
+    var savedJournalDraft by remember(dailyStore) {
+        mutableStateOf(AppCache.readDraft(context, "journal_draft.json")?.let { s -> runCatching { AppCache.json.decodeFromString<JournalDraftDto>(s) }.getOrNull() })
     }
+    // 同次编辑切换日期时保留用户删改后的正文（包括空正文）及标签。
+    val sessionDrafts = remember(dailyStore) { mutableMapOf<String, JournalDraftDto>() }
     // 编辑器打开期间草稿实时落盘；发布成功或放弃时清除
     LaunchedEffect(writing, editorDateKey, entryDrafts, tags) {
-        if (writing) AppCache.writeDraft(
-            context, "journal_draft.json",
-            AppCache.json.encodeToString(
-                JournalDraftDto.serializer(),
-                JournalDraftDto(editorDateKey, entryDrafts.map { JournalDraftEntryDto(it.entryId, it.content) }, tags.mapNotNull { n -> availableTags.firstOrNull { it.name == n }?.id })
+        if (writing) {
+            val draft = JournalDraftDto(
+                editorDateKey, entryDrafts,
+                tags.mapNotNull { name -> availableTags.firstOrNull { it.name == name }?.id }
             )
-        )
+            savedJournalDraft = draft
+            AppCache.writeDraft(context, "journal_draft.json", AppCache.json.encodeToString(JournalDraftDto.serializer(), draft))
+        }
     }
     fun businessDate(): DemoDate = com.pandora6ix.app.data.journalBusinessDate(businessTimezone)
     fun todayIso(): String { val t = businessDate(); return "%04d-%02d-%02d".format(t.year, t.month, t.day) }
@@ -1511,33 +1596,40 @@ private data class EntryDraft(val entryId: String?, val content: String)
     fun dateLabel(iso: String): String = parseIsoDate(iso)?.shortLabel() ?: iso
     // 按整篇日志出卡片：日期/标签/完成的工作与编辑删除在同一张卡片内，不再与上方重复
     val filteredJournals = historyFilter?.let { key -> journals.filter { it.workDate == key } } ?: journals
+    fun loadEditorDate(dateKey: String): Boolean {
+        val draft = sessionDrafts[dateKey] ?: savedJournalDraft?.takeIf { it.dateKey == dateKey && it.dateKey in threeDays().map(::isoOf) && (it.dateKey == todayIso() || journals.none { j -> j.workDate == it.dateKey }) }
+        // 编辑窗口按创建时间（allowedActions 由后端按 published_at 判定），而不是 work_date
+        val existing = journals.firstOrNull { it.workDate == dateKey }
+        if (existing != null && "EDIT" !in existing.allowedActions) { showEditNotice("日志创建已满 24 小时，不能再修改或删除"); return false }
+        editNotice = null
+        editorDateKey = dateKey
+        editingJournal = existing
+        entryDrafts = initialJournalEntries(
+            dateKey, dailyStore.load(), draft?.entries,
+            existing?.entries?.sortedBy { it.displayOrder }?.map { EntryDraft(it.entryId, it.content) }
+        )
+        tags = if (draft != null) draft.tagIds.mapNotNull { id -> availableTags.firstOrNull { it.id == id }?.name }
+        else existing?.tags?.sortedBy { if (it.id == existing.primaryTagId) 0 else 1 }?.map { it.name } ?: emptyList()
+        publishError = null
+        return true
+    }
     fun openEditor(dateKey: String) {
         if (businessTimezone.isNullOrBlank()) { publishError = "请管理员先配置公司业务时区"; return }
-        val draft = savedJournalDraft?.takeIf { it.dateKey == dateKey && it.dateKey in threeDays().map(::isoOf) && (it.dateKey == todayIso() || journals.none { j -> j.workDate == it.dateKey }) }
-        editorDateKey = draft?.dateKey ?: dateKey
-        // 编辑窗口按创建时间（allowedActions 由后端按 published_at 判定），而不是 work_date
-        val existing = journals.firstOrNull { it.workDate == editorDateKey }
-        if (existing != null && "EDIT" !in existing.allowedActions) { showEditNotice("日志创建已满 24 小时，不能再修改或删除"); return }
-        editNotice = null
-        editingJournal = journals.firstOrNull { it.workDate == editorDateKey }
-        entryDrafts = draft?.entries?.map { EntryDraft(it.entryId, it.content) }
-            ?: editingJournal?.entries?.sortedBy { it.displayOrder }?.map { EntryDraft(it.entryId, it.content) }
-            ?: listOf(EntryDraft(null, ""))
-        tags = if (draft != null) draft.tagIds.mapNotNull { id -> availableTags.firstOrNull { it.id == id }?.name }
-        else editingJournal?.tags?.sortedBy { if (it.id == editingJournal?.primaryTagId) 0 else 1 }?.map { it.name } ?: emptyList()
-        publishError = null
-        writing = true
+        sessionDrafts.clear()
+        if (loadEditorDate(dateKey)) writing = true
     }
     fun switchEditorDate(dateKey: String) {
         if (dateKey == editorDateKey) { editNotice = null; return }
-        val existing = journals.firstOrNull { it.workDate == dateKey }
-        if (existing != null && "EDIT" !in existing.allowedActions) { showEditNotice("日志创建已满 24 小时，不能再修改或删除"); return }
-        editNotice = null
-        editorDateKey = dateKey
-        editingJournal = journals.firstOrNull { it.workDate == dateKey }
-        entryDrafts = editingJournal?.entries?.sortedBy { it.displayOrder }?.map { EntryDraft(it.entryId, it.content) } ?: listOf(EntryDraft(null, ""))
-        tags = editingJournal?.tags?.sortedBy { if (it.id == editingJournal?.primaryTagId) 0 else 1 }?.map { it.name } ?: emptyList()
-        publishError = null
+        sessionDrafts[editorDateKey] = JournalDraftDto(
+            editorDateKey, entryDrafts,
+            tags.mapNotNull { name -> availableTags.firstOrNull { it.name == name }?.id }
+        )
+        loadEditorDate(dateKey)
+    }
+    fun clearJournalDrafts() {
+        sessionDrafts.clear()
+        savedJournalDraft = null
+        AppCache.deleteDraft(context, "journal_draft.json")
     }
     fun closeEditor() {
         if (entryDrafts.any { it.content.isNotBlank() }) confirmExit = true else writing = false
@@ -1603,7 +1695,7 @@ private data class EntryDraft(val entryId: String?, val content: String)
                     )
                 }
                 writing = false
-                AppCache.deleteDraft(context, "journal_draft.json")
+                clearJournalDrafts()
                 loadJournals()
             } catch (e: SessionExpiredException) {
                 // 401 已由全局回调处理
@@ -1744,7 +1836,7 @@ private data class EntryDraft(val entryId: String?, val content: String)
             }
             }
         }
-        if (confirmExit) PandoraAlertDialog(onDismissRequest = { confirmExit = false }, title = { Text("放弃未保存内容？") }, text = { Text("退出后当前填写内容会被清空。") }, confirmButton = { PandoraDialogConfirm("放弃并退出", { confirmExit = false; entryDrafts = listOf(EntryDraft(null, "")); AppCache.deleteDraft(context, "journal_draft.json"); writing = false }, destructive = true) }, dismissButton = { PandoraDialogDismiss("继续编辑", { confirmExit = false }) })
+        if (confirmExit) PandoraAlertDialog(onDismissRequest = { confirmExit = false }, title = { Text("放弃未保存内容？") }, text = { Text("退出后当前填写内容会被清空。") }, confirmButton = { PandoraDialogConfirm("放弃并退出", { confirmExit = false; entryDrafts = listOf(EntryDraft(null, "")); writing = false; clearJournalDrafts() }, destructive = true) }, dismissButton = { PandoraDialogDismiss("继续编辑", { confirmExit = false }) })
         if (showTagPicker) PandoraAlertDialog(
         onDismissRequest = { showTagPicker = false },
         title = { Text("选择标签") },
@@ -2285,15 +2377,19 @@ private fun FullTaskDetail(id: String, repo: TaskRepository, tags: List<TagDto>,
     var loading by remember(id) { mutableStateOf(true) }
     var error by remember(id) { mutableStateOf<String?>(null) }
     var revision by remember(id) { mutableIntStateOf(0) }
-    LaunchedEffect(id, revision) {
-        loading = true
+    val taskRefreshRevision = LocalTaskRefreshRevision.current
+    LaunchedEffect(id, revision, taskRefreshRevision) {
+        loading = task == null
         error = null
         try {
             task = repo.task(id)
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled
         } catch (e: Exception) {
-            error = (e as? ApiException)?.friendlyMessage() ?: "加载失败，请重试"
+            if (task == null || (e is ApiException && e.httpStatus in listOf(401,403,404))) {
+                task = null
+                error = (e as? ApiException)?.friendlyMessage() ?: "加载失败，请重试"
+            }
         } finally { loading = false }
     }
     when {
@@ -2346,7 +2442,7 @@ private fun FullTaskDetail(id: String, repo: TaskRepository, tags: List<TagDto>,
     }
 
     val canUpdateTask = detailAssignment?.allowedActions?.any { it == "UPDATE_PROGRESS" || it == "COMPLETE_PERSONAL" || it == "REQUEST_COMPLETION" } == true ||
-        (dto?.seriesId != null && dto.kind == "PERSONAL" && dto.reviewStatus == "APPROVED" && detailAssignment != null)
+        (dto?.seriesId != null && dto.kind == "PERSONAL" && dto.reviewStatus == "APPROVED" && detailAssignment?.executionStatus == "COMPLETED")
     var repeatStatus by remember { mutableStateOf<String?>(null) }
     var editOpen by remember { mutableStateOf(false) }
     var stageNote by remember { mutableStateOf("") }
@@ -2429,12 +2525,13 @@ private fun FullTaskDetail(id: String, repo: TaskRepository, tags: List<TagDto>,
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Text("任务信息", Modifier.weight(1f), style = PandoraTypography.titleSmall)
                             // 有修改待上级审批（pendingEditReviewId 非空）或任务已完成时锁定编辑
-                            val taskCompleted = dto.authorizedAssignments.isNotEmpty() && dto.authorizedAssignments.all { it.executionStatus == "COMPLETED" }
+                            val taskCompleted = dto.taskCompletionState() != "NOT_COMPLETED"
                             if (dto.pendingEditReviewId == null && !taskCompleted && dto.allowedActions.any { it == "EDIT_TASK" || it == "EDIT_PENDING" }) {
                                 TextButton({ editOpen = true }) { Text("编辑", style = PandoraTypography.labelLarge, color = PandoraTheme.colors.primary) }
                             }
                         }
                         Text(dto.title, style = PandoraTypography.titleMedium)
+                        Text("任务状态 · ${taskCompletionLabel(dto.taskCompletionState())}", style = PandoraTypography.bodyLarge)
                         if (dto.pendingEditReviewId != null) Text("修改待上级审批", color = PandoraTheme.colors.primary, style = PandoraTypography.bodyMedium)
                         if (dto.tags.isNotEmpty()) {
                             FlowRow(horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space8), verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space8)) {
@@ -2464,21 +2561,19 @@ private fun FullTaskDetail(id: String, repo: TaskRepository, tags: List<TagDto>,
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space12)) {
                                 val name = executionNames[assignment.recipientUserId]?.takeIf { it.isNotBlank() } ?: "姓名暂不可用"
                                 RemoteAvatar(assignment.recipientUserId, name, 32.dp, 14.sp, userRepo)
-                                // 被驳回的任务执行关系仍停在「待审批」态，展示为「被驳回」更符合用户预期
-                                val execLabel = if (dto.reviewStatus == "REJECTED" && assignment.executionStatus == "PENDING_APPROVAL") "被驳回"
-                                    else executionStatusLabel(assignment.executionStatus)
+                                val execLabel = taskCompletionLabel(dto.taskCompletionState())
                                 Text("$name · $execLabel", style = PandoraTypography.bodyLarge)
                             }
 
-                            val pending = dto.completionRequests.lastOrNull { it.assignmentId == assignment.id && it.decision == "PENDING" }
-                            if ("DECIDE_COMPLETION" in assignment.allowedActions && pending != null) {
-                                pending.submittedNote?.takeIf { it.isNotBlank() }?.let { Text(it, style = PandoraTypography.bodyLarge) }
-                                Row(horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space12)) {
-                                    PandoraButton("验收通过", { decideCompletion(pending, "ACCEPT") }, enabled = !stageBusy)
-                                    PandoraButton("不通过", { decideCompletion(pending, "REJECT") }, variant = PandoraButtonVariant.Destructive, enabled = !stageBusy)
-                                }
+                        }
+                        val pending = dto.completionRequests.filter { it.decision == "PENDING" }
+                            .minWithOrNull(compareBy<CompletionRequestDto> { it.requestedAt.orEmpty() }.thenBy { it.id })
+                        if (dto.authorizedAssignments.any { "DECIDE_COMPLETION" in it.allowedActions } && pending != null) {
+                            pending.submittedNote?.takeIf { it.isNotBlank() }?.let { Text(it, style = PandoraTypography.bodyLarge) }
+                            Row(horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space12)) {
+                                PandoraButton("验收通过", { decideCompletion(pending, "ACCEPT") }, enabled = !stageBusy)
+                                PandoraButton("不通过", { decideCompletion(pending, "REJECT") }, variant = PandoraButtonVariant.Destructive, enabled = !stageBusy)
                             }
-
                         }
                         stageError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = PandoraTypography.bodyMedium) }
                         if (stageBusy) LinearProgressIndicator(Modifier.fillMaxWidth(), color = PandoraTheme.colors.primary)

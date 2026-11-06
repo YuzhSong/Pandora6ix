@@ -26,6 +26,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
@@ -41,7 +42,7 @@ internal fun JournalEntryField(
     colors: TextFieldColors,
     modifier: Modifier = Modifier
 ) {
-    var value by remember { mutableStateOf(TextFieldValue(text)) }
+    var value by remember { mutableStateOf(TextFieldValue(text, TextRange(text.length))) }
     var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
     var focused by remember { mutableStateOf(false) }
     val requester = remember { BringIntoViewRequester() }
@@ -52,7 +53,7 @@ internal fun JournalEntryField(
 
     // 外部切换日期或加载已有日志时同步正文；正常输入保留选区和输入法 composition。
     LaunchedEffect(text) {
-        if (value.text != text) value = TextFieldValue(text)
+        if (value.text != text) value = TextFieldValue(text, TextRange(text.length))
     }
     LaunchedEffect(value, layout, focused, keyboardBottom) {
         // 等待新行高度应用到外层滚动容器，避免在旧的最大偏移范围内滚动。

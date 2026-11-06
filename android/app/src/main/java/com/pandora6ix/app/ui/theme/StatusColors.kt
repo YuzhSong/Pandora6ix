@@ -26,7 +26,7 @@ fun reviewStatusTone(status: String?): StatusTone = when (status) {
 /** 执行状态；ACTIVE 再按工作状态区分未开始/进行中 */
 fun executionStatusTone(executionStatus: String?, workStatus: String? = null): StatusTone = when (executionStatus) {
     "PENDING_APPROVAL" -> StatusTone.WARNING
-    "ACTIVE" -> if (workStatus == "NOT_STARTED") StatusTone.NEUTRAL else StatusTone.INFO
+    "ACTIVE" -> StatusTone.NEUTRAL
     "AWAITING_ACCEPTANCE" -> StatusTone.WARNING
     "COMPLETED" -> StatusTone.SUCCESS
     else -> StatusTone.NEUTRAL

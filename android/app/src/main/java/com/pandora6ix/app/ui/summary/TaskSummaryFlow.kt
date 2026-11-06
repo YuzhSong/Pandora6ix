@@ -16,6 +16,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import kotlinx.coroutines.flow.first
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
@@ -84,6 +85,13 @@ fun TaskSummaryFlow(
     val managedTasks = taskPagers.getValue("managed")
     val fullTasks = taskPagers.getValue(listTaskScope)
     val name: (String) -> String = { summaryPersonName(it, user, people.items) }
+    val taskRefreshRevision = LocalTaskRefreshRevision.current
+    LaunchedEffect(user.id, taskRefreshRevision) {
+        if (taskRefreshRevision > 0 && canRead) taskPagers.values.filter { it.initialized }.forEach { pager ->
+            snapshotFlow { pager.loading }.first { !it }
+            pager.load(refresh = true)
+        }
+    }
 
     LaunchedEffect(taskScope, canRead, canManage) {
         if (canRead && (taskScope != "managed" || canManage)) selectedTasks.ensureLoaded()
@@ -384,17 +392,16 @@ private fun SummaryTaskRow(task: TaskDto, name: (String) -> String, userRepo: Us
     Column(Modifier.fillMaxWidth().summaryEntry(onOpen).padding(horizontal = PandoraSpacing.space12, vertical = PandoraSpacing.space8), verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space4)) {
         Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space8)) {
             Text(task.title, Modifier.weight(1f), style = PandoraTypography.labelLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            // 状态色由集中映射给出，文字仍沿用汇总规则（多执行人显示“多种执行状态”）
             val label = summaryTaskStatus(task)
-            val assignmentStates = task.authorizedAssignments.map { it.executionStatus to it.workStatus }.distinct()
-            val tone = when {
-                task.reviewStatus != "APPROVED" -> reviewStatusTone(task.reviewStatus)
-                assignmentStates.size == 1 -> executionStatusTone(assignmentStates.single().first, assignmentStates.single().second)
+            val tone = when (task.taskCompletionState()) {
+                "COMPLETED" -> StatusTone.SUCCESS
+                "AWAITING_ACCEPTANCE" -> StatusTone.WARNING
                 else -> StatusTone.NEUTRAL
             }
-            PandoraStatusChip(label, tone, maxWidth = 96.dp)
+            PandoraStatusChip(label, tone, maxWidth = 144.dp)
         }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space4), verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space4)) {
+            if (task.reviewStatus != "APPROVED") PandoraStatusChip(reviewStatusLabel(task.reviewStatus), reviewStatusTone(task.reviewStatus))
             task.tags.sortedBy { if (it.id == task.primaryTagId) 0 else 1 }.forEach { tag ->
                 PandoraTagChip(tag.name, tag.colorHex, primary = tag.id == task.primaryTagId)
             }

@@ -70,15 +70,7 @@ internal fun executorName(task: TaskDto, userId: String, fallback: (String) -> S
     task.authorizedAssignments.firstOrNull { it.recipientUserId == userId }?.recipientName?.takeIf { it.isNotBlank() } ?: fallback(userId)
 
 internal fun summaryTaskStatus(task: TaskDto): String {
-    if (task.reviewStatus != "APPROVED") return reviewStatusLabel(task.reviewStatus)
-    val states = task.authorizedAssignments.map { assignment ->
-        if (assignment.executionStatus == "ACTIVE") when (assignment.workStatus) {
-            "NOT_STARTED" -> "待开始"
-            "IN_PROGRESS" -> "进行中"
-            else -> executionStatusLabel(assignment.executionStatus)
-        } else executionStatusLabel(assignment.executionStatus)
-    }.distinct()
-    return when (states.size) { 0 -> reviewStatusLabel(task.reviewStatus); 1 -> states.first(); else -> "多种执行状态" }
+    return taskCompletionLabel(task.taskCompletionState())
 }
 
 internal fun memberJournals(journals: List<JournalDto>, userId: String) = journals.filter { it.authorUserId == userId }

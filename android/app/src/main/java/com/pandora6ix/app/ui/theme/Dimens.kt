@@ -75,6 +75,12 @@ object PandoraCalendarDimens {
     val weekHourHeight = 56.dp
     val monthBarMinHeight = 18.dp
     val monthBarRadius = 3.dp
+    const val monthVisibleItemCount = 3
+    val monthDayRowHeight = 30.dp
+    val monthLaneGap = 3.dp
+    val monthOverflowRowHeight = 16.dp
+    val monthWeekHeight = monthDayRowHeight +
+        (monthBarMinHeight + monthLaneGap) * monthVisibleItemCount + monthOverflowRowHeight + 2.dp
     /** 日视图时间块与周视图任务卡：窄列内保留 4dp 小角 */
     val blockRadius = 4.dp
 }
