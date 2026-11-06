@@ -91,6 +91,7 @@ import com.pandora6ix.app.ui.summary.TaskSummaryFlow
 import com.pandora6ix.app.ui.tags.TagManageScreen
 import com.pandora6ix.app.ui.logs.JournalDatePickerDialog
 import com.pandora6ix.app.ui.logs.JournalEntryField
+import com.pandora6ix.app.ui.logs.initialJournalEntries
 import com.pandora6ix.app.ui.theme.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -745,7 +746,7 @@ fun PandoraApp(
                                 } else if (item.taskId.isNotBlank()) detail = item.taskId
                             }) }
                             Route.VIEW -> calendarUiState.SaveableStateProvider("calendar") { CalendarScreen(CalendarMode.valueOf(modeName), date, taskItems, canCreatePersonal, canCreateDelegated, serverTags, taskRepo, { modeName = it.name }, { dateKey = "${it.year}-${it.month}-${it.day}" }, { calRetry++ }, { detail = it.id }, taskScope = taskScope, onTaskScopeChange = { taskScope = it; calNotice = null }, currentUser = currentUser, canReviewTasks = canReviewTasks, businessTimezone = currentUser?.businessTimezone, loading = calLoading, error = calError, onRetry = { calRetry++ }, notice = calNotice, onOpenSummary = { showTaskSummary = true }) }
-                            Route.LOGS -> LogsScreen(journalRepo, serverTags.toList(), currentUser?.businessTimezone, currentUser, userRepo) { journalDetailId = it }
+                            Route.LOGS -> LogsScreen(journalRepo, serverTags.toList(), currentUser?.businessTimezone, currentUser, userRepo, dailyStore) { journalDetailId = it }
                             Route.AI -> AiExplorerScreen(aiRepo, currentUser!!.id)
                             Route.ME -> ProfileScreen(currentUser!!, notifyMaster, showReviewCenter, reviewBadgeCount, tagManager, userRepo, scrollState = profileScrollState, onOpenTagManage = { showTagManage = true }, onOpenReviews = { reviewFocusId = null; showReviews = true }, onOpenSettings = { showSettings = true })
                         }
@@ -1418,10 +1419,10 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
 
 
 /** 编辑中的一条工作条目：entryId 非空表示修改已有条目，空表示新增（发布时生成 clientEntryKey） */
-private data class EntryDraft(val entryId: String?, val content: String)
+private typealias EntryDraft = JournalDraftEntryDto
 
 @OptIn(ExperimentalLayoutApi::class)
-@Composable private fun LogsScreen(repo: JournalRepository, availableTags: List<TagDto>, businessTimezone: String?, currentUser: UserDto?, userRepo: UserRepository, onOpen: (String) -> Unit) {
+@Composable private fun LogsScreen(repo: JournalRepository, availableTags: List<TagDto>, businessTimezone: String?, currentUser: UserDto?, userRepo: UserRepository, dailyStore: DailyItemsStore, onOpen: (String) -> Unit) {
     var expandedLogs by rememberSaveable { mutableStateOf(false) }
     var filterOpen by rememberSaveable { mutableStateOf(false) }
     // null = 全部日期；否则为具体业务日期（iso），避免用展示文案做筛选键
@@ -1461,18 +1462,21 @@ private data class EntryDraft(val entryId: String?, val content: String)
     val mutedColors = pandoraTextFieldColors()
     // 日报草稿（缓存目录）：上次编辑未发布的内容
     val context = LocalContext.current
-    val savedJournalDraft = remember {
-        AppCache.readDraft(context, "journal_draft.json")?.let { s -> runCatching { AppCache.json.decodeFromString<JournalDraftDto>(s) }.getOrNull() }
+    var savedJournalDraft by remember(dailyStore) {
+        mutableStateOf(AppCache.readDraft(context, "journal_draft.json")?.let { s -> runCatching { AppCache.json.decodeFromString<JournalDraftDto>(s) }.getOrNull() })
     }
+    // 同次编辑切换日期时保留用户删改后的正文（包括空正文）及标签。
+    val sessionDrafts = remember(dailyStore) { mutableMapOf<String, JournalDraftDto>() }
     // 编辑器打开期间草稿实时落盘；发布成功或放弃时清除
     LaunchedEffect(writing, editorDateKey, entryDrafts, tags) {
-        if (writing) AppCache.writeDraft(
-            context, "journal_draft.json",
-            AppCache.json.encodeToString(
-                JournalDraftDto.serializer(),
-                JournalDraftDto(editorDateKey, entryDrafts.map { JournalDraftEntryDto(it.entryId, it.content) }, tags.mapNotNull { n -> availableTags.firstOrNull { it.name == n }?.id })
+        if (writing) {
+            val draft = JournalDraftDto(
+                editorDateKey, entryDrafts,
+                tags.mapNotNull { name -> availableTags.firstOrNull { it.name == name }?.id }
             )
-        )
+            savedJournalDraft = draft
+            AppCache.writeDraft(context, "journal_draft.json", AppCache.json.encodeToString(JournalDraftDto.serializer(), draft))
+        }
     }
     fun businessDate(): DemoDate = com.pandora6ix.app.data.journalBusinessDate(businessTimezone)
     fun todayIso(): String { val t = businessDate(); return "%04d-%02d-%02d".format(t.year, t.month, t.day) }
@@ -1511,33 +1515,40 @@ private data class EntryDraft(val entryId: String?, val content: String)
     fun dateLabel(iso: String): String = parseIsoDate(iso)?.shortLabel() ?: iso
     // 按整篇日志出卡片：日期/标签/完成的工作与编辑删除在同一张卡片内，不再与上方重复
     val filteredJournals = historyFilter?.let { key -> journals.filter { it.workDate == key } } ?: journals
+    fun loadEditorDate(dateKey: String): Boolean {
+        val draft = sessionDrafts[dateKey] ?: savedJournalDraft?.takeIf { it.dateKey == dateKey && it.dateKey in threeDays().map(::isoOf) && (it.dateKey == todayIso() || journals.none { j -> j.workDate == it.dateKey }) }
+        // 编辑窗口按创建时间（allowedActions 由后端按 published_at 判定），而不是 work_date
+        val existing = journals.firstOrNull { it.workDate == dateKey }
+        if (existing != null && "EDIT" !in existing.allowedActions) { showEditNotice("日志创建已满 24 小时，不能再修改或删除"); return false }
+        editNotice = null
+        editorDateKey = dateKey
+        editingJournal = existing
+        entryDrafts = initialJournalEntries(
+            dateKey, dailyStore.load(), draft?.entries,
+            existing?.entries?.sortedBy { it.displayOrder }?.map { EntryDraft(it.entryId, it.content) }
+        )
+        tags = if (draft != null) draft.tagIds.mapNotNull { id -> availableTags.firstOrNull { it.id == id }?.name }
+        else existing?.tags?.sortedBy { if (it.id == existing.primaryTagId) 0 else 1 }?.map { it.name } ?: emptyList()
+        publishError = null
+        return true
+    }
     fun openEditor(dateKey: String) {
         if (businessTimezone.isNullOrBlank()) { publishError = "请管理员先配置公司业务时区"; return }
-        val draft = savedJournalDraft?.takeIf { it.dateKey == dateKey && it.dateKey in threeDays().map(::isoOf) && (it.dateKey == todayIso() || journals.none { j -> j.workDate == it.dateKey }) }
-        editorDateKey = draft?.dateKey ?: dateKey
-        // 编辑窗口按创建时间（allowedActions 由后端按 published_at 判定），而不是 work_date
-        val existing = journals.firstOrNull { it.workDate == editorDateKey }
-        if (existing != null && "EDIT" !in existing.allowedActions) { showEditNotice("日志创建已满 24 小时，不能再修改或删除"); return }
-        editNotice = null
-        editingJournal = journals.firstOrNull { it.workDate == editorDateKey }
-        entryDrafts = draft?.entries?.map { EntryDraft(it.entryId, it.content) }
-            ?: editingJournal?.entries?.sortedBy { it.displayOrder }?.map { EntryDraft(it.entryId, it.content) }
-            ?: listOf(EntryDraft(null, ""))
-        tags = if (draft != null) draft.tagIds.mapNotNull { id -> availableTags.firstOrNull { it.id == id }?.name }
-        else editingJournal?.tags?.sortedBy { if (it.id == editingJournal?.primaryTagId) 0 else 1 }?.map { it.name } ?: emptyList()
-        publishError = null
-        writing = true
+        sessionDrafts.clear()
+        if (loadEditorDate(dateKey)) writing = true
     }
     fun switchEditorDate(dateKey: String) {
         if (dateKey == editorDateKey) { editNotice = null; return }
-        val existing = journals.firstOrNull { it.workDate == dateKey }
-        if (existing != null && "EDIT" !in existing.allowedActions) { showEditNotice("日志创建已满 24 小时，不能再修改或删除"); return }
-        editNotice = null
-        editorDateKey = dateKey
-        editingJournal = journals.firstOrNull { it.workDate == dateKey }
-        entryDrafts = editingJournal?.entries?.sortedBy { it.displayOrder }?.map { EntryDraft(it.entryId, it.content) } ?: listOf(EntryDraft(null, ""))
-        tags = editingJournal?.tags?.sortedBy { if (it.id == editingJournal?.primaryTagId) 0 else 1 }?.map { it.name } ?: emptyList()
-        publishError = null
+        sessionDrafts[editorDateKey] = JournalDraftDto(
+            editorDateKey, entryDrafts,
+            tags.mapNotNull { name -> availableTags.firstOrNull { it.name == name }?.id }
+        )
+        loadEditorDate(dateKey)
+    }
+    fun clearJournalDrafts() {
+        sessionDrafts.clear()
+        savedJournalDraft = null
+        AppCache.deleteDraft(context, "journal_draft.json")
     }
     fun closeEditor() {
         if (entryDrafts.any { it.content.isNotBlank() }) confirmExit = true else writing = false
@@ -1603,7 +1614,7 @@ private data class EntryDraft(val entryId: String?, val content: String)
                     )
                 }
                 writing = false
-                AppCache.deleteDraft(context, "journal_draft.json")
+                clearJournalDrafts()
                 loadJournals()
             } catch (e: SessionExpiredException) {
                 // 401 已由全局回调处理
@@ -1744,7 +1755,7 @@ private data class EntryDraft(val entryId: String?, val content: String)
             }
             }
         }
-        if (confirmExit) PandoraAlertDialog(onDismissRequest = { confirmExit = false }, title = { Text("放弃未保存内容？") }, text = { Text("退出后当前填写内容会被清空。") }, confirmButton = { PandoraDialogConfirm("放弃并退出", { confirmExit = false; entryDrafts = listOf(EntryDraft(null, "")); AppCache.deleteDraft(context, "journal_draft.json"); writing = false }, destructive = true) }, dismissButton = { PandoraDialogDismiss("继续编辑", { confirmExit = false }) })
+        if (confirmExit) PandoraAlertDialog(onDismissRequest = { confirmExit = false }, title = { Text("放弃未保存内容？") }, text = { Text("退出后当前填写内容会被清空。") }, confirmButton = { PandoraDialogConfirm("放弃并退出", { confirmExit = false; entryDrafts = listOf(EntryDraft(null, "")); writing = false; clearJournalDrafts() }, destructive = true) }, dismissButton = { PandoraDialogDismiss("继续编辑", { confirmExit = false }) })
         if (showTagPicker) PandoraAlertDialog(
         onDismissRequest = { showTagPicker = false },
         title = { Text("选择标签") },

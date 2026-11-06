@@ -385,16 +385,15 @@ private fun MonthScrollRow(month: DemoDate, week: List<DemoDate>, tasks: List<Ta
             }
         }.filter { it.isNotEmpty() }
     }
-    val capacity = 3  // 固定行高内可展示的任务条道数
+    val capacity = PandoraCalendarDimens.monthVisibleItemCount
     val shownLanes = lanes.take(capacity)
     // 每日未展示任务数：超出容量的分道中覆盖该列的任务条数
     val hiddenPerDay = IntArray(7)
     lanes.drop(capacity).forEach { lane -> lane.forEach { seg -> for (c in seg.first..seg.last) hiddenPerDay[c]++ } }
-    val dayRowHeight = 30.dp
     val laneHeight = PandoraCalendarDimens.monthBarMinHeight
-    val laneGap = 3.dp       // 行间距加大
-    val overflowRowHeight = 16.dp  // 第 4 行：放每日“+N”
-    Column(Modifier.fillMaxWidth().height(dayRowHeight + (laneHeight + laneGap) * capacity + overflowRowHeight + 2.dp)) {
+    val laneGap = PandoraCalendarDimens.monthLaneGap
+    val overflowRowHeight = PandoraCalendarDimens.monthOverflowRowHeight
+    Column(Modifier.fillMaxWidth().height(PandoraCalendarDimens.monthWeekHeight)) {
         DayNumberRow(month, week, inMonth, today, onOpenDay)
         shownLanes.forEach { lane ->
             Box(Modifier.fillMaxWidth().height(laneHeight)) {
@@ -418,7 +417,7 @@ private fun MonthScrollRow(month: DemoDate, week: List<DemoDate>, tasks: List<Ta
 
 @Composable
 private fun DayNumberRow(month: DemoDate, week: List<DemoDate>, inMonth: List<Boolean>, today: DemoDate, onOpenDay: (DemoDate) -> Unit) {
-    Row(Modifier.fillMaxWidth().height(30.dp)) {
+    Row(Modifier.fillMaxWidth().height(PandoraCalendarDimens.monthDayRowHeight)) {
         week.forEachIndexed { col, date ->
             Box(Modifier.weight(1f).fillMaxHeight().clickable(enabled = inMonth[col]) { onOpenDay(date) }, contentAlignment = Alignment.Center) {
                 if (inMonth[col]) Text("${date.day}", style = PandoraTypography.bodyMedium, fontWeight = if (date == today) FontWeight.SemiBold else FontWeight.Normal, color = PandoraTheme.colors.textPrimary, modifier = Modifier.clip(PandoraShapes.pill).background(if (date == today) PandoraTheme.colors.primaryContainer else Color.Transparent).padding(horizontal = PandoraSpacing.space8, vertical = PandoraSpacing.space2))

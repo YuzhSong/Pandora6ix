@@ -4,12 +4,12 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -33,13 +33,13 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.pandora6ix.app.data.DailyItem
 import com.pandora6ix.app.ui.calendar.WheelColumn
@@ -165,7 +165,7 @@ fun DailyItemsPanel(
     }
 }
 
-/** 单月网格：每个网格项自包含点击与打点展示，数据变化时随重组即时刷新 */
+/** 单月网格：与公司月视图共用固定周行尺寸，每天三条预览及独立的溢出行。 */
 @Composable
 private fun MonthGrid(
     month: YearMonth,
@@ -178,42 +178,77 @@ private fun MonthGrid(
     val leading = month.atDay(1).dayOfWeek.value - 1
     val cells = leading + month.lengthOfMonth()
     val weeks = (cells + 6) / 7
+    val itemsByDate = items.groupBy { it.date }
     Column {
         repeat(weeks) { w ->
-            Row(Modifier.fillMaxWidth().height(40.dp)) {
+            Row(Modifier.fillMaxWidth().height(PandoraCalendarDimens.monthWeekHeight)) {
                 repeat(7) { d ->
                     val dayNumber = w * 7 + d - leading + 1
-                    Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
+                    Box(Modifier.weight(1f).fillMaxHeight()) {
                         if (dayNumber in 1..month.lengthOfMonth()) {
                             val date = month.atDay(dayNumber)
                             val key = date.toString()
-                            val dateItems = items.filter { it.date == key }
+                            val dateItems = itemsByDate[key].orEmpty()
+                            val capacity = PandoraCalendarDimens.monthVisibleItemCount
+                            val hiddenCount = (dateItems.size - capacity).coerceAtLeast(0)
                             val selected = date == selectedDate
                             val isToday = date == today
                             Column(
-                                Modifier.pointerInput(key) { detectTapGestures(onTap = { onOpenDay(key) }) },
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.Center
+                                Modifier.fillMaxSize().clickable(onClickLabel = "查看${date.monthValue}月${dayNumber}日事项") { onOpenDay(key) },
+                                horizontalAlignment = Alignment.CenterHorizontally
                             ) {
                                 Box(
-                                    Modifier.size(30.dp).clip(CircleShape)
+                                    Modifier.size(PandoraCalendarDimens.monthDayRowHeight).clip(CircleShape)
                                         .background(if (selected) colors.primaryContainer else Color.Transparent),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Text(
                                         "$dayNumber",
                                         style = PandoraTypography.bodyMedium,
-                                        color = if (isToday) colors.primary else if (date.month == month.month) colors.textPrimary else colors.textTertiary,
+                                        color = if (isToday) colors.primary else colors.textPrimary,
                                         fontWeight = if (isToday) FontWeight.Bold else null
                                     )
                                 }
-                                if (dateItems.isNotEmpty()) {
+                                repeat(capacity) { lane ->
                                     Box(
-                                        Modifier.padding(top = 1.dp).size(4.dp).clip(CircleShape)
-                                            .background(if (dateItems.any { !it.done }) colors.primary else colors.textTertiary)
-                                    )
-                                } else {
-                                    Spacer(Modifier.height(5.dp))
+                                        Modifier.fillMaxWidth().height(PandoraCalendarDimens.monthBarMinHeight)
+                                            .padding(horizontal = 1.dp),
+                                        contentAlignment = Alignment.CenterStart
+                                    ) {
+                                        dateItems.getOrNull(lane)?.let { item ->
+                                            Box(
+                                                Modifier.fillMaxSize().clip(RoundedCornerShape(PandoraCalendarDimens.monthBarRadius))
+                                                    .background(if (item.done) colors.divider else colors.primaryContainer),
+                                                contentAlignment = Alignment.CenterStart
+                                            ) {
+                                                Text(
+                                                    item.content,
+                                                    Modifier.padding(horizontal = PandoraSpacing.space4),
+                                                    style = PandoraTypography.calendarMicro,
+                                                    color = if (item.done) colors.textTertiary else colors.textPrimary,
+                                                    textDecoration = if (item.done) TextDecoration.LineThrough else null,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+                                        }
+                                    }
+                                    Spacer(Modifier.height(PandoraCalendarDimens.monthLaneGap))
+                                }
+                                Box(
+                                    Modifier.fillMaxWidth().height(PandoraCalendarDimens.monthOverflowRowHeight),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (hiddenCount > 0) {
+                                        Text(
+                                            "+$hiddenCount",
+                                            Modifier.clickable(onClickLabel = "查看${date.monthValue}月${dayNumber}日其余${hiddenCount}项事项") { onOpenDay(key) },
+                                            style = PandoraTypography.calendarMicro,
+                                            fontWeight = FontWeight.Medium,
+                                            color = colors.textSecondary,
+                                            maxLines = 1
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -265,7 +300,7 @@ private fun DailyDayDialog(
     onDelete: (DailyItem) -> Unit
 ) {
     val colors = PandoraTheme.colors
-    // 直接过滤（SnapshotStateList 的读取会被快照观察）：任何增删改立即刷新本清单与月历打点
+    // 直接过滤（SnapshotStateList 的读取会被快照观察）：任何增删改立即刷新本清单与月历预览
     val dayItems = items.filter { it.date == date.toString() }
     var showInput by remember { mutableStateOf(false) }
     var input by remember { mutableStateOf("") }
