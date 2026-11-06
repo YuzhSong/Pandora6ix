@@ -69,6 +69,9 @@ public class JournalService implements com.pandora6ix.backend.application.journa
             sql.append(" AND work_date<=?");
             args.add(to);
         }
+        // 列表同样带回作者资料：客户端若只用本地成员名单兜底，停用/不在名单的作者会退化成「成员 xxxx」
+        Map<String, Map<String, Object>> authorProfiles = new HashMap<>();
+        for (String authorId : authors) authorProfiles.put(authorId, authorProfile(a, authorId));
         return Pages.sqlPage(
                 db,
                 sql.toString(),
@@ -88,11 +91,16 @@ public class JournalService implements com.pandora6ix.backend.application.journa
                         + to,
                 List.of("work_date", "published_at", "id"),
                 true,
-                row -> journalView(a, row));
+                row -> journalView(a, row, authorProfiles));
     }
 
-    private Map<String, Object> journalView(IdentityService.Actor a, Map<String, Object> journal) {
+    private Map<String, Object> journalView(
+            IdentityService.Actor a,
+            Map<String, Object> journal,
+            Map<String, Map<String, Object>> authorProfiles) {
         var result = view(journal);
+        var author = authorProfiles.get(str(journal, "author_user_id"));
+        if (author != null) result.put("author", author);
         result.put("journalId", result.get("id"));
         var entries =
                 db
@@ -150,9 +158,8 @@ public class JournalService implements com.pandora6ix.backend.application.journa
         a.business();
         var row = db.entity("work_log", a.enterpriseId(), id);
         scope.read(a, str(row, "author_user_id"));
-        var result = journalView(a, row);
-        result.put("author", authorProfile(a, str(row, "author_user_id")));
-        return result;
+        String authorId = str(row, "author_user_id");
+        return journalView(a, row, Map.of(authorId, authorProfile(a, authorId)));
     }
 
     /** 日志作者：姓名、职位、所属组织与部门（组织向上最近的 DEPARTMENT 节点） */

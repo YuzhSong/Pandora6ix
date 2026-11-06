@@ -206,7 +206,8 @@ def read_schemas():
             "today": DATE, "businessTimezone": STRING, "tasks": array(ref("Task")), "nextCursor": nullable(STRING), "totalCount": INTEGER}),
         "Error": obj({"error": obj({"code": STRING, "message": STRING, "fieldErrors": array(obj({"field": STRING, "message": STRING})), "existingJournalId": ID}, ("code", "message", "fieldErrors")),
             "requestId": STRING, "timestamp": INSTANT, "status": INTEGER, "code": STRING, "message": STRING, "path": STRING}, ("error", "requestId"))}
-    for name in ("Tag", "Task", "Journal", "WorkEntry", "CompanyItem", "OrgUnit", "User", "Recipient", "TaskReview", "Notification"):
+    schemas["CompletionQueueItem"] = obj({**completion["properties"], "taskId": ID, "taskTitle": STRING, "requesterName": nullable(STRING)})
+    for name in ("Tag", "Task", "Journal", "WorkEntry", "CompanyItem", "OrgUnit", "User", "Recipient", "TaskReview", "Notification", "CompletionQueueItem"):
         schemas[name + "Page"] = obj({"items": array(ref(name)), "nextCursor": nullable(STRING), "moreUrl": STRING}, ("items", "nextCursor"))
     personnel_values = obj({"version": nullable(INTEGER), "displayName": nullable(STRING), "loginName": nullable(STRING), "employmentStatus": nullable(STRING), "departureDate": nullable(DATE), "jobTitle": nullable(STRING), "orgUnitId": nullable(ID), "orgUnitName": nullable(STRING), "supervisorUserId": nullable(ID), "supervisorName": nullable(STRING), "roles": array(STRING), "status": nullable(STRING)})
     schemas["PersonnelChangePage"] = obj({"items": array(obj({"id": ID, "userId": ID, "actorUserId": ID, "actorName": nullable(STRING), "actorLoginName": nullable(STRING), "kind": {"type": "string", "enum": ["DEPARTURE", "JOB_CHANGE"]}, "effectiveDate": DATE, "recordedAt": INSTANT, "beforeValues": personnel_values, "afterValues": personnel_values}))}, ("items",))
@@ -283,6 +284,7 @@ RESPONSES = {
     ("POST", "/task-assignments/{id}/completion-requests"): "CompletionResult", ("POST", "/task-completion-requests/{id}/decision"): "CompletionResult",
     ("GET", "/task-reviews"): "TaskReviewPage", ("GET", "/task-reviews/{id}"): "TaskReview", ("POST", "/task-reviews/{id}/decision"): "ReviewDecisionResult",
     ("GET", "/task-reviews/pending-count"): "TaskReviewPendingCount",
+    ("GET", "/task-completion-requests"): "CompletionQueueItemPage", ("GET", "/task-completion-requests/pending-count"): "TaskReviewPendingCount",
     ("GET", "/work-logs/dates"): "JournalDates", ("GET", "/calendar"): "Calendar", ("GET", "/work-logs"): "JournalPage", ("POST", "/work-logs"): "Journal", ("GET", "/work-logs/{id}"): "Journal", ("PATCH", "/work-logs/{id}"): "Journal", ("DELETE", "/work-logs/{id}"): "JournalDeleted",
     ("DELETE", "/tags/{id}"): "TagDeleted",
     ("GET", "/work-log-entries/{id}"): "WorkEntry", ("GET", "/me/important-entry-candidates"): "WorkEntryPage", ("GET", "/me/important-entries"): "ImportantSelection", ("PUT", "/me/important-entries"): "ImportantSelection",

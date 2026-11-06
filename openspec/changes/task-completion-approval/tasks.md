@@ -1,0 +1,15 @@
+- [x] 1.1 日志列表接口补返回 `author` 资料（批量取，避免 N+1）
+- [x] 1.2 Android 日志列表 / 日志卡片优先显示后端作者姓名
+- [x] 2.1 新增 `completionApprover`：执行人≠发起人→发起人；执行人=发起人→任务最近一次审批的 reviewer；无审批人→null
+- [x] 2.2 个人任务完成（complete）在存在审批人时转完成申请，无审批人保持本人直接完成
+- [x] 2.3 申请验收（requestCompletion）统一使用 `completionApprover` 作为通知对象与审批人
+- [x] 2.4 decide 权限改为完成审批人（发起人或任务审批人），去掉仅派发任务的限制
+- [x] 2.5 `DECIDE_COMPLETION` 动作下发给完成审批人
+- [x] 2.6 客户端完成 / 验收提示文案更新
+- [x] 2.7 后端完成申请队列 `GET /task-completion-requests`（pending/created）与 pending-count
+- [x] 2.8 审批中心新增「完成验收」分区：列表、详情、验收通过 / 驳回（驳回可留言）、跳任务详情；徽标计入待验收数
+- [x] 2.9 消息点击规则：待审批申请→审批中心展开详情；审批结果等→任务详情
+- [x] 2.10 首页消息抽屉开关改为不跨 tab 保留，修复「一点首页就打开消息界面」
+- [x] 3.1 后端 `mvnw compile` 通过
+- [x] 3.2 Android `:app:compileDebugKotlin` 通过
+- [ ] 3.3 真机验证：个人任务点已完成 → 状态变「待验收」→ 上级在任务详情验收通过 → 变为「已完成」

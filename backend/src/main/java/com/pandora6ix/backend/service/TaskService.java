@@ -402,8 +402,8 @@ public class TaskService
                     "PERSONAL".equals(task.get("task_kind"))
                             ? "COMPLETE_PERSONAL"
                             : "REQUEST_COMPLETION");
-        if (a.id().equals(task.get("creator_user_id"))
-                && "AWAITING_ACCEPTANCE".equals(assignment.get("execution_status")))
+        if ("AWAITING_ACCEPTANCE".equals(assignment.get("execution_status"))
+                && a.id().equals(completionApprover(a, task, assignment)))
             return List.of("DECIDE_COMPLETION");
         return List.of();
     }
@@ -819,6 +819,14 @@ public class TaskService
                         taskId,
                         a.id());
         active(task, assignment);
+        // 个人任务执行人即发起人：按规则改由该任务的审批人审批，存在审批人时转为完成申请而不是直接标记完成
+        String approver = completionApprover(a, task, assignment);
+        if (approver != null && !approver.equals(a.id())) {
+            var requested =
+                    submitCompletion(
+                            a, task, assignment, approver, c.expectedAssignmentVersion(), null);
+            return assignmentView(requested);
+        }
         var auditBefore=audit.assignment(a,str(assignment,"id"));
         checkVersion(
                 db.update(
@@ -849,19 +857,50 @@ public class TaskService
         if (Boolean.FALSE.equals(assignment.get("current_member"))) throw BusinessException.missing();
         if (!a.id().equals(assignment.get("recipient_user_id"))) throw BusinessException.missing();
         var task = db.entity("task", a.enterpriseId(), str(assignment, "task_id"));
-        if (!"DELEGATED".equals(task.get("task_kind")))
-            throw new BusinessException(
-                    409, "INVALID_WORKFLOW_STATE", "Personal tasks use self completion.");
         active(task, assignment);
-        var auditBefore=audit.assignment(a,id);
+        // 派发任务由发起人验收；执行人就是发起人（自派）时改由该任务的审批人审批
+        String approver = completionApprover(a, task, assignment);
+        if (approver == null || approver.equals(a.id()))
+            throw new BusinessException(
+                    409, "INVALID_WORKFLOW_STATE", "No approver is available for this completion.");
+        return submitCompletion(a, task, assignment, approver, c.expectedVersion(), c.note());
+    }
+
+    /**
+     * 完成审批人：执行人不是发起人时由发起人验收；执行人就是发起人（个人任务 / 自派任务）时，
+     * 由该任务的审批人（最近一次任务审批 / 修改申请的 reviewer）审批；创始人任务无审批人时返回 null。
+     */
+    private String completionApprover(
+            IdentityService.Actor a, Map<String, Object> task, Map<String, Object> assignment) {
+        String creator = str(task, "creator_user_id");
+        if (creator != null && !creator.equals(str(assignment, "recipient_user_id"))) return creator;
+        return db.optional(
+                        "SELECT reviewer_user_id FROM task_review WHERE enterprise_id=? AND"
+                                + " task_id=? AND reviewer_user_id IS NOT NULL ORDER BY attempt_no DESC",
+                        a.enterpriseId(),
+                        task.get("id"))
+                .map(row -> str(row, "reviewer_user_id"))
+                .orElse(null);
+    }
+
+    /** 提交完成申请：执行关系进入 AWAITING_ACCEPTANCE，并通知审批人验收 */
+    private Map<String, Object> submitCompletion(
+            IdentityService.Actor a,
+            Map<String, Object> task,
+            Map<String, Object> assignment,
+            String approver,
+            long expectedVersion,
+            String note) {
+        String assignmentId = str(assignment, "id");
+        var auditBefore = audit.assignment(a, assignmentId);
         checkVersion(
                 db.update(
                         "UPDATE task_assignment SET"
                                 + " execution_status='AWAITING_ACCEPTANCE',work_status='IN_PROGRESS',version=version+1 WHERE"
                                 + " enterprise_id=? AND id=? AND version=?",
                         a.enterpriseId(),
-                        id,
-                        c.expectedVersion()));
+                        assignmentId,
+                        expectedVersion));
         String request = id();
         db.update(
                 "INSERT INTO"
@@ -869,25 +908,30 @@ public class TaskService
                     + " VALUES(?,?,?,?,?)",
                 request,
                 a.enterpriseId(),
-                id,
+                assignmentId,
                 a.id(),
-                c.note());
+                note);
         notifications.statusChanged(
                 a.enterpriseId(),
-                str(task, "creator_user_id"),
+                approver,
                 str(task, "id"),
-                id,
+                assignmentId,
                 str(task, "title"),
                 "已提交完成申请，等待验收",
                 request + "|STATUS|REQUESTED");
-        var auditAfter=audit.assignment(a,id);
-        auditAfter.put("note",c.note());
-        audit.record(a,id,"TASK_ASSIGNMENT","TASK","SUBMIT","提交任务完成申请",auditBefore,auditAfter);
+        var auditAfter = audit.assignment(a, assignmentId);
+        auditAfter.put("note", note);
+        audit.record(a, assignmentId, "TASK_ASSIGNMENT", "TASK", "SUBMIT", "提交任务完成申请", auditBefore, auditAfter);
         return fields(
                 "request",
                 view(db.entity("task_completion_request", a.enterpriseId(), request)),
                 "assignment",
-                view(db.entity("task_assignment", a.enterpriseId(), id)));
+                view(db.entity("task_assignment", a.enterpriseId(), assignmentId)));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> assignmentView(Map<String, Object> requested) {
+        return (Map<String, Object>) requested.get("assignment");
     }
 
     @Transactional
@@ -899,15 +943,16 @@ public class TaskService
         if (Boolean.FALSE.equals(assignment.get("current_member"))) throw BusinessException.missing();
         var auditBefore=audit.assignment(a,assignmentId);
         var task = db.entity("task", a.enterpriseId(), str(assignment, "task_id"));
-        if (!a.id().equals(task.get("creator_user_id"))) throw BusinessException.missing();
-        if (!"DELEGATED".equals(task.get("task_kind"))
-                || !"APPROVED".equals(task.get("review_status"))
+        // 只有该任务的完成审批人可以验收：派发任务为发起人，个人 / 自派任务为任务审批人
+        String approver = completionApprover(a, task, assignment);
+        if (approver == null || !a.id().equals(approver)) throw BusinessException.missing();
+        if (!"APPROVED".equals(task.get("review_status"))
                 || !"PENDING".equals(request.get("decision"))
                 || !"AWAITING_ACCEPTANCE".equals(assignment.get("execution_status")))
             throw new BusinessException(
                     409,
                     "INVALID_WORKFLOW_STATE",
-                    "A pending delegated completion request is required.");
+                    "A pending completion request is required.");
         boolean accept = "ACCEPT".equals(c.decision());
         checkVersion(
                 db.update(
@@ -951,6 +996,69 @@ public class TaskService
                 view(db.entity("task_completion_request", a.enterpriseId(), id)),
                 "assignment",
                 view(db.entity("task_assignment", a.enterpriseId(), assignmentId)));
+    }
+
+    /** 当前用户作为完成审批人的判定条件：派发任务=发起人；个人/自派任务=任务最近一次审批的 reviewer */
+    private static final String APPROVER_CONDITION =
+            " ((t.creator_user_id <> s.recipient_user_id AND t.creator_user_id=?)"
+                    + " OR (t.creator_user_id = s.recipient_user_id AND EXISTS (SELECT 1 FROM task_review rv"
+                    + " WHERE rv.enterprise_id=r.enterprise_id AND rv.task_id=t.id AND rv.reviewer_user_id=?"
+                    + " AND rv.attempt_no=(SELECT MAX(x.attempt_no) FROM task_review x"
+                    + " WHERE x.enterprise_id=rv.enterprise_id AND x.task_id=rv.task_id))))";
+
+    /**
+     * 完成申请队列（审批中心「完成验收」分区）：
+     * pending=当前用户需要验收的申请；created=当前用户提交过的申请（含历史结果）。
+     */
+    public Map<String, Object> completionRequestList(
+            IdentityService.Actor a, String requestedScope, String cursor, int limit) {
+        a.business();
+        if (!Set.of("pending", "created").contains(requestedScope))
+            throw BusinessException.invalid("Completion request scope must be pending or created.");
+        String query =
+                "SELECT r.*,t.title AS task_title,u.display_name AS requester_name FROM"
+                        + " task_completion_request r JOIN task_assignment s ON"
+                        + " s.enterprise_id=r.enterprise_id AND s.id=r.assignment_id"
+                        + " JOIN task t ON t.enterprise_id=r.enterprise_id AND t.id=s.task_id"
+                        + " JOIN app_user u ON u.enterprise_id=r.enterprise_id AND u.id=r.requested_by_user_id"
+                        + " WHERE r.enterprise_id=?";
+        List<Object> args = new ArrayList<>(List.of(a.enterpriseId()));
+        if ("pending".equals(requestedScope)) {
+            query += " AND r.decision='PENDING' AND" + APPROVER_CONDITION;
+            args.add(a.id());
+            args.add(a.id());
+        } else {
+            query += " AND r.requested_by_user_id=?";
+            args.add(a.id());
+        }
+        return Pages.sqlPage(
+                db,
+                query,
+                args,
+                cursor,
+                limit,
+                a.enterpriseId() + ":" + a.id() + ":completion-requests:" + requestedScope,
+                List.of("requested_at", "id"),
+                true,
+                row -> {
+                    var item = view(row);
+                    item.put("taskId", str(row, "task_id"));
+                    item.put("taskTitle", str(row, "task_title"));
+                    item.put("requesterName", str(row, "requester_name"));
+                    return item;
+                });
+    }
+
+    /** 待我验收的完成申请数量（角标用） */
+    public Map<String, Object> completionPendingCount(IdentityService.Actor a) {
+        a.business();
+        var result = db.one(
+                "SELECT COUNT(*) AS request_count FROM task_completion_request r"
+                        + " JOIN task_assignment s ON s.enterprise_id=r.enterprise_id AND s.id=r.assignment_id"
+                        + " JOIN task t ON t.enterprise_id=r.enterprise_id AND t.id=s.task_id"
+                        + " WHERE r.enterprise_id=? AND r.decision='PENDING' AND" + APPROVER_CONDITION,
+                a.enterpriseId(), a.id(), a.id());
+        return fields("count", number(result, "request_count"));
     }
 
     public Map<String, Object> calendar(

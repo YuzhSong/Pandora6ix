@@ -112,6 +112,34 @@ data class TaskReviewPageDto(
     val moreUrl: String? = null
 )
 
+/** 完成申请（审批中心「完成验收」分区）：pending=待我验收；created=我提交过的（含历史结果） */
+@Serializable
+data class CompletionRequestItemDto(
+    val id: String,
+    val version: Long = 0,
+    val assignmentId: String = "",
+    val taskId: String = "",
+    val taskTitle: String = "",
+    val requestedByUserId: String = "",
+    val requesterName: String? = null,
+    val submittedNote: String? = null,
+    val requestedAt: String? = null,
+    val decision: String = "PENDING",
+    val decidedAt: String? = null,
+    val decisionNote: String? = null,
+    val decidedByUserId: String = ""
+)
+
+@Serializable
+data class CompletionRequestPageDto(
+    val items: List<CompletionRequestItemDto> = emptyList(),
+    val nextCursor: String? = null
+)
+
+/** GET /task-completion-requests/pending-count */
+@Serializable
+data class CompletionPendingCountDto(val count: Long = 0)
+
 /** POST /task-reviews/{id}/decision 请求体：expectedVersion 必填，decision ∈ APPROVE|REJECT */
 @Serializable
 data class ReviewDecisionDto(
@@ -214,6 +242,20 @@ class TaskRepository(private val api: ApiClient) {
         }
         return api.get(query, TaskReviewPageDto.serializer())
     }
+
+    /** 完成申请队列：scope=pending（待我验收）| created（我提交过的，含历史结果） */
+    suspend fun completionRequests(scope: String = "pending", cursor: String? = null, limit: Int = 20): CompletionRequestPageDto {
+        val query = buildString {
+            append("/task-completion-requests?scope=").append(URLEncoder.encode(scope, "UTF-8"))
+            cursor?.let { append("&cursor=").append(URLEncoder.encode(it, "UTF-8")) }
+            append("&limit=").append(limit.coerceIn(1, 100))
+        }
+        return api.get(query, CompletionRequestPageDto.serializer())
+    }
+
+    /** 待我验收的完成申请数量（审批中心角标） */
+    suspend fun completionPendingCount(): CompletionPendingCountDto =
+        api.get("/task-completion-requests/pending-count", CompletionPendingCountDto.serializer())
 
     /** 单条审批（含快照详情） */
     suspend fun review(id: String): TaskReviewDto =

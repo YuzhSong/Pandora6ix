@@ -591,6 +591,25 @@ class BusinessApiIntegrationTests {
                 task);
     }
 
+    /** 个人任务完成后由审批人验收通过（完成审批规则：执行人即发起人时由任务审批人验收） */
+    private void acceptCompletion(String task, String reviewerToken) throws Exception {
+        String requestId =
+                str(
+                        db.one(
+                                "SELECT r.id FROM task_completion_request r JOIN task_assignment s"
+                                        + " ON s.enterprise_id=r.enterprise_id AND s.id=r.assignment_id"
+                                        + " WHERE r.enterprise_id=? AND s.task_id=? AND r.decision='PENDING'",
+                                enterprise,
+                                task),
+                        "id");
+        request(
+                "POST",
+                "/task-completion-requests/" + requestId + "/decision",
+                reviewerToken,
+                fields("expectedVersion", 0, "decision", "ACCEPT"),
+                200);
+    }
+
     private String assignment(String task, String recipient) {
         return str(
                 db.one(
@@ -749,7 +768,13 @@ class BusinessApiIntegrationTests {
                                 "expectedAssignmentVersion",
                                 ((Map<?, ?>) progress.get("assignment")).get("version")),
                         200);
-        assertEquals("SELF", complete.get("completionSource"));
+        // 个人任务完成需审批人验收：先进入待验收，审批人通过后才计入完成
+        assertEquals("AWAITING_ACCEPTANCE", complete.get("executionStatus"));
+        assertEquals(
+                0,
+                ((Number) request("GET", "/statistics", employeeToken, null, 200).get("completed"))
+                        .intValue());
+        acceptCompletion(taskId, leadToken);
         assertEquals(
                 1,
                 ((Number) request("GET", "/statistics", employeeToken, null, 200).get("completed"))
@@ -1982,9 +2007,10 @@ class BusinessApiIntegrationTests {
                 employeeToken,
                 fields("expectedAssignmentVersion", 1),
                 200);
+        acceptCompletion(id, leadToken);
         var row = db.entity("task_assignment", enterprise, assignment);
-        assertEquals("SELF", row.get("completion_source"));
-        assertEquals(employee, row.get("completed_by_user_id"));
+        assertEquals("CREATOR_ACCEPTANCE", row.get("completion_source"));
+        assertEquals(lead, row.get("completed_by_user_id"));
         assertNotNull(row.get("completed_at"));
         request(
                 "POST",
@@ -2501,6 +2527,7 @@ class BusinessApiIntegrationTests {
                 employeeToken,
                 fields("expectedAssignmentVersion", 0),
                 200);
+        acceptCompletion((String) task.get("id"), leadToken);
         createTask(employeeToken, "PERSONAL", List.of(employee));
         var stats = request("GET", "/statistics", employeeToken, null, 200);
         assertEquals(1, stats.get("total"));
@@ -3317,6 +3344,7 @@ class BusinessApiIntegrationTests {
         dueAt(str(personal, "id"), end, endMinute);
         request("POST", "/tasks/"+str(personal, "id")+"/complete", employeeToken,
                 fields("expectedAssignmentVersion", 1), 200);
+        acceptCompletion(str(personal, "id"), leadToken);
         assertTrue(notifications.scanDeadlines() >= 1);
         assertEquals(1, countKind(employeeToken, "DEADLINE"));
         assertEquals(0, unread(peerToken));
