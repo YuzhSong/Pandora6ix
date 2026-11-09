@@ -345,6 +345,8 @@ public class TaskService
                                 })
                         .toList();
         v.put("authorizedAssignments", allowed);
+        // 任务汇总表格的“进度备注”：只取当前用户可见执行关系里最近一条非空备注
+        v.put("latestProgressNote", latestProgressNote(a, allowed));
         Set<String> actions = new LinkedHashSet<>();
         if (a.id().equals(task.get("creator_user_id"))
                 && task.get("series_id") == null && "PENDING".equals(task.get("review_status"))) actions.add("EDIT_PENDING");
@@ -947,6 +949,23 @@ public class TaskService
     @SuppressWarnings("unchecked")
     private static Map<String, Object> assignmentView(Map<String, Object> requested) {
         return (Map<String, Object>) requested.get("assignment");
+    }
+
+    /** 可见执行关系中最近一条非空进度备注；没有可见执行关系或备注时为 null */
+    private String latestProgressNote(IdentityService.Actor a, List<Map<String, Object>> allowed) {
+        var ids = allowed.stream().map(r -> str(r, "id")).filter(Objects::nonNull).toList();
+        if (ids.isEmpty()) return null;
+        var args = new ArrayList<Object>();
+        args.add(a.enterpriseId());
+        args.addAll(ids);
+        return db.optional(
+                        "SELECT note FROM task_progress_record WHERE enterprise_id=? AND assignment_id IN ("
+                                + String.join(",", Collections.nCopies(ids.size(), "?"))
+                                + ") AND note IS NOT NULL AND TRIM(note)<>''"
+                                + " ORDER BY recorded_at DESC,id DESC FETCH FIRST 1 ROW ONLY",
+                        args.toArray())
+                .map(r -> str(r, "note"))
+                .orElse(null);
     }
 
     private void notifyCompletionMembers(IdentityService.Actor a, Map<String,Object> task,
