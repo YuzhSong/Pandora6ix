@@ -77,6 +77,28 @@ class BusinessApiIntegrationTests {
         assertEquals(1,db.rows("SELECT id FROM task_progress_record WHERE enterprise_id=? AND assignment_id=? AND note='Shared result'",enterprise,relation).size());
     }
 
+    @Test void taskViewsCarryLatestVisibleProgressNote() throws Exception {
+        var task=createTask(managerToken,"DELEGATED",List.of(employee,peer));
+        reviewDecision(founderToken,task,"APPROVE");
+        String taskId=str(task,"id"), relation=assignment(taskId,employee), peerRelation=assignment(taskId,peer);
+        assertNull(listedProgressNote(managerToken,"created",taskId));
+        request("POST","/task-assignments/"+relation+"/progress-records",employeeToken,fields("expectedVersion",1,"progressPercent",30,"note","Employee note"),201);
+        request("POST","/task-assignments/"+peerRelation+"/progress-records",peerToken,fields("expectedVersion",1,"progressPercent",40,"note","Peer note"),201);
+        request("POST","/task-assignments/"+peerRelation+"/progress-records",peerToken,fields("expectedVersion",2,"progressPercent",50,"note","  "),201);
+        db.update("UPDATE task_progress_record SET recorded_at=recorded_at - INTERVAL '1' MINUTE WHERE enterprise_id=? AND assignment_id=?",enterprise,relation);
+        // 创建人能看到两位执行人的记录：取较新的非空备注；空白备注不覆盖
+        assertEquals("Peer note",listedProgressNote(managerToken,"created",taskId));
+        assertEquals("Peer note",request("GET","/tasks/"+taskId,managerToken,null,200).get("latestProgressNote"));
+        // 执行人只能看到授权给自己的执行关系，备注范围与之一致
+        assertEquals(List.of(relation),taskAssignments(request("GET","/tasks/"+taskId,employeeToken,null,200)).stream().map(r->r.get("id")).toList());
+        assertEquals("Employee note",listedProgressNote(employeeToken,"mine",taskId));
+    }
+
+    private Object listedProgressNote(String token,String scope,String taskId) throws Exception {
+        return items(request("GET","/tasks?scope="+scope,token,null,200)).stream()
+                .filter(t->taskId.equals(t.get("id"))).findFirst().orElseThrow().get("latestProgressNote");
+    }
+
     @Test void sharedCreatorRecipientCannotVerifyPeerSubmission() throws Exception {
         var task=createTask(managerToken,"DELEGATED",List.of(manager,employee));reviewDecision(founderToken,task,"APPROVE");
         String taskId=str(task,"id"), relation=assignment(taskId,employee);

@@ -144,7 +144,7 @@ def read_schemas():
         "priorityLevel": {"type": "integer", "minimum": 1, "maximum": 5}, "startDate": DATE, "endDate": DATE,
         "timeKind": java_type("TimeKind"), "startTime": nullable(STRING), "endTime": nullable(STRING), "reviewStatus": {"type": "string", "enum": ["PENDING", "APPROVED", "REJECTED"]},
         "primaryTagId": nullable(ID), "tags": array(ref("Tag")), "tagIds": array(ID), "displayColor": nullable(STRING), "createdAt": INSTANT,
-        "authorizedAssignments": array(ref("Assignment")), "allowedActions": array(STRING), "reviewId": nullable(ID), "pendingEditReviewId": nullable(ID),
+        "authorizedAssignments": array(ref("Assignment")), "allowedActions": array(STRING), "reviewId": nullable(ID), "pendingEditReviewId": nullable(ID), "latestProgressNote": nullable(STRING),
         "progressRecords": array(ref("ProgressRecord")), "completionRequests": array(ref("CompletionRequestView")),
         "seriesId": nullable(ID), "recurrenceLabel": nullable(STRING), "occurrenceCount": INTEGER, "occurrenceDate": nullable(DATE)})
     entry = obj({**versioned, "entryId": ID, "journalId": ID, "workLogId": ID, "workDate": DATE, "authorUserId": ID,

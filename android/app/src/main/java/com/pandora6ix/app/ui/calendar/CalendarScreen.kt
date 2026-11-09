@@ -73,26 +73,20 @@ fun CalendarScreen(
     onCursorChange: (DemoDate) -> Unit,
     onCreated: (TaskDto) -> Unit,
     onOpen: (TaskItem) -> Unit,
-    taskScope: String = "mine",
-    onTaskScopeChange: (String) -> Unit = {},
     currentUser: UserDto? = null,
-    canReviewTasks: Boolean = true,
     businessTimezone: String? = null,
     loading: Boolean = false,
     error: String? = null,
     onRetry: () -> Unit = {},
     notice: String? = null,
-    onOpenSummary: () -> Unit = {}
+    onOpenSummary: () -> Unit = {},
+    onOpenContacts: () -> Unit = {}
 ) {
     var menu by rememberSaveable { mutableStateOf(false) }
     var adding by rememberSaveable { mutableStateOf(false) }
     // 标签筛选：选中的标签任务必须同时全部具备（AND）才在视图中显示
     var filterTags by rememberSaveable { mutableStateOf(listOf<String>()) }
     var showTagFilter by rememberSaveable { mutableStateOf(false) }
-    // 无审批权限时不应停留在"我管理的"（状态恢复等场景），自动切回"我的任务"
-    LaunchedEffect(canReviewTasks, taskScope) {
-        if (!canReviewTasks && taskScope == "managed") onTaskScopeChange("mine")
-    }
     val today = todayDate()
     // 月视图消费定位信号；年视图用导航版本直接重建目标网格，避免旧布局参与跳转。
     var gridJumpTarget by remember { mutableStateOf<DemoDate?>(null) }
@@ -127,6 +121,11 @@ fun CalendarScreen(
                     }
                 }
                 Spacer(Modifier.weight(1f))
+                TextButton(onOpenContacts, colors = ButtonDefaults.textButtonColors(contentColor = colors.primary)) {
+                    Icon(Icons.Default.Contacts, null, Modifier.size(PandoraDimensions.iconSmall + 2.dp))
+                    Spacer(Modifier.width(PandoraSpacing.space4))
+                    Text("通讯录", style = PandoraTypography.labelLarge)
+                }
                 TextButton(onOpenSummary, colors = ButtonDefaults.textButtonColors(contentColor = colors.primary)) {
                     Icon(Icons.Default.Checklist, null, Modifier.size(PandoraDimensions.iconSmall + 2.dp))
                     Spacer(Modifier.width(PandoraSpacing.space4))
@@ -147,13 +146,6 @@ fun CalendarScreen(
                 onDismiss = { showDatePick = false },
                 onConfirm = { d -> showDatePick = false; jumpToDate(d) }
             )
-            // 所有视图共用任务范围；"我管理的"仅对有审批能力的用户显示。
-            Row(Modifier.fillMaxWidth().padding(horizontal = PandoraSpacing.pageHorizontal, vertical = PandoraSpacing.space4).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space8)) {
-                (listOf("mine" to "我的任务") + (if (canReviewTasks) listOf("managed" to "我管理的") else emptyList()) + listOf("created" to "我创建的")).forEach { (value, label) ->
-                    val selected = taskScope == value
-                    PandoraChoiceChip(label, selected, onClick = { if (!selected) onTaskScopeChange(value) })
-                }
-            }
             if (notice != null) Text(notice, Modifier.fillMaxWidth().padding(horizontal = PandoraSpacing.pageHorizontal, vertical = PandoraSpacing.space2), style = PandoraTypography.caption, color = colors.textSecondary)
             if (filterTags.isNotEmpty()) Row(Modifier.fillMaxWidth().padding(horizontal = PandoraSpacing.pageHorizontal, vertical = PandoraSpacing.space2), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space8)) {
                 Text("仅显示：", style = PandoraTypography.caption, color = colors.textSecondary, maxLines = 1, softWrap = false)

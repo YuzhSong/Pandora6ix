@@ -88,6 +88,7 @@ import com.pandora6ix.app.ui.ai.AiExplorerScreen
 import com.pandora6ix.app.ui.review.ReviewScreen
 import com.pandora6ix.app.ui.task.ProgressSheet
 import com.pandora6ix.app.ui.summary.TaskSummaryFlow
+import com.pandora6ix.app.ui.summary.ContactsFlow
 import com.pandora6ix.app.ui.tags.TagManageScreen
 import com.pandora6ix.app.ui.logs.JournalDatePickerDialog
 import com.pandora6ix.app.ui.logs.JournalEntryField
@@ -381,6 +382,7 @@ fun PandoraApp(
         var themeKey by remember(themeOwner) { mutableStateOf(themePreferences.theme(themeOwner)) }
 
         var showTaskSummary by rememberSaveable(currentUser?.id) { mutableStateOf(false) }
+        var showContacts by rememberSaveable(currentUser?.id) { mutableStateOf(false) }
         val calendarUiState = key(currentUser?.id) { rememberSaveableStateHolder() }
         // 子页面替换“我的”时仍保留滚动位置，退出登录或切换账号时重置。
         val profileScrollState = rememberSaveable(currentUser?.id, saver = ScrollState.Saver) { ScrollState(0) }
@@ -446,6 +448,7 @@ fun PandoraApp(
                 detail = null
                 homeDetail = null
                 showTaskSummary = false
+                showContacts = false
             }
         }
         LaunchedEffect(approvalPromptEvents, currentUser?.id, notifyMaster, notifyStatus) {
@@ -650,8 +653,8 @@ fun PandoraApp(
         // 非阻断提示（如权限自动切换），重载后仍保留，用户手动操作后清除
         var calNotice by remember { mutableStateOf<String?>(null) }
         var calRetry by remember { mutableStateOf(0) }
-        // 所有视图任务范围：mine=我的任务 / managed=我管理的 / created=我创建的
-        var taskScope by rememberSaveable { mutableStateOf("mine") }
+        // 公司页面只显示自己的任务；下属任务与我创建的任务在任务汇总中查看
+        val taskScope = "mine"
         val calendarAnchor = calendarQueryDate(CalendarMode.valueOf(modeName), date)
         LaunchedEffect(current, modeName, calendarAnchor, currentUser?.id, calRetry, taskScope, taskRefreshRevision) {
             if (current != Route.VIEW || currentUser == null) return@LaunchedEffect
@@ -674,13 +677,7 @@ fun PandoraApp(
             } catch (e: Exception) {
                 // 加载失败显示空视图与重试入口，不保留过期内容
                 val api = e as? ApiException
-                // 无权限查看当前范围（如"我管理的"）：给出具体提示并切回"我的任务"，重试无意义
-                if (api?.httpStatus == 403 && taskScope == "managed") {
-                    calNotice = "当前账号没有查看「我管理的」任务的权限，已切回「我的任务」"
-                    taskScope = "mine"
-                } else {
-                    calError = api?.friendlyMessage() ?: "加载失败，请重试"
-                }
+                calError = api?.friendlyMessage() ?: "加载失败，请重试"
                 taskItems.clear()
             } finally {
                 if (coroutineContext[kotlinx.coroutines.Job]?.isActive == true) calLoading = false
@@ -717,7 +714,7 @@ fun PandoraApp(
                 route = Route.HOME.name; detail = null; homeDetail = null; showSettings = false; showReviews = false
             }
             else -> PandoraTheme(theme) { CompositionLocalProvider(LocalDensity provides scaledDensity, LocalTaskRefreshRevision provides taskRefreshRevision) {
-        Scaffold(containerColor = theme.colors.appBackground, bottomBar = { NavigationBar(containerColor = theme.art?.navBand ?: theme.colors.appBackground) { nav.forEach { item -> NavigationBarItem(selected = current == item.route, onClick = { notificationListOpen = false; route = item.route.name; detail = null; homeDetail = null; journalDetailId = null; showSettings = false; showReviews = false; showTagManage = false; progressTaskId = null; showTaskSummary = false }, icon = { MeNavIcon(item, reviewBadgeCount) }, label = { Text(item.label, style = if (current == item.route && theme.art?.navLabel != null) PandoraTypography.caption.copy(fontWeight = FontWeight.SemiBold) else PandoraTypography.caption) }, colors = NavigationBarItemDefaults.colors(selectedIconColor = theme.colors.primary, selectedTextColor = theme.art?.navLabel ?: theme.colors.primary, indicatorColor = theme.colors.primaryContainer, unselectedIconColor = theme.colors.textSecondary, unselectedTextColor = theme.art?.navLabel ?: theme.colors.textSecondary)) } } }) { padding ->
+        Scaffold(containerColor = theme.colors.appBackground, bottomBar = { NavigationBar(containerColor = theme.art?.navBand ?: theme.colors.appBackground) { nav.forEach { item -> NavigationBarItem(selected = current == item.route, onClick = { notificationListOpen = false; route = item.route.name; detail = null; homeDetail = null; journalDetailId = null; showSettings = false; showReviews = false; showTagManage = false; progressTaskId = null; showTaskSummary = false; showContacts = false }, icon = { MeNavIcon(item, reviewBadgeCount) }, label = { Text(item.label, style = if (current == item.route && theme.art?.navLabel != null) PandoraTypography.caption.copy(fontWeight = FontWeight.SemiBold) else PandoraTypography.caption) }, colors = NavigationBarItemDefaults.colors(selectedIconColor = theme.colors.primary, selectedTextColor = theme.art?.navLabel ?: theme.colors.primary, indicatorColor = theme.colors.primaryContainer, unselectedIconColor = theme.colors.textSecondary, unselectedTextColor = theme.art?.navLabel ?: theme.colors.textSecondary)) } } }) { padding ->
             Surface(Modifier.padding(padding).fillMaxSize(), color = theme.colors.appBackground) {
                 when {
                     homeDetail?.kind == "TASK" && homeDetail?.id != null -> FullTaskDetail(
@@ -727,12 +724,21 @@ fun PandoraApp(
                     journalDetailId != null -> JournalDetailScreen(journalRepo, journalDetailId!!, currentUser?.businessTimezone, currentUser, userRepo) { journalDetailId = null }
                     showTaskSummary -> key(currentUser!!.id) {
                         TaskSummaryFlow(
+                            currentUser!!, calendarRepo,
+                            taskDetail = { id, onBack, onChanged ->
+                                FullTaskDetail(id, taskRepo, serverTags, currentUser?.businessTimezone, currentUser, userRepo, onBack) { onChanged(); calRetry++ }
+                            },
+                            onClose = { showTaskSummary = false }
+                        )
+                    }
+                    showContacts -> key(currentUser!!.id) {
+                        ContactsFlow(
                             currentUser!!, calendarRepo, taskRepo, journalRepo, userRepo,
                             taskDetail = { id, onBack, onChanged ->
                                 FullTaskDetail(id, taskRepo, serverTags, currentUser?.businessTimezone, currentUser, userRepo, onBack) { onChanged(); calRetry++ }
                             },
                             journalDetail = { id, onBack -> JournalDetailScreen(journalRepo, id, currentUser?.businessTimezone, currentUser, userRepo, onBack) },
-                            onClose = { showTaskSummary = false }
+                            onClose = { showContacts = false }
                         )
                     }
                     showSettings -> SettingsScreen(
@@ -792,7 +798,7 @@ fun PandoraApp(
                                     showReviews = true
                                 } else if (item.taskId.isNotBlank()) detail = item.taskId
                             }) }
-                            Route.VIEW -> calendarUiState.SaveableStateProvider("calendar") { CalendarScreen(CalendarMode.valueOf(modeName), date, taskItems, canCreatePersonal, canCreateDelegated, serverTags, taskRepo, { modeName = it.name }, { dateKey = "${it.year}-${it.month}-${it.day}" }, { calRetry++ }, { detail = it.id }, taskScope = taskScope, onTaskScopeChange = { taskScope = it; calNotice = null }, currentUser = currentUser, canReviewTasks = canReviewTasks, businessTimezone = currentUser?.businessTimezone, loading = calLoading, error = calError, onRetry = { calRetry++ }, notice = calNotice, onOpenSummary = { showTaskSummary = true }) }
+                            Route.VIEW -> calendarUiState.SaveableStateProvider("calendar") { CalendarScreen(CalendarMode.valueOf(modeName), date, taskItems, canCreatePersonal, canCreateDelegated, serverTags, taskRepo, { modeName = it.name }, { dateKey = "${it.year}-${it.month}-${it.day}" }, { calRetry++ }, { detail = it.id }, currentUser = currentUser, businessTimezone = currentUser?.businessTimezone, loading = calLoading, error = calError, onRetry = { calRetry++ }, notice = calNotice, onOpenSummary = { showTaskSummary = true }, onOpenContacts = { showContacts = true }) }
                             Route.LOGS -> LogsScreen(journalRepo, serverTags.toList(), currentUser?.businessTimezone, currentUser, userRepo, dailyStore) { journalDetailId = it }
                             Route.AI -> AiExplorerScreen(aiRepo, currentUser!!.id)
                             Route.ME -> ProfileScreen(currentUser!!, notifyMaster, showReviewCenter, reviewBadgeCount, tagManager, userRepo, scrollState = profileScrollState, onOpenTagManage = { showTagManage = true }, onOpenReviews = { reviewFocusId = null; showReviews = true }, onOpenSettings = { showSettings = true })

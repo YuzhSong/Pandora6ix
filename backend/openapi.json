@@ -11315,11 +11315,6 @@
       "Task": {
         "type": "object",
         "properties": {
-          "completionStatus": {
-            "type": "string",
-            "enum": ["NOT_COMPLETED", "AWAITING_ACCEPTANCE", "COMPLETED"],
-            "description": "任务整体完成状态。任一当前接收人提交完成后全员待验收，指定验收人通过后全员完成，驳回后全员未完成；assignment 状态同步保持兼容。"
-          },
           "id": {
             "type": "string",
             "format": "uuid"
@@ -11473,6 +11468,16 @@
               {
                 "type": "string",
                 "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "latestProgressNote": {
+            "anyOf": [
+              {
+                "type": "string"
               },
               {
                 "type": "null"
