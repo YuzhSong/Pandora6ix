@@ -101,7 +101,8 @@ data class TaskDto(
     val occurrenceCount: Int = 1,
     val occurrenceDate: String? = null,
     val companyWide: Boolean = false,
-    val pendingEditReviewId: String? = null
+    val pendingEditReviewId: String? = null,
+    val completionStatus: String? = null
 )
 
 @Serializable

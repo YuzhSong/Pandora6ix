@@ -24,7 +24,12 @@ class AuthRepository(private val api: ApiClient, private val session: SessionSto
         return result.user
     }
 
-    suspend fun me(): UserDto = api.get("/me", UserDto.serializer()).also { session.bindOwner(it.id) }
+    suspend fun me(): UserDto {
+        val expectedToken = session.token ?: throw SessionExpiredException()
+        val user = api.getSessionProfile(UserDto.serializer())
+        if (!session.bindOwnerIfCurrent(expectedToken, user.id)) throw SessionExpiredException()
+        return user
+    }
 
     suspend fun changePassword(currentPassword: String, newPassword: String): UserDto? {
         val token = session.token ?: throw SessionExpiredException()

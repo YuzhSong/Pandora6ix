@@ -15,6 +15,18 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 class PasswordRenewalTest {
+    @Test fun staleProfileCannotRebindClearedOrReplacementSession() {
+        val session = SessionStore(preferences())
+        session.save("old-fixture-session", "old-person")
+        session.clear()
+        assertFalse(session.bindOwnerIfCurrent("old-fixture-session", "old-person"))
+        assertNull(session.ownerId)
+        session.save("new-fixture-session", "new-person")
+        assertFalse(session.bindOwnerIfCurrent("old-fixture-session", "old-person"))
+        assertEquals("new-person", session.ownerId)
+        assertTrue(session.bindOwnerIfCurrent("new-fixture-session", "new-person"))
+    }
+
     private fun preferences(): SharedPreferences {
         val values = ConcurrentHashMap<String, String>()
         lateinit var editor: SharedPreferences.Editor
@@ -93,6 +105,32 @@ class PasswordRenewalTest {
     }
     private val login = """{"data":{"accessToken":"new-token","user":{"id":"person"}}}"""
     private fun CountDownLatch.awaitRequest() { check(await(10, TimeUnit.SECONDS)) { "HTTP request timed out" } }
+
+    @Test fun stalledStartupProfileTimesOutWithoutLosingSession() = runBlocking {
+        Fixture().use { f ->
+            val release = CountDownLatch(1)
+            f.route("/me") { release.await(25, TimeUnit.SECONDS); it.reply(200, """{"data":{"id":"person"}}""") }
+            val started = System.nanoTime()
+            try {
+                val result = restoreSession({ f.session.token }) { f.auth.me() }
+                assertTrue(result is SessionRestoreResult.Unavailable)
+                assertTrue(TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - started) < 23)
+                assertEquals("old-token", f.session.token)
+                assertEquals("person", f.session.ownerId)
+                assertEquals(0, f.expired.get())
+            } finally { release.countDown() }
+        }
+    }
+
+    @Test fun malformedStartupProfileDoesNotBecomeSignedOut() = runBlocking {
+        Fixture().use { f ->
+            f.route("/me") { it.reply(200, "not-json") }
+            val result = restoreSession({ f.session.token }) { f.auth.me() }
+            assertTrue(result is SessionRestoreResult.Unavailable)
+            assertEquals("old-token", f.session.token)
+            assertEquals(0, f.expired.get())
+        }
+    }
 
     @Test fun oldToken401DuringRenewalDoesNotLogOutAndNormal401StillDoes() = runBlocking {
         Fixture().use { f ->

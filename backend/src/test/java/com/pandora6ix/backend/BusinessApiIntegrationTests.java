@@ -46,6 +46,98 @@ class BusinessApiIntegrationTests {
     private String adminToken, founderToken, managerToken, leadToken, employeeToken, peerToken;
     private LocalDate today;
 
+    @Test void sharedCompletionNotifiesEveryoneAndAcceptsOrRejectsAsOneTask() throws Exception {
+        var task=createTask(managerToken,"DELEGATED",List.of(employee,peer));
+        reviewDecision(founderToken,task,"APPROVE");
+        String taskId=str(task,"id"), relation=assignment(taskId,employee), peerRelation=assignment(taskId,peer);
+        String key=UUID.randomUUID().toString();
+        var body=fields("expectedVersion",1,"workStatus","COMPLETED","note","Shared result");
+        var submitted=request("PATCH","/task-assignments/"+relation+"/status",employeeToken,body,200,"Idempotency-Key",key);
+        assertEquals(submitted,request("PATCH","/task-assignments/"+relation+"/status",employeeToken,body,200,"Idempotency-Key",key));
+        String completion=(String)((Map<?,?>)submitted.get("completionRequest")).get("id");
+        assertEquals("AWAITING_ACCEPTANCE",request("GET","/tasks/"+taskId,peerToken,null,200).get("completionStatus"));
+        assertEquals("AWAITING_ACCEPTANCE",db.entity("task_assignment",enterprise,peerRelation).get("execution_status"));
+        assertEquals("COMPLETED",db.entity("task_assignment",enterprise,peerRelation).get("work_status"));
+        assertEquals(3,db.rows("SELECT id FROM notification WHERE enterprise_id=? AND dedupe_key=?",enterprise,completion+"|STATUS|REQUESTED").size());
+        assertEquals(1,number(request("GET","/task-completion-requests/pending-count",managerToken,null,200),"count"));
+        request("PATCH","/task-assignments/"+peerRelation+"/status",peerToken,fields("expectedVersion",1,"workStatus","COMPLETED"),409);
+        request("POST","/task-completion-requests/"+completion+"/decision",peerToken,fields("expectedVersion",0,"decision","ACCEPT"),404);
+        request("POST","/task-completion-requests/"+completion+"/decision",managerToken,fields("expectedVersion",99,"decision","ACCEPT"),409);
+        assertEquals("AWAITING_ACCEPTANCE",db.entity("task",enterprise,taskId).get("completion_status"));
+        request("POST","/task-completion-requests/"+completion+"/decision",managerToken,fields("expectedVersion",0,"decision","REJECT"),200);
+        assertEquals("NOT_COMPLETED",request("GET","/tasks/"+taskId,peerToken,null,200).get("completionStatus"));
+        for(String assignment:List.of(relation,peerRelation)) assertEquals("ACTIVE",db.entity("task_assignment",enterprise,assignment).get("execution_status"));
+        assertEquals(3,db.rows("SELECT id FROM notification WHERE enterprise_id=? AND dedupe_key=?",enterprise,completion+"|STATUS|REJECTED").size());
+        var again=request("PATCH","/task-assignments/"+peerRelation+"/status",peerToken,fields("expectedVersion",3,"workStatus","COMPLETED"),200);
+        String second=(String)((Map<?,?>)again.get("completionRequest")).get("id");
+        request("POST","/task-completion-requests/"+second+"/decision",managerToken,fields("expectedVersion",0,"decision","ACCEPT"),200);
+        assertEquals("COMPLETED",request("GET","/tasks/"+taskId,employeeToken,null,200).get("completionStatus"));
+        for(String assignment:List.of(relation,peerRelation)) assertEquals("COMPLETED",db.entity("task_assignment",enterprise,assignment).get("execution_status"));
+        assertEquals(3,db.rows("SELECT id FROM notification WHERE enterprise_id=? AND dedupe_key=?",enterprise,second+"|STATUS|ACCEPTED").size());
+        assertEquals(1,db.rows("SELECT id FROM task_progress_record WHERE enterprise_id=? AND assignment_id=? AND note='Shared result'",enterprise,relation).size());
+    }
+
+    @Test void sharedCreatorRecipientCannotVerifyPeerSubmission() throws Exception {
+        var task=createTask(managerToken,"DELEGATED",List.of(manager,employee));reviewDecision(founderToken,task,"APPROVE");
+        String taskId=str(task,"id"), relation=assignment(taskId,employee);
+        var submitted=request("PATCH","/task-assignments/"+relation+"/status",employeeToken,fields("expectedVersion",1,"workStatus","COMPLETED"),200);
+        String completion=(String)((Map<?,?>)submitted.get("completionRequest")).get("id");
+        assertEquals(0,number(request("GET","/task-completion-requests/pending-count",managerToken,null,200),"count"));
+        assertEquals(1,number(request("GET","/task-completion-requests/pending-count",founderToken,null,200),"count"));
+        request("POST","/task-completion-requests/"+completion+"/decision",managerToken,fields("expectedVersion",0,"decision","ACCEPT"),404);
+        request("POST","/task-completion-requests/"+completion+"/decision",founderToken,fields("expectedVersion",0,"decision","ACCEPT"),200);
+        assertEquals("COMPLETED",request("GET","/tasks/"+taskId,employeeToken,null,200).get("completionStatus"));
+    }
+
+    @Test void sharedCompletionRollsBackAllMembersAndNotificationsOnFailure() throws Exception {
+        var task=createTask(managerToken,"DELEGATED",List.of(employee,peer));reviewDecision(founderToken,task,"APPROVE");
+        String taskId=str(task,"id"), relation=assignment(taskId,employee);
+        String constraint="shared_failure_"+UUID.randomUUID().toString().replace("-","");
+        db.update("ALTER TABLE task_assignment ADD CONSTRAINT "+constraint+" CHECK (enterprise_id <> '"+enterprise+"' OR recipient_user_id <> '"+peer+"' OR execution_status <> 'AWAITING_ACCEPTANCE')");
+        try {
+            request("PATCH","/task-assignments/"+relation+"/status",employeeToken,fields("expectedVersion",1,"workStatus","COMPLETED","note","Must roll back"),409);
+            assertEquals("NOT_COMPLETED",db.entity("task",enterprise,taskId).get("completion_status"));
+            assertEquals(2,db.rows("SELECT id FROM task_assignment WHERE enterprise_id=? AND task_id=? AND execution_status='ACTIVE' AND version=1",enterprise,taskId).size());
+            assertEquals(0,db.rows("SELECT r.id FROM task_completion_request r JOIN task_assignment a ON a.id=r.assignment_id WHERE r.enterprise_id=? AND a.task_id=?",enterprise,taskId).size());
+            assertEquals(0,db.rows("SELECT id FROM notification WHERE enterprise_id=? AND task_id=? AND dedupe_key LIKE '%|STATUS|REQUESTED'",enterprise,taskId).size());
+            assertEquals(0,db.rows("SELECT id FROM task_progress_record WHERE enterprise_id=? AND assignment_id=?",enterprise,relation).size());
+        } finally {db.update("ALTER TABLE task_assignment DROP CONSTRAINT "+constraint);}
+    }
+
+    @Test void sharedConcurrentCompletionCreatesOneRequest() throws Exception {
+        var task=createTask(managerToken,"DELEGATED",List.of(employee,peer));reviewDecision(founderToken,task,"APPROVE");
+        String taskId=str(task,"id"), a=assignment(taskId,employee), b=assignment(taskId,peer);
+        var start=new CountDownLatch(1);
+        try(var executor=Executors.newFixedThreadPool(2)) {
+            var first=executor.submit(() -> {start.await();return raw("PATCH","/task-assignments/"+a+"/status",employeeToken,fields("expectedVersion",1,"workStatus","COMPLETED","note","A"));});
+            var second=executor.submit(() -> {start.await();return raw("PATCH","/task-assignments/"+b+"/status",peerToken,fields("expectedVersion",1,"workStatus","COMPLETED","note","B"));});
+            start.countDown();
+            int x=first.get(20,TimeUnit.SECONDS).status(),y=second.get(20,TimeUnit.SECONDS).status();
+            assertTrue((x==200&&y==409)||(x==409&&y==200),x+"/"+y);
+        }
+        assertEquals(1,db.rows("SELECT r.id FROM task_completion_request r JOIN task_assignment a ON a.id=r.assignment_id AND a.enterprise_id=r.enterprise_id WHERE r.enterprise_id=? AND a.task_id=?",enterprise,taskId).size());
+        assertEquals(2,db.rows("SELECT id FROM task_assignment WHERE enterprise_id=? AND task_id=? AND execution_status='AWAITING_ACCEPTANCE'",enterprise,taskId).size());
+        assertEquals(1,db.rows("SELECT r.id FROM task_progress_record r JOIN task_assignment a ON a.id=r.assignment_id WHERE r.enterprise_id=? AND a.task_id=?",enterprise,taskId).size());
+    }
+
+    @Test void sharedPendingCompletionProtectsMembershipAndResolvesLegacyRequestsOnce() throws Exception {
+        var task=createTask(founderToken,"DELEGATED",List.of(employee,peer));
+        String taskId=str(task,"id"),a=assignment(taskId,employee),b=assignment(taskId,peer);
+        request("PATCH","/task-assignments/"+a+"/status",employeeToken,fields("expectedVersion",0,"workStatus","COMPLETED"),200);
+        String legacy=UUID.randomUUID().toString();
+        db.update("INSERT INTO task_completion_request(id,enterprise_id,assignment_id,requested_by_user_id) VALUES(?,?,?,?)",legacy,enterprise,b,peer);
+        assertEquals(1,number(request("GET","/task-completion-requests/pending-count",founderToken,null,200),"count"));
+        var queue=items(request("GET","/task-completion-requests?scope=pending",founderToken,null,200));assertEquals(1,queue.size());
+        var patch=revision(0,"Must not lose requester");patch.put("recipientIds",List.of(peer));
+        request("PATCH","/tasks/"+taskId,founderToken,patch,409);
+        assertEquals("Task",db.entity("task",enterprise,taskId).get("title"));
+        assertEquals(2,db.rows("SELECT id FROM task_assignment WHERE enterprise_id=? AND task_id=? AND current_member=TRUE",enterprise,taskId).size());
+        String completion=str(queue.getFirst(),"id");
+        request("POST","/task-completion-requests/"+completion+"/decision",founderToken,fields("expectedVersion",0,"decision","ACCEPT"),200);
+        assertEquals("ACCEPTED",db.entity("task_completion_request",enterprise,legacy).get("decision"));
+        request("POST","/task-completion-requests/"+legacy+"/decision",founderToken,fields("expectedVersion",0,"decision","REJECT"),409);
+    }
+
     @Test
     void recurringTasksAreIndependentAndRetriesAreIdempotent() throws Exception {
         var body = taskBody("PERSONAL", List.of(), List.of(), null);
@@ -782,7 +874,7 @@ class BusinessApiIntegrationTests {
     }
 
     @Test
-    void realDelegatedApprovalAndPerRecipientAcceptanceDoNotCompleteOtherRecipients()
+    void realDelegatedApprovalAndAcceptanceCompleteAllRecipients()
             throws Exception {
         var task = createTask(leadToken, "DELEGATED", List.of(employee, peer));
         String id = str(task, "id");
@@ -803,9 +895,7 @@ class BusinessApiIntegrationTests {
         var creatorView = request("GET", "/tasks/" + id, leadToken, null, 200);
         for (var relation : taskAssignments(creatorView)) {
             assertEquals(
-                    relation.get("recipientUserId").equals(employee)
-                            ? List.of("DECIDE_COMPLETION")
-                            : List.of(),
+                    List.of("DECIDE_COMPLETION"),
                     relation.get("allowedActions"));
         }
         request(
@@ -825,9 +915,9 @@ class BusinessApiIntegrationTests {
                 "CREATOR_ACCEPTANCE",
                 ((Map<?, ?>) completion.get("assignment")).get("completionSource"));
         var forPeer = request("GET", "/tasks/" + id, peerToken, null, 200);
-        assertEquals("ACTIVE", taskAssignments(forPeer).getFirst().get("executionStatus"));
+        assertEquals("COMPLETED", taskAssignments(forPeer).getFirst().get("executionStatus"));
         assertEquals(
-                List.of("UPDATE_PROGRESS", "REQUEST_COMPLETION"),
+                List.of(),
                 taskAssignments(forPeer).getFirst().get("allowedActions"));
     }
 
@@ -2021,7 +2111,7 @@ class BusinessApiIntegrationTests {
     }
 
     @Test
-    void delegatedCompletionRequiresCreatorAcceptancePerRecipient() throws Exception {
+    void delegatedCompletionRequiresCreatorAcceptanceForWholeTask() throws Exception {
         var task = createTask(managerToken, "DELEGATED", List.of(employee, peer));
         String id = (String) task.get("id");
         approved(id);
@@ -2056,7 +2146,7 @@ class BusinessApiIntegrationTests {
                 db.entity("task_assignment", enterprise, assignment(id, employee))
                         .get("completion_source"));
         assertEquals(
-                "ACTIVE",
+                "COMPLETED",
                 db.entity("task_assignment", enterprise, assignment(id, peer))
                         .get("execution_status"));
         request(
@@ -3583,9 +3673,9 @@ class BusinessApiIntegrationTests {
         completion=(String)((Map<?,?>)again.get("completionRequest")).get("id");
         request("POST","/task-completion-requests/"+completion+"/decision",managerToken,fields("expectedVersion",0,"decision","ACCEPT"),200);
         assertEquals("COMPLETED",db.entity("task_assignment",enterprise,relation).get("work_status"));
-        assertEquals("ACTIVE",db.entity("task_assignment",enterprise,peerRelation).get("execution_status"));
+        assertEquals("COMPLETED",db.entity("task_assignment",enterprise,peerRelation).get("execution_status"));
         request("PATCH","/task-assignments/"+relation+"/status",employeeToken,fields("expectedVersion",8,"workStatus","IN_PROGRESS"),409);
-        request("POST","/task-assignments/"+peerRelation+"/progress-records",peerToken,fields("expectedVersion",1),422);
+        request("POST","/task-assignments/"+peerRelation+"/progress-records",peerToken,fields("expectedVersion",1),409);
     }
 
     @Test void taskAndJournalAuditsCaptureCommittedSnapshotsAndSanitizedFailures() throws Exception {
