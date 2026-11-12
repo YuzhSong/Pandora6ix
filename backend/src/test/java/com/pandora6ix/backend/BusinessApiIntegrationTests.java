@@ -77,6 +77,34 @@ class BusinessApiIntegrationTests {
         assertEquals(1,db.rows("SELECT id FROM task_progress_record WHERE enterprise_id=? AND assignment_id=? AND note='Shared result'",enterprise,relation).size());
     }
 
+    @Test void overdueTasksEmitOneDeadlineDatedMessageUntilAccepted() throws Exception {
+        var task=createTask(founderToken,"DELEGATED",List.of(employee,peer));
+        String taskId=str(task,"id"), relation=assignment(taskId,employee);
+        // 把截止时刻拨到 10 分钟前（TIMED），保证落在「已过期 ≤24h」扫描窗口内且不受全天 23:59 语义影响
+        int minuteOfDay=LocalTime.now().toSecondOfDay()/60;
+        db.update("UPDATE task SET end_date=?,end_minute=?,time_kind='TIMED' WHERE enterprise_id=? AND id=?",
+                LocalDate.now(),Math.max(0,minuteOfDay-10),enterprise,taskId);
+        int created=notifications.scanDeadlines();
+        assertTrue(created>=1);
+        String key=taskId+"|OVERDUE|"+LocalDate.now();
+        assertEquals(2,db.rows("SELECT id FROM notification WHERE enterprise_id=? AND dedupe_key=?",
+                enterprise,key).size());
+        // 重复扫描：去重键（任务+截止日期）保证不再产生第二条
+        notifications.scanDeadlines();
+        assertEquals(2,db.rows("SELECT id FROM notification WHERE enterprise_id=? AND dedupe_key=?",
+                enterprise,key).size());
+        // 执行人提交完成进入待验收后，不再对该任务的截止发逾期消息
+        var detail=request("GET","/tasks/"+taskId,employeeToken,null,200);
+        @SuppressWarnings("unchecked")
+        long version=number(((List<Map<String,Object>>)detail.get("authorizedAssignments")).stream()
+                .filter(a->relation.equals(str(a,"id"))).findFirst().orElseThrow(),"version");
+        request("PATCH","/task-assignments/"+relation+"/status",employeeToken,
+                fields("expectedVersion",version,"workStatus","COMPLETED"),200);
+        notifications.scanDeadlines();
+        assertEquals(2,db.rows("SELECT id FROM notification WHERE enterprise_id=? AND dedupe_key LIKE ?",
+                enterprise,taskId+"|OVERDUE|%").size());
+    }
+
     @Test void taskViewsCarryLatestVisibleProgressNote() throws Exception {
         var task=createTask(managerToken,"DELEGATED",List.of(employee,peer));
         reviewDecision(founderToken,task,"APPROVE");
@@ -150,6 +178,8 @@ class BusinessApiIntegrationTests {
         db.update("INSERT INTO task_completion_request(id,enterprise_id,assignment_id,requested_by_user_id) VALUES(?,?,?,?)",legacy,enterprise,b,peer);
         assertEquals(1,number(request("GET","/task-completion-requests/pending-count",founderToken,null,200),"count"));
         var queue=items(request("GET","/task-completion-requests?scope=pending",founderToken,null,200));assertEquals(1,queue.size());
+        // 列表必须携带 taskId（客户端据此直接跳任务详情）
+        assertEquals(taskId,str(queue.getFirst(),"taskId"));
         var patch=revision(0,"Must not lose requester");patch.put("recipientIds",List.of(peer));
         request("PATCH","/tasks/"+taskId,founderToken,patch,409);
         assertEquals("Task",db.entity("task",enterprise,taskId).get("title"));

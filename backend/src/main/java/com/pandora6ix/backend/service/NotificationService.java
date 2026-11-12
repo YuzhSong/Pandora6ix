@@ -27,6 +27,7 @@ public class NotificationService {
 
     public static final String NEW_TASK = "NEW_TASK";
     public static final String DEADLINE = "DEADLINE";
+    public static final String OVERDUE = "OVERDUE";
     public static final String STATUS = "STATUS";
 
     /** 服务端生成截止提醒的最大提前量（小时） */
@@ -248,8 +249,9 @@ public class NotificationService {
     }
 
     /**
-     * 截止时间扫描：按企业业务时区判断任务截止时刻是否进入未来 24 小时窗口，为每条未完成的执行关系生成
-     * 一条截止提醒。已完成、已驳回与已过期的任务不产生提醒（US29）。
+     * 截止时间扫描：按企业业务时区判断任务截止时刻，为每条未完成的执行关系生成一条提醒。
+     * 未来 24 小时窗口内生成截止提醒（US29）；截止时刻刚过去（≤24 小时窗口）且执行人仍未提交
+     * 完成、任务未进入验收/完成/驳回时，生成一条逾期消息，去重键含截止日期（顺延后重新武装）。
      */
     @Scheduled(fixedDelayString = "${pandora.notification-scan-delay-ms:900000}")
     @Transactional
@@ -263,8 +265,8 @@ public class NotificationService {
             LocalDate businessToday = LocalDate.now(zone);
             var rows =
                     db.rows(
-                            "SELECT t.id,t.title,t.end_date,t.end_minute,t.time_kind,a.id AS"
-                                + " assignment_id,a.recipient_user_id FROM task t JOIN"
+                            "SELECT t.id,t.title,t.end_date,t.end_minute,t.time_kind,t.completion_status,a.id AS"
+                                + " assignment_id,a.recipient_user_id,a.execution_status FROM task t JOIN"
                                 + " task_assignment a ON a.enterprise_id=t.enterprise_id AND"
                                 + " a.task_id=t.id WHERE t.enterprise_id=? AND"
                                 + " t.review_status='APPROVED' AND t.end_date BETWEEN ? AND ? AND"
@@ -276,24 +278,48 @@ public class NotificationService {
                 Instant due = dueInstant(row, zone);
                 if (due == null) continue;
                 long remaining = Duration.between(now, due).toMillis();
-                if (remaining <= 0 || remaining > DEADLINE_LEAD_HOURS * 60L * 60L * 1000L) continue;
                 String taskId = str(row, "task_id") == null ? str(row, "id") : str(row, "task_id");
                 String title = str(row, "title");
                 String assignmentId = str(row, "assignment_id");
                 String recipient = str(row, "recipient_user_id");
                 String when = LocalDateTime.ofInstant(due, zone).format(STAMP);
-                int before = count(enterpriseId, taskId + "|" + DEADLINE, recipient);
-                emit(
-                        enterpriseId,
-                        recipient,
-                        DEADLINE,
-                        taskId,
-                        assignmentId,
-                        "截止时间临近",
-                        "《" + title + "》将于 " + when + " 截止，请尽快处理。",
-                        taskId + "|" + DEADLINE,
-                        due);
-                created += count(enterpriseId, taskId + "|" + DEADLINE, recipient) - before;
+                if (remaining > 0 && remaining <= DEADLINE_LEAD_HOURS * 60L * 60L * 1000L) {
+                    int before = count(enterpriseId, taskId + "|" + DEADLINE, recipient);
+                    emit(
+                            enterpriseId,
+                            recipient,
+                            DEADLINE,
+                            taskId,
+                            assignmentId,
+                            "截止时间临近",
+                            "《" + title + "》将于 " + when + " 截止，请尽快处理。",
+                            taskId + "|" + DEADLINE,
+                            due);
+                    created += count(enterpriseId, taskId + "|" + DEADLINE, recipient) - before;
+                    continue;
+                }
+                // 逾期消息：截止时刻刚过（≤24h 窗口，避免历史任务补发轰炸）、执行人仍未提交完成且任务未进入验收
+                long overdueFor = -remaining;
+                if (overdueFor > 0
+                        && overdueFor <= DEADLINE_LEAD_HOURS * 60L * 60L * 1000L
+                        && "ACTIVE".equals(str(row, "execution_status"))
+                        && "NOT_COMPLETED".equals(str(row, "completion_status"))) {
+                    String dueDate = LocalDate.ofInstant(due, zone).toString();
+                    int before = count(enterpriseId, taskId + "|OVERDUE|" + dueDate, recipient);
+                    // kind 沿用 DEADLINE（表 CHECK 约束只允许 NEW_TASK/DEADLINE/STATUS），事件类型用 OVERDUE 区分
+                    emit(
+                            enterpriseId,
+                            recipient,
+                            DEADLINE,
+                            taskId,
+                            assignmentId,
+                            "任务已逾期",
+                            "《" + title + "》已超过 " + when + " 的截止时间，请尽快处理。",
+                            taskId + "|OVERDUE|" + dueDate,
+                            null,
+                            OVERDUE);
+                    created += count(enterpriseId, taskId + "|OVERDUE|" + dueDate, recipient) - before;
+                }
             }
         }
         return created;

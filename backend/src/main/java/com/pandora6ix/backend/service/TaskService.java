@@ -1066,7 +1066,7 @@ public class TaskService
         if (!Set.of("pending", "created").contains(requestedScope))
             throw BusinessException.invalid("Completion request scope must be pending or created.");
         String query =
-                "SELECT r.*,t.title AS task_title,u.display_name AS requester_name FROM"
+                "SELECT r.*,t.id AS task_id,t.title AS task_title,u.display_name AS requester_name FROM"
                         + " task_completion_request r JOIN task_assignment s ON"
                         + " s.enterprise_id=r.enterprise_id AND s.id=r.assignment_id"
                         + " JOIN task t ON t.enterprise_id=r.enterprise_id AND t.id=s.task_id"
