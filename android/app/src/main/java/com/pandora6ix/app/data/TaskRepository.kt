@@ -118,7 +118,8 @@ data class CompletionRequestItemDto(
     val id: String,
     val version: Long = 0,
     val assignmentId: String = "",
-    val taskId: String = "",
+    /** 申请创建时关联的任务；服务端对历史/异常数据可能返回 null，此时不提供任务跳转 */
+    val taskId: String? = null,
     val taskTitle: String = "",
     val requestedByUserId: String = "",
     val requesterName: String? = null,
@@ -127,7 +128,8 @@ data class CompletionRequestItemDto(
     val decision: String = "PENDING",
     val decidedAt: String? = null,
     val decisionNote: String? = null,
-    val decidedByUserId: String = ""
+    /** 待验收申请尚无决定人，服务端返回 null */
+    val decidedByUserId: String? = null
 )
 
 @Serializable

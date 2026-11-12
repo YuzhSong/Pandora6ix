@@ -98,6 +98,14 @@ fun TaskDto.toTaskItem(): TaskItem {
 
 /** 展示用文案：任务类型 / 审批状态 / 执行状态（与后端枚举一一对应，不合成单一 status） */
 fun kindLabelOf(kind: String): String = if (kind == "DELEGATED") "派发任务" else "个人任务"
+
+/** 日历条目是否已逾期：审批通过、任一执行关系未进入完成/待验收，且截止时刻（业务时区）已过。仅作展示标识。 */
+fun TaskItem.isOverdue(timezone: String?): Boolean {
+    if (reviewStatus != "APPROVED") return false
+    if (assignments.any { it.executionStatus == "COMPLETED" || it.executionStatus == "AWAITING_ACCEPTANCE" }) return false
+    val endKey = "%04d-%02d-%02d".format(end.year, end.month, end.day)
+    return !deadlineNotPast(endKey, endMinute, timeKind == "ALL_DAY", timezone)
+}
 fun reviewStatusLabel(status: String): String = when (status) {
     "PENDING" -> "待审批"
     "APPROVED" -> "已批准"

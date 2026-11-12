@@ -41,9 +41,9 @@ internal const val PreviewLimit = 3
 @Composable
 internal fun TaskPreview(
     pager: SummaryPager<TaskDto>, records: List<TaskDto>, name: (String) -> String, userRepo: UserRepository,
-    onTask: (String) -> Unit, onAll: () -> Unit, onRetry: () -> Unit, filtered: Boolean = false
+    onTask: (String) -> Unit, onAll: () -> Unit, onRetry: () -> Unit, filtered: Boolean = false, businessTimezone: String? = null
 ) {
-    records.take(PreviewLimit).forEach { task -> SummaryTaskRow(task, name, userRepo) { onTask(task.id) } }
+    records.take(PreviewLimit).forEach { task -> SummaryTaskRow(task, name, userRepo, businessTimezone) { onTask(task.id) } }
     CollectionFooter(pager, records.isEmpty(), "暂无相关任务", filtered, showMore = false,
         partialEmptyText = "已加载范围暂无相关任务，可查看全部任务", onMore = onRetry)
     TextButton(onAll, Modifier.fillMaxWidth()) {
@@ -151,14 +151,15 @@ internal fun <T> CollectionFooter(
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun SummaryTaskRow(task: TaskDto, name: (String) -> String, userRepo: UserRepository, onOpen: () -> Unit) {
+internal fun SummaryTaskRow(task: TaskDto, name: (String) -> String, userRepo: UserRepository, businessTimezone: String? = null, onOpen: () -> Unit) {
     Column(Modifier.fillMaxWidth().summaryEntry(onOpen).padding(horizontal = PandoraSpacing.space12, vertical = PandoraSpacing.space8), verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space4)) {
         Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space8)) {
             Text(task.title, Modifier.weight(1f), style = PandoraTypography.labelLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            val label = summaryTaskStatus(task)
-            val tone = when (task.taskCompletionState()) {
-                "COMPLETED" -> StatusTone.SUCCESS
-                "AWAITING_ACCEPTANCE" -> StatusTone.WARNING
+            val label = summaryTaskStatus(task, businessTimezone)
+            val tone = when {
+                task.taskCompletionState() == "COMPLETED" -> StatusTone.SUCCESS
+                task.taskCompletionState() == "AWAITING_ACCEPTANCE" -> StatusTone.WARNING
+                task.isTaskOverdue(businessTimezone) -> StatusTone.ERROR
                 else -> StatusTone.NEUTRAL
             }
             PandoraStatusChip(label, tone, maxWidth = 144.dp)

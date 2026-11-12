@@ -127,6 +127,10 @@ fun ReviewScreen(taskRepo: TaskRepository, availableTags: List<TagDto>, business
     var loadDenied by remember { mutableStateOf(false) }
     var loadRetry by remember { mutableStateOf(0) }
     var selected by remember { mutableStateOf<TaskReviewDto?>(null) }
+    // 「完成验收」详情与审批详情同级：整页替换，选择状态提升到审批中心层
+    var selectedCompletion by remember { mutableStateOf<CompletionRequestItemDto?>(null) }
+    var completionRevision by remember { mutableIntStateOf(0) }
+    val completionKeys = remember { mutableStateMapOf<String, String>() }
     var loadGeneration by remember { mutableStateOf(0) }
     val uiScope = rememberCoroutineScope()
 
@@ -186,17 +190,23 @@ fun ReviewScreen(taskRepo: TaskRepository, availableTags: List<TagDto>, business
         return
     }
 
+    // 完成申请详情：与审批详情一样整页展示（有自己的返回栏），决定后刷新完成验收列表
+    selectedCompletion?.let { request ->
+        CompletionRequestDetail(taskRepo, request, businessTimezone, userRepo, completionKeys, onBack = { selectedCompletion = null }, onChanged = { completionRevision++ }, onOpenTask = onOpenTask)
+        return
+    }
+
     // 列表页与详情页一致：系统返回关闭审批中心，而不是直接退出应用
     androidx.activity.compose.BackHandler(onBack = onBack)
     Column(Modifier.fillMaxSize().background(PandoraTheme.colors.appBackground)) {
         PandoraTopBar("审批中心", onBack = onBack)
-        // 审批队列统一为标准 Tab（48dp、Primary 2dp 下划线）：待我审批 / 完成验收 / 我提交的
-        val queues = (if (canReview) listOf("pending" to "待我审批", "completion" to "完成验收") else emptyList()) + listOf("created" to "我提交的")
+        // 审批队列统一为标准 Tab（48dp、Primary 2dp 下划线）：待我审批 / 验收任务 / 我提交的
+        val queues = (if (canReview) listOf("pending" to "待我审批", "completion" to "验收任务") else emptyList()) + listOf("created" to "我提交的")
         PandoraTabRow(queues.map { it.second }, queues.indexOfFirst { it.first == scope }.coerceAtLeast(0), { scope = queues[it].first },
             Modifier.padding(horizontal = PandoraSpacing.pageHorizontal))
         Box(Modifier.fillMaxSize()) {
             if (scope == "completion") {
-                CompletionRequestsTab(taskRepo, businessTimezone, userRepo, onOpenTask)
+                CompletionRequestsTab(taskRepo, businessTimezone, userRepo, completionKeys, completionRevision, onOpenTask, { selectedCompletion = it })
             } else when {
                 loading && items.isEmpty() -> CircularProgressIndicator(Modifier.align(Alignment.Center).size(36.dp), color = PandoraTheme.colors.primary)
                 loadError != null && items.isEmpty() -> Column(Modifier.align(Alignment.Center).padding(PandoraSpacing.space32), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -666,18 +676,24 @@ private fun CompletionSection(title: String, content: @Composable ColumnScope.()
 }
 
 /**
- * 审批中心「完成验收」：待我验收的完成申请列表 + 详情（接受 / 驳回）。
- * 数据源 GET /task-completion-requests?scope=pending，验收走 POST /task-completion-requests/{id}/decision。
+ * 审批中心「验收任务」：待我验收的完成申请列表；点击直接打开任务详情（验收/驳回在任务详情操作）。
+ * 数据源 GET /task-completion-requests?scope=pending。
  */
 @Composable
-private fun CompletionRequestsTab(taskRepo: TaskRepository, businessTimezone: String?, userRepo: UserRepository?, onOpenTask: (String) -> Unit) {
+private fun CompletionRequestsTab(
+    taskRepo: TaskRepository,
+    businessTimezone: String?,
+    userRepo: UserRepository?,
+    keys: androidx.compose.runtime.snapshots.SnapshotStateMap<String, String>,
+    openRevision: Int,
+    onOpenTask: (String) -> Unit,
+    onOpenRequest: (CompletionRequestItemDto) -> Unit
+) {
     var items by remember { mutableStateOf<List<CompletionRequestItemDto>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var loadError by remember { mutableStateOf<String?>(null) }
     var loadRetry by remember { mutableIntStateOf(0) }
-    var selected by remember { mutableStateOf<CompletionRequestItemDto?>(null) }
     val uiScope = rememberCoroutineScope()
-    val keys = remember { mutableStateMapOf<String, String>() }
 
     fun load() {
         uiScope.launch {
@@ -688,18 +704,16 @@ private fun CompletionRequestsTab(taskRepo: TaskRepository, businessTimezone: St
             } catch (e: ApiException) {
                 loadError = e.friendlyMessage()
             } catch (e: Exception) {
-                loadError = "加载失败，请重试"
+                // 网络类失败与解析类失败分开提示，并留 Logcat 证据（tag Pandora6ix）
+                android.util.Log.w("Pandora6ix", "完成验收队列加载失败", e)
+                loadError = if (e is java.io.IOException) "网络异常，请检查连接后重试" else "加载失败，请重试"
             } finally {
                 loading = false
             }
         }
     }
-    LaunchedEffect(loadRetry) { load() }
-
-    selected?.let { request ->
-        CompletionRequestDetail(taskRepo, request, businessTimezone, userRepo, keys, onBack = { selected = null }, onChanged = { load() }, onOpenTask = onOpenTask)
-        return
-    }
+    // openRevision：详情页做出验收决定后由审批中心递增，触发列表刷新
+    LaunchedEffect(loadRetry, openRevision) { load() }
 
     Box(Modifier.fillMaxSize()) {
         when {
@@ -712,7 +726,12 @@ private fun CompletionRequestsTab(taskRepo: TaskRepository, businessTimezone: St
             items.isEmpty() -> Text("暂无待验收的完成申请", Modifier.align(Alignment.Center), color = PandoraTheme.colors.textTertiary)
             else -> LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(PandoraSpacing.space16), verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space12)) {
                 items(items, key = { it.id }) { request ->
-                    CompletionRequestCard(request, businessTimezone, userRepo) { selected = request }
+                    CompletionRequestCard(request, businessTimezone, userRepo) {
+                        // 与消息点击一致：直接打开任务详情，验收/驳回在任务详情里操作；
+                        // 仅当申请没有关联任务（异常数据）时才回退到申请详情页
+                        val taskId = request.taskId
+                        if (taskId.isNullOrBlank()) onOpenRequest(request) else onOpenTask(taskId)
+                    }
                 }
             }
         }
@@ -770,7 +789,7 @@ private fun CompletionRequestDetail(taskRepo: TaskRepository, request: Completio
         }
     }
     Column(Modifier.fillMaxSize().background(PandoraTheme.colors.appBackground)) {
-        PandoraTopBar("完成验收", onBack = onBack)
+        PandoraTopBar("验收任务", onBack = onBack)
         Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(PandoraSpacing.space16), verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space12)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space12)) {
                 RemoteAvatar(request.requestedByUserId, personName(request.requesterName, request.requestedByUserId), 40.dp, 17.sp, userRepo)
@@ -782,8 +801,10 @@ private fun CompletionRequestDetail(taskRepo: TaskRepository, request: Completio
             }
             CompletionSection("任务") {
                 Text(request.taskTitle.ifBlank { "未命名任务" }, style = PandoraTypography.bodyLarge)
-                if (request.taskId.isNotBlank()) TextButton({ onOpenTask(request.taskId) }, enabled = !busy) {
-                    Text("查看任务详情", style = PandoraTypography.labelLarge, color = PandoraTheme.colors.primary)
+                request.taskId?.takeIf { it.isNotBlank() }?.let { taskId ->
+                    TextButton({ onOpenTask(taskId) }, enabled = !busy) {
+                        Text("查看任务详情", style = PandoraTypography.labelLarge, color = PandoraTheme.colors.primary)
+                    }
                 }
             }
             CompletionSection("完成申请") {

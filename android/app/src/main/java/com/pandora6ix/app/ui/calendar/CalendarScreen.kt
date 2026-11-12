@@ -195,7 +195,7 @@ fun CalendarScreen(
                             onSelectMonth = { yearNavigationVersion++; monthAnchorYear = it.year; gridJumpTarget = it; onCursorChange(it); onModeChange(CalendarMode.MONTH) }
                         )
                     }
-                    CalendarMode.MONTH -> MonthScroll(cursor, visibleTasks, today, monthScrollIndex.value, monthScrollState, jumpTarget = gridJumpTarget, onJumpConsumed = { gridJumpTarget = null }, onCursorChange = onCursorChange, onOpen = onOpen, onOpenDay = { date -> onCursorChange(date); onModeChange(CalendarMode.DAY) })
+                    CalendarMode.MONTH -> MonthScroll(cursor, visibleTasks, today, monthScrollIndex.value, monthScrollState, jumpTarget = gridJumpTarget, onJumpConsumed = { gridJumpTarget = null }, onCursorChange = onCursorChange, onOpen = onOpen, onOpenDay = { date -> onCursorChange(date); onModeChange(CalendarMode.DAY) }, businessTimezone)
                     CalendarMode.WEEK, CalendarMode.DAY -> Column(Modifier.fillMaxSize()) {
                         val visibleDates = if (mode == CalendarMode.DAY) listOf(cursor) else dates
                         WeekDates(visibleDates, today) { date ->
@@ -204,7 +204,7 @@ fun CalendarScreen(
                         }
                         PandoraDivider()
                         key(mode, if (mode == CalendarMode.DAY) cursor else weekStart) {
-                            if (mode == CalendarMode.WEEK) WeekTaskStacks(visibleDates, visibleTasks, onOpen)
+                            if (mode == CalendarMode.WEEK) WeekTaskStacks(visibleDates, visibleTasks, businessTimezone, onOpen)
                             else TimeGrid(visibleDates, visibleTasks, true, today, businessTimezone, onSelect = { task, _ -> onOpen(task) })
                         }
                     }
@@ -334,7 +334,8 @@ private fun MonthScroll(
     onJumpConsumed: () -> Unit,
     onCursorChange: (DemoDate) -> Unit,
     onOpen: (TaskItem) -> Unit,
-    onOpenDay: (DemoDate) -> Unit
+    onOpenDay: (DemoDate) -> Unit,
+    businessTimezone: String?
 ) {
     val currentCursor by rememberUpdatedState(cursor)
     val currentJump by rememberUpdatedState(jumpTarget)
@@ -365,7 +366,7 @@ private fun MonthScroll(
                 if (item.isTitle) {
                     Text("${item.month.month}月", style = PandoraTypography.titleLarge, color = PandoraTheme.colors.textPrimary, modifier = Modifier.padding(start = PandoraSpacing.space8, top = PandoraSpacing.space16, bottom = PandoraSpacing.space4).semantics { heading() })
                 } else {
-                    MonthScrollRow(item.month, item.week, tasks, today, onCursorChange, onOpen, onOpenDay)
+                    MonthScrollRow(item.month, item.week, tasks, today, onCursorChange, onOpen, onOpenDay, businessTimezone)
                 }
             }
         }
@@ -375,7 +376,7 @@ private fun MonthScroll(
 /** 月视图卷轴的一行：week 为 7 列基准（可含邻月补位日），仅渲染本月日期，任务条裁剪到本月列范围；
  *  行高固定：每天最多展示 3 条任务道，第 4 行按日显示灰色“+N”（正对该日列、不与任务重合），点击跳转当天日视图 */
 @Composable
-private fun MonthScrollRow(month: DemoDate, week: List<DemoDate>, tasks: List<TaskItem>, today: DemoDate, onCursorChange: (DemoDate) -> Unit, onOpen: (TaskItem) -> Unit, onOpenDay: (DemoDate) -> Unit) {
+private fun MonthScrollRow(month: DemoDate, week: List<DemoDate>, tasks: List<TaskItem>, today: DemoDate, onCursorChange: (DemoDate) -> Unit, onOpen: (TaskItem) -> Unit, onOpenDay: (DemoDate) -> Unit, businessTimezone: String?) {
     val inMonth = week.map { it.year == month.year && it.month == month.month }
     val firstCol = inMonth.indexOfFirst { it }
     val lastCol = inMonth.lastIndexOf(true)
@@ -401,7 +402,7 @@ private fun MonthScrollRow(month: DemoDate, week: List<DemoDate>, tasks: List<Ta
         DayNumberRow(month, week, inMonth, today, onOpenDay)
         shownLanes.forEach { lane ->
             Box(Modifier.fillMaxWidth().height(laneHeight)) {
-                DateLane(lane, week, 17, compact = true) { task, _ -> onOpen(task) }
+                DateLane(lane, week, 17, compact = true, businessTimezone) { task, _ -> onOpen(task) }
             }
             Spacer(Modifier.height(laneGap))
         }
@@ -430,7 +431,7 @@ private fun DayNumberRow(month: DemoDate, week: List<DemoDate>, inMonth: List<Bo
     }
 }
 
-@Composable private fun DateLane(lane: List<TaskSegment>, dates: List<DemoDate>, height: Int, compact: Boolean, onSelect: (TaskItem, DemoDate) -> Unit) {
+@Composable private fun DateLane(lane: List<TaskSegment>, dates: List<DemoDate>, height: Int, compact: Boolean, businessTimezone: String?, onSelect: (TaskItem, DemoDate) -> Unit) {
     BoxWithConstraints(Modifier.fillMaxWidth().height(height.dp)) {
         val cellWidth = maxWidth / dates.size
         lane.forEach { segment ->
@@ -438,14 +439,17 @@ private fun DayNumberRow(month: DemoDate, week: List<DemoDate>, inMonth: List<Bo
             Box(Modifier.offset(x = cellWidth * segment.first).width(cellWidth * (segment.last - segment.first + 1)).fillMaxHeight().padding(horizontal = 1.dp).clip(RoundedCornerShape(PandoraCalendarDimens.monthBarRadius)).background(barColor)
                 .semantics { role = Role.Button; onClick("查看${segment.task.title}") { onSelect(segment.task, dates[segment.first]); true } }
                 .pointerInput(segment.task.id, dates) { detectTapGestures { position -> val day = (position.x / (size.width.toFloat() / (segment.last - segment.first + 1))).toInt().coerceIn(0, segment.last - segment.first); onSelect(segment.task, dates[segment.first + day]) } }, contentAlignment = Alignment.CenterStart) {
-                Text((if (segment.task.recurrenceLabel != null) "↻ " else "") + calendarTaskTitle(segment.task), Modifier.padding(horizontal = PandoraSpacing.space4), style = if (compact) PandoraTypography.calendarMicro else PandoraTypography.caption, maxLines = 1, overflow = TextOverflow.Ellipsis, color = tagContentColor(barColor))
+                Text((if (segment.task.recurrenceLabel != null) "↻ " else "") + calendarTaskTitle(segment.task, businessTimezone), Modifier.padding(horizontal = PandoraSpacing.space4), style = if (compact) PandoraTypography.calendarMicro else PandoraTypography.caption, maxLines = 1, overflow = TextOverflow.Ellipsis, color = tagContentColor(barColor))
             }
         }
     }
 }
 
-private fun calendarTaskTitle(task: TaskItem): String =
-    if (task.reviewStatus == "REJECTED") "被驳回 · ${task.title}" else task.title
+private fun calendarTaskTitle(task: TaskItem, businessTimezone: String?): String = when {
+    task.reviewStatus == "REJECTED" -> "被驳回 · ${task.title}"
+    task.isOverdue(businessTimezone) -> "已逾期 · ${task.title}"
+    else -> task.title
+}
 
 // 任务颜色：优先服务端 displayColor（主标签颜色），其次主标签目录 colorHex；
 // 无标签的任务使用中性灰（不同于任何标签色），标签已改为可选
@@ -551,7 +555,7 @@ private fun Modifier.calendarGuides(): Modifier = drawBehind {
                             }
                         }) {
                         Column(Modifier.padding(start = PandoraSpacing.space8, end = PandoraSpacing.space4, top = PandoraSpacing.space2, bottom = PandoraSpacing.space2)) {
-                            Text(calendarTaskTitle(task), style = if (dayMode) PandoraTypography.bodyMedium else PandoraTypography.calendarMicro, color = blockContent, maxLines = if (dayMode) 2 else 1, overflow = TextOverflow.Ellipsis)
+                            Text(calendarTaskTitle(task, businessTimezone), style = if (dayMode) PandoraTypography.bodyMedium else PandoraTypography.calendarMicro, color = blockContent, maxLines = if (dayMode) 2 else 1, overflow = TextOverflow.Ellipsis)
                             if (dayMode && !isAllDay(task) && range.last - range.first >= 30) Text("${if (spansFrom) "自昨日 " else ""}${minuteLabel(range.first)}—${minuteLabel(range.last + 1)}${if (spansInto) " →次日" else ""}", style = PandoraTypography.caption, color = blockContent, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
@@ -579,7 +583,7 @@ private fun Modifier.calendarGuides(): Modifier = drawBehind {
                         Box(Modifier.size(12.dp).clip(PandoraShapes.circle).background(taskColor(candidate)).border(PandoraDimensions.borderWidth, colors.border, PandoraShapes.circle))
                         Spacer(Modifier.width(PandoraSpacing.space12))
                         Column(Modifier.weight(1f)) {
-                            Text(calendarTaskTitle(candidate), style = PandoraTypography.bodyLarge, color = colors.textPrimary)
+                            Text(calendarTaskTitle(candidate, businessTimezone), style = PandoraTypography.bodyLarge, color = colors.textPrimary)
                             Text(taskSelectionTimeLabel(candidate), Modifier.padding(top = PandoraSpacing.space4), style = PandoraTypography.caption, color = colors.textSecondary)
                         }
                     }
@@ -591,13 +595,13 @@ private fun Modifier.calendarGuides(): Modifier = drawBehind {
     }
 }
 
-@Composable private fun WeekTaskStacks(dates: List<DemoDate>, tasks: List<TaskItem>, onOpen: (TaskItem) -> Unit) {
+@Composable private fun WeekTaskStacks(dates: List<DemoDate>, tasks: List<TaskItem>, businessTimezone: String?, onOpen: (TaskItem) -> Unit) {
     val allDayRows = weekAllDayRows(tasks, dates)
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = PandoraCalendarDimens.contentHorizontal, end = PandoraCalendarDimens.contentHorizontal, top = PandoraSpacing.space8, bottom = 80.dp)
     ) {
         allDayRows.forEach { lane ->
-            DateLane(lane, dates, height = 28, compact = false) { task, _ -> onOpen(task) }
+            DateLane(lane, dates, height = 28, compact = false, businessTimezone) { task, _ -> onOpen(task) }
             Spacer(Modifier.height(4.dp))
         }
         if (allDayRows.isNotEmpty()) Spacer(Modifier.height(4.dp))
@@ -616,7 +620,7 @@ private fun Modifier.calendarGuides(): Modifier = drawBehind {
                                 drawLine(edge, Offset(1.dp.toPx(), 0f), Offset(1.dp.toPx(), size.height), strokeWidth = 2.dp.toPx())
                             }.padding(start = PandoraSpacing.space4, end = PandoraSpacing.space2, top = PandoraSpacing.space4, bottom = PandoraSpacing.space4)
                     ) {
-                        Text(calendarTaskTitle(task), Modifier.weight(1f), style = PandoraTypography.caption,
+                        Text(calendarTaskTitle(task, businessTimezone), Modifier.weight(1f), style = PandoraTypography.caption,
                             maxLines = 3, overflow = TextOverflow.Ellipsis, color = cardContent)
                         val time = (if (task.recurrenceLabel != null) "↻ " else "") + if (isAllDay(task)) "全天" else minuteLabel(timelineTimeRangeOnDate(task, date)?.first ?: task.startMinute!!)
                         Text(if (date > task.start) "续 $time" else time,

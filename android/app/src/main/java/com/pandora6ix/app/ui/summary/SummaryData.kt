@@ -69,9 +69,9 @@ internal fun executorIds(task: TaskDto) = task.authorizedAssignments.map { it.re
 internal fun executorName(task: TaskDto, userId: String, fallback: (String) -> String): String =
     task.authorizedAssignments.firstOrNull { it.recipientUserId == userId }?.recipientName?.takeIf { it.isNotBlank() } ?: fallback(userId)
 
-internal fun summaryTaskStatus(task: TaskDto): String {
-    return taskCompletionLabel(task.taskCompletionState())
-}
+/** 完成情况列：逾期任务显示「已逾期」，否则按任务整体完成状态显示。 */
+internal fun summaryTaskStatus(task: TaskDto, businessTimezone: String?, nowMillis: Long = System.currentTimeMillis()): String =
+    if (task.isTaskOverdue(businessTimezone, nowMillis)) "已逾期" else taskCompletionLabel(task.taskCompletionState())
 
 internal fun memberJournals(journals: List<JournalDto>, userId: String) = journals.filter { it.authorUserId == userId }
 

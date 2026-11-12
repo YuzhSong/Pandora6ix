@@ -41,7 +41,8 @@ internal fun TaskSummaryTable(
     name: (String) -> String,
     onTask: (String) -> Unit,
     onMore: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    businessTimezone: String? = null
 ) {
     val colors = PandoraTheme.colors
     val horizontal = rememberSaveable(saver = ScrollState.Saver) { ScrollState(0) }
@@ -61,7 +62,7 @@ internal fun TaskSummaryTable(
             LazyColumn(Modifier.weight(1f), state = listState) {
                 groups.forEachIndexed { index, (group, tasks) ->
                     item(key = "group:$index:$group") { GroupRow(group, tasks.size) }
-                    items(tasks, key = { it.id }) { task -> TaskRow(task, name, horizontal) { onTask(task.id) } }
+                    items(tasks, key = { it.id }) { task -> TaskRow(task, name, horizontal, businessTimezone) { onTask(task.id) } }
                 }
                 item(key = "footer") {
                     Box(Modifier.padding(horizontal = PandoraSpacing.space12)) {
@@ -116,7 +117,7 @@ private fun GroupRow(group: String, count: Int) {
 }
 
 @Composable
-private fun TaskRow(task: TaskDto, name: (String) -> String, horizontal: ScrollState, onOpen: () -> Unit) {
+private fun TaskRow(task: TaskDto, name: (String) -> String, horizontal: ScrollState, businessTimezone: String?, onOpen: () -> Unit) {
     val colors = PandoraTheme.colors
     TableRow(
         RowHeight, horizontal, colors.surface,
@@ -134,9 +135,10 @@ private fun TaskRow(task: TaskDto, name: (String) -> String, horizontal: ScrollS
         Cell(Columns[2].second) {
             // 未通过审批的任务先显示审批状态，审批通过后显示完成情况
             if (task.reviewStatus != "APPROVED") PandoraStatusChip(reviewStatusLabel(task.reviewStatus), reviewStatusTone(task.reviewStatus), maxWidth = 76.dp)
-            else PandoraStatusChip(summaryTaskStatus(task), when (task.taskCompletionState()) {
-                "COMPLETED" -> StatusTone.SUCCESS
-                "AWAITING_ACCEPTANCE" -> StatusTone.WARNING
+            else PandoraStatusChip(summaryTaskStatus(task, businessTimezone), when {
+                task.taskCompletionState() == "COMPLETED" -> StatusTone.SUCCESS
+                task.taskCompletionState() == "AWAITING_ACCEPTANCE" -> StatusTone.WARNING
+                task.isTaskOverdue(businessTimezone) -> StatusTone.ERROR
                 else -> StatusTone.NEUTRAL
             }, maxWidth = 76.dp)
         }

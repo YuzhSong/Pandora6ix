@@ -1,5 +1,6 @@
 package com.pandora6ix.app.data
 
+import android.util.Log
 import com.pandora6ix.app.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -113,6 +114,9 @@ class ApiClient(private val session: SessionStore, private val baseUrl: String =
         ignoreUnknownKeys = true
         explicitNulls = false
         encodeDefaults = false
+        // 服务端会把可空列直接输出为 null（如 completion request 的 taskId/decidedByUserId），
+        // 而 decodeFromJsonElement 不会把 null 当作缺省；coerceInputValues 让非空且有默认值的字段回落到默认值
+        coerceInputValues = true
     }
 
     /** 401 会话失效回调（由应用层注册，用于回到登录页） */
@@ -223,12 +227,18 @@ class ApiClient(private val session: SessionStore, private val baseUrl: String =
                         @Suppress("UNCHECKED_CAST")
                         Unit as T
                     } else {
-                        val root = json.parseToJsonElement(text).jsonObject
-                        val requestId = (root["requestId"] as? JsonPrimitive)?.content
-                        val data = root["data"] ?: throw ApiException(
-                            resp.code, null, "响应缺少 data 字段", requestId = requestId
-                        )
-                        json.decodeFromJsonElement(dataSerializer, data)
+                        try {
+                            val root = json.parseToJsonElement(text).jsonObject
+                            val requestId = (root["requestId"] as? JsonPrimitive)?.content
+                            val data = root["data"] ?: throw ApiException(
+                                resp.code, null, "响应缺少 data 字段", requestId = requestId
+                            )
+                            json.decodeFromJsonElement(dataSerializer, data)
+                        } catch (e: Exception) {
+                            // 响应解析失败时记录方法、路径与截断后的响应体（不含鉴权信息），便于在 Logcat 定位契约不一致
+                            Log.w("Pandora6ix", "响应解析失败: $method $path http=${resp.code} body=${text.take(512)}", e)
+                            throw e
+                        }
                     }
                 }
                 else -> throw parseError(resp.code, text)
