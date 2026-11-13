@@ -30,12 +30,9 @@ import com.pandora6ix.app.data.JournalRepository
 import com.pandora6ix.app.data.SessionExpiredException
 import com.pandora6ix.app.data.UserRepository
 import com.pandora6ix.app.data.businessDateTimeLabel
-import com.pandora6ix.app.ui.components.PandoraAlertDialog
 import com.pandora6ix.app.ui.components.PandoraButton
 import com.pandora6ix.app.ui.components.PandoraButtonSize
 import com.pandora6ix.app.ui.components.PandoraButtonVariant
-import com.pandora6ix.app.ui.components.PandoraDialogConfirm
-import com.pandora6ix.app.ui.components.PandoraDialogDismiss
 import com.pandora6ix.app.ui.components.PandoraDivider
 import com.pandora6ix.app.ui.components.PandoraPanel
 import com.pandora6ix.app.ui.components.PandoraPanelTone
@@ -51,7 +48,7 @@ const val JournalCommentMaxLength = 500
 
 /**
  * 日志详情下方的“上级留言”区：能读日志即可查看；上级（canComment）有较大的多行输入框，
- * 作者只读。发送失败保留已输入的文字；只能删除自己写的留言。
+ * 作者只读。发送失败保留已输入的文字；留言发送后不可删除。
  */
 @Composable
 fun JournalCommentsSection(repo: JournalRepository, journalId: String, businessTimezone: String?, userRepo: UserRepository) {
@@ -65,7 +62,6 @@ fun JournalCommentsSection(repo: JournalRepository, journalId: String, businessT
     var draft by rememberSaveable(journalId) { mutableStateOf("") }
     var sending by remember { mutableStateOf(false) }
     var sendError by remember { mutableStateOf<String?>(null) }
-    var deleting by remember { mutableStateOf<JournalCommentDto?>(null) }
 
     LaunchedEffect(journalId, reload) {
         loading = true; loadError = null
@@ -116,7 +112,7 @@ fun JournalCommentsSection(repo: JournalRepository, journalId: String, businessT
                     )
                     comments.forEachIndexed { index, comment ->
                         if (index > 0) PandoraDivider()
-                        CommentRow(comment, businessTimezone, userRepo) { deleting = comment }
+                        CommentRow(comment, businessTimezone, userRepo)
                     }
                     if (canComment) {
                         if (comments.isNotEmpty()) PandoraDivider()
@@ -133,44 +129,18 @@ fun JournalCommentsSection(repo: JournalRepository, journalId: String, businessT
             }
         }
     }
-
-    deleting?.let { target ->
-        PandoraAlertDialog(
-            onDismissRequest = { deleting = null },
-            title = { Text("删除这条留言？") },
-            text = { Text("删除后日志作者将看不到这条留言。") },
-            confirmButton = {
-                PandoraDialogConfirm("删除", {
-                    deleting = null
-                    scope.launch {
-                        try {
-                            repo.deleteComment(target.id)
-                            comments = comments.filterNot { it.id == target.id }
-                        } catch (_: SessionExpiredException) {
-                        } catch (e: Exception) {
-                            sendError = (e as? ApiException)?.friendlyMessage() ?: "删除失败，请重试"
-                        }
-                    }
-                }, destructive = true)
-            },
-            dismissButton = { PandoraDialogDismiss("取消", { deleting = null }) }
-        )
-    }
 }
 
 @Composable
-private fun CommentRow(comment: JournalCommentDto, businessTimezone: String?, userRepo: UserRepository, onDelete: () -> Unit) {
+private fun CommentRow(comment: JournalCommentDto, businessTimezone: String?, userRepo: UserRepository) {
     val c = PandoraTheme.colors
     val name = comment.authorName?.takeIf { it.isNotBlank() } ?: "上级"
     Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space12)) {
         RemoteAvatar(comment.authorUserId, name, PandoraDimensions.avatarMedium, 14.sp, userRepo)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space4)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(name + (comment.authorJobTitle?.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""), style = PandoraTypography.labelLarge, color = c.textPrimary)
-                    Text(businessDateTimeLabel(comment.createdAt, businessTimezone), style = PandoraTypography.caption, color = c.textTertiary)
-                }
-                if ("DELETE" in comment.allowedActions) PandoraButton("删除", onDelete, variant = PandoraButtonVariant.Destructive, size = PandoraButtonSize.Chip)
+            Column {
+                Text(name + (comment.authorJobTitle?.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""), style = PandoraTypography.labelLarge, color = c.textPrimary)
+                Text(businessDateTimeLabel(comment.createdAt, businessTimezone), style = PandoraTypography.caption, color = c.textTertiary)
             }
             Text(comment.content, style = PandoraTypography.bodyLarge, color = c.textPrimary)
         }

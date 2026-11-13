@@ -91,6 +91,8 @@ data class TaskDto(
     val tagIds: List<String> = emptyList(),
     val displayColor: String? = null,
     val createdAt: String? = null,
+    /** 最近一次任务内容变更时间（EDIT 审批通过落账或创建者直接修改）；从未编辑过为 null */
+    val editedAt: String? = null,
     val authorizedAssignments: List<AssignmentDto> = emptyList(),
     val allowedActions: List<String> = emptyList(),
     val reviewId: String? = null,

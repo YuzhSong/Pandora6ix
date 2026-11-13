@@ -117,9 +117,9 @@ class BusinessApiIntegrationTests {
         // 创建人能看到两位执行人的记录：取较新的非空备注；空白备注不覆盖
         assertEquals("Peer note",listedProgressNote(managerToken,"created",taskId));
         assertEquals("Peer note",request("GET","/tasks/"+taskId,managerToken,null,200).get("latestProgressNote"));
-        // 执行人只能看到授权给自己的执行关系，备注范围与之一致
-        assertEquals(List.of(relation),taskAssignments(request("GET","/tasks/"+taskId,employeeToken,null,200)).stream().map(r->r.get("id")).toList());
-        assertEquals("Employee note",listedProgressNote(employeeToken,"mine",taskId));
+        // 执行情况展示全部执行人；进度备注同样覆盖全部执行关系（取较新的非空备注）
+        assertEquals(java.util.Set.of(relation,peerRelation),new java.util.HashSet<>(taskAssignments(request("GET","/tasks/"+taskId,employeeToken,null,200)).stream().map(r->r.get("id")).toList()));
+        assertEquals("Peer note",listedProgressNote(employeeToken,"mine",taskId));
     }
 
     private Object listedProgressNote(String token,String scope,String taskId) throws Exception {
@@ -932,7 +932,7 @@ class BusinessApiIntegrationTests {
         String id = str(task, "id");
         reviewDecision(managerToken, task, "APPROVE");
         var forEmployee = request("GET", "/tasks/" + id, employeeToken, null, 200);
-        assertEquals(1, taskAssignments(forEmployee).size());
+        assertEquals(2, taskAssignments(forEmployee).size());
         var assignment = taskAssignments(forEmployee).getFirst();
         assertEquals(
                 List.of("UPDATE_PROGRESS", "REQUEST_COMPLETION"), assignment.get("allowedActions"));
@@ -3186,8 +3186,15 @@ class BusinessApiIntegrationTests {
         }
         var read = request("GET", "/tasks/" + publicId, peerToken, null, 200);
         assertEquals(true, read.get("companyWide"));
+        // 全公司可见只放开只读：非执行人可看详情与执行人列表，但没有任何操作动作
         assertEquals(List.of(), read.get("allowedActions"));
-        assertEquals(List.of(), read.get("authorizedAssignments"));
+        var peerView = taskAssignments(read);
+        assertEquals(1, peerView.size());
+        assertEquals(employee, str(peerView.getFirst(), "recipientUserId"));
+        assertEquals(List.of(), peerView.getFirst().get("allowedActions"));
+        // 全公司任务进入所有员工的任务列表（scope=mine）
+        assertTrue(items(request("GET", "/tasks?scope=mine&limit=100", peerToken, null, 200)).stream()
+                .anyMatch(t -> publicId.equals(t.get("id"))));
         request("GET", "/tasks/" + privateTask.get("id"), peerToken, null, 404);
         request("POST", "/tasks", leadToken, body, 403);
         body.put("kind", "PERSONAL");

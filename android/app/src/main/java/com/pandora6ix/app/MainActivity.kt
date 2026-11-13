@@ -362,6 +362,16 @@ fun PandoraApp(
         var approvalPrompt by remember { mutableStateOf<ApprovalPrompt?>(null) }
         // 从消息进入审批中心时定位到具体那条审批
         var reviewFocusId by rememberSaveable { mutableStateOf<String?>(null) }
+        // 审批结果消息：先校验该审批详情在当前角色审批中心可见，再直接打开该条详情（不可见则回退任务详情）
+        var focusedReview by remember { mutableStateOf<TaskReviewDto?>(null) }
+        // 消息带过来的一次性定位状态只对当次打开有效：审批中心关闭后立即清空，
+        // 否则下次从「我的」进入审批中心会直接跳进上一条详情，而不是停留在分栏列表
+        LaunchedEffect(showReviews) {
+            if (!showReviews) {
+                focusedReview = null
+                reviewFocusId = null
+            }
+        }
         // 消息在抽屉之外被置为已读（如直接点开任务详情）后，用于刷新信封角标
         var notificationReadRevision by remember { mutableIntStateOf(0) }
         // 标签管理覆盖层（我的页进入，入口仅对有权限角色显示）
@@ -532,7 +542,9 @@ fun PandoraApp(
         var pendingReviewCount by remember(currentUser?.id, currentUser?.capabilities?.reviewTasks) { mutableStateOf(0) }
         // 完成验收待办：发起人（派发任务）与任务审批人（个人 / 自派任务）都可能有待验收申请
         var pendingCompletionCount by remember(currentUser?.id) { mutableStateOf(0) }
-        val reviewBadgeCount = (pendingReviewCount + pendingCompletionCount + (unreadReviewKeys - readReviewKeys).size).coerceAtMost(99)
+        // 审批中心红点只反映「还需要我处理」的量：待审批 + 待验收。
+        // 审批结果消息的未读状态只影响消息列表样式，不参与角标；只有真正处理完审批/验收才会减少。
+        val reviewBadgeCount = (pendingReviewCount + pendingCompletionCount).coerceAtMost(99)
         LaunchedEffect(currentUser?.id, authChecked, currentUser?.capabilities?.reviewTasks, current, showReviews) {
             if (currentUser == null || !authChecked) return@LaunchedEffect
             (appContext as ComponentActivity).lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -622,9 +634,10 @@ fun PandoraApp(
                 }
             }
         }
-        // 不论从消息进入还是自己点开：打开任务详情就把该任务的未读消息置为已读，并刷新信封角标
-        LaunchedEffect(detail, currentUser?.id) {
-            val taskId = detail ?: return@LaunchedEffect
+        // 不论从消息进入、看板点开还是日历点开：只要打开了任务详情，就把指向该任务的未读消息置为已读，
+        // 并刷新信封角标与消息列表的未读样式（不需要再从消息列表点一次卡片）
+        LaunchedEffect(detail, homeDetail?.id, currentUser?.id) {
+            val taskId = detail ?: homeDetail?.takeIf { it.kind == "TASK" }?.id ?: return@LaunchedEffect
             runCatching {
                 notificationRepo.list()
                     .filter { it.taskId == taskId && it.readAt == null }
@@ -770,11 +783,23 @@ fun PandoraApp(
                         ReviewScreen(taskRepo, serverTags, currentUser?.businessTimezone, userRepo,
                             canReview = canReviewTasks, readResultKeys = readReviewKeys, currentUser = currentUser,
                             refreshRevision = reviewRefreshRevision, focusReviewId = reviewFocusId,
+                            focusReview = focusedReview, onFocusReviewConsumed = { focusedReview = null },
                             onResultRead = { review ->
                                 reviewReads.markRead(review)
                                 readReviewKeys = reviewReads.keys()
                             },
-                            onOpenTask = { taskId -> showReviews = false; reviewFocusId = null; detail = taskId }) { showReviews = false; reviewFocusId = null }
+                            // 看了审批详情就算处理过这条消息：把指向该审批的未读消息置为已读并刷新角标
+                            onReviewViewed = { reviewId ->
+                                appScope.launch {
+                                    runCatching {
+                                        notificationRepo.list()
+                                            .filter { it.reviewId == reviewId && it.readAt == null }
+                                            .forEach { notificationRepo.markRead(it.id) }
+                                    }
+                                    notificationReadRevision++
+                                }
+                            },
+                            onOpenTask = { taskId -> showReviews = false; reviewFocusId = null; focusedReview = null; detail = taskId }) { showReviews = false; reviewFocusId = null; focusedReview = null }
                     }
                     showTagManage -> TagManageScreen(
                         tagRepo,
@@ -790,18 +815,38 @@ fun PandoraApp(
                       AnimatedContent(current, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "page") { target ->
                         when (target) {
                             Route.HOME -> calendarUiState.SaveableStateProvider("home") { HomeScreen(dashboardRepo, calendarRepo, notificationRepo, dailyStore, openedNotificationId, notificationOpenSequence, notificationReadRevision, currentUserId = currentUser!!.id, notifications = notificationListOpen, onNotificationsChange = { notificationListOpen = it }, businessTimezone = currentUser?.businessTimezone, onDrawerClosed = { openedNotificationId = null }, onOpenHome = { homeDetail = it }, onOpenNotification = { item ->
-                                // 只有仍在「待我审批」队列里的审批申请才进审批中心并展开该条；
-                                // 审批结果 / 完成验收结果等消息直接看对应任务详情
+                                // 仍在「待我审批」队列里的审批申请：进审批中心并展开该条
                                 val awaitingReview = item.reviewId != null && item.eventType == "REVIEW_REQUEST" && !item.resolved
                                 if (awaitingReview) {
                                     reviewFocusId = item.reviewId
                                     showReviews = true
+                                } else if (item.eventType == "REVIEW_RESULT" && item.reviewId != null) {
+                                    // 审批结果：审批详情在当前角色的审批中心可见（本人是审批人或提交人）就打开该条详情，
+                                    // 否则（服务端 403/404）回退到对应任务详情
+                                    val reviewId = item.reviewId
+                                    val taskId = item.taskId
+                                    appScope.launch {
+                                        val loaded = try {
+                                            taskRepo.review(reviewId)
+                                        } catch (_: SessionExpiredException) {
+                                            null
+                                        } catch (_: Exception) {
+                                            null
+                                        }
+                                        if (loaded != null) {
+                                            reviewFocusId = null
+                                            focusedReview = loaded
+                                            showReviews = true
+                                        } else if (taskId.isNotBlank()) {
+                                            detail = taskId
+                                        }
+                                    }
                                 } else if (item.taskId.isNotBlank()) detail = item.taskId
                             }) }
                             Route.VIEW -> calendarUiState.SaveableStateProvider("calendar") { CalendarScreen(CalendarMode.valueOf(modeName), date, taskItems, canCreatePersonal, canCreateDelegated, serverTags, taskRepo, { modeName = it.name }, { dateKey = "${it.year}-${it.month}-${it.day}" }, { calRetry++ }, { detail = it.id }, currentUser = currentUser, businessTimezone = currentUser?.businessTimezone, loading = calLoading, error = calError, onRetry = { calRetry++ }, notice = calNotice, onOpenSummary = { showTaskSummary = true }, onOpenContacts = { showContacts = true }) }
                             Route.LOGS -> LogsScreen(journalRepo, serverTags.toList(), currentUser?.businessTimezone, currentUser, userRepo, dailyStore) { journalDetailId = it }
                             Route.AI -> AiExplorerScreen(aiRepo, currentUser!!.id)
-                            Route.ME -> ProfileScreen(currentUser!!, notifyMaster, showReviewCenter, reviewBadgeCount, tagManager, userRepo, scrollState = profileScrollState, onOpenTagManage = { showTagManage = true }, onOpenReviews = { reviewFocusId = null; showReviews = true }, onOpenSettings = { showSettings = true })
+                            Route.ME -> ProfileScreen(currentUser!!, notifyMaster, showReviewCenter, reviewBadgeCount, tagManager, userRepo, scrollState = profileScrollState, onOpenTagManage = { showTagManage = true }, onOpenReviews = { reviewFocusId = null; focusedReview = null; showReviews = true }, onOpenSettings = { showSettings = true })
                         }
                       }
                     }
@@ -815,6 +860,8 @@ fun PandoraApp(
                         prompt = approvalPrompt!!,
                         onReview = {
                             approvalPrompt = null
+                            reviewFocusId = null
+                            focusedReview = null
                             showReviews = true
                         },
                         onDismiss = { approvalPrompt = null }
@@ -2544,6 +2591,13 @@ private fun FullTaskDetail(id: String, repo: TaskRepository, tags: List<TagDto>,
                         }
                         Text(dto.title, style = PandoraTypography.titleMedium)
                         Text("任务状态 · ${taskCompletionLabel(dto.taskCompletionState())}", style = PandoraTypography.bodyLarge)
+                        // 创建时间与最新编辑时间按公司业务时区展示；从未编辑过的任务不显示编辑时间
+                        dto.createdAt?.let {
+                            Text("创建时间 · ${businessFullDateTimeLabel(it, businessTimezone)}", style = PandoraTypography.bodyMedium, color = PandoraTheme.colors.textSecondary)
+                        }
+                        dto.editedAt?.let {
+                            Text("最新编辑 · ${businessFullDateTimeLabel(it, businessTimezone)}", style = PandoraTypography.bodyMedium, color = PandoraTheme.colors.textSecondary)
+                        }
                         if (dto.pendingEditReviewId != null) Text("修改待上级审批", color = PandoraTheme.colors.primary, style = PandoraTypography.bodyMedium)
                         if (dto.tags.isNotEmpty()) {
                             FlowRow(horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space8), verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space8)) {
@@ -2576,7 +2630,6 @@ private fun FullTaskDetail(id: String, repo: TaskRepository, tags: List<TagDto>,
                                 val execLabel = taskCompletionLabel(dto.taskCompletionState())
                                 Text("$name · $execLabel", style = PandoraTypography.bodyLarge)
                             }
-
                         }
                         val pending = dto.completionRequests.filter { it.decision == "PENDING" }
                             .minWithOrNull(compareBy<CompletionRequestDto> { it.requestedAt.orEmpty() }.thenBy { it.id })

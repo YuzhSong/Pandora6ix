@@ -113,7 +113,7 @@ import java.util.UUID
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ReviewScreen(taskRepo: TaskRepository, availableTags: List<TagDto>, businessTimezone: String? = null, userRepo: UserRepository? = null, canReview: Boolean = true, readResultKeys: Set<String> = emptySet(), refreshRevision: Int = 0, focusReviewId: String? = null, onResultRead: (TaskReviewDto) -> Unit = {}, currentUser: UserDto? = null, onOpenTask: (String) -> Unit = {}, onBack: () -> Unit) {
+fun ReviewScreen(taskRepo: TaskRepository, availableTags: List<TagDto>, businessTimezone: String? = null, userRepo: UserRepository? = null, canReview: Boolean = true, readResultKeys: Set<String> = emptySet(), refreshRevision: Int = 0, focusReviewId: String? = null, focusReview: TaskReviewDto? = null, onFocusReviewConsumed: () -> Unit = {}, onResultRead: (TaskReviewDto) -> Unit = {}, onReviewViewed: (String) -> Unit = {}, currentUser: UserDto? = null, onOpenTask: (String) -> Unit = {}, onBack: () -> Unit) {
     // 无审批权限时直接隐藏"待我审批"入口，仅展示自己提交的申请
     var scope by rememberSaveable { mutableStateOf(if (canReview) "pending" else "created") }
     var items by remember(scope) { mutableStateOf<List<TaskReviewDto>>(emptyList()) }
@@ -183,6 +183,17 @@ fun ReviewScreen(taskRepo: TaskRepository, availableTags: List<TagDto>, business
         val target = focusReviewId ?: return@LaunchedEffect
         if (selected?.id == target) return@LaunchedEffect
         items.firstOrNull { it.id == target }?.let { selected = it }
+    }
+
+    // 打开任一审批详情（无论从消息、列表还是我提交的进入）都视为已查看，通知调用方消除对应消息的未读状态
+    val openReviewId = focusReview?.id ?: selected?.id
+    LaunchedEffect(openReviewId) { openReviewId?.let(onReviewViewed) }
+
+    // 审批结果消息直达：该条审批详情已确认可见，直接整页展示；系统返回回到审批中心列表
+    focusReview?.let { review ->
+        ReviewDetail(review, taskRepo, availableTags, businessTimezone, userRepo, currentUser,
+            onBack = onFocusReviewConsumed, onChanged = { load(append = false) })
+        return
     }
 
     selected?.let { review ->
@@ -417,9 +428,6 @@ private fun ReviewDetail(review: TaskReviewDto, taskRepo: TaskRepository, availa
             }
             if (stale) item {
                 Text("任务在提交后已有修改，以下为提交当时的内容快照。", style = PandoraTypography.caption, color = PandoraTheme.colors.textTertiary)
-            }
-            if (current.decision == "PENDING" && current.allowedActions.isEmpty()) item {
-                Text("该申请当前不可操作（权限或人员范围已变化），请由创建者修改后重新提交。", style = PandoraTypography.caption, color = PandoraTheme.colors.textTertiary)
             }
             if (current.decision != "PENDING") item {
                 SectionCard("审批结果") {
