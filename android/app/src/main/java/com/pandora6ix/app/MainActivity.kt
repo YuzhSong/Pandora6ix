@@ -92,6 +92,7 @@ import com.pandora6ix.app.ui.summary.ContactsFlow
 import com.pandora6ix.app.ui.tags.TagManageScreen
 import com.pandora6ix.app.ui.logs.JournalDatePickerDialog
 import com.pandora6ix.app.ui.logs.JournalEntryField
+import com.pandora6ix.app.ui.logs.JournalMarkdown
 import com.pandora6ix.app.ui.logs.initialJournalEntries
 import com.pandora6ix.app.ui.theme.*
 import kotlinx.coroutines.Dispatchers
@@ -714,8 +715,11 @@ fun PandoraApp(
                 route = Route.HOME.name; detail = null; homeDetail = null; showSettings = false; showReviews = false
             }
             else -> PandoraTheme(theme) { CompositionLocalProvider(LocalDensity provides scaledDensity, LocalTaskRefreshRevision provides taskRefreshRevision) {
-        Scaffold(containerColor = theme.colors.appBackground, bottomBar = { NavigationBar(containerColor = theme.art?.navBand ?: theme.colors.appBackground) { nav.forEach { item -> NavigationBarItem(selected = current == item.route, onClick = { notificationListOpen = false; route = item.route.name; detail = null; homeDetail = null; journalDetailId = null; showSettings = false; showReviews = false; showTagManage = false; progressTaskId = null; showTaskSummary = false; showContacts = false }, icon = { MeNavIcon(item, reviewBadgeCount) }, label = { Text(item.label, style = if (current == item.route && theme.art?.navLabel != null) PandoraTypography.caption.copy(fontWeight = FontWeight.SemiBold) else PandoraTypography.caption) }, colors = NavigationBarItemDefaults.colors(selectedIconColor = theme.colors.primary, selectedTextColor = theme.art?.navLabel ?: theme.colors.primary, indicatorColor = theme.colors.primaryContainer, unselectedIconColor = theme.colors.textSecondary, unselectedTextColor = theme.art?.navLabel ?: theme.colors.textSecondary)) } } }) { padding ->
-            Surface(Modifier.padding(padding).fillMaxSize(), color = theme.colors.appBackground) {
+        val summaryLandscape = showTaskSummary && androidx.compose.ui.platform.LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+        Scaffold(containerColor = theme.colors.appBackground,
+            contentWindowInsets = if (showTaskSummary) WindowInsets.safeDrawing else ScaffoldDefaults.contentWindowInsets,
+            bottomBar = { if (!summaryLandscape) { NavigationBar(containerColor = theme.art?.navBand ?: theme.colors.appBackground) { nav.forEach { item -> NavigationBarItem(selected = current == item.route, onClick = { notificationListOpen = false; route = item.route.name; detail = null; homeDetail = null; journalDetailId = null; showSettings = false; showReviews = false; showTagManage = false; progressTaskId = null; showTaskSummary = false; showContacts = false }, icon = { MeNavIcon(item, reviewBadgeCount) }, label = { Text(item.label, style = if (current == item.route && theme.art?.navLabel != null) PandoraTypography.caption.copy(fontWeight = FontWeight.SemiBold) else PandoraTypography.caption) }, colors = NavigationBarItemDefaults.colors(selectedIconColor = theme.colors.primary, selectedTextColor = theme.art?.navLabel ?: theme.colors.primary, indicatorColor = theme.colors.primaryContainer, unselectedIconColor = theme.colors.textSecondary, unselectedTextColor = theme.art?.navLabel ?: theme.colors.textSecondary)) } } } }) { padding ->
+            Surface(Modifier.padding(padding).then(if (showTaskSummary) Modifier.consumeWindowInsets(padding) else Modifier).fillMaxSize(), color = theme.colors.appBackground) {
                 when {
                     homeDetail?.kind == "TASK" && homeDetail?.id != null -> FullTaskDetail(
                         homeDetail!!.id!!, taskRepo, serverTags, currentUser?.businessTimezone, currentUser, userRepo,
@@ -1659,8 +1663,6 @@ private typealias EntryDraft = JournalDraftEntryDto
         if (valid.isEmpty() && editingJournal != null && deleteIds.size == editingJournal!!.entries.size) {
             publishError = "如需删除整篇日志，请使用日志卡片的删除按钮"; return
         }
-        // 标签必选：未选标签不允许发布日志
-        if (tags.isEmpty()) { publishError = "请至少选择一个标签"; return }
         publishing = true; publishError = null
         scope.launch {
             try {
@@ -1672,7 +1674,7 @@ private typealias EntryDraft = JournalDraftEntryDto
                         // 新建一篇（所选日期）：每条携带客户端稳定键
                         repo.create(
                             editorDateKey,
-                            valid.map { EntryCreateDto(clientEntryKey = UUID.randomUUID().toString(), content = it.content.trim()) },
+                            valid.map { EntryCreateDto(clientEntryKey = UUID.randomUUID().toString(), content = it.content) },
                             tagIdList.ifEmpty { null },
                             tagIdList.firstOrNull()
                         )
@@ -1685,7 +1687,7 @@ private typealias EntryDraft = JournalDraftEntryDto
                                 existing.journalId.ifBlank { existing.id },
                                 JournalPatchDto(
                                     expectedVersion = existing.version,
-                                    upsertEntries = valid.map { EntryUpsertDto(clientEntryKey = UUID.randomUUID().toString(), content = it.content.trim()) },
+                                    upsertEntries = valid.map { EntryUpsertDto(clientEntryKey = UUID.randomUUID().toString(), content = it.content) },
                                     tagIds = tagIdList,
                                     primaryTagId = tagIdList.firstOrNull()
                                 )
@@ -1698,7 +1700,7 @@ private typealias EntryDraft = JournalDraftEntryDto
                         EntryUpsertDto(
                             entryId = d.entryId,
                             clientEntryKey = if (d.entryId == null) UUID.randomUUID().toString() else null,
-                            content = d.content.trim()
+                            content = d.content
                         )
                     }
                     repo.patch(
@@ -1795,7 +1797,7 @@ private typealias EntryDraft = JournalDraftEntryDto
                     Row(verticalAlignment = Alignment.CenterVertically) { Text(if (editingJournal != null) "编辑日志" else "记录日志", style = PandoraTypography.titleMedium, modifier = Modifier.weight(1f)); IconButton({ closeEditor() }) { Icon(Icons.Default.Close, "关闭", tint = PandoraTheme.colors.textSecondary) } }
                     // 日期、标签与工作条目共用滚动视口，保留键盘和导航栏避让。
                     Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())) {
-                        Text("· 日志日期", style = PandoraTypography.labelLarge)
+                        Text("日志日期", style = PandoraTypography.labelLarge)
                         Row(Modifier.fillMaxWidth().padding(vertical = PandoraSpacing.space12), horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space8)) {
                             threeDays().forEach { d ->
                                 val key = isoOf(d)
@@ -1810,14 +1812,14 @@ private typealias EntryDraft = JournalDraftEntryDto
                         }
                         val editorEditable = editingJournal == null || "EDIT" in editingJournal!!.allowedActions
                         if (!editorEditable) Text("日志仅在创建后 24 小时内可修改或删除。", style = PandoraTypography.caption, color = PandoraTheme.colors.textTertiary)
-                        Text("· 标签（可多选，可切换主标签）", style = PandoraTypography.labelLarge, modifier = Modifier.padding(top = PandoraSpacing.space12, bottom = PandoraSpacing.space8))
+                        Text("标签", style = PandoraTypography.labelLarge, modifier = Modifier.padding(top = PandoraSpacing.space12, bottom = PandoraSpacing.space8))
                         if (tags.isNotEmpty()) FlowRow(Modifier.fillMaxWidth().padding(vertical = PandoraSpacing.space2), horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space8)) {
                             tags.forEach { name ->
                                 PandoraTagChip(name, availableTags.firstOrNull { it.name == name }?.colorHex, Modifier.heightIn(min = PandoraDimensions.chipButtonHeight), primary = name == tags.first(), onClick = { tags = tags - name })
                             }
                         }
                         OutlinedButton({ journalFocusManager.clearFocus(force = true); showTagPicker = true }, contentPadding = PaddingValues(horizontal = PandoraSpacing.space12, vertical = PandoraSpacing.space8), border = BorderStroke(1.dp, PandoraTheme.colors.border), colors = ButtonDefaults.outlinedButtonColors(contentColor = PandoraTheme.colors.textPrimary)) { Icon(Icons.Default.Add, "选择标签", Modifier.size(16.dp)); Spacer(Modifier.width(PandoraSpacing.space4)); Text("选择标签", style = PandoraTypography.bodyMedium) }
-                        Text("· 完成的工作", style = PandoraTypography.labelLarge, modifier = Modifier.padding(top = PandoraSpacing.space12, bottom = PandoraSpacing.space8))
+                        Text("完成的工作", style = PandoraTypography.labelLarge, modifier = Modifier.padding(top = PandoraSpacing.space12, bottom = PandoraSpacing.space8))
                         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space8)) {
                             entryDrafts.forEachIndexed { i, draft ->
                                 Row(verticalAlignment = Alignment.Top) {
@@ -1980,11 +1982,11 @@ private fun JournalCard(
             }
             Spacer(Modifier.height(PandoraSpacing.space8))
             journal.entries.sortedBy { it.displayOrder }.forEachIndexed { i, entry ->
-                Text(
+                JournalMarkdown(
                     entry.content, style = PandoraTypography.bodyMedium,
                     color = PandoraTheme.colors.textSecondary,
                     maxLines = 3,
-                    overflow = TextOverflow.Ellipsis
+                    linksEnabled = false
                 )
                 if (i < journal.entries.lastIndex) Spacer(Modifier.height(PandoraSpacing.space4))
             }
@@ -2081,7 +2083,7 @@ private fun JournalDetailScreen(repo: JournalRepository, journalId: String, busi
                     val entries = j.entries.sortedBy { it.displayOrder }
                     entries.forEachIndexed { i, entry ->
                         // 正文与导图片事项详情一致（19sp / 30sp 行高），日志详情更易读
-                        Text(entry.content, style = PandoraTypography.bodyLarge)
+                        JournalMarkdown(entry.content, style = PandoraTypography.bodyLarge)
                         if (i < entries.lastIndex) Spacer(Modifier.height(PandoraSpacing.space12))
                     }
                 }
