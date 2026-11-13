@@ -190,9 +190,11 @@ internal fun JournalRow(journal: JournalDto, name: String, timezone: String?, us
     Row(Modifier.fillMaxWidth().summaryEntry(onOpen).padding(PandoraSpacing.space12), horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space12)) {
         RemoteAvatar(journal.authorUserId, shownName, PandoraDimensions.avatarList, 16.sp, userRepo)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space4)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space8)) {
-                Text(shownName, Modifier.weight(1f), style = PandoraTypography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(businessDateTimeLabel(journal.publishedAt, timezone).ifBlank { journal.workDate }, style = PandoraTypography.caption, color = PandoraTheme.colors.textSecondary)
+            Text(shownName, style = PandoraTypography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("日志日期：${journal.workDate.ifBlank { "未知" }}", style = PandoraTypography.caption, color = PandoraTheme.colors.textSecondary)
+            val publishedLabel = businessDateTimeLabel(journal.publishedAt, timezone)
+            if (publishedLabel.isNotBlank()) {
+                Text("发布时间：$publishedLabel", style = PandoraTypography.caption, color = PandoraTheme.colors.textSecondary)
             }
             Text(journalSummary(journal), maxLines = 1, overflow = TextOverflow.Ellipsis, style = PandoraTypography.bodyMedium, color = PandoraTheme.colors.textSecondary)
         }
