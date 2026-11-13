@@ -140,10 +140,12 @@ public class TaskService
     private Map<String, Object> createOne(IdentityService.Actor a, Contracts.TaskCreate c, String series, String recurrenceLabel, boolean submitReview) {
         a.business();
         identity.zone(a);
-        if (Boolean.TRUE.equals(c.companyWide()) && (!a.has("FOUNDER") || c.kind() != TaskKind.DELEGATED))
+        boolean companyWide = Boolean.TRUE.equals(c.companyWide());
+        if (companyWide && (!a.has("FOUNDER") || c.kind() != TaskKind.DELEGATED))
             throw BusinessException.forbidden();
         var minutes = time(c.timeKind(), c.startDate(), c.endDate(), c.startTime(), c.endTime());
         var tagIds = tags.validate(a, c.tagIds(), c.primaryTagId());
+        // 全公司可见只控制可见性（APPROVED 后全员可读），不展开执行人；接收人仍由创建者显式选择
         List<String> recipients =
                 c.recipientIds() == null
                         ? new ArrayList<>()
@@ -199,7 +201,7 @@ public class TaskService
                 minutes == null ? null : minutes[0],
                 minutes == null ? null : minutes[1],
                 c.primaryTagId());
-        db.update("UPDATE task SET company_wide=? WHERE enterprise_id=? AND id=?", Boolean.TRUE.equals(c.companyWide()), a.enterpriseId(), task);
+        db.update("UPDATE task SET company_wide=? WHERE enterprise_id=? AND id=?", companyWide, a.enterpriseId(), task);
         tags.replace(a, "task_tag", "task_id", task, tagIds);
         if (series != null) db.update("UPDATE task SET series_id=?,recurrence_label=?,occurrence_date=? WHERE enterprise_id=? AND id=?",
                 series, recurrenceLabel, c.startDate(), a.enterpriseId(), task);
@@ -249,7 +251,7 @@ public class TaskService
                         tagIds,
                         "primaryTagId",
                         c.primaryTagId());
-        snapshot.put("companyWide", Boolean.TRUE.equals(c.companyWide()));
+        snapshot.put("companyWide", companyWide);
         snapshot.put("seriesId", series);
         snapshot.put("recurrenceLabel", recurrenceLabel);
         if (!founder && submitReview)
@@ -328,13 +330,9 @@ public class TaskService
                         .map(t -> t.get("colorHex"))
                         .findFirst()
                         .orElse(null));
+        // 执行情况展示全部执行人（操作动作仍按查看者身份逐条判定，非本人/非验收人时为空）
         var allowed =
                 assignments.stream()
-                        .filter(
-                                r ->
-                                        a.id().equals(task.get("creator_user_id"))
-                                                || a.id().equals(r.get("recipient_user_id"))
-                                                || managed.contains(str(r, "recipient_user_id")))
                         .map(
                                 r -> {
                                     var assignment = view(r);
@@ -355,6 +353,18 @@ public class TaskService
         v.put("allowedActions", List.copyOf(actions));
         v.put("pendingEditReviewId",db.optional("SELECT id FROM task_review WHERE enterprise_id=? AND task_id=? AND review_kind='EDIT' AND decision='PENDING' AND task_version=? AND attempt_no=(SELECT MAX(attempt_no) FROM task_review WHERE enterprise_id=? AND task_id=?)",a.enterpriseId(),task.get("id"),task.get("version"),a.enterpriseId(),task.get("id")).map(row->row.get("id")).orElse(null));
         if (full) {
+            // 「最新编辑时间」：最近一次任务内容变更（operation_log 中 object_type=TASK 且 action=UPDATE 的最新记录）
+            v.put("editedAt", db.optional(
+                            "SELECT MAX(occurred_at) AS latest FROM operation_log"
+                                    + " WHERE enterprise_id=? AND object_type='TASK' AND object_id=? AND action='UPDATE'",
+                            a.enterpriseId(), task.get("id"))
+                    .map(r -> {
+                        var t = r.get("latest");
+                        if (t instanceof java.time.OffsetDateTime o) return o.toInstant().toString();
+                        if (t instanceof java.sql.Timestamp ts) return ts.toInstant().toString();
+                        return t;
+                    })
+                    .orElse(null));
             v.put(
                     "reviewId",
                     db.optional(
@@ -482,10 +492,11 @@ public class TaskService
                 }
             }
             default -> {
+                // 「我的」任务列表与日历：本人是执行人，或任务审批通过且全公司可见（只读）
                 sql.append(
-                        " AND t.review_status='APPROVED' AND EXISTS (SELECT 1 FROM task_assignment"
+                        " AND t.review_status='APPROVED' AND (EXISTS (SELECT 1 FROM task_assignment"
                                 + " x WHERE x.enterprise_id=t.enterprise_id AND x.task_id=t.id AND x.current_member=TRUE AND"
-                                + " x.recipient_user_id=?)");
+                                + " x.recipient_user_id=?) OR t.company_wide=TRUE)");
                 args.add(a.id());
             }
         }
@@ -588,7 +599,6 @@ public class TaskService
                 db.update("UPDATE task_assignment SET execution_status='ACTIVE',activated_at=CURRENT_TIMESTAMP,version=version+1 WHERE enterprise_id=? AND task_id=? AND execution_status='PENDING_APPROVAL'",a.enterpriseId(),id);
                 notifications.taskApproved(a.enterpriseId(),id,c.title());
             }
-            audit.record(a,id,"TASK","TASK","UPDATE","创始人修改任务",auditBefore,audit.task(a,id));
             return detail(a,id);
         }
         String reviewerId=str(db.entity("app_user",a.enterpriseId(),a.id()),"supervisor_user_id");
@@ -603,7 +613,6 @@ public class TaskService
         db.update("INSERT INTO task_review(id,enterprise_id,task_id,reviewer_user_id,submitted_by_user_id,task_version,submitted_snapshot,attempt_no,review_kind) VALUES(?,?,?,?,?,?,?,?,?)",
                 reviewId,a.enterpriseId(),id,reviewerId,a.id(),c.expectedVersion()+1,json.writeValueAsString(snapshot),attempt,effective?"EDIT":"CREATE");
         if(effective) audit.record(a,reviewId,"TASK_REVIEW","TASK","UPDATE","提交任务修改申请",null,fields("version",0,"taskId",id,"title",c.title(),"description",c.description()));
-        else audit.record(a,id,"TASK","TASK","UPDATE","修改待审批任务",auditBefore,audit.task(a,id));
         notifications.reviewRequested(a.enterpriseId(),reviewId,id,a.id(),reviewerId,c.title());
         return detail(a,id);
     }
@@ -646,6 +655,7 @@ public class TaskService
     /** Apply a validated immutable proposal within the caller's task-locked transaction. */
     @SuppressWarnings("unchecked")
     void applyContent(IdentityService.Actor a,String id,Map<String,Object> content,long expectedVersion) {
+        var before=audit.task(a,id);
         var kind=TimeKind.valueOf(String.valueOf(content.get("timeKind")));
         var start=LocalDate.parse(String.valueOf(content.get("startDate")));
         var end=LocalDate.parse(String.valueOf(content.get("endDate")));
@@ -657,6 +667,9 @@ public class TaskService
         if(content.containsKey("companyWide")) db.update("UPDATE task SET company_wide=? WHERE enterprise_id=? AND id=?",Boolean.TRUE.equals(content.get("companyWide")),a.enterpriseId(),id);
         tags.replace(a,"task_tag","task_id",id,tagIds);
         applyRecipients(a,id,content);
+        // 任务内容变更统一记录 UPDATE 审计（创始人直接修改 / 待审批任务直接修改 / EDIT 审批通过落账三条路径共用），
+        // 任务详情的「最新编辑时间」取最近一次该类记录
+        audit.record(a,id,"TASK","TASK","UPDATE","修改任务内容",before,audit.task(a,id));
     }
 
     private List<Map<String,Object>> scopeTargets(IdentityService.Actor a,String id,String scope,boolean lock) {

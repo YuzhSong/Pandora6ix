@@ -9,7 +9,7 @@ fun TaskDto.taskCompletionState(): String = completionStatus ?: when {
 
 fun taskCompletionLabel(state: String): String = when (state) {
     "COMPLETED" -> "已完成"
-    "AWAITING_ACCEPTANCE" -> "已完成，待验收"
+    "AWAITING_ACCEPTANCE" -> "待验收"
     else -> "未完成"
 }
 

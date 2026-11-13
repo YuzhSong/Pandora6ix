@@ -7,7 +7,6 @@ import android.content.pm.ActivityInfo
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.ScreenRotation
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -77,9 +76,6 @@ fun TaskSummaryFlow(
             IconButton({ landscape = !landscape }) {
                 Icon(Icons.Default.ScreenRotation, if (landscape) "恢复竖屏" else "横屏查看",
                     tint = if (landscape) PandoraTheme.colors.primary else PandoraTheme.colors.textSecondary)
-            }
-            IconButton({ if (allowed) scope.launch { selected.load(refresh = true) } }) {
-                Icon(Icons.Default.Refresh, "刷新", tint = PandoraTheme.colors.textSecondary)
             }
         }
         Column(
