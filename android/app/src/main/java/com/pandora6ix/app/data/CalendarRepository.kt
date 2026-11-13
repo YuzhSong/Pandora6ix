@@ -25,7 +25,7 @@ class CalendarRepository(private val api: ApiClient) {
             cursor?.let { append("&cursor=").append(url(it)) }
             append("&limit=").append(limit.coerceIn(1, 100))
         }
-        val calendar = api.get(query, CalendarDto.serializer())
+        val calendar = api.get(query, CalendarDto.serializer()).withoutRejectedTasks()
         if (scope == "mine") return calendar
 
         // /calendar 仅支持 mine；复用其服务端周期边界查询其他范围。
@@ -62,7 +62,7 @@ class CalendarRepository(private val api: ApiClient) {
             cursor?.let { append("&cursor=").append(url(it)) }
             append("&limit=").append(limit.coerceIn(1, 100))
         }
-        return api.get(query, TaskPageDto.serializer())
+        return api.get(query, TaskPageDto.serializer()).withoutRejectedTasks()
     }
 
     private fun url(value: String) = URLEncoder.encode(value, "UTF-8")

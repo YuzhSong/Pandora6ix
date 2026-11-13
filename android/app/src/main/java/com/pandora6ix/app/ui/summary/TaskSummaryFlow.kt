@@ -6,23 +6,19 @@ import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.ScreenRotation
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import com.pandora6ix.app.data.*
 import com.pandora6ix.app.ui.components.*
 import com.pandora6ix.app.ui.theme.*
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
-private val TaskScopes = listOf("mine" to "我的任务", "created" to "我创建的", "managed" to "下属任务")
+internal val TaskScopes = listOf("mine" to "我的任务", "created" to "我创建的", "managed" to "下属任务")
 
 /** 任务汇总：只有任务表格；下属与日志在通讯录。分页器按范围常驻，切换范围或进出详情不丢已加载的页。 */
 @Composable
@@ -72,26 +68,16 @@ fun TaskSummaryFlow(
         }
         return
     }
-    Column(Modifier.fillMaxSize()) {
-        PandoraTopBar("任务汇总", onBack = onClose) {
-            IconButton({ landscape = !landscape }) {
-                Icon(Icons.Default.ScreenRotation, if (landscape) "恢复竖屏" else "横屏查看",
-                    tint = if (landscape) PandoraTheme.colors.primary else PandoraTheme.colors.textSecondary)
-            }
-            IconButton({ if (allowed) scope.launch { selected.load(refresh = true) } }) {
-                Icon(Icons.Default.Refresh, "刷新", tint = PandoraTheme.colors.textSecondary)
-            }
-        }
-        Column(
-            Modifier.weight(1f).fillMaxWidth().padding(horizontal = PandoraSpacing.space12).padding(bottom = PandoraSpacing.space12),
-            verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space8)
-        ) {
-            PandoraTabRow(TaskScopes.map { it.second }, TaskScopes.indexOfFirst { it.first == taskScope }.coerceAtLeast(0), { taskScope = TaskScopes[it].first })
-            if (!allowed) Note(if (!canRead) "当前账号没有业务任务查看权限" else "当前账号没有下属任务查看权限")
-            // 每个范围各自保存表格的纵向/横向滚动位置
-            else uiStates.SaveableStateProvider(taskScope) {
-                TaskSummaryTable(selected, name, { taskId = it }, { scope.launch { selected.load() } }, Modifier.weight(1f), businessTimezone)
-            }
+    val compact = LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+    TaskSummaryLayout(
+        compact = compact, taskScope = taskScope, onScope = { taskScope = it }, onBack = onClose,
+        onRotate = { landscape = !landscape }, rotationLocked = landscape,
+        onRefresh = { scope.launch { selected.load(refresh = true) } }, refreshEnabled = allowed
+    ) { tableModifier ->
+        if (!allowed) Note(if (!canRead) "当前账号没有业务任务查看权限" else "当前账号没有下属任务查看权限")
+        // 每个范围各自保存表格的纵向/横向滚动位置
+        else uiStates.SaveableStateProvider(taskScope) {
+            TaskSummaryTable(selected, name, { taskId = it }, { scope.launch { selected.load() } }, tableModifier, businessTimezone, showScrollHint = !compact)
         }
     }
 }

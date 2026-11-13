@@ -16,6 +16,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -42,7 +43,8 @@ internal fun TaskSummaryTable(
     onTask: (String) -> Unit,
     onMore: () -> Unit,
     modifier: Modifier = Modifier,
-    businessTimezone: String? = null
+    businessTimezone: String? = null,
+    showScrollHint: Boolean = true
 ) {
     val colors = PandoraTheme.colors
     val horizontal = rememberSaveable(saver = ScrollState.Saver) { ScrollState(0) }
@@ -51,7 +53,7 @@ internal fun TaskSummaryTable(
     val shape = PandoraShapes.medium
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space4)) {
         // 只在还没滑动过时提示一次，滑动后不再占位
-        if (horizontal.value == 0 && horizontal.maxValue > 0) Text(
+        if (showScrollHint && horizontal.value == 0 && horizontal.maxValue > 0) Text(
             "左右滑动查看更多列，或点右上角横屏查看",
             style = PandoraTypography.caption, color = colors.textSecondary
         )
@@ -59,7 +61,7 @@ internal fun TaskSummaryTable(
             TableRow(44.dp, horizontal, colors.neutralContainer, name = { HeaderText("任务名称") }) {
                 Columns.forEach { (label, width) -> Cell(width) { HeaderText(label) } }
             }
-            LazyColumn(Modifier.weight(1f), state = listState) {
+            LazyColumn(Modifier.weight(1f).testTag("summary-task-rows"), state = listState) {
                 groups.forEachIndexed { index, (group, tasks) ->
                     item(key = "group:$index:$group") { GroupRow(group, tasks.size) }
                     items(tasks, key = { it.id }) { task -> TaskRow(task, name, horizontal, businessTimezone) { onTask(task.id) } }
