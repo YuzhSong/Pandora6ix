@@ -995,7 +995,13 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
     val d = dashboard
     val panels = listOf(
         HomePanelDef("事件纪", companyPager.items.map { it.title }, "暂无事件"),
-        HomePanelDef("任务看板", taskPager.items.map { it.title }, "暂无任务", taskPager.items.map { if (it.taskCompletionState() == "AWAITING_ACCEPTANCE") "待验收" else "" })
+        HomePanelDef("任务看板", taskPager.items.map { it.title }, "暂无任务", taskPager.items.map {
+            when {
+                it.taskCompletionState() == "AWAITING_ACCEPTANCE" -> "待验收"
+                it.isTaskOverdue(businessTimezone) -> "已逾期"
+                else -> ""
+            }
+        })
     )
     val panelAccent = PandoraTheme.colors.primary
     fun openItem(panelIndex: Int, index: Int, text: String) {
@@ -1074,7 +1080,7 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
                               Spacer(Modifier.width(PandoraSpacing.space12))
                               Column(Modifier.weight(1f)) {
                                   Text(item, style = PandoraTypography.bodyLarge, color = colors.textPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                                  selected.statuses.getOrNull(i)?.takeIf { it.isNotBlank() }?.let { Text(it, style = PandoraTypography.caption, color = colors.textSecondary) }
+                                  selected.statuses.getOrNull(i)?.takeIf { it.isNotBlank() }?.let { Text(it, style = PandoraTypography.caption, color = if (it == "已逾期") colors.error else colors.textSecondary) }
                               }
                           }
                           if (i < list.lastIndex) PandoraDivider()
@@ -1173,7 +1179,7 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.fillMaxWidth()
                             )
-                            panel.statuses.getOrNull(i)?.takeIf { it.isNotBlank() }?.let { Text(it, style = PandoraTypography.caption, color = colors.textSecondary) }
+                            panel.statuses.getOrNull(i)?.takeIf { it.isNotBlank() }?.let { Text(it, style = PandoraTypography.caption, color = if (it == "已逾期") colors.error else colors.textSecondary) }
                         }
                     }
                     if (i < list.lastIndex) PandoraDivider()

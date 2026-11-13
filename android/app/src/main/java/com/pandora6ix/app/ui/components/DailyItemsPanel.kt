@@ -33,6 +33,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -46,6 +47,7 @@ import com.pandora6ix.app.ui.calendar.WheelColumn
 import com.pandora6ix.app.ui.theme.*
 import java.time.LocalDate
 import java.time.YearMonth
+import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 
 private val WeekdayLabels = listOf("一", "二", "三", "四", "五", "六", "日")
@@ -66,6 +68,7 @@ fun DailyItemsPanel(
     onDelete: (DailyItem) -> Unit
 ) {
     val colors = PandoraTheme.colors
+    val density = LocalDensity.current
     val today = LocalDate.now()
     val scope = rememberCoroutineScope()
     var selectedKey by rememberSaveable { mutableStateOf(today.toString()) }
@@ -105,8 +108,16 @@ fun DailyItemsPanel(
                 Icon(Icons.Default.KeyboardArrowDown, "选择月份", Modifier.size(16.dp), tint = colors.textSecondary)
             }
             TextButton({
+                // 定位到今天所在月的「今天那一周」行：月网格最多 6 行，只滚到月首会停在第一周
+                val todayMonth = YearMonth.from(today)
+                val leading = todayMonth.atDay(1).dayOfWeek.value - 1
+                val weekIndex = (leading + today.dayOfMonth - 1) / 7
+                val weekHeightPx = with(density) { PandoraCalendarDimens.monthWeekHeight.toPx() }
                 scope.launch {
-                    listState.scrollToItem(months.indexOf(YearMonth.from(today)).coerceAtLeast(0))
+                    listState.scrollToItem(
+                        months.indexOf(todayMonth).coerceAtLeast(0),
+                        (weekIndex * weekHeightPx).roundToInt()
+                    )
                 }
                 selectedKey = today.toString()
             }) { Text("今天", style = PandoraTypography.labelLarge) }

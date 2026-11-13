@@ -142,7 +142,7 @@ fun ContactsFlow(
                         val records = listMemberId?.let { responsibleTasks(managedTasks.items, it) } ?: managedTasks.items
                         PanelHeading(listMemberId?.let { "${name(it)} · 负责的任务" } ?: "下属任务")
                         LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space12)) {
-                            items(records, key = { it.id }) { task -> SummaryTaskRow(task, name, userRepo) { taskId = task.id } }
+                            items(records, key = { it.id }) { task -> SummaryTaskRow(task, name, userRepo, user.businessTimezone) { taskId = task.id } }
                             item { CollectionFooter(managedTasks, records.isEmpty(), "暂无相关任务", filtered = listMemberId != null) { scope.launch { managedTasks.load() } } }
                         }
                     }
@@ -181,7 +181,7 @@ fun ContactsFlow(
                                 SummaryPanel {
                                     PanelHeading("负责的任务")
                                     TaskPreview(managedTasks, responsibleTasks(managedTasks.items, member.id), name, userRepo,
-                                        { taskId = it }, { openList("tasks", member.id) }, { scope.launch { managedTasks.load() } }, filtered = true)
+                                        { taskId = it }, { openList("tasks", member.id) }, { scope.launch { managedTasks.load() } }, filtered = true, businessTimezone = user.businessTimezone)
                                 }
                             }
                             item {

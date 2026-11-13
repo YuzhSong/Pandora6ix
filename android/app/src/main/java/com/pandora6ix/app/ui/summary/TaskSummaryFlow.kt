@@ -32,6 +32,7 @@ fun TaskSummaryFlow(
     taskDetail: @Composable (String, () -> Unit, () -> Unit) -> Unit,
     onClose: () -> Unit
 ) {
+    val businessTimezone = user.businessTimezone
     val canManage = user.capabilities.manage && user.capabilities.business
     val canRead = user.capabilities.business
     val taskPagers = remember(user.id) {
@@ -89,7 +90,7 @@ fun TaskSummaryFlow(
             if (!allowed) Note(if (!canRead) "当前账号没有业务任务查看权限" else "当前账号没有下属任务查看权限")
             // 每个范围各自保存表格的纵向/横向滚动位置
             else uiStates.SaveableStateProvider(taskScope) {
-                TaskSummaryTable(selected, name, { taskId = it }, { scope.launch { selected.load() } }, Modifier.weight(1f))
+                TaskSummaryTable(selected, name, { taskId = it }, { scope.launch { selected.load() } }, Modifier.weight(1f), businessTimezone)
             }
         }
     }
