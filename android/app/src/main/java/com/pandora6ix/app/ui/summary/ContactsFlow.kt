@@ -10,7 +10,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -120,20 +119,7 @@ fun ContactsFlow(
                     "organization" -> "组织架构"; "member" -> "成员详情"
                     "tasks" -> "负责的任务"; "journals" -> "下属日志"; else -> "通讯录"
                 }
-                PandoraTopBar(title, onBack = { back() }) {
-                    IconButton({
-                        if (canManage) when (page) {
-                            "organization", "contacts" -> scope.launch { people.load(refresh = true) }
-                            "tasks" -> scope.launch { managedTasks.load(refresh = true) }
-                            "journals" -> scope.launch { filteredJournals.load(refresh = true) }
-                            "member" -> {
-                                memberRefresh++
-                                scope.launch { managedTasks.load(refresh = true) }
-                                scope.launch { recentJournals.load(refresh = true) }
-                            }
-                        }
-                    }) { Icon(Icons.Default.Refresh, "刷新", tint = PandoraTheme.colors.textSecondary) }
-                }
+                PandoraTopBar(title, onBack = { back() })
                 if (!canManage) Box(Modifier.padding(PandoraSpacing.space16)) {
                     SummaryPanel { Note("当前账号没有下属查看权限") }
                 } else when (page) {
