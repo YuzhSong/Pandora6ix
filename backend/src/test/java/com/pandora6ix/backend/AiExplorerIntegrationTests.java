@@ -96,8 +96,10 @@ class AiExplorerIntegrationTests {
         db.update("INSERT INTO work_log_tag(enterprise_id,work_log_id,tag_id) VALUES(?,?,?)", enterprise, log, tag);
         entry(log, 0, "和李小龙联调接口，电话13800138000，邮箱li@example.com，详见 https://intra.example/a");
         entry(log, 1, "完成审批页面开发与自测");
-        task(me, me, "整理李小龙提出的需求", today, "ACTIVE");
-        task(outsider, outsider, "王五六的私人任务", today, "ACTIVE");
+        // Keep the tasks overdue for AI statistics, outside the 24-hour notification scan window.
+        LocalDate overdueDate = today.minusDays(2);
+        task(me, me, "整理李小龙提出的需求", overdueDate, "ACTIVE");
+        task(outsider, outsider, "王五六的私人任务", overdueDate, "ACTIVE");
         db.update("INSERT INTO company_important_item(id,enterprise_id,publisher_user_id,title,content) VALUES(?,?,?,?,?)",
                 BusinessDb.id(), enterprise, me, "年底上线新版本", "详细内容不发送");
     }
@@ -121,10 +123,10 @@ class AiExplorerIntegrationTests {
                 BusinessDb.id(), enterprise, me, log, "k" + order, content, order);
     }
 
-    private void task(String creator, String recipient, String title, LocalDate date, String status) {
+    private void task(String creator, String recipient, String title, LocalDate endDate, String status) {
         String id = BusinessDb.id();
         db.update("INSERT INTO task(id,enterprise_id,creator_user_id,task_kind,title,priority_level,start_date,end_date,time_kind,review_status) VALUES(?,?,?,?,?,?,?,?,?,?)",
-                id, enterprise, creator, "PERSONAL", title, 4, date.minusDays(2), date.minusDays(1), "ALL_DAY", "APPROVED");
+                id, enterprise, creator, "PERSONAL", title, 4, endDate.minusDays(1), endDate, "ALL_DAY", "APPROVED");
         db.update("INSERT INTO task_assignment(id,enterprise_id,task_id,recipient_user_id,execution_status) VALUES(?,?,?,?,?)",
                 BusinessDb.id(), enterprise, id, recipient, status);
     }

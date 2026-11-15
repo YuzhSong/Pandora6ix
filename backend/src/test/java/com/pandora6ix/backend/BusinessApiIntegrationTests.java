@@ -80,13 +80,15 @@ class BusinessApiIntegrationTests {
     @Test void overdueTasksEmitOneDeadlineDatedMessageUntilAccepted() throws Exception {
         var task=createTask(founderToken,"DELEGATED",List.of(employee,peer));
         String taskId=str(task,"id"), relation=assignment(taskId,employee);
-        // 把截止时刻拨到 10 分钟前（TIMED），保证落在「已过期 ≤24h」扫描窗口内且不受全天 23:59 语义影响
-        int minuteOfDay=LocalTime.now().toSecondOfDay()/60;
-        db.update("UPDATE task SET end_date=?,end_minute=?,time_kind='TIMED' WHERE enterprise_id=? AND id=?",
-                LocalDate.now(),Math.max(0,minuteOfDay-10),enterprise,taskId);
-        int created=notifications.scanDeadlines();
-        assertTrue(created>=1);
-        String key=taskId+"|OVERDUE|"+LocalDate.now();
+        // Use the enterprise time zone for the task interval, including when it crosses midnight.
+        var deadline = ZonedDateTime.now(ZoneId.of("Asia/Shanghai")).minusMinutes(10);
+        var start = deadline.minusHours(1);
+        db.update("UPDATE task SET start_date=?,end_date=?,start_minute=?,end_minute=?,time_kind='TIMED'"
+                        + " WHERE enterprise_id=? AND id=?",
+                start.toLocalDate(), deadline.toLocalDate(), start.toLocalTime().toSecondOfDay() / 60,
+                deadline.toLocalTime().toSecondOfDay() / 60, enterprise, taskId);
+        notifications.scanDeadlines();
+        String key=taskId+"|OVERDUE|"+deadline.toLocalDate();
         assertEquals(2,db.rows("SELECT id FROM notification WHERE enterprise_id=? AND dedupe_key=?",
                 enterprise,key).size());
         // 重复扫描：去重键（任务+截止日期）保证不再产生第二条
@@ -3344,9 +3346,9 @@ class BusinessApiIntegrationTests {
         db.update("UPDATE enterprise SET business_timezone='Etc/GMT+12' WHERE id=?", enterprise);
         assertTrue(LocalDate.now(ZoneId.of("Etc/GMT+12")).isBefore(companyToday));
         assertEquals(List.of("EDIT", "DELETE"), request("GET", "/work-logs/"+created.get("id"), employeeToken, null, 200).get("allowedActions"));
-        // 创建已满 24 小时才转为只读
+        // Use a timestamp past the cutoff so database rounding cannot affect this integration assertion.
         db.update("UPDATE work_log SET published_at=? WHERE enterprise_id=? AND id=?",
-                java.time.OffsetDateTime.now(ZoneId.of("Etc/GMT+12")).minusDays(1), enterprise, str(created, "id"));
+                OffsetDateTime.now(ZoneId.of("Etc/GMT+12")).minusHours(24).minusMinutes(1), enterprise, str(created, "id"));
         assertEquals(List.of(), request("GET", "/work-logs/"+created.get("id"), employeeToken, null, 200).get("allowedActions"));
         request("PATCH", "/work-logs/"+created.get("id"), employeeToken, fields("expectedVersion", 0), 409);
         request("DELETE", "/work-logs/"+created.get("id"), employeeToken, null, 409);
