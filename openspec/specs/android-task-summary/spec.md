@@ -49,3 +49,10 @@ Recent journals SHALL display actual author avatar/name or explicit ID fallback,
 #### Scenario: Request failure
 - **WHEN** a request fails or server access is denied
 - **THEN** the existing ApiClient session/permission processing applies, the affected panel has retry, and no mock records or broader-scope fallback are used
+
+### Requirement: Summary and contacts toolbar actions
+Android SHALL omit the manual refresh action from the task summary and contacts toolbars. The summary SHALL retain back, scope selection and rotation controls in its compact landscape layout.
+
+#### Scenario: Open landscape summary and then contacts
+- **WHEN** the user opens the task summary in landscape and then navigates to contacts
+- **THEN** the summary presents its compact navigation controls and both toolbars omit manual refresh

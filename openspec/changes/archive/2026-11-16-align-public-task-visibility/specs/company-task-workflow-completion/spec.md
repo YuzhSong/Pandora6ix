@@ -1,7 +1,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: Explicit company-wide tasks
-The system SHALL allow only FOUNDER business users to publish explicitly company-wide delegated tasks. Approved company-wide tasks SHALL appear in the company panel, the personal task list and the calendar of business readers in the same enterprise. The publisher SHALL explicitly select the executors. Legacy and ordinary delegated tasks SHALL remain private. Public reading SHALL NOT grant write, approval or execution rights.
+The system SHALL allow only FOUNDER business users to publish explicitly company-wide delegated tasks. The company panel SHALL list only approved company-wide tasks in the reader's enterprise. These tasks SHALL also appear in the personal task list and calendar of business readers in the same enterprise. The publisher SHALL explicitly select the executors. Legacy and ordinary delegated tasks SHALL remain private. Public reading SHALL NOT grant write, approval or execution rights.
 
 #### Scenario: Private delegation
 - **WHEN** a manager delegates a normal task to an employee

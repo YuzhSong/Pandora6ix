@@ -17,3 +17,10 @@ Android SHALL offer new journals for the authenticated company's today, yesterda
 #### Scenario: Backfill date leaves creation range
 - **WHEN** a journal for the day before yesterday is still within its 24-hour window on the following day
 - **THEN** Android allows editing and saving it using allowedActions despite workDate being outside the three-day creation range.
+
+### Requirement: Posted journal comment actions
+Android SHALL display posted supervisor comments without a delete action in the journal comments section.
+
+#### Scenario: Review a posted comment
+- **WHEN** a supervisor views a comment they posted on a journal in Android
+- **THEN** the comment renders with its author and timestamp and the section offers no delete action for the comment

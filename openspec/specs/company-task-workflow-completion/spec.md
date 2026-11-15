@@ -11,7 +11,7 @@ Task editing SHALL resolve authorized recipient display names when opened withou
 - **THEN** existing recipients have resolved names, tags retain primary order and recognizable color, and execution records do not require a modal
 
 ### Requirement: Explicit company-wide tasks
-The system SHALL allow only FOUNDER business users to publish explicitly company-wide delegated tasks. The company panel SHALL list only approved company-wide tasks in the reader's enterprise, identically for all business readers. Legacy and ordinary delegated tasks SHALL remain private. Public reading SHALL NOT grant write, approval or execution rights.
+The system SHALL allow only FOUNDER business users to publish explicitly company-wide delegated tasks. The company panel SHALL list only approved company-wide tasks in the reader's enterprise. These tasks SHALL also appear in the personal task list and calendar of business readers in the same enterprise. The publisher SHALL explicitly select the executors. Legacy and ordinary delegated tasks SHALL remain private. Public reading SHALL NOT grant write, approval or execution rights.
 
 #### Scenario: Private delegation
 - **WHEN** a manager delegates a normal task to an employee
@@ -19,14 +19,18 @@ The system SHALL allow only FOUNDER business users to publish explicitly company
 
 #### Scenario: Public task isolation
 - **WHEN** a founder publishes a company-wide task
-- **THEN** same-enterprise business readers can list and read it without becoming executors, and other enterprises cannot access it
+- **THEN** same-enterprise business readers can list it in the company panel, personal task list and calendar and read its details without becoming executors, and other enterprises cannot access it
 
 ### Requirement: Complete editable information panel
-Task detail SHALL place task information in one white segmented panel with an authorized edit action and execution in a second panel. Creators SHALL edit all user-supplied task information through a complete form. Non-founder changes SHALL require the configured superior's approval before replacing effective data; founder behavior SHALL follow the established top-level approval exception.
+Task detail SHALL place task information in one white segmented panel with an authorized edit action and execution in a second panel. Creators SHALL edit all user-supplied task information through a complete form. Non-founder changes SHALL require the configured superior's approval before replacing effective data. Founder behavior SHALL follow the established top-level approval exception. Android SHALL label founder creation "发布任务" and render the creation time and optional latest effective edit time in the enterprise time zone. Android SHALL label the task's acceptance-pending state "待验收".
 
 #### Scenario: Awaiting edit approval
 - **WHEN** a creator submits changed content, dates, priority, tags or executors
 - **THEN** the superior reviews that proposed version and the current effective task stays unchanged until approval
+
+#### Scenario: Read latest edit time
+- **WHEN** a reader opens a task after an effective edit
+- **THEN** the detail shows creation time and the latest effective edit time in the enterprise time zone
 
 ### Requirement: Completion acceptance loop
 Task execution SHALL expose authorized accept/reject controls for pending completion requests and refresh authoritative state after decisions.
@@ -62,3 +66,10 @@ The Android client SHALL persist the selected theme by account and restore it on
 #### Scenario: Relaunch with chosen theme
 - **WHEN** a user chooses a theme and fully exits and reopens the app
 - **THEN** the same account retains the selected theme without leaking another account's preference
+
+### Requirement: Complete execution information for readable tasks
+Task views SHALL include all current execution relationships for a task the reader is authorized to see. The latest nonblank progress note and detail history SHALL use that collection. The service SHALL determine progress, completion and acceptance actions for each relationship from the reader's authorization and the task state.
+
+#### Scenario: Read execution as a non-executor
+- **WHEN** an employee who is neither an executor nor an approver reads an approved company-wide task
+- **THEN** the employee sees all current executors and their execution information and receives no actions for those relationships
