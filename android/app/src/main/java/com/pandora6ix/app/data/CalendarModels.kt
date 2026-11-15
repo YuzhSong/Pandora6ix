@@ -115,7 +115,7 @@ fun reviewStatusLabel(status: String): String = when (status) {
 fun executionStatusLabel(status: String): String = when (status) {
     "PENDING_APPROVAL" -> "未完成"
     "ACTIVE" -> "未完成"
-    "AWAITING_ACCEPTANCE" -> "已完成，待验收"
+    "AWAITING_ACCEPTANCE" -> "待验收"
     "COMPLETED" -> "已完成"
     "CANCELLED" -> "已取消"
     else -> status.ifBlank { "未知" }

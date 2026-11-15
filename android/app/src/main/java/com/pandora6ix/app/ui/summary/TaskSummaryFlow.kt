@@ -71,8 +71,7 @@ fun TaskSummaryFlow(
     val compact = LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
     TaskSummaryLayout(
         compact = compact, taskScope = taskScope, onScope = { taskScope = it }, onBack = onClose,
-        onRotate = { landscape = !landscape }, rotationLocked = landscape,
-        onRefresh = { scope.launch { selected.load(refresh = true) } }, refreshEnabled = allowed
+        onRotate = { landscape = !landscape }, rotationLocked = landscape
     ) { tableModifier ->
         if (!allowed) Note(if (!canRead) "当前账号没有业务任务查看权限" else "当前账号没有下属任务查看权限")
         // 每个范围各自保存表格的纵向/横向滚动位置
