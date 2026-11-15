@@ -934,8 +934,12 @@ class BusinessApiIntegrationTests {
         String id = str(task, "id");
         reviewDecision(managerToken, task, "APPROVE");
         var forEmployee = request("GET", "/tasks/" + id, employeeToken, null, 200);
-        assertEquals(2, taskAssignments(forEmployee).size());
-        var assignment = taskAssignments(forEmployee).getFirst();
+        var assignments = taskAssignments(forEmployee);
+        assertEquals(2, assignments.size());
+        var assignment = assignments.stream()
+                .filter(row -> employee.equals(str(row, "recipientUserId")))
+                .findFirst()
+                .orElseThrow();
         assertEquals(
                 List.of("UPDATE_PROGRESS", "REQUEST_COMPLETION"), assignment.get("allowedActions"));
         var requested =
