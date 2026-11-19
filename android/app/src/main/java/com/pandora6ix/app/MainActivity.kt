@@ -412,7 +412,7 @@ fun PandoraApp(
             NavItem(Route.HOME, "首页", Icons.Default.GridView),
             NavItem(Route.VIEW, "公司", Icons.Default.CalendarMonth),
             NavItem(Route.LOGS, "日志", Icons.Default.NoteAlt),
-            NavItem(Route.AI, "AI地图", Icons.Default.Psychology),
+            NavItem(Route.AI, "地图", Icons.Default.Psychology),
             NavItem(Route.ME, "我的", Icons.Default.PersonOutline)
         )
         val baseDensity = LocalDensity.current
@@ -1787,7 +1787,7 @@ private typealias EntryDraft = JournalDraftEntryDto
     }
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().padding(horizontal = PandoraSpacing.space16)) {
-            // 一级页面统一标题行：与导图、AI地图、我的同高同字号
+            // 一级页面统一标题行：与首页、地图、我的同高同字号
             PandoraPageTitle("日志")
             Spacer(Modifier.height(PandoraSpacing.space4))
             LazyColumn(Modifier.fillMaxWidth().weight(1f), verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space12), contentPadding = PaddingValues(bottom = PandoraSpacing.space16)) {
@@ -2202,7 +2202,6 @@ private fun JournalDetailScreen(repo: JournalRepository, journalId: String, busi
         }
     }
 }
-/** AI 地图：保持规划中占位，不扩展业务；占位插图 64dp、品牌 Coral 仅作小面积装饰 */
 @Composable private fun ProfileScreen(user: UserDto, notificationsEnabled: Boolean, showReviewCenter: Boolean, pendingReviewCount: Int, canManageTags: Boolean, userRepo: UserRepository, scrollState: ScrollState, onOpenTagManage: () -> Unit, onOpenReviews: () -> Unit, onOpenSettings: () -> Unit) {
     val context = LocalContext.current
     val avatarScope = rememberCoroutineScope()

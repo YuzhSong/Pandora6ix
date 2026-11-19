@@ -47,7 +47,7 @@ import kotlinx.coroutines.launch
 
 private val PresetQuestions = listOf("我今天的工作运势如何？", "最近适合尝试新的挑战吗？", "接下来一周会有什么惊喜？")
 
-/** AI 塔罗屋：后端抽牌，逐张点击翻牌，三张都翻开后展示整体解读 */
+/** 塔罗屋：后端抽牌，逐张点击翻牌，三张都翻开后展示整体解读 */
 @Composable
 internal fun TarotScreen(repo: AiRepository) {
     val scope = rememberCoroutineScope()
@@ -96,7 +96,7 @@ internal fun TarotScreen(repo: AiRepository) {
                 }
                 PandoraTextField(question, { if (it.length <= 100) question = it }, Modifier.fillMaxWidth(),
                     placeholder = { Text("也可以自己写一个问题（可留空）") },
-                    supportingText = { Text("${question.length}/100 · 问题会发送给 AI，请勿输入姓名、电话等敏感信息") },
+                    supportingText = { Text("${question.length}/100 · 问题会发送给第三方服务，请勿输入姓名、电话等敏感信息") },
                     minLines = 2)
                 when (s) {
                     AiLoad.Loading -> AiLoading("正在洗牌、抽牌…")

@@ -88,7 +88,7 @@ pandora:
 - 幸运签：颜色、关键词、行动各 ≥20 条静态表；兜底寄语 ≥20 条。
 
 ### 8. Android
-- `ui/ai/AiExplorerScreen.kt` 首页与公共组件，`FortuneScreen`/`PersonalityScreen`/`TarotScreen` 各一个文件，职业星图与公司下一站共用 `WorkLabScreens.kt`，页面内状态切换（与审批中心一致的 `selected` 模式）+ `BackHandler` 返回首页；底部导航不变，页面标题仍为“AI地图”，副标题“AI 探索馆”。
+- `ui/ai/AiExplorerScreen.kt` 提供首页与公共组件，`FortuneScreen`、`PersonalityScreen`、`TarotScreen` 各一个文件，职业星图与公司下一站共用 `WorkLabScreens.kt`。通过页面内状态切换与 `BackHandler` 返回首页。导航名称和主页面标题为「地图」，功能页副标题为「探索馆」，保留第三方数据处理告知。
 - `data/AiRepository.kt` + `AiModels.kt`，沿用 `ApiClient`，新增 `getSlow/postSlow` 长超时通道（读 45s、整体 50s），其他接口超时不变；人格最近结果与“已确认数据说明”按账号存 SharedPreferences。
 - 视觉：卡片使用 `PandoraCard` 与 Token；功能强调色只作图标底和渐变装饰，文字用主题文字色；塔罗翻牌用 `graphicsLayer.rotationY` 动画。
 
