@@ -82,31 +82,15 @@ internal fun summaryPersonName(userId: String, user: UserDto, people: List<Recip
 internal fun journalSummary(journal: JournalDto): String = journal.entries.sortedBy { it.displayOrder }
     .joinToString(" ") { it.content }.replace(Regex("\\s+"), " ").trim().ifBlank { "暂无日志内容" }
 
-/** 表格分组：按主标签名分组，组顺序取首次出现；无主标签的任务归入最后的“未分组” */
-internal fun summaryTableGroups(tasks: List<TaskDto>): List<Pair<String, List<TaskDto>>> {
-    val groups = LinkedHashMap<String, MutableList<TaskDto>>()
-    val ungrouped = mutableListOf<TaskDto>()
-    tasks.forEach { task ->
-        val tag = task.tags.firstOrNull { it.id == task.primaryTagId }?.name?.takeIf { it.isNotBlank() }
-        if (tag == null) ungrouped += task else groups.getOrPut(tag) { mutableListOf() } += task
-    }
-    return groups.map { it.key to it.value as List<TaskDto> } + if (ungrouped.isEmpty()) emptyList() else listOf("未分组" to ungrouped)
-}
+internal fun summaryTags(task: TaskDto): List<TagDto> =
+    task.tags.sortedBy { it.id != task.primaryTagId }.filter { it.name.isNotBlank() }.distinctBy { it.name }
 
 /** 截止日期两行：日期（yyyy/MM/dd）与时间（全天任务为 null） */
 internal fun summaryDeadline(task: TaskDto): Pair<String, String?> =
     task.endDate.replace('-', '/') to task.endTime?.takeIf { task.timeKind == "TIMED" && it.isNotBlank() }?.take(5)
 
-/** 进度备注：优先最近的非空备注，其次可见执行关系的平均进度，都没有时为“—” */
-internal fun summaryProgressNote(task: TaskDto): String {
-    task.latestProgressNote?.replace(Regex("\\s+"), " ")?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
-    val percents = task.authorizedAssignments.map { it.progressPercent }
-    val average = if (percents.isEmpty()) 0 else percents.sum() / percents.size
-    return if (average > 0) "进度 $average%" else "—"
-}
-
-internal fun summaryOwners(task: TaskDto, name: (String) -> String): String =
-    executorIds(task).joinToString("、") { executorName(task, it, name) }.ifBlank { "—" }
+internal fun summaryOwners(task: TaskDto, name: (String) -> String): List<String> =
+    executorIds(task).map { executorName(task, it, name) }.distinct()
 
 /** 下属日志日期筛选 */
 internal enum class JournalRange(val label: String) { ALL("全部"), TODAY("今天"), WEEK("近 7 天"), MONTH("本月"), DAY("指定日期") }

@@ -105,7 +105,7 @@ data class TaskDto(
     val companyWide: Boolean = false,
     val pendingEditReviewId: String? = null,
     val completionStatus: String? = null,
-    /** 当前用户可见执行关系中最近一条非空进度备注（任务汇总表格“进度备注”列） */
+    /** 当前用户可见执行关系中最近一条非空进度备注 */
     val latestProgressNote: String? = null
 )
 

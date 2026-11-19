@@ -47,10 +47,13 @@ import com.pandora6ix.app.ui.calendar.WheelColumn
 import com.pandora6ix.app.ui.theme.*
 import java.time.LocalDate
 import java.time.YearMonth
-import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 
 private val WeekdayLabels = listOf("一", "二", "三", "四", "五", "六", "日")
+private val DailyWeekHeight = PandoraCalendarDimens.monthWeekHeight * 0.75f
+private val DailyDayHeight = 24.dp
+private val DailyPreviewHeight = 14.dp
+private val DailyLaneGap = 1.dp
 
 /**
  * 首页「每日事项」面板：月视图日历样式（周一开头网格）。
@@ -112,11 +115,11 @@ fun DailyItemsPanel(
                 val todayMonth = YearMonth.from(today)
                 val leading = todayMonth.atDay(1).dayOfWeek.value - 1
                 val weekIndex = (leading + today.dayOfMonth - 1) / 7
-                val weekHeightPx = with(density) { PandoraCalendarDimens.monthWeekHeight.toPx() }
+                val weekHeightPx = with(density) { DailyWeekHeight.roundToPx() }
                 scope.launch {
                     listState.scrollToItem(
                         months.indexOf(todayMonth).coerceAtLeast(0),
-                        (weekIndex * weekHeightPx).roundToInt()
+                        weekIndex * weekHeightPx
                     )
                 }
                 selectedKey = today.toString()
@@ -176,7 +179,7 @@ fun DailyItemsPanel(
     }
 }
 
-/** 单月网格：与公司月视图共用固定周行尺寸，每天三条预览及独立的溢出行。 */
+/** 单月网格，每天三条预览及独立的溢出行。 */
 @Composable
 private fun MonthGrid(
     month: YearMonth,
@@ -192,7 +195,7 @@ private fun MonthGrid(
     val itemsByDate = items.groupBy { it.date }
     Column {
         repeat(weeks) { w ->
-            Row(Modifier.fillMaxWidth().height(PandoraCalendarDimens.monthWeekHeight)) {
+            Row(Modifier.fillMaxWidth().height(DailyWeekHeight)) {
                 repeat(7) { d ->
                     val dayNumber = w * 7 + d - leading + 1
                     Box(Modifier.weight(1f).fillMaxHeight()) {
@@ -209,7 +212,7 @@ private fun MonthGrid(
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
                                 Box(
-                                    Modifier.size(PandoraCalendarDimens.monthDayRowHeight).clip(CircleShape)
+                                    Modifier.size(DailyDayHeight).clip(CircleShape)
                                         .background(if (selected) colors.primaryContainer else Color.Transparent),
                                     contentAlignment = Alignment.Center
                                 ) {
@@ -222,7 +225,7 @@ private fun MonthGrid(
                                 }
                                 repeat(capacity) { lane ->
                                     Box(
-                                        Modifier.fillMaxWidth().height(PandoraCalendarDimens.monthBarMinHeight)
+                                        Modifier.fillMaxWidth().height(DailyPreviewHeight)
                                             .padding(horizontal = 1.dp),
                                         contentAlignment = Alignment.CenterStart
                                     ) {
@@ -244,10 +247,10 @@ private fun MonthGrid(
                                             }
                                         }
                                     }
-                                    Spacer(Modifier.height(PandoraCalendarDimens.monthLaneGap))
+                                    Spacer(Modifier.height(DailyLaneGap))
                                 }
                                 Box(
-                                    Modifier.fillMaxWidth().height(PandoraCalendarDimens.monthOverflowRowHeight),
+                                    Modifier.fillMaxWidth().height(DailyPreviewHeight),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     if (hiddenCount > 0) {

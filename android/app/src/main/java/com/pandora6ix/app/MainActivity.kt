@@ -89,6 +89,7 @@ import com.pandora6ix.app.ui.review.ReviewScreen
 import com.pandora6ix.app.ui.task.ProgressSheet
 import com.pandora6ix.app.ui.summary.TaskSummaryFlow
 import com.pandora6ix.app.ui.summary.ContactsFlow
+import com.pandora6ix.app.ui.summary.taskSummaryCompactWindow
 import com.pandora6ix.app.ui.tags.TagManageScreen
 import com.pandora6ix.app.ui.logs.JournalDatePickerDialog
 import com.pandora6ix.app.ui.logs.JournalEntryField
@@ -393,6 +394,7 @@ fun PandoraApp(
         var themeKey by remember(themeOwner) { mutableStateOf(themePreferences.theme(themeOwner)) }
 
         var showTaskSummary by rememberSaveable(currentUser?.id) { mutableStateOf(false) }
+        var taskSummaryLandscape by rememberSaveable(currentUser?.id, showTaskSummary) { mutableStateOf(false) }
         var showContacts by rememberSaveable(currentUser?.id) { mutableStateOf(false) }
         val calendarUiState = key(currentUser?.id) { rememberSaveableStateHolder() }
         // 子页面替换“我的”时仍保留滚动位置，退出登录或切换账号时重置。
@@ -728,10 +730,10 @@ fun PandoraApp(
                 route = Route.HOME.name; detail = null; homeDetail = null; showSettings = false; showReviews = false
             }
             else -> PandoraTheme(theme) { CompositionLocalProvider(LocalDensity provides scaledDensity, LocalTaskRefreshRevision provides taskRefreshRevision) {
-        val summaryLandscape = showTaskSummary && androidx.compose.ui.platform.LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+        val compactSummary = showTaskSummary && (taskSummaryLandscape || taskSummaryCompactWindow())
         Scaffold(containerColor = theme.colors.appBackground,
             contentWindowInsets = if (showTaskSummary) WindowInsets.safeDrawing else ScaffoldDefaults.contentWindowInsets,
-            bottomBar = { if (!summaryLandscape) { NavigationBar(containerColor = theme.art?.navBand ?: theme.colors.appBackground) { nav.forEach { item -> NavigationBarItem(selected = current == item.route, onClick = { notificationListOpen = false; route = item.route.name; detail = null; homeDetail = null; journalDetailId = null; showSettings = false; showReviews = false; showTagManage = false; progressTaskId = null; showTaskSummary = false; showContacts = false }, icon = { MeNavIcon(item, reviewBadgeCount) }, label = { Text(item.label, style = if (current == item.route && theme.art?.navLabel != null) PandoraTypography.caption.copy(fontWeight = FontWeight.SemiBold) else PandoraTypography.caption) }, colors = NavigationBarItemDefaults.colors(selectedIconColor = theme.colors.primary, selectedTextColor = theme.art?.navLabel ?: theme.colors.primary, indicatorColor = theme.colors.primaryContainer, unselectedIconColor = theme.colors.textSecondary, unselectedTextColor = theme.art?.navLabel ?: theme.colors.textSecondary)) } } } }) { padding ->
+            bottomBar = { if (!compactSummary) { NavigationBar(containerColor = theme.art?.navBand ?: theme.colors.appBackground) { nav.forEach { item -> NavigationBarItem(selected = current == item.route, onClick = { notificationListOpen = false; route = item.route.name; detail = null; homeDetail = null; journalDetailId = null; showSettings = false; showReviews = false; showTagManage = false; progressTaskId = null; showTaskSummary = false; showContacts = false }, icon = { MeNavIcon(item, reviewBadgeCount) }, label = { Text(item.label, style = if (current == item.route && theme.art?.navLabel != null) PandoraTypography.caption.copy(fontWeight = FontWeight.SemiBold) else PandoraTypography.caption) }, colors = NavigationBarItemDefaults.colors(selectedIconColor = theme.colors.primary, selectedTextColor = theme.art?.navLabel ?: theme.colors.primary, indicatorColor = theme.colors.primaryContainer, unselectedIconColor = theme.colors.textSecondary, unselectedTextColor = theme.art?.navLabel ?: theme.colors.textSecondary)) } } } }) { padding ->
             Surface(Modifier.padding(padding).then(if (showTaskSummary) Modifier.consumeWindowInsets(padding) else Modifier).fillMaxSize(), color = theme.colors.appBackground) {
                 when {
                     homeDetail?.kind == "TASK" && homeDetail?.id != null -> FullTaskDetail(
@@ -745,6 +747,9 @@ fun PandoraApp(
                             taskDetail = { id, onBack, onChanged ->
                                 FullTaskDetail(id, taskRepo, serverTags, currentUser?.businessTimezone, currentUser, userRepo, onBack) { onChanged(); calRetry++ }
                             },
+                            landscapeRequested = taskSummaryLandscape,
+                            compact = compactSummary,
+                            onRotate = { taskSummaryLandscape = !taskSummaryLandscape },
                             onClose = { showTaskSummary = false }
                         )
                     }
@@ -1088,12 +1093,12 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
                     Text("正在加载…", style = PandoraTypography.bodyMedium, color = colors.textSecondary)
                 }
                 else -> Column(Modifier.fillMaxSize().padding(bottom = PandoraSpacing.space16), verticalArrangement = Arrangement.spacedBy(PandoraGrid.gutter)) {
-            Row(Modifier.fillMaxWidth().weight(0.9f), horizontalArrangement = Arrangement.spacedBy(PandoraGrid.gutter)) {
+            Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(PandoraGrid.gutter)) {
                 HomePanel(panels[0], Modifier.weight(1f).fillMaxHeight(), loading = dashLoading, error = dashError, onRetry = { loadDashboard() }, onExpand = { expandedPanel = panels[0].title }, onItemClick = { i, t -> openItem(0, i, t) })
                 HomePanel(panels[1], Modifier.weight(1f).fillMaxHeight(), loading = taskBoardLoading, error = taskBoardError, onRetry = { loadTaskBoard() }, onExpand = { expandedPanel = panels[1].title }, onItemClick = { i, t -> openItem(1, i, t) })
             }
             DailyItemsPanel(
-                Modifier.fillMaxWidth().weight(1.1f).padding(bottom = PandoraSpacing.space4),
+                Modifier.fillMaxWidth().weight(1f),
                 items = dailyItems,
                 onAdd = { date, content -> mutateDaily { add(DailyItem(UUID.randomUUID().toString(), date.toString(), content)) } },
                 onToggle = { item -> mutateDaily { val i = indexOfFirst { it.id == item.id }; if (i >= 0) this[i] = this[i].copy(done = !this[i].done) } },

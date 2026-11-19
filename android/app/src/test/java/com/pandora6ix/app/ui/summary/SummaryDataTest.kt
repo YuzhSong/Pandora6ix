@@ -57,11 +57,11 @@ class SummaryDataTest {
         val pending = TaskDto("pending", reviewStatus = "PENDING")
         val active = TaskDto("active", reviewStatus = "APPROVED", authorizedAssignments = listOf(
             AssignmentDto("assignment", executionStatus = "ACTIVE", workStatus = "NOT_STARTED")))
-        assertEquals("未完成", summaryTaskStatus(pending))
-        assertEquals("未完成", summaryTaskStatus(active))
-        assertEquals("未完成", summaryTaskStatus(TaskDto("unassigned", reviewStatus = "APPROVED")))
-        assertEquals("待验收", summaryTaskStatus(active.copy(completionStatus = "AWAITING_ACCEPTANCE")))
-        assertEquals("已完成", summaryTaskStatus(active.copy(completionStatus = "COMPLETED")))
+        assertEquals("未完成", summaryTaskStatus(pending, null))
+        assertEquals("未完成", summaryTaskStatus(active, null))
+        assertEquals("未完成", summaryTaskStatus(TaskDto("unassigned", reviewStatus = "APPROVED"), null))
+        assertEquals("待验收", summaryTaskStatus(active.copy(completionStatus = "AWAITING_ACCEPTANCE"), null))
+        assertEquals("已完成", summaryTaskStatus(active.copy(completionStatus = "COMPLETED"), null))
     }
 
     @Test fun nextPageFailureRetainsDataAndRetriesSameCursor() = runBlocking {

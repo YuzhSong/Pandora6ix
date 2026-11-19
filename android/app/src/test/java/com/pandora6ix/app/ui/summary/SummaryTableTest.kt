@@ -5,22 +5,25 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SummaryTableTest {
-    private val design = TagDto(id = "t1", name = "设计")
-    private val build = TagDto(id = "t2", name = "施工")
+    private val design = TagDto(id = "t1", name = "设计", colorHex = "#DAE9F9")
+    private val build = TagDto(id = "t2", name = "施工", colorHex = "#EEE4F7")
 
     private fun task(id: String, primary: TagDto? = null, vararg extra: TagDto) =
         TaskDto(id = id, primaryTagId = primary?.id, tags = listOfNotNull(primary) + extra)
 
-    @Test fun groupsFollowFirstAppearanceAndUngroupedGoLast() {
-        val groups = summaryTableGroups(listOf(task("a"), task("b", build), task("c", design, build), task("d", build)))
-        assertEquals(listOf("施工", "设计", "未分组"), groups.map { it.first })
-        assertEquals(listOf("b", "d"), groups[0].second.map { it.id })
-        assertEquals(listOf("a"), groups[2].second.map { it.id })
-        assertTrue(summaryTableGroups(listOf(task("x", design))).none { it.first == "未分组" })
+    @Test fun tagsIncludeSecondaryTagsAndShowPrimaryFirst() {
+        val task = task("a", design, build).copy(tags = listOf(build, design))
+        assertEquals(listOf(design, build), summaryTags(task))
+        assertEquals(listOf(design), summaryTags(task("b", null, design)))
+        assertEquals(listOf("无标签"), SummaryTableRow(task("c"), { it }, null).values(SummaryColumn.TAG))
     }
 
-    @Test fun nonPrimaryTagDoesNotGroup() {
-        assertEquals("未分组", summaryTableGroups(listOf(task("a", null, design))).single().first)
+    @Test fun combinedFiltersMatchSecondaryTagAndDisplayedApprovalStatus() {
+        val row = SummaryTableRow(task("a", design, build).copy(reviewStatus = "PENDING"), { it }, null)
+        val filters = mapOf(SummaryColumn.TAG to "施工", SummaryColumn.STATUS to "待审批")
+        assertTrue(row.matches(filters))
+        assertFalse(row.matches(filters + (SummaryColumn.STATUS to "已完成")))
+        assertTrue(row.matches(emptyMap()))
     }
 
     @Test fun deadlineShowsTimeOnlyForTimedTasks() {
@@ -28,19 +31,12 @@ class SummaryTableTest {
         assertEquals("2026/10/29" to null, summaryDeadline(TaskDto(id = "a", endDate = "2026-10-29", timeKind = "ALL_DAY", endTime = "23:59")))
     }
 
-    @Test fun progressPrefersNoteThenAverageThenDash() {
-        val assignments = listOf(AssignmentDto("1", progressPercent = 40), AssignmentDto("2", progressPercent = 80))
-        assertEquals("828 已到货 设计定稿", summaryProgressNote(TaskDto(id = "a", latestProgressNote = " 828 已到货\n设计定稿 ", authorizedAssignments = assignments)))
-        assertEquals("进度 60%", summaryProgressNote(TaskDto(id = "a", latestProgressNote = "  ", authorizedAssignments = assignments)))
-        assertEquals("—", summaryProgressNote(TaskDto(id = "a")))
-    }
-
     @Test fun ownersUseRecipientNamesWithFallback() {
         val task = TaskDto(id = "a", authorizedAssignments = listOf(
             AssignmentDto("1", recipientUserId = "u1", recipientName = "李思思"),
             AssignmentDto("2", recipientUserId = "u2")))
-        assertEquals("李思思、成员 u2", summaryOwners(task) { "成员 $it" })
-        assertEquals("—", summaryOwners(TaskDto(id = "b")) { it })
+        assertEquals(listOf("李思思", "成员 u2"), summaryOwners(task) { "成员 $it" })
+        assertTrue(summaryOwners(TaskDto(id = "b")) { it }.isEmpty())
     }
 
     @Test fun journalRangesAreInclusiveServerBounds() {
