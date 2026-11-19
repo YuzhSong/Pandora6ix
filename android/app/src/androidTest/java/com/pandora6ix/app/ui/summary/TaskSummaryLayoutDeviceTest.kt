@@ -22,7 +22,7 @@ class TaskSummaryLayoutDeviceTest {
         compose.setContent {
             PandoraTheme {
                 Box(Modifier.fillMaxWidth().height(280.dp).testTag("viewport")) {
-                    TaskSummaryLayout(true, "mine", {}, {}, {}, true, {}, true) {
+                    TaskSummaryLayout(true, "mine", {}, {}, {}, true) {
                         Box(it.fillMaxWidth().testTag("table"))
                     }
                 }
@@ -35,7 +35,7 @@ class TaskSummaryLayoutDeviceTest {
         compose.onNodeWithText("我创建的").assertDoesNotExist()
         compose.onNodeWithContentDescription("返回").assertIsDisplayed()
         compose.onNodeWithContentDescription("恢复竖屏").assertIsDisplayed()
-        compose.onNodeWithContentDescription("刷新").assertIsDisplayed()
+        compose.onNodeWithContentDescription("刷新").assertDoesNotExist()
     }
 
     @Test fun compactScopeMenuSwitchesTheVisibleCollection() {
@@ -43,7 +43,7 @@ class TaskSummaryLayoutDeviceTest {
             PandoraTheme {
                 var selected by remember { mutableStateOf("mine") }
                 Box(Modifier.fillMaxWidth().height(280.dp)) {
-                    TaskSummaryLayout(true, selected, { selected = it }, {}, {}, true, {}, true) {
+                    TaskSummaryLayout(true, selected, { selected = it }, {}, {}, true) {
                         Box(it) { Text("scope:$selected") }
                     }
                 }
@@ -63,7 +63,7 @@ class TaskSummaryLayoutDeviceTest {
         compose.setContent {
             PandoraTheme {
                 Box(Modifier.fillMaxWidth().height(280.dp)) {
-                    TaskSummaryLayout(true, "mine", {}, {}, {}, true, {}, true) {
+                    TaskSummaryLayout(true, "mine", {}, {}, {}, true) {
                         TaskSummaryTable(pager, { it }, {}, {}, it, showScrollHint = false)
                     }
                 }

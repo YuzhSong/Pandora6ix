@@ -58,6 +58,20 @@ fun businessDateTimeLabel(iso: String?, timezone: String?): String {
     )
 }
 
+/** UTC 时间戳 → 业务时区 "yyyy-MM-dd HH:mm"；无法解析返回空串（任务创建/最新编辑时间展示用） */
+fun businessFullDateTimeLabel(iso: String?, timezone: String?): String {
+    val cal = businessCalendar(iso, timezone) ?: return ""
+    return String.format(
+        Locale.US,
+        "%04d-%02d-%02d %02d:%02d",
+        cal.get(Calendar.YEAR),
+        cal.get(Calendar.MONTH) + 1,
+        cal.get(Calendar.DAY_OF_MONTH),
+        cal.get(Calendar.HOUR_OF_DAY),
+        cal.get(Calendar.MINUTE)
+    )
+}
+
 private fun nowIn(timezone: String?): Calendar =
     Calendar.getInstance(TimeZone.getTimeZone(timezone?.takeIf { it.isNotBlank() } ?: "UTC"))
 

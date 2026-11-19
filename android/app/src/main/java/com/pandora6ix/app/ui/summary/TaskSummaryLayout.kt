@@ -4,7 +4,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.ScreenRotation
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -26,8 +25,6 @@ internal fun TaskSummaryLayout(
     onBack: () -> Unit,
     onRotate: () -> Unit,
     rotationLocked: Boolean,
-    onRefresh: () -> Unit,
-    refreshEnabled: Boolean,
     table: @Composable (Modifier) -> Unit
 ) {
     var scopeMenu by remember { mutableStateOf(false) }
@@ -36,7 +33,6 @@ internal fun TaskSummaryLayout(
             Icon(Icons.Default.ScreenRotation, if (rotationLocked) "恢复竖屏" else "横屏查看",
                 tint = if (rotationLocked) PandoraTheme.colors.primary else PandoraTheme.colors.textSecondary)
         }
-        IconButton(onRefresh, enabled = refreshEnabled) { Icon(Icons.Default.Refresh, "刷新") }
     }
     Column(Modifier.fillMaxSize()) {
         if (compact) {

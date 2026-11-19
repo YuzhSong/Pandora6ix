@@ -112,6 +112,8 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
     }
     // 任务类型由接收人推导，不再由按钮区分：仅本人且有个人任务能力 → 个人任务，否则派发任务
     var companyWide by rememberSaveable { mutableStateOf(savedDraft?.companyWide == true) }
+    // 创始人创建任务无需上级审批（服务端直接发布），按钮文案区分「发布任务 / 提交审批」
+    val isFounder = currentUser?.roles?.contains("FOUNDER") == true
     val kind = when {
         selectedRecipientIds.size == 1 && selectedRecipientIds.first() == selfRecipient?.id && canCreatePersonal -> "PERSONAL"
         else -> "DELEGATED"
@@ -298,7 +300,7 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
                 IconButton(requestClose) { Icon(Icons.Default.Close, "关闭任务填写") }
             }
             Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space12)) {
-                if (currentUser?.roles?.contains("FOUNDER") == true && kind == "DELEGATED") {
+                if (isFounder && kind == "DELEGATED") {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Text("全公司可见", Modifier.weight(1f))
                         Switch(companyWide, { companyWide = it }, colors = com.pandora6ix.app.ui.theme.pandoraSwitchColors())
@@ -421,7 +423,10 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
             }
             // 标签已改为可选：无可用标签不再阻断提交
             error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = PandoraTypography.bodyMedium) }
-            PandoraButton(if (editingTask != null) "保存" else "提交审批", { submit() }, Modifier.fillMaxWidth().padding(vertical = PandoraSpacing.space12), loading = submitting)
+            PandoraButton(
+                if (editingTask != null) "保存" else if (isFounder) "发布任务" else "提交审批",
+                { submit() }, Modifier.fillMaxWidth().padding(vertical = PandoraSpacing.space12), loading = submitting
+            )
         }
     }
     if (confirmExit) PandoraAlertDialog(onDismissRequest = { confirmExit = false; sheetScope.launch { sheetState.show() } }, title = { Text("放弃未保存的任务？") }, text = { Text("关闭后，本次填写的内容会清空。") }, confirmButton = { PandoraDialogConfirm("放弃", { confirmExit = false; AppCache.deleteDraft(context, draftKey); onDismiss() }, destructive = true) }, dismissButton = { TextButton({ confirmExit = false; sheetScope.launch { sheetState.show() } }) { Text("继续填写", style = PandoraTypography.labelLarge, color = PandoraTheme.colors.textSecondary) } })

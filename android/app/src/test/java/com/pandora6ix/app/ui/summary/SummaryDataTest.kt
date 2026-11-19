@@ -60,7 +60,7 @@ class SummaryDataTest {
         assertEquals("未完成", summaryTaskStatus(pending))
         assertEquals("未完成", summaryTaskStatus(active))
         assertEquals("未完成", summaryTaskStatus(TaskDto("unassigned", reviewStatus = "APPROVED")))
-        assertEquals("已完成，待验收", summaryTaskStatus(active.copy(completionStatus = "AWAITING_ACCEPTANCE")))
+        assertEquals("待验收", summaryTaskStatus(active.copy(completionStatus = "AWAITING_ACCEPTANCE")))
         assertEquals("已完成", summaryTaskStatus(active.copy(completionStatus = "COMPLETED")))
     }
 
