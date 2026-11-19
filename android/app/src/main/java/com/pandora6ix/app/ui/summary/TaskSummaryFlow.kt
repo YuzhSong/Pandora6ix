@@ -26,6 +26,9 @@ fun TaskSummaryFlow(
     user: UserDto,
     calendarRepo: CalendarRepository,
     taskDetail: @Composable (String, () -> Unit, () -> Unit) -> Unit,
+    landscapeRequested: Boolean,
+    compact: Boolean,
+    onRotate: () -> Unit,
     onClose: () -> Unit
 ) {
     val businessTimezone = user.businessTimezone
@@ -38,7 +41,6 @@ fun TaskSummaryFlow(
     }
     var taskScope by rememberSaveable(user.id) { mutableStateOf("mine") }
     var taskId by rememberSaveable(user.id) { mutableStateOf<String?>(null) }
-    var landscape by rememberSaveable(user.id) { mutableStateOf(false) }
     val uiStates = rememberSaveableStateHolder()
     val scope = rememberCoroutineScope()
     val selected = taskPagers.getValue(taskScope)
@@ -53,12 +55,13 @@ fun TaskSummaryFlow(
     }
     LaunchedEffect(taskScope, allowed) { if (allowed) selected.ensureLoaded() }
 
-    // 横屏查看：一屏显示全部列；离开汇总时恢复跟随系统
     val activity = LocalContext.current.findActivity()
-    DisposableEffect(activity, landscape) {
-        activity?.requestedOrientation =
-            if (landscape) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-        onDispose { activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED }
+    if (landscapeRequested && activity != null) {
+        DisposableEffect(activity) {
+            val previousOrientation = activity.requestedOrientation
+            activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            onDispose { activity.requestedOrientation = previousOrientation }
+        }
     }
 
     BackHandler { if (taskId != null) taskId = null else onClose() }
@@ -68,17 +71,22 @@ fun TaskSummaryFlow(
         }
         return
     }
-    val compact = LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
     TaskSummaryLayout(
         compact = compact, taskScope = taskScope, onScope = { taskScope = it }, onBack = onClose,
-        onRotate = { landscape = !landscape }, rotationLocked = landscape
+        onRotate = onRotate, rotationLocked = landscapeRequested
     ) { tableModifier ->
         if (!allowed) Note(if (!canRead) "当前账号没有业务任务查看权限" else "当前账号没有下属任务查看权限")
         // 每个范围各自保存表格的纵向/横向滚动位置
         else uiStates.SaveableStateProvider(taskScope) {
-            TaskSummaryTable(selected, name, { taskId = it }, { scope.launch { selected.load() } }, tableModifier, businessTimezone, showScrollHint = !compact)
+            TaskSummaryTable(selected, name, { taskId = it }, { scope.launch { selected.load() } }, tableModifier, businessTimezone)
         }
     }
+}
+
+@Composable
+internal fun taskSummaryCompactWindow(): Boolean {
+    val window = LocalConfiguration.current
+    return window.screenWidthDp > window.screenHeightDp || window.screenHeightDp in 1..480
 }
 
 private tailrec fun Context.findActivity(): Activity? = when (this) {
