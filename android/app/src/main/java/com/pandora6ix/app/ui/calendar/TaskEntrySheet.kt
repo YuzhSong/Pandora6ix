@@ -100,11 +100,26 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
     var startMinute by rememberSaveable { mutableIntStateOf(savedDraft?.startMinute ?: nowMinute.coerceAtMost(23 * 60 + 58)) }
     var endMinute by rememberSaveable { mutableIntStateOf(savedDraft?.endMinute ?: (nowMinute + 60).coerceAtMost(23 * 60 + 59)) }
     var priority by rememberSaveable { mutableIntStateOf(savedDraft?.priority ?: 3) }
-    // 接收人规则：无派发权限的员工锁定为本人（灰色不可改）；有派发权限时可多选（本人 + 管理范围内成员）
+    // 接收人规则：任何业务用户都可派发（含只派给自己）；派发时可多选全企业在职成员
     val canDelegate = canCreateDelegated
+    // 本人候选由 /me 资料补全组织字段，保证分组标题显示真实组织而非「未分配组织」；
+    // departmentId/departmentName 派生规则与后端候选人接口一致：DEPARTMENT→自身，TEAM→父部门
     val selfRecipient = remember(currentUser) {
         currentUser?.let { u ->
-            RecipientDto(id = u.id, displayName = u.displayName.ifBlank { u.name.ifBlank { u.loginName } }, jobTitle = u.jobTitle, orgUnitId = u.orgUnitId)
+            val org = u.organization
+            RecipientDto(
+                id = u.id,
+                displayName = u.displayName.ifBlank { u.name.ifBlank { u.loginName } },
+                jobTitle = u.jobTitle,
+                orgUnitId = u.orgUnitId,
+                organizationName = org?.name?.takeIf { it.isNotBlank() },
+                departmentId = when (org?.kind) {
+                    "DEPARTMENT" -> org.id
+                    "TEAM" -> org.parentId?.takeIf { it.isNotBlank() }
+                    else -> null
+                },
+                departmentName = u.department?.takeIf { it.isNotBlank() }
+            )
         }
     }
     var selectedRecipientIds by remember {
@@ -162,7 +177,7 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
             queryVisibility.bringIntoView()
         }
     }
-    // 候选范围由后端授权；组织 ID 决定层级和折叠状态，名称只用于显示。
+    // 候选范围由后端授权（全企业在职业务用户）；组织 ID 决定层级和折叠状态，名称只用于显示。
     LaunchedEffect(candidateOpen, recipientQuery, kind, candidateRetry) {
         if (canDelegate && candidateOpen) {
             val keyword = recipientQuery.substringAfter("@").trim()
