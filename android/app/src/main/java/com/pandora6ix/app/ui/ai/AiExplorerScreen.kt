@@ -73,11 +73,11 @@ enum class AiFeature(val title: String, val subtitle: String) {
     CAREER("我的职业星图", "从工作记录看发展方向"),
     COMPANY("公司下一站", "三种发展情景剧本"),
     PERSONALITY("职场人格盲盒", "12 道情景题测测自己"),
-    TAROT("AI 塔罗屋", "抽三张牌看看近况")
+    TAROT("塔罗屋", "抽三张牌看看近况")
 }
 
 /**
- * 第四个一级页面：保留“AI地图”标题与底部导航，内容为 AI 探索馆首页；
+ * 第四个一级页面：地图及其探索功能；
  * 功能页在页内切换，系统返回回到首页。
  */
 @Composable
@@ -93,7 +93,7 @@ fun AiExplorerScreen(repo: AiRepository, ownerId: String) {
         BackHandler { featureName = null }
         val back = { featureName = null }
         Column(Modifier.fillMaxSize()) {
-            PandoraTopBar(feature.title, subtitle = "AI 探索馆", onBack = back)
+            PandoraTopBar(feature.title, subtitle = "探索馆", onBack = back)
             when (feature) {
                 AiFeature.FORTUNE -> FortuneScreen(repo)
                 AiFeature.PERSONALITY -> PersonalityScreen(repo, prefs, ownerId)
@@ -111,8 +111,7 @@ fun AiExplorerScreen(repo: AiRepository, ownerId: String) {
 private fun AiHome(onOpen: (AiFeature) -> Unit) {
     val c = PandoraTheme.colors
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = PandoraSpacing.pageHorizontal)) {
-        PandoraPageTitle("AI地图")
-        Text("AI 探索馆 · 让工作与未来多一点想象", style = PandoraTypography.bodyMedium, color = c.textSecondary)
+        PandoraPageTitle("地图")
         Spacer(Modifier.height(PandoraSpacing.space16))
         // 今日幸运签：首页顶部的大入口
         PandoraPanel(Modifier.fillMaxWidth(), onClick = { onOpen(AiFeature.FORTUNE) }) {
@@ -130,7 +129,7 @@ private fun AiHome(onOpen: (AiFeature) -> Unit) {
         SectionTitle("灵感游乐场", "轻松一下，不读取工作数据")
         FeatureRow(AiFeature.PERSONALITY, Icons.Default.Face, c.primaryContainer, c.primary, AiFeature.TAROT, Icons.Default.Style, c.errorContainer, c.error, onOpen)
         Spacer(Modifier.height(PandoraSpacing.space16))
-        Text("所有内容由 AI 或预设规则生成，仅供娱乐与参考，不构成任何评价、预测或建议。",
+        Text("内容仅供娱乐与参考，不构成任何评价、预测或建议。",
             style = PandoraTypography.caption, color = c.textTertiary)
         // 卡通主题底部有场景插画：留出空间，滚到底时文字不压在插画上
         Spacer(Modifier.height(if (LocalAppTheme.current.art != null) 160.dp else PandoraSpacing.space24))
@@ -236,15 +235,15 @@ internal fun AiError(message: String, onRetry: () -> Unit) {
 internal fun AiResultFooter(result: AiResultDto<*>) {
     val c = PandoraTheme.colors
     if (!result.aiGenerated) {
-        val hint = if (result.quotaExceeded) "今日 AI 生成次数已用完，以下为基础版内容，明天再来看看吧。"
-        else "AI 暂时不可用，以下为基础版内容。"
+        val hint = if (result.quotaExceeded) "今日生成次数已用完，以下为基础版内容。"
+        else "生成服务暂时不可用，以下为基础版内容。"
         Row(Modifier.fillMaxWidth().background(c.infoContainer, PandoraShapes.medium).padding(PandoraSpacing.space12),
             verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Default.Info, null, Modifier.size(PandoraDimensions.iconSmall), tint = c.info)
             Text(hint, Modifier.padding(start = PandoraSpacing.space8), style = PandoraTypography.caption, color = c.info)
         }
     }
-    Text(result.disclaimer, style = PandoraTypography.caption, color = c.textTertiary)
+    Text(result.disclaimer.replace("以上内容由 AI 生成，", "以上内容"), style = PandoraTypography.caption, color = c.textTertiary)
 }
 
 /** 1–5 星；读屏读出“几星” */
@@ -300,7 +299,7 @@ internal fun AiMeter(label: String, ratio: Float, trailing: String) {
 internal fun AiDataNotice(onAccept: () -> Unit) {
     val c: PandoraColorTokens = PandoraTheme.colors
     AiCard("使用前说明") {
-        Text("生成时会把你可见的工作记录整理成摘要和关键词，发送给第三方 AI 服务（DeepSeek）。",
+        Text("生成时会把你可见的工作记录整理成摘要和关键词，发送给第三方服务 DeepSeek。",
             style = PandoraTypography.bodyMedium, color = c.textPrimary)
         AiBullet("同事姓名会替换为“同事”，手机号、邮箱、网址等会被隐藏")
         AiBullet("只发送统计数字、标签和截断后的少量摘录，不发送全文")

@@ -1,11 +1,11 @@
 ## ADDED Requirements
 
 ### Requirement: AI explorer home in the existing tab
-The Android client SHALL replace the "功能规划中" placeholder of the fourth primary tab with the AI explorer home, keeping the bottom navigation labels, icons and order (导图、视图、日志、AI地图、我的) unchanged. The home SHALL show a daily fortune entry, a "工作实验室" group (我的职业星图、公司下一站) and a "灵感游乐场" group (职场人格盲盒、AI 塔罗屋).
+The Android client SHALL show the explorer home as the fourth primary tab, labeled "地图" in both the navigation and page title. The home SHALL show a daily fortune entry, a "工作实验室" group (我的职业星图、公司下一站) and a "灵感游乐场" group (职场人格盲盒、塔罗屋).
 
 #### Scenario: Open AI tab
-- **WHEN** a signed-in user taps AI地图
-- **THEN** the AI explorer home appears with the five feature entries and the bottom navigation is unchanged.
+- **WHEN** a signed-in user taps 地图
+- **THEN** the explorer home appears with the five feature entries and the bottom navigation keeps its icons and order.
 
 ### Requirement: Design system consistency
 AI screens SHALL use the Pandora design system tokens and shared components for typography, buttons, dialogs, spacing and system bars in all five themes. Feature cards MAY use feature accent colors or gradients for decoration only, while text on them SHALL meet 4.5:1 contrast.
@@ -26,7 +26,7 @@ Each feature SHALL show a progress state while generating, render structured res
 - **THEN** the AI explorer home is shown instead of exiting the app.
 
 ### Requirement: Disclaimer and data notice
-Every result page SHALL display the disclaimer returned by the backend. 我的职业星图 and 公司下一站 SHALL show, before the first generation, a notice that a de-identified summary and keywords of the user's visible work records will be sent to the third-party DeepSeek service. The tarot question field SHALL remind users not to enter sensitive information.
+Every result page SHALL display the substance of the disclaimer returned by the backend. The map's interface copy, including fallback messages and disclaimers, SHALL use wording without the "AI" label. 我的职业星图 and 公司下一站 SHALL show, before the first generation, a notice that a de-identified summary and keywords of the user's visible work records will be sent to the third-party DeepSeek service. The tarot question field SHALL disclose third-party processing and remind users not to enter sensitive information.
 
 #### Scenario: First career map
 - **WHEN** a user opens 我的职业星图 and has not generated one before on this device

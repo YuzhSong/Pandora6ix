@@ -10,15 +10,23 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.mapSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -27,15 +35,56 @@ import com.pandora6ix.app.data.*
 import com.pandora6ix.app.ui.components.*
 import com.pandora6ix.app.ui.theme.*
 
-/** 冻结的“任务名称”列；其余列在同一个横向滚动状态下整表同步滑动 */
-private val NameWidth = 120.dp
-private val Columns = listOf("截止日期" to 92.dp, "紧急程度" to 76.dp, "完成情况" to 88.dp, "进度备注" to 200.dp, "负责人" to 120.dp)
-private val RowHeight = 60.dp
+internal enum class SummaryColumn(val label: String, val width: Dp) {
+    TAG("标签", 112.dp),
+    DEADLINE("截止日期", 92.dp),
+    PRIORITY("紧急程度", 80.dp),
+    STATUS("完成情况", 86.dp),
+    OWNER("负责人", 112.dp)
+}
 
-/**
- * 表格式任务汇总（参照甲方使用的在线表格）：表头固定、首列固定，其余列左右滑动；
- * 按主标签分组显示组标题行，点任务行进入原任务详情。
- */
+private val TaskNameWidth = 124.dp
+private const val NoTagsLabel = "无标签"
+
+internal class SummaryTableRow(task: TaskDto, name: (String) -> String, businessTimezone: String?) {
+    val id = task.id
+    val title = task.title
+    val tags = summaryTags(task)
+    private val deadline = summaryDeadline(task)
+    val date = deadline.first.ifBlank { "—" }
+    val time = deadline.second
+    val priority = priorityLabel(task.priorityLevel)
+    val priorityColor = priorityTone(task.priorityLevel)
+    val status = if (task.reviewStatus == "APPROVED") summaryTaskStatus(task, businessTimezone)
+        else reviewStatusLabel(task.reviewStatus)
+    val statusColor = when {
+        task.reviewStatus != "APPROVED" -> reviewStatusTone(task.reviewStatus)
+        task.taskCompletionState() == "COMPLETED" -> StatusTone.SUCCESS
+        task.taskCompletionState() == "AWAITING_ACCEPTANCE" -> StatusTone.WARNING
+        status == "已逾期" -> StatusTone.ERROR
+        else -> StatusTone.NEUTRAL
+    }
+    val owners = summaryOwners(task, name).ifEmpty { listOf("—") }
+
+    fun values(column: SummaryColumn): List<String> = when (column) {
+        SummaryColumn.TAG -> tags.map { it.name }.ifEmpty { listOf(NoTagsLabel) }
+        SummaryColumn.DEADLINE -> listOf(date)
+        SummaryColumn.PRIORITY -> listOf(priority)
+        SummaryColumn.STATUS -> listOf(status)
+        SummaryColumn.OWNER -> owners
+    }
+
+    fun matches(filters: Map<SummaryColumn, String>): Boolean =
+        filters.all { (column, value) -> value in values(column) }
+}
+
+private val FiltersSaver = mapSaver<Map<SummaryColumn, String>>(
+    save = { filters -> filters.mapKeys { it.key.name } },
+    restore = { values -> SummaryColumn.entries.mapNotNull { column ->
+        (values[column.name] as? String)?.let { column to it }
+    }.toMap() }
+)
+
 @Composable
 internal fun TaskSummaryTable(
     pager: SummaryPager<TaskDto>,
@@ -43,32 +92,57 @@ internal fun TaskSummaryTable(
     onTask: (String) -> Unit,
     onMore: () -> Unit,
     modifier: Modifier = Modifier,
-    businessTimezone: String? = null,
-    showScrollHint: Boolean = true
+    businessTimezone: String? = null
 ) {
     val colors = PandoraTheme.colors
     val horizontal = rememberSaveable(saver = ScrollState.Saver) { ScrollState(0) }
     val listState = rememberLazyListState()
-    val groups = remember(pager.items) { summaryTableGroups(pager.items) }
+    var filters by rememberSaveable(stateSaver = FiltersSaver) { mutableStateOf(emptyMap()) }
+    var openColumn by remember { mutableStateOf<SummaryColumn?>(null) }
+    val rows = pager.items.map { SummaryTableRow(it, name, businessTimezone) }
+    val matches = rows.filter { it.matches(filters) }
     val shape = PandoraShapes.medium
-    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space4)) {
-        // 只在还没滑动过时提示一次，滑动后不再占位
-        if (showScrollHint && horizontal.value == 0 && horizontal.maxValue > 0) Text(
-            "左右滑动查看更多列，或点右上角横屏查看",
-            style = PandoraTypography.caption, color = colors.textSecondary
+    val header: @Composable (SummaryColumn) -> Unit = { column ->
+        val selected = filters[column]
+        ColumnFilter(
+            column, selected, expanded = openColumn == column,
+            options = if (openColumn == column) rows.flatMap { it.values(column) }.distinct().sorted() else emptyList(),
+            onOpen = { openColumn = column },
+            onDismiss = { openColumn = null },
+            onSelect = { value ->
+                openColumn = null
+                if (value != selected) {
+                    filters = if (value == null) filters - column else filters + (column to value)
+                    listState.requestScrollToItem(0)
+                }
+            }
         )
-        Column(Modifier.weight(1f).fillMaxWidth().clip(shape).border(BorderStroke(PandoraDimensions.borderWidth, colors.border), shape).background(colors.surface)) {
-            TableRow(44.dp, horizontal, colors.neutralContainer, name = { HeaderText("任务名称") }) {
-                Columns.forEach { (label, width) -> Cell(width) { HeaderText(label) } }
+    }
+    BoxWithConstraints(modifier.fillMaxWidth().clip(shape).border(BorderStroke(PandoraDimensions.borderWidth, colors.border), shape).background(colors.surface)) {
+        val baseWidth = SummaryColumn.entries.fold(TaskNameWidth + PandoraDimensions.borderWidth) { width, column -> width + column.width }
+        val extra = (maxWidth - baseWidth).coerceAtLeast(0.dp)
+        val nameWidth = TaskNameWidth + extra / 2
+        val widths = SummaryColumn.entries.associateWith { column ->
+            column.width + when (column) {
+                SummaryColumn.TAG, SummaryColumn.OWNER -> extra / 4
+                else -> 0.dp
+            }
+        }
+        Column(Modifier.fillMaxSize()) {
+            TableRow(Modifier.height(48.dp), horizontal, colors.neutralContainer, nameWidth, name = {
+                Text("任务名称", style = PandoraTypography.caption, fontWeight = FontWeight.SemiBold,
+                    color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }) {
+                SummaryColumn.entries.forEach { column -> Cell(widths.getValue(column)) { header(column) } }
             }
             LazyColumn(Modifier.weight(1f).testTag("summary-task-rows"), state = listState) {
-                groups.forEachIndexed { index, (group, tasks) ->
-                    item(key = "group:$index:$group") { GroupRow(group, tasks.size) }
-                    items(tasks, key = { it.id }) { task -> TaskRow(task, name, horizontal, businessTimezone) { onTask(task.id) } }
+                items(matches, key = { it.id }) { row ->
+                    TaskRow(row, horizontal, nameWidth, widths) { onTask(row.id) }
                 }
                 item(key = "footer") {
                     Box(Modifier.padding(horizontal = PandoraSpacing.space12)) {
-                        CollectionFooter(pager, pager.items.isEmpty(), "暂无相关任务", onMore = onMore)
+                        CollectionFooter(pager, matches.isEmpty(), if (filters.isEmpty()) "暂无相关任务" else "没有符合筛选的任务",
+                            filtered = filters.isNotEmpty(), onMore = onMore)
                     }
                 }
             }
@@ -77,20 +151,63 @@ internal fun TaskSummaryTable(
 }
 
 @Composable
+private fun ColumnFilter(
+    column: SummaryColumn,
+    selected: String?,
+    expanded: Boolean,
+    options: List<String>,
+    onOpen: () -> Unit,
+    onDismiss: () -> Unit,
+    onSelect: (String?) -> Unit
+) {
+    val colors = PandoraTheme.colors
+    val tint = if (selected == null) colors.textSecondary else colors.primary
+    Box(Modifier.fillMaxSize()) {
+        Row(
+            Modifier.fillMaxSize().clickable(role = Role.Button, onClickLabel = "筛选${column.label}", onClick = onOpen),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(column.label, style = PandoraTypography.caption, fontWeight = FontWeight.SemiBold,
+                color = tint, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Icon(Icons.Default.ArrowDropDown, null, Modifier.size(16.dp), tint = tint)
+        }
+        PandoraDropdownMenu(expanded, onDismiss) {
+            DropdownMenuItem(text = { Text(if (selected == null) "全部 ✓" else "全部") }, onClick = { onSelect(null) })
+            (options + listOfNotNull(selected)).distinct().forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(option + if (option == selected) " ✓" else "", maxLines = 2, overflow = TextOverflow.Ellipsis) },
+                    onClick = { onSelect(option) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun TableRow(
-    height: Dp,
+    rowSize: Modifier,
     horizontal: ScrollState,
     background: Color,
+    nameWidth: Dp,
     modifier: Modifier = Modifier,
     name: @Composable BoxScope.() -> Unit,
     cells: @Composable RowScope.() -> Unit
 ) {
     val colors = PandoraTheme.colors
     Column(modifier.fillMaxWidth().background(background)) {
-        Row(Modifier.fillMaxWidth().height(height)) {
-            Box(Modifier.width(NameWidth).fillMaxHeight().padding(horizontal = PandoraSpacing.space8), contentAlignment = Alignment.CenterStart, content = name)
-            Box(Modifier.width(PandoraDimensions.borderWidth).fillMaxHeight().background(colors.border))
-            Row(Modifier.fillMaxHeight().horizontalScroll(horizontal), verticalAlignment = Alignment.CenterVertically, content = cells)
+        Row(
+            Modifier.fillMaxWidth().then(rowSize).drawBehind {
+                drawRect(
+                    color = colors.border,
+                    topLeft = Offset(nameWidth.roundToPx().toFloat(), 0f),
+                    size = Size(PandoraDimensions.borderWidth.roundToPx().toFloat(), size.height)
+                )
+            },
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Cell(nameWidth, name)
+            Spacer(Modifier.width(PandoraDimensions.borderWidth))
+            Row(Modifier.horizontalScroll(horizontal), verticalAlignment = Alignment.CenterVertically, content = cells)
         }
         Box(Modifier.fillMaxWidth().height(PandoraDimensions.borderWidth).background(colors.divider))
     }
@@ -98,57 +215,41 @@ private fun TableRow(
 
 @Composable
 private fun Cell(width: Dp, content: @Composable BoxScope.() -> Unit) {
-    Box(Modifier.width(width).fillMaxHeight().padding(horizontal = PandoraSpacing.space8), contentAlignment = Alignment.CenterStart, content = content)
+    Box(Modifier.width(width).padding(horizontal = PandoraSpacing.space8), contentAlignment = Alignment.CenterStart, content = content)
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun HeaderText(text: String) {
-    Text(text, style = PandoraTypography.caption, fontWeight = FontWeight.SemiBold, color = PandoraTheme.colors.textSecondary, maxLines = 1)
-}
-
-@Composable
-private fun GroupRow(group: String, count: Int) {
-    val colors = PandoraTheme.colors
-    Column(Modifier.fillMaxWidth().background(colors.primaryContainer)) {
-        Row(Modifier.fillMaxWidth().heightIn(min = 36.dp).padding(horizontal = PandoraSpacing.space8), verticalAlignment = Alignment.CenterVertically) {
-            Text(group, style = PandoraTypography.labelLarge, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-            Text(" · $count", style = PandoraTypography.caption, color = colors.textSecondary)
-        }
-        Box(Modifier.fillMaxWidth().height(PandoraDimensions.borderWidth).background(colors.divider))
-    }
-}
-
-@Composable
-private fun TaskRow(task: TaskDto, name: (String) -> String, horizontal: ScrollState, businessTimezone: String?, onOpen: () -> Unit) {
+private fun TaskRow(row: SummaryTableRow, horizontal: ScrollState, nameWidth: Dp, widths: Map<SummaryColumn, Dp>, onOpen: () -> Unit) {
     val colors = PandoraTheme.colors
     TableRow(
-        RowHeight, horizontal, colors.surface,
+        Modifier.heightIn(min = 60.dp), horizontal, colors.surface, nameWidth,
         Modifier.clickable(onClickLabel = "查看任务详情", onClick = onOpen),
-        name = { Text(task.title, style = PandoraTypography.bodyMedium, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+        name = { Text(row.title, style = PandoraTypography.bodyMedium, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis) }
     ) {
-        val (date, time) = summaryDeadline(task)
-        Cell(Columns[0].second) {
-            Column {
-                Text(date, style = PandoraTypography.bodyMedium, maxLines = 1)
-                time?.let { Text(it, style = PandoraTypography.caption, color = colors.textSecondary) }
+        Cell(widths.getValue(SummaryColumn.TAG)) {
+            if (row.tags.isEmpty()) {
+                Text(NoTagsLabel, style = PandoraTypography.caption, color = colors.textSecondary)
+            } else {
+                FlowRow(
+                    Modifier.padding(vertical = PandoraSpacing.space4),
+                    horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space4),
+                    verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space4)
+                ) {
+                    row.tags.forEach { tag -> PandoraTagChip(tag.name, tag.colorHex) }
+                }
             }
         }
-        Cell(Columns[1].second) { PandoraStatusChip(priorityLabel(task.priorityLevel), priorityTone(task.priorityLevel), maxWidth = 64.dp) }
-        Cell(Columns[2].second) {
-            // 未通过审批的任务先显示审批状态，审批通过后显示完成情况
-            if (task.reviewStatus != "APPROVED") PandoraStatusChip(reviewStatusLabel(task.reviewStatus), reviewStatusTone(task.reviewStatus), maxWidth = 76.dp)
-            else PandoraStatusChip(summaryTaskStatus(task, businessTimezone), when {
-                task.taskCompletionState() == "COMPLETED" -> StatusTone.SUCCESS
-                task.taskCompletionState() == "AWAITING_ACCEPTANCE" -> StatusTone.WARNING
-                task.isTaskOverdue(businessTimezone) -> StatusTone.ERROR
-                else -> StatusTone.NEUTRAL
-            }, maxWidth = 76.dp)
+        Cell(widths.getValue(SummaryColumn.DEADLINE)) {
+            Column {
+                Text(row.date, style = PandoraTypography.bodyMedium, maxLines = 1)
+                row.time?.let { Text(it, style = PandoraTypography.caption, color = colors.textSecondary) }
+            }
         }
-        Cell(Columns[3].second) {
-            Text(summaryProgressNote(task), style = PandoraTypography.bodyMedium, color = colors.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        }
-        Cell(Columns[4].second) {
-            Text(summaryOwners(task, name), style = PandoraTypography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Cell(widths.getValue(SummaryColumn.PRIORITY)) { PandoraStatusChip(row.priority, row.priorityColor, maxWidth = 64.dp) }
+        Cell(widths.getValue(SummaryColumn.STATUS)) { PandoraStatusChip(row.status, row.statusColor, maxWidth = 76.dp) }
+        Cell(widths.getValue(SummaryColumn.OWNER)) {
+            Text(row.owners.joinToString("、"), style = PandoraTypography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
     }
 }

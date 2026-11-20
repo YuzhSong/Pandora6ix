@@ -9,6 +9,7 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.unit.dp
 import com.pandora6ix.app.data.TaskDto
+import com.pandora6ix.app.data.TagDto
 import com.pandora6ix.app.ui.theme.PandoraTheme
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertTrue
@@ -64,7 +65,7 @@ class TaskSummaryLayoutDeviceTest {
             PandoraTheme {
                 Box(Modifier.fillMaxWidth().height(280.dp)) {
                     TaskSummaryLayout(true, "mine", {}, {}, {}, true) {
-                        TaskSummaryTable(pager, { it }, {}, {}, it, showScrollHint = false)
+                        TaskSummaryTable(pager, { it }, {}, {}, it)
                     }
                 }
             }
@@ -73,5 +74,26 @@ class TaskSummaryLayoutDeviceTest {
         compose.onNodeWithText("任务 20").assertIsDisplayed()
         compose.onNodeWithText("任务名称").assertIsDisplayed()
         compose.onNodeWithText("左右滑动查看更多列，或点右上角横屏查看").assertDoesNotExist()
+    }
+
+    @Test fun taskNameIsStaticAndTagFilterSelectsAndClearsRows() {
+        val pager = SummaryPager<TaskDto>({ it.id }) {
+            SummaryPage(listOf(
+                TaskDto(id = "a", title = "任务甲"),
+                TaskDto(id = "b", title = "任务乙", tags = listOf(TagDto(id = "design", name = "需求设计")))
+            ), null)
+        }
+        runBlocking { pager.load() }
+        compose.setContent {
+            PandoraTheme { TaskSummaryTable(pager, { it }, {}, {}, Modifier.fillMaxSize()) }
+        }
+        compose.onNodeWithText("任务名称").assertIsDisplayed().assertHasNoClickAction()
+        compose.onNodeWithText("标签").performClick()
+        compose.onAllNodesWithText("需求设计").filter(hasClickAction()).onLast().performClick()
+        compose.onNodeWithText("任务甲").assertDoesNotExist()
+        compose.onNodeWithText("任务乙").assertIsDisplayed()
+        compose.onNodeWithText("标签").performClick()
+        compose.onNodeWithText("全部").performClick()
+        compose.onNodeWithText("任务甲").assertIsDisplayed()
     }
 }
