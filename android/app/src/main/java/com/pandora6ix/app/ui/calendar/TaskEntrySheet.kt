@@ -562,7 +562,7 @@ private fun RecipientGroupRows(
 
 /** 时间选择：左列小时 00–23、右列分钟 00–59，上下滚动或点击选择 */
 @Composable
-private fun TimeWheelDialog(initialMinute: Int, onDismiss: () -> Unit, onConfirm: (Int) -> Unit) {
+internal fun TimeWheelDialog(initialMinute: Int, onDismiss: () -> Unit, onConfirm: (Int) -> Unit) {
     var hour by remember { mutableStateOf(initialMinute / 60) }
     var minute by remember { mutableStateOf(initialMinute % 60) }
     PandoraAlertDialog(

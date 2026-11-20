@@ -1,11 +1,14 @@
 package com.pandora6ix.app.ui.calendar
 
 import com.pandora6ix.app.data.TaskItem
+import com.pandora6ix.app.data.validCalendarInterval
 import com.pandora6ix.app.mock.*
 import java.util.Calendar
 
 enum class CalendarMode(val label: String) { DAY("日视图"), WEEK("周视图"), MONTH("月视图"), YEAR("年视图") }
-data class TaskSegment(val task: TaskItem, val first: Int, val last: Int)
+data class CalendarSegment<T>(val item: T, val first: Int, val last: Int)
+typealias TaskSegment = CalendarSegment<TaskItem>
+val TaskSegment.task: TaskItem get() = item
 
 fun CalendarMode.zoomIn(): CalendarMode = when (this) {
     CalendarMode.YEAR -> CalendarMode.MONTH
@@ -38,16 +41,45 @@ fun monthWeeks(date: DemoDate): List<List<DemoDate>> {
 }
 
 fun packTaskRows(tasks: List<TaskItem>, dates: List<DemoDate>): List<List<TaskSegment>> {
-    val rows = mutableListOf<MutableList<TaskSegment>>()
-    tasks.filter { it.end >= dates.first() && it.start <= dates.last() }
+    if (dates.isEmpty()) return emptyList()
+    val matching = tasks.filter { it.end >= dates.first() && it.start <= dates.last() }
         .sortedWith(compareByDescending<TaskItem> { it.priorityLevel }.thenBy { it.start }.thenBy { it.id })
-        .forEach { task ->
-            val segment = TaskSegment(task, maxOf(0, daysBetween(dates.first(), task.start)), minOf(dates.lastIndex, daysBetween(dates.first(), task.end)))
-            val row = rows.firstOrNull { lane -> lane.none { segment.first <= it.last && segment.last >= it.first } }
-                ?: mutableListOf<TaskSegment>().also { rows.add(it) }
-            row.add(segment)
+    return packCalendarRows(matching, dates, TaskItem::start, TaskItem::end)
+}
+
+internal fun <T, D : Comparable<D>> packCalendarRows(
+    orderedItems: List<T>,
+    dates: List<D>,
+    start: (T) -> D,
+    end: (T) -> D
+): List<List<CalendarSegment<T>>> {
+    if (dates.isEmpty()) return emptyList()
+    val rows = mutableListOf<MutableList<CalendarSegment<T>>>()
+    orderedItems.forEach { item ->
+        val firstDay = start(item)
+        val lastDay = end(item)
+        if (firstDay > dates.last() || lastDay < dates.first()) return@forEach
+        val first = dates.indexOfFirst { it >= firstDay }
+        val last = dates.indexOfLast { it <= lastDay }
+        if (first > last) return@forEach
+        val segment = CalendarSegment(item, first, last)
+        val row = rows.firstOrNull { lane -> lane.none { first <= it.last && last >= it.first } }
+            ?: mutableListOf<CalendarSegment<T>>().also { rows.add(it) }
+        row.add(segment)
+    }
+    return rows.map { it.sortedBy(CalendarSegment<T>::first) }
+}
+
+internal fun <T> hiddenCalendarCounts(
+    lanes: List<List<CalendarSegment<T>>>,
+    columnCount: Int,
+    capacity: Int
+): IntArray = IntArray(columnCount).also { counts ->
+    lanes.drop(capacity).forEach { lane ->
+        lane.forEach { segment ->
+            for (column in segment.first..segment.last) counts[column]++
         }
-    return rows.map { it.sortedBy { segment -> segment.first } }
+    }
 }
 
 fun isAllDay(task: TaskItem) = task.startMinute == null || task.endMinute == null
@@ -176,9 +208,5 @@ fun followStart(previous: TaskSpan, newStart: DemoDate, newStartMinute: Int, all
     return moved.copy(endDate = newStart.plusDays((end / 1440 - newStart.ordinal()).toInt()), endMinute = (end % 1440).toInt())
 }
 
-fun validTaskInterval(start: DemoDate, end: DemoDate, startMinute: Int?, endMinute: Int?): Boolean {
-    if (end < start || (startMinute == null) != (endMinute == null)) return false
-    if (startMinute == null) return true
-    if (startMinute !in 0..1439 || endMinute!! !in 0..1439) return false
-    return end > start || endMinute > startMinute
-}
+fun validTaskInterval(start: DemoDate, end: DemoDate, startMinute: Int?, endMinute: Int?): Boolean =
+    validCalendarInterval(start, end, startMinute, endMinute)
