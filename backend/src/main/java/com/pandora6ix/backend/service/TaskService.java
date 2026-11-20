@@ -47,7 +47,9 @@ public class TaskService
 
     public Map<String, Object> candidates(
             IdentityService.Actor a, String q, String cursor, int limit) {
-        var managed = scope.managed(a);
+        a.business();
+        var managed = scope.activeBusinessUsers(a);
+        managed.remove(a.id());
         String search = q == null ? "" : q.strip().toLowerCase(Locale.ROOT);
         StringBuilder sql =
                 new StringBuilder(
