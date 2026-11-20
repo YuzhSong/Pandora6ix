@@ -1118,9 +1118,11 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
                       Text(selected.title, style = PandoraTypography.titleMedium, color = colors.textPrimary, modifier = Modifier.weight(1f).semantics { heading() })
                       IconButton({ expandedPanel = null }) { Icon(Icons.Default.Close, "关闭", tint = colors.textSecondary) }
                   }
-                  Text("共 ${selected.items.size} 条", style = PandoraTypography.caption, color = colors.textTertiary, modifier = Modifier.padding(top = PandoraSpacing.space4, bottom = PandoraSpacing.space12))
+                  // 事件纪最多显示 10 条（含浮层）；其他面板保持全部已加载条目
+                  val capped = selected.title == panels[0].title
+                  val list = if (capped) selected.items.take(10) else selected.items
+                  Text("共 ${list.size} 条", style = PandoraTypography.caption, color = colors.textTertiary, modifier = Modifier.padding(top = PandoraSpacing.space4, bottom = PandoraSpacing.space12))
                   Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())) {
-                      val list = selected.items
                       // 展开后的每一条也可点击进入该事项详情（与面板内点击一致）
                       val panelIndex = panels.indexOfFirst { it.title == selected.title }
                       list.forEachIndexed { i, item ->
@@ -1141,9 +1143,9 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
                           }
                           if (i < list.lastIndex) PandoraDivider()
                       }
-                      // 分页：nextCursor 非空时提供“加载更多”
+                      // 分页：nextCursor 非空时提供“加载更多”；事件纪固定最多 10 条，不提供继续加载
                       val pagerState = when (selected.title) {
-                          panels[0].title -> companyPager.nextCursor to companyPager.loadingMore
+                          panels[0].title -> null to false
                           panels[1].title -> taskPager.nextCursor to taskPager.loadingMore
                           else -> null to false
                       }
