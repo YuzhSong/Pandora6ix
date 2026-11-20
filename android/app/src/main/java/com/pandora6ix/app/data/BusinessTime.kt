@@ -4,6 +4,18 @@ import java.util.Calendar
 import java.util.Locale
 import java.util.TimeZone
 
+internal fun <D : Comparable<D>> validCalendarInterval(
+    start: D,
+    end: D,
+    startMinute: Int?,
+    endMinute: Int?
+): Boolean {
+    if (end < start || (startMinute == null) != (endMinute == null)) return false
+    if (startMinute == null) return true
+    if (startMinute !in 0..1439 || endMinute!! !in 0..1439) return false
+    return end > start || endMinute > startMinute
+}
+
 /*
  * 服务端返回的时间戳统一是 UTC（BusinessDb.view() 用 toInstant().toString()，形如 2026-10-18T08:00:00Z）；
  * 展示或比较前必须先按公司业务时区换算，否则会把 UTC 当成现实时间显示（东八区正好差 8 小时）。
