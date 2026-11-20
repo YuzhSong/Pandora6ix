@@ -801,7 +801,8 @@ class BusinessApiIntegrationTests {
         var employeeProfile = request("GET", "/me", employeeToken, null, 200);
         var employeeCaps = (Map<?, ?>) employeeProfile.get("capabilities");
         assertEquals(true, employeeCaps.get("createPersonalTasks"));
-        assertEquals(false, employeeCaps.get("createDelegatedTasks"));
+        // 接收人范围放宽后，员工也具备派发能力（仍不可审批）
+        assertEquals(true, employeeCaps.get("createDelegatedTasks"));
         assertEquals(false, employeeCaps.get("reviewTasks"));
         var managerCaps =
                 (Map<?, ?>) request("GET", "/me", managerToken, null, 200).get("capabilities");
@@ -856,9 +857,10 @@ class BusinessApiIntegrationTests {
         var assigned = db.rows("SELECT * FROM task_assignment WHERE enterprise_id=? AND task_id=?", enterprise, task.get("id"));
         assertEquals(2, assigned.size());
         assertTrue(assigned.stream().allMatch(row -> "ACTIVE".equals(row.get("execution_status"))));
-        request("POST", "/tasks", managerToken, taskBody("DELEGATED", List.of(manager), List.of(), null), 403);
-        request("POST", "/tasks", managerToken, taskBody("DELEGATED", List.of(manager, founder), List.of(), null), 403);
-        request("POST", "/tasks", employeeToken, taskBody("DELEGATED", List.of(employee, peer), List.of(), null), 403);
+        // 员工也可派发、也可纯自派；派发给跨层级的在职业务用户（如创始人）同样允许
+        request("POST", "/tasks", managerToken, taskBody("DELEGATED", List.of(manager), List.of(), null), 201);
+        request("POST", "/tasks", managerToken, taskBody("DELEGATED", List.of(manager, founder), List.of(), null), 201);
+        request("POST", "/tasks", employeeToken, taskBody("DELEGATED", List.of(employee, peer), List.of(), null), 201);
         db.update("UPDATE app_user SET status='DISABLED' WHERE id=?", peer);
         request("POST", "/tasks", managerToken, taskBody("DELEGATED", List.of(manager, peer), List.of(), null), 403);
     }
@@ -1886,25 +1888,25 @@ class BusinessApiIntegrationTests {
     }
 
     @Test
-    void recipientsIncludeCrossLevelButExcludePeersAndOtherDepartments() throws Exception {
+    void recipientsIncludeAllActiveBusinessMembersAcrossDepartments() throws Exception {
         String other = createOrg("Other", "DEPARTMENT", root),
                 otherTeam = createOrg("Other team", "TEAM", other);
         String outside = createUser("outside", otherTeam, null, List.of("EMPLOYEE"));
         var candidates =
                 items(request("GET", "/tasks/recipient-candidates", managerToken, null, 200));
         var ids = candidates.stream().map(r -> r.get("id")).toList();
-        assertTrue(ids.containsAll(List.of(lead, employee, peer)));
-        assertFalse(ids.contains(outside));
+        assertTrue(ids.containsAll(List.of(lead, employee, peer, outside, founder)));
         assertFalse(ids.contains(manager));
-        request("GET", "/tasks/recipient-candidates", employeeToken, null, 403);
-        request(
-                "POST",
-                "/tasks",
-                managerToken,
-                taskBody("DELEGATED", List.of(employee, outside), List.of(), null),
-                403);
-        assertTrue(db.rows("SELECT id FROM task WHERE enterprise_id=?", enterprise).isEmpty());
-        createTask(managerToken, "DELEGATED", List.of(employee, peer));
+        // 任何业务用户都可访问候选列表；纯 ADMIN 之外不区分职级
+        request("GET", "/tasks/recipient-candidates", employeeToken, null, 200);
+        var task =
+                request(
+                        "POST",
+                        "/tasks",
+                        managerToken,
+                        taskBody("DELEGATED", List.of(employee, outside), List.of(), null),
+                        201);
+        approved((String) task.get("id"));
     }
 
     @Test
@@ -3280,18 +3282,33 @@ class BusinessApiIntegrationTests {
 
     @Test
     void recipientCandidatesExposeStableDepartmentMetadataWithoutPersonnelSecrets() throws Exception {
-        var candidates = items(request("GET", "/tasks/recipient-candidates?limit=1", managerToken, null, 200));
-        assertEquals(1, candidates.size());
-        var value = candidates.getFirst();
-        assertEquals(department, value.get("departmentId"));
-        assertEquals("Department", value.get("departmentName"));
-        assertEquals(team, value.get("orgUnitId")); assertEquals("Team", value.get("organizationName"));
-        for (String key : List.of("gender", "idNumber", "phoneNumber", "passwordHash")) assertFalse(value.containsKey(key));
-        var next = request("GET", "/tasks/recipient-candidates?limit=1", managerToken, null, 200).get("nextCursor");
-        assertNotNull(next);
-        var second = items(request("GET", "/tasks/recipient-candidates?limit=1&cursor="+next, managerToken, null, 200)).getFirst();
-        assertNotEquals(value.get("id"), second.get("id"));
-        assertEquals(department, second.get("departmentId"));
+        // 候选范围为全企业在职业务用户，逐页收集后按 id 校验团队成员元数据
+        var seen = new LinkedHashMap<String, Map<String, Object>>();
+        String cursor = null;
+        do {
+            var page =
+                    request(
+                            "GET",
+                            "/tasks/recipient-candidates?limit=1"
+                                    + (cursor == null ? "" : "&cursor=" + cursor),
+                            managerToken,
+                            null,
+                            200);
+            var pageItems = items(page);
+            if (pageItems.isEmpty()) break;
+            var value = pageItems.getFirst();
+            seen.put((String) value.get("id"), value);
+            for (String key : List.of("gender", "idNumber", "phoneNumber", "passwordHash"))
+                assertFalse(value.containsKey(key));
+            cursor = (String) page.get("nextCursor");
+        } while (cursor != null);
+        assertTrue(seen.keySet().containsAll(List.of(employee, lead, founder)));
+        assertFalse(seen.containsKey(manager));
+        var teamMember = seen.get(employee);
+        assertEquals(department, teamMember.get("departmentId"));
+        assertEquals("Department", teamMember.get("departmentName"));
+        assertEquals(team, teamMember.get("orgUnitId"));
+        assertEquals("Team", teamMember.get("organizationName"));
     }
 
     @Test

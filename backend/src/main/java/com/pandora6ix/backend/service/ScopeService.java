@@ -71,11 +71,29 @@ public class ScopeService {
                 || (actor.businessRank() < 3 && managed(actor).contains(owner));
     }
 
-    /** Task participation only: a manager may join a delegation containing other recipients. */
+    /**
+     * 任务接收人授权：全企业在职业务用户（不受组织层级与子树限制）+ 创建者本人。
+     * 任何业务用户（含 EMPLOYEE）都可创建派发任务，也允许只派给自己；
+     * 日志范围、成员通讯录、审批者-提交者关系等授权仍走 {@link #managed}。
+     */
     public Set<String> taskRecipients(IdentityService.Actor actor, Collection<String> recipients) {
-        var allowed = activeManaged(actor);
-        if (recipients.stream().anyMatch(id -> !actor.id().equals(id))) allowed.add(actor.id());
+        actor.business();
+        var allowed = activeBusinessUsers(actor);
+        allowed.add(actor.id());
         return allowed;
+    }
+
+    /** 本企业 ACTIVE 且拥有业务角色（FOUNDER/DEPARTMENT_MANAGER/TEAM_LEAD/EMPLOYEE）的用户。 */
+    public Set<String> activeBusinessUsers(IdentityService.Actor actor) {
+        Set<String> users = new HashSet<>();
+        for (var row :
+                db.rows(
+                        "SELECT DISTINCT u.id FROM app_user u JOIN user_role r ON"
+                            + " r.enterprise_id=u.enterprise_id AND r.user_id=u.id WHERE"
+                            + " u.enterprise_id=? AND u.status='ACTIVE' AND r.role_code IN"
+                            + " ('FOUNDER','DEPARTMENT_MANAGER','TEAM_LEAD','EMPLOYEE')",
+                        actor.enterpriseId())) users.add(str(row, "id"));
+        return users;
     }
 
     public void read(IdentityService.Actor actor, String owner) {
