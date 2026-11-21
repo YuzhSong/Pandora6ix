@@ -16,6 +16,7 @@ import { presentOperationComparison } from '../data/operationPresentation.ts'
 import type { AdminData } from '../data/types.ts'
 import './SystemLogsPage.css'
 
+const logPageSize = 20
 const previewLogs = import.meta.env.DEV && ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname) && new URLSearchParams(location.search).get('previewLogs') === '1'
 const reader = createOperationLogReader({ async request<T>(path: string, options?: { signal?: AbortSignal }): Promise<T> {
   if (previewLogs) { const { previewLogRequest } = await import('../../dev/operationLogPreview.ts'); return previewLogRequest<T>(path, options) }
@@ -55,7 +56,7 @@ export function SystemLogsPage({ refreshKey, data }: { refreshKey?: unknown; dat
     const controller = new AbortController()
     setLoading(true); setError(''); setPage(null)
     if (!dateRangeValid(filters)) { setError('结束日期不能早于开始日期。'); setLoading(false); return () => controller.abort() }
-    void reader.list(filters, { cursor: cursors[pageIndex], snapshotToken: snapshot.current, limit: 20, signal: controller.signal }).then(next => {
+    void reader.list(filters, { cursor: cursors[pageIndex], snapshotToken: snapshot.current, limit: logPageSize, signal: controller.signal }).then(next => {
       if (!controller.signal.aborted) { snapshot.current = next.snapshotToken; setPage(next) }
     }).catch(reason => { if (!controller.signal.aborted) setError(errorMessage(reason)) }).finally(() => { if (!controller.signal.aborted) setLoading(false) })
     return () => controller.abort()
@@ -112,7 +113,7 @@ export function SystemLogsPage({ refreshKey, data }: { refreshKey?: unknown; dat
             <td><button className="text-button" aria-label={`查看${row.actor.displayName ?? '历史操作人'}的${logLabel(logActions, row.action)}记录`} onClick={() => setSelected(row.id)}>查看</button></td>
           </tr>)}
       </tbody></table></div>
-    <div className="table-footer"><span>{page ? `共 ${page.total} 条` : '—'}</span><div className="log-pagination" aria-label="日志分页"><button className="button secondary" disabled={loading || exporting || pageIndex === 0} onClick={() => { setCursors(previous => previous.slice(0, pageIndex)); setPageIndex(value => value - 1) }}>上一页</button><span>第 {pageIndex + 1} 页</span><button className="button secondary" disabled={loading || exporting || !page?.nextCursor} onClick={nextPage}>下一页</button></div></div>
+    <div className="table-footer"><span>{page ? `共 ${page.total} 条` : '—'}</span><div className="log-pagination" aria-label="日志分页"><button className="button secondary" disabled={loading || exporting || pageIndex === 0} onClick={() => { setCursors(previous => previous.slice(0, pageIndex)); setPageIndex(value => value - 1) }}>上一页</button><span>{page ? `${page.total ? pageIndex + 1 : 0} / ${Math.ceil(page.total / logPageSize)} 页` : '—'}</span><button className="button secondary" disabled={loading || exporting || !page?.nextCursor} onClick={nextPage}>下一页</button></div></div>
     {selected && <OperationLogDialog data={data} id={selected} onClose={() => setSelected(null)} />}
   </section>
 }

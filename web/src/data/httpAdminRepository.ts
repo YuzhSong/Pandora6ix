@@ -3,7 +3,9 @@ import type { createApiClient } from '../api/client.ts'
 import { requireAdmin, validatePassword } from '../api/auth.ts'
 import { roleLabels } from './types.ts'
 import type { AdminData, AdminRepository, CompanyImportantItem, CredentialHandoff, Enterprise, OrgUnit, Person, Role, UnitKind } from './types.ts'
-import { profilePendingMessage, supportsPersonnelProfile, validatePersonnelProfile } from './personnelProfile.ts'
+import { duplicateIdentityMessage, duplicatePhoneMessage, normalizePersonnelIdentity, normalizePersonnelPhone, profilePendingMessage, supportsPersonnelProfile, validatePersonnelName, validatePersonnelProfile } from './personnelProfile.ts'
+import { validateLeadershipAssignment } from './personnelResponsibility.ts'
+import { organizationRole, validateRoleOrganization } from './personnelCreation.ts'
 import { organizationDeletionBlocker, validateOrganizationEdit } from './organizationEditing.ts'
 
 type Json = Record<string, unknown>
@@ -108,9 +110,9 @@ export function createHttpAdminRepository(client: ReturnType<typeof createApiCli
         return result
       }, (data, value) => { data.people = replace(data.people, value) }, true)
     },
-    async replaceManager(personId, successorId, expectedVersion, successorExpectedVersion, successorJobTitle, formerJobTitle) {
+    async replaceManager(personId, successorId, expectedVersion, successorExpectedVersion, successorJobTitle, formerJobTitle, formerOrgUnitId) {
       checkPersonnelWrite()
-      return write(`/admin/users/${encodeURIComponent(personId)}/manager-replacement`, { expectedVersion, successorUserId: successorId, successorExpectedVersion, successorJobTitle, formerJobTitle }, value => {
+      return write(`/admin/users/${encodeURIComponent(personId)}/manager-replacement`, { expectedVersion, successorUserId: successorId, successorExpectedVersion, successorJobTitle, formerJobTitle, formerOrgUnitId }, value => {
         const page = object(value)
         if (!Array.isArray(page.items)) throw invalid()
         const items = page.items.map(person)
@@ -126,8 +128,21 @@ export function createHttpAdminRepository(client: ReturnType<typeof createApiCli
         return result
       }, (data, value) => { data.people = replace(data.people, value) }, false)
     },
+    async reverseDeparture(personId, expectedVersion, orgUnitId) {
+      checkPersonnelWrite()
+      const old = current().people.find(person => person.id === personId)
+      if (!old || old.employmentStatus !== 'DEPARTED' || old.version !== expectedVersion) throw new Error('仅可撤销当前已离职记录，请刷新后核对。')
+      return write(`/admin/users/${encodeURIComponent(personId)}/departure-reversal`, { expectedVersion, orgUnitId }, value => {
+        const result = verifyPerson(profileBody(old))(value)
+        if (result.id !== old.id || result.loginName !== old.loginName || result.employmentStatus !== 'IN_SERVICE' ||
+            result.departureDate !== null || result.version !== expectedVersion + 1) throw invalid()
+        return result
+      }, (data, value) => { data.people = replace(data.people, value) }, false)
+    },
     async changePersonJob(personId, input, expectedVersion) {
       checkPersonnelWrite()
+      validateRoleOrganization(current(), organizationRole(input.roles), input.orgUnitId)
+      validateLeadershipAssignment(current().people, input.roles, input.orgUnitId, personId)
       return write(`/admin/users/${encodeURIComponent(personId)}/job-change`, { expectedVersion, jobTitle: input.jobTitle, roles: input.roles, orgUnitId: input.orgUnitId || null, supervisorUserId: input.supervisorId }, value => {
         const result = person(value)
         if (result.id !== personId || result.employmentStatus === 'DEPARTED' || result.orgUnitId !== input.orgUnitId || result.supervisorId !== input.supervisorId || result.version !== expectedVersion + 1 || JSON.stringify([...result.roles].sort()) !== JSON.stringify([...input.roles].sort())) { uncertainPersonnelWrite = true; throw new Error('服务器返回的岗位与提交内容不一致，请刷新并核对组织、上级和角色，勿重复提交。') }
@@ -192,11 +207,27 @@ export function createHttpAdminRepository(client: ReturnType<typeof createApiCli
       if (!input.loginName.trim() || input.loginName.length > 128 || input.loginName !== input.loginName.trim()) throw new Error('登录名须为 1–128 个字符，且前后不能有空白。')
       const supported = supportsPersonnelProfile(current().people)
       const oldPerson = current().people.find(value => value.id === id)
+      if (input.displayName !== oldPerson?.displayName) validatePersonnelName(input.displayName)
+      const role = organizationRole(input.roles)
+      if (!oldPerson || oldPerson.orgUnitId !== input.orgUnitId || organizationRole(oldPerson.roles) !== role) {
+        validateRoleOrganization(current(), role, input.orgUnitId)
+      }
+      validateLeadershipAssignment(current().people, input.roles, input.orgUnitId, id)
       const profile = profileBody({ ...oldPerson, ...input, id: id ?? '', version: expectedVersion ?? 0 })
       const profileChanged = Object.entries(profile).some(([key, value]) => value !== oldPerson?.[key as keyof Person])
       if (!supported && (!id || profileChanged)) throw new Error(profilePendingMessage)
       if (id && Object.entries(profile).some(([key, value]) => value == null && oldPerson?.[key as keyof Person] != null)) throw new Error('已填写的性别、身份证号和电话号码暂不支持清空，请保留原值或填写新值。')
       if (!id || profileChanged) validatePersonnelProfile(profile, !!id)
+      const identity = normalizePersonnelIdentity(profile.idNumber)
+      if (identity && identity !== normalizePersonnelIdentity(oldPerson?.idNumber) &&
+          current().people.some(person => person.id !== id && normalizePersonnelIdentity(person.idNumber) === identity)) {
+        throw new Error(duplicateIdentityMessage)
+      }
+      const phone = normalizePersonnelPhone(profile.phoneNumber)
+      if (phone && phone !== normalizePersonnelPhone(oldPerson?.phoneNumber) &&
+          current().people.some(person => person.id !== id && normalizePersonnelPhone(person.phoneNumber) === phone)) {
+        throw new Error(duplicatePhoneMessage)
+      }
       if (id) {
         const old = current().people.find(value => value.id === id)
         if (!old || expectedVersion === undefined) throw invalid()
@@ -222,6 +253,8 @@ export function createHttpAdminRepository(client: ReturnType<typeof createApiCli
       checkPersonnelWrite()
       const old = current().people.find(value => value.id === personId)
       if (!old) throw invalid()
+      if (organizationRole(old.roles) !== organizationRole(roles)) validateRoleOrganization(current(), organizationRole(roles), old.orgUnitId)
+      validateLeadershipAssignment(current().people, roles, old.orgUnitId, personId)
       return write(`/admin/users/${encodeURIComponent(personId)}`, userBody(old, expectedVersion, roles), verifyPerson(profileBody(old)), (data, value) => { data.people = replace(data.people, value) }, true)
     },
     async saveTag() { throw new Error('管理端不提供标签管理。') },
