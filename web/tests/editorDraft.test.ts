@@ -38,6 +38,14 @@ test('person creation proposes selected organization without inventing a supervi
   assert.deepEqual(draft.roles, ['EMPLOYEE'])
 })
 
+test('new hires default to department manager only when that department has a vacancy', () => {
+  const data = createSeed()
+  const request = { kind: 'person', orgUnitId: 'org-product' } as const
+  assert.deepEqual(createEditorDraft(request, data).roles, ['EMPLOYEE'])
+  data.people.find(person => person.id === 'u-product')!.employmentStatus = 'DEPARTED'
+  assert.deepEqual(createEditorDraft(request, data).roles, ['DEPARTMENT_MANAGER'])
+})
+
 test('invalid context does not invent relationships, and existing records retain original values', () => {
   const data = createSeed()
   assert.equal(createEditorDraft({ kind: 'unit', parentId: 'org-web' }, data).kind, 'DEPARTMENT')

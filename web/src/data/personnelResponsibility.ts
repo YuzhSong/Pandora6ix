@@ -1,6 +1,27 @@
 import type { AdminData, Person, Role } from './types.ts'
-export function managerRole(person: Person): Role | undefined {
-  return (['FOUNDER', 'DEPARTMENT_MANAGER', 'TEAM_LEAD'] as Role[]).find(role => person.roles.includes(role))
+import { roleLabels } from './types.ts'
+
+const leadershipRoles: Role[] = ['FOUNDER', 'DEPARTMENT_MANAGER', 'TEAM_LEAD']
+
+export function managerRole(person: Pick<Person, 'roles'>): Role | undefined {
+  return leadershipRoles.find(role => person.roles.includes(role))
+}
+
+export function validateLeadershipAssignment(
+  people: readonly Pick<Person, 'id' | 'orgUnitId' | 'roles' | 'employmentStatus'>[],
+  roles: readonly Role[],
+  organization: string,
+  personId?: string,
+) {
+  const previous = people.find(person => person.id === personId)
+  for (const role of leadershipRoles) {
+    const samePosition = (org: string) => role === 'FOUNDER' || org === organization
+    if (!roles.includes(role) || (previous?.roles.includes(role) && samePosition(previous.orgUnitId))) continue
+    if (people.some(person => person.id !== personId && person.employmentStatus !== 'DEPARTED' &&
+        person.roles.includes(role) && samePosition(person.orgUnitId))) {
+      throw new Error(`该${role === 'FOUNDER' ? '公司' : role === 'DEPARTMENT_MANAGER' ? '部门' : '团队'}已有${roleLabels[role]}，请使用“更换负责人”。`)
+    }
+  }
 }
 export function departureBlocker(data: AdminData, person: Person): string | null {
   const reports = data.people.filter(p => p.supervisorId === person.id && p.employmentStatus !== 'DEPARTED')

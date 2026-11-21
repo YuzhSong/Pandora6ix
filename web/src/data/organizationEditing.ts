@@ -1,4 +1,5 @@
 import type { AdminData, UnitInput, UnitKind } from './types.ts'
+import { organizationAllowsRole, organizationRole } from './personnelCreation.ts'
 
 export function organizationDeletionBlocker(data: AdminData, id: string): string | null {
   const unit = data.units.find(unit => unit.id === id)
@@ -28,5 +29,7 @@ export function validateOrganizationEdit(data: AdminData, input: UnitInput, id?:
     if (children.length) throw new Error('该组织仍有下级组织，请先调整下级归属后再变更类型。')
     const incompatibleRole = input.kind === 'TEAM' ? 'DEPARTMENT_MANAGER' : 'TEAM_LEAD'
     if (data.people.some(person => person.orgUnitId === id && person.roles.includes(incompatibleRole))) throw new Error('该组织有与新类型不匹配的负责人角色，请先调整人员角色。')
+    if (data.people.some(person => person.orgUnitId === id && person.employmentStatus !== 'DEPARTED' &&
+      !organizationAllowsRole(organizationRole(person.roles), input.kind))) throw new Error('请先调整直属人员的所属组织，再变更组织类型。')
   }
 }

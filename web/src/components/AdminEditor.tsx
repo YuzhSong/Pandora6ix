@@ -1,4 +1,3 @@
-import { followingOrganization } from '../data/personnelHistory.ts'
 import { supervisorOptionLabel } from '../data/personnelDisplay.ts'
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
@@ -14,10 +13,10 @@ import { Select } from './Select.tsx'
 import { organizationParents, validateOrganizationEdit } from '../data/organizationEditing.ts'
 import { supportsPersonnelProfile } from '../data/personnelProfile.ts'
 import { ValidatedForm } from './ValidatedForm.tsx'
-import { canHaveSupervisor, reportingError, supervisorCandidates } from '../data/supervisors.ts'
+import { canHaveSupervisor, organizationSupervisor, reportingError } from '../data/supervisors.ts'
 import { RoleBadge } from './RoleBadge.tsx'
 import type { CreatedAccountReceipt } from '../data/accountHandoff.ts'
-import { businessRoleOptions, generateLoginName, generateInitialPassword, personnelRole, validateRoleOrganization } from '../data/personnelCreation.ts'
+import { businessRoleOptions, defaultPersonnelRole, generateLoginName, generateInitialPassword, organizationAllowsRole, organizationRole, personnelRole, validateRoleOrganization } from '../data/personnelCreation.ts'
 
 export type EditRequest =
   | { kind: 'enterprise'; item: Enterprise }
@@ -33,6 +32,7 @@ export function AdminEditor({ request, data, onClose, onSaved }: {
   const dialog = useRef<HTMLDialogElement>(null)
   const [initial] = useState(() => createEditorDraft(request, data))
   const [draft, setDraft] = useState(initial)
+  const [roleSelected, setRoleSelected] = useState(false)
   const [error, setError] = useState('')
   const errorFeedback = useRef<HTMLParagraphElement>(null)
   useEffect(() => { if (error) errorFeedback.current?.focus() }, [error])
@@ -44,10 +44,22 @@ export function AdminEditor({ request, data, onClose, onSaved }: {
   const [confirmDiscard, setConfirmDiscard] = useState(false)
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) => { setDraft(current => ({ ...current, [key]: value, ...(key === 'name' && request.kind === 'person' && !request.item ? { loginName: generateLoginName(String(value), data.people) } : {}) })); setConfirmDiscard(false) }
   const dirty = JSON.stringify(initial) !== JSON.stringify(draft)
-  const candidates = supervisorCandidates(data.people, request.item?.id, draft.roles)
-  const effectiveSupervisor = canHaveSupervisor(draft.roles) ? draft.supervisorId : ''
-  const invalidSupervisor = !!effectiveSupervisor && !candidates.some(person => person.id === draft.supervisorId)
-  const supervisorField = canHaveSupervisor(draft.roles) ? <label>直属上级<Select label="直属上级" popupMinWidth={380} value={draft.supervisorId} onChange={value => { setDraft(current => ({ ...current, supervisorId: value, orgUnitId: followingOrganization(data, current.roles, value) ?? current.orgUnitId })); setConfirmDiscard(false) }} options={[{ value: '', label: '未设置直属上级' }, ...(invalidSupervisor ? [{ value: draft.supervisorId, label: `${data.people.find(person => person.id === draft.supervisorId)?.displayName ?? '原上级'}（不符合当前角色，请重新选择）` }] : []), ...candidates.map(person => ({ value: person.id, label: supervisorOptionLabel(data, person) }))]} />{invalidSupervisor && <button className="text-button" type="button" onClick={() => set('supervisorId', '')}>清除不符合层级的上级</button>}</label> : null
+  const supervisor = organizationSupervisor(data, draft.orgUnitId, draft.roles, request.item?.id)
+  const effectiveSupervisor = supervisor?.id ?? ''
+  const supervisorField = canHaveSupervisor(draft.roles) ? <label>直属上级<input readOnly value={supervisor ? supervisorOptionLabel(data, supervisor) : '未设置'} /></label> : null
+  const newPerson = request.kind === 'person' && !request.item
+  const eligibleOrganizations = data.units.filter(unit => {
+    if (request.kind === 'person' && unit.id === request.item?.orgUnitId) return true
+    const role = newPerson && !roleSelected ? defaultPersonnelRole(data.units, data.people, unit.id) : organizationRole(draft.roles)
+    return organizationAllowsRole(role, unit.kind)
+  })
+  const changeOrganization = (orgUnitId: string) => {
+    if (request.kind === 'person' && !request.item && !roleSelected) {
+      const role = defaultPersonnelRole(data.units, data.people, orgUnitId)
+      setDraft(current => ({ ...current, orgUnitId, roles: [role], jobTitle: roleLabels[role] }))
+      setConfirmDiscard(false)
+    } else set('orgUnitId', orgUnitId)
+  }
   useEffect(() => {
     const opener = document.activeElement as HTMLElement | null
     dialog.current?.showModal()
@@ -112,8 +124,8 @@ export function AdminEditor({ request, data, onClose, onSaved }: {
             {!profileSupported && <p className="panel-note" role="status">当前暂不支持维护完整人员资料。</p>}
             <div className="field-grid"><label><span>性别 {(!request.item || !!request.item.gender) && <span className="required">*</span>}</span><Select label="性别" required={!request.item || !!request.item.gender} disabled={!profileSupported && !!request.item} value={draft.gender} onChange={value => set('gender', value as Draft['gender'])} options={[{ value: '', label: '请选择性别' }, { value: 'MALE', label: '男' }, { value: 'FEMALE', label: '女' }]} /></label><label><span>电话号码 {(!request.item || !!request.item.phoneNumber) && <span className="required">*</span>}</span><input type="tel" required={!request.item || !!request.item.phoneNumber} disabled={!profileSupported && !!request.item} maxLength={24} autoComplete="off" value={draft.phoneNumber} onChange={event => set('phoneNumber', event.target.value)} placeholder="手机号或含区号的固定电话" /></label></div>
             <label><span>身份证号 {(!request.item || !!request.item.idNumber) && <span className="required">*</span>}</span><input required={!request.item || !!request.item.idNumber} disabled={!profileSupported && !!request.item} minLength={15} maxLength={18} autoComplete="off" spellCheck={false} value={draft.idNumber} onChange={event => set('idNumber', event.target.value.toUpperCase())} placeholder="15 位或 18 位身份证号" /></label>
-            {!request.item && <label>业务角色<Select label="业务角色" value={draft.roles[0]} options={businessRoleOptions} onChange={value => { const role = personnelRole(value); setDraft(current => ({ ...current, roles: [role], jobTitle: roleLabels[role], supervisorId: '' })) }} /></label>}
-            <div className="field-grid"><label>所属组织<Select label="所属组织" value={draft.orgUnitId} onChange={value => set('orgUnitId', value)} options={[{ value: '', label: '未分配组织' }, ...data.units.map(unit => ({ value: unit.id, label: unit.name }))]} /></label>{supervisorField}</div>
+            {!request.item && <label>业务角色<Select label="业务角色" value={draft.roles[0]} options={businessRoleOptions} onChange={value => { const role = personnelRole(value); setRoleSelected(true); setDraft(current => ({ ...current, roles: [role], jobTitle: roleLabels[role] })) }} /></label>}
+            <div className="field-grid"><label>所属组织<Select label="所属组织" value={draft.orgUnitId} onChange={changeOrganization} options={[...(organizationAllowsRole(organizationRole(draft.roles)) ? [{ value: '', label: '未分配组织' }] : []), ...eligibleOrganizations.map(unit => ({ value: unit.id, label: unit.name }))]} /></label>{supervisorField}</div>
             
           </>}
           {request.kind === 'roles' && <><fieldset className="role-picker"><legend>业务角色 <span className="required">*</span></legend><div>{(Object.keys(roleLabels) as Role[]).map(role => <label key={role}><input type="checkbox" checked={draft.roles.includes(role)} onChange={event => set('roles', event.target.checked ? [...draft.roles, role] : draft.roles.filter(item => item !== role))} /><RoleBadge role={role} /></label>)}</div></fieldset><div className="role-supervisor">{supervisorField}</div></>}

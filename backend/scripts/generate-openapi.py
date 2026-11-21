@@ -265,6 +265,7 @@ RESPONSES = {
     ("DELETE", "/push-devices/{installationId}"): "PushDeviceRegistrationResult",
     ("POST", "/admin/users/{id}/manager-replacement"): "ManagerReplacementResult",
     ("POST", "/admin/users/{id}/departure"): "User",
+    ("POST", "/admin/users/{id}/departure-reversal"): "User",
     ("POST", "/admin/users/{id}/job-change"): "User",
     ("GET", "/admin/users/{id}/personnel-changes"): "PersonnelChangePage",
     # OperationLogController declares its base path on @RequestMapping, so the

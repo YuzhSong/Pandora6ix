@@ -1,4 +1,4 @@
-import { personnelHistoryFields, personnelHistoryValue, followingOrganization } from '../data/personnelHistory.ts'
+import { personnelHistoryFields, personnelHistoryValue } from '../data/personnelHistory.ts'
 import { supervisorOptionLabel } from '../data/personnelDisplay.ts'
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
@@ -9,7 +9,8 @@ import { adminRepository } from '../data/repository.ts'
 import { errorMessage } from '../api/feedback.ts'
 import { ApiError } from '../api/client.ts'
 import { organizationFilterOptions } from '../data/organizationHierarchy.ts'
-import { canHaveSupervisor, reportingError, supervisorCandidates } from '../data/supervisors.ts'
+import { canHaveSupervisor, organizationSupervisor, reportingError } from '../data/supervisors.ts'
+import { businessRoles, organizationAllowsRole, validateRoleOrganization } from '../data/personnelCreation.ts'
 import { Select } from './Select.tsx'
 import { Icon } from './Icon.tsx'
 import { ValidatedForm } from './ValidatedForm.tsx'
@@ -17,15 +18,24 @@ import { ValidatedForm } from './ValidatedForm.tsx'
 export type PersonnelAction = 'departure' | 'job' | 'history' | 'replacement'
 export function PersonnelLifecycleDialog({ person, action, continuation, data, onClose, onSaved }: { person: Person; action: PersonnelAction; continuation?: 'job' | 'departure'; data: AdminData; onClose: () => void; onSaved: (data: AdminData) => void }) {
   const dialog = useRef<HTMLDialogElement>(null), submitting = useRef(false)
-  const [org, setOrg] = useState(person.orgUnitId), [supervisor, setSupervisor] = useState(person.supervisorId ?? ''), [roles, setRoles] = useState<Role[]>(person.roles)
+  const [org, setOrg] = useState(person.orgUnitId)
+  const [jobRole, setJobRole] = useState<Role>(() => managerRole(person) ?? 'EMPLOYEE')
+  const roles = [jobRole]
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: data.enterprise.businessTimezone || 'UTC', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
   const [date, setDate] = useState(today), [error, setError] = useState(''), [busy, setBusy] = useState(false), [blocked, setBlocked] = useState(false)
   const [history, setHistory] = useState<PersonnelChange[] | null>(null)
   const [successorId, setSuccessorId] = useState(''), [successorTitle] = useState<string>(roleLabels[managerRole(person) ?? 'EMPLOYEE']), [formerTitle] = useState('员工')
+  const [formerTeam, setFormerTeam] = useState('')
   const successors = replacementCandidates(data, person), departureError = departureBlocker(data, person)
+  const successor = successors.find(value => value.id === successorId)
+  const organizations = organizationFilterOptions(data.units)
+  const teams = organizations.filter(option => data.units.some(unit => unit.id === option.value && unit.kind === 'TEAM'))
+  const formerOrgIsTeam = teams.some(option => option.value === person.orgUnitId)
+  const replacementTeam = formerOrgIsTeam ? person.orgUnitId : formerTeam ||
+    (teams.some(option => option.value === successor?.orgUnitId) ? successor?.orgUnitId : undefined)
   const reports = data.people.filter(value => value.supervisorId === person.id && value.employmentStatus !== 'DEPARTED')
-  const effectiveSupervisor = canHaveSupervisor(roles) ? supervisor : ''
-  const candidates = supervisorCandidates(data.people, person.id, roles)
+  const supervisor = organizationSupervisor(data, org, roles, person.id)
+  const effectiveSupervisor = supervisor?.id ?? ''
   const title = action === 'departure' ? '办理离职' : action === 'job' ? '岗位调整' : action === 'replacement' ? '更换负责人' : '人员变动记录'
   useEffect(() => { const opener = document.activeElement as HTMLElement | null, element = dialog.current; element?.showModal(); return () => { element?.close(); opener?.focus() } }, [])
   useEffect(() => {
@@ -41,14 +51,13 @@ export function PersonnelLifecycleDialog({ person, action, continuation, data, o
       if (person.roles.includes('ADMIN')) { setError('系统管理员不适用岗位调整。'); return }
       const invalid = reportingError(data.people.filter(p => p.employmentStatus !== 'DEPARTED'), person.id, roles, effectiveSupervisor)
       if (invalid) { setError(invalid); return }
-      if (!roles.length) { setError('请选择角色。'); return }
-      const kind = data.units.find(unit => unit.id === org)?.kind
-      if ((roles.includes('TEAM_LEAD') && kind !== 'TEAM') || (roles.includes('DEPARTMENT_MANAGER') && kind !== 'DEPARTMENT')) { setError('请选择与负责人角色匹配的部门或团队。'); return }
+      try { validateRoleOrganization(data, jobRole, org) }
+      catch (reason) { setError(errorMessage(reason)); return }
     }
-    if (action === 'replacement' && !successors.some(p => p.id === successorId)) { setError('请选择接任负责人。'); return }
+    if (action === 'replacement' && (!successor || !replacementTeam)) { setError(successor ? '请选择原负责人的所属团队。' : '请选择接任负责人。'); return }
     submitting.current = true; setBusy(true)
     try {
-      const next = action === 'replacement' ? await adminRepository.replaceManager(person.id, successorId, person.version, successors.find(p => p.id === successorId)!.version, successorTitle, formerTitle) : action === 'departure' ? await adminRepository.departPerson(person.id, date, person.version) : await adminRepository.changePersonJob(person.id, { jobTitle: roles.length === person.roles.length && roles.every(role => person.roles.includes(role)) ? person.jobTitle : roles.filter(role => role !== 'ADMIN').map(role => roleLabels[role]).join('、'), orgUnitId: org, supervisorId: effectiveSupervisor || null, roles }, person.version)
+      const next = action === 'replacement' ? await adminRepository.replaceManager(person.id, successorId, person.version, successor!.version, successorTitle, formerTitle, replacementTeam) : action === 'departure' ? await adminRepository.departPerson(person.id, date, person.version) : await adminRepository.changePersonJob(person.id, { jobTitle: roles.length === person.roles.length && roles.every(role => person.roles.includes(role)) ? person.jobTitle : roles.filter(role => role !== 'ADMIN').map(role => roleLabels[role]).join('、'), orgUnitId: org, supervisorId: effectiveSupervisor || null, roles }, person.version)
       onSaved(next)
     } catch (reason) {
       setError(errorMessage(reason))
@@ -66,8 +75,8 @@ export function PersonnelLifecycleDialog({ person, action, continuation, data, o
         {action === 'replacement' && continuation && <div className="handover-guidance"><strong>第 1 步：交接负责人 → 第 2 步：{continuation === 'departure' ? '办理离职' : '岗位调整'}</strong><p>请先选择接任负责人。交接成功后，将继续为 {person.displayName} {continuation === 'departure' ? '办理离职' : '调整岗位'}。</p></div>}
         {action === 'replacement' && !successors.length && <p className="error-message" role="alert">暂无符合条件的接任人员，请先新增员工或调整人员岗位。</p>}
         {action === 'departure' && <><label>离职日期<input type="date" value={date} max={today} required disabled={busy || blocked} onChange={event => setDate(event.target.value)} /></label>{departureError && <p className="error-message" role="alert">{departureError}</p>}</>}
-        {action === 'replacement' && <fieldset disabled={busy || blocked}><label>接任负责人<Select label="接任负责人" popupMinWidth={420} value={successorId} options={[{ value: '', label: '请选择' }, ...successors.map(p => ({ value: p.id, label: supervisorOptionLabel(data, p) }))]} onChange={setSuccessorId} required /></label><dl className="info-list"><div><dt>负责组织</dt><dd>{data.units.find(unit => unit.id === person.orgUnitId)?.name ?? '未分配'}</dd></div><div><dt>接任角色</dt><dd>{roleLabels[managerRole(person) ?? 'EMPLOYEE']}</dd></div><div><dt>原负责人角色</dt><dd>{person.roles.includes('ADMIN') ? '系统管理员、普通员工' : '普通员工'}</dd></div><div><dt>调整直属下属</dt><dd>{reports.filter(p => p.id !== successorId).map(p => p.displayName).join('、') || '无'}</dd></div></dl></fieldset>}
-        {action === 'job' && <fieldset disabled={busy || blocked}><label>所属组织<Select label="调整所属组织" value={org} options={[{ value: '', label: '未分配' }, ...organizationFilterOptions(data.units)]} onChange={setOrg} /></label><div className="lifecycle-roles" role="group" aria-label="岗位角色">{(Object.keys(roleLabels) as Role[]).map(role => <label key={role}><input type="checkbox" checked={roles.includes(role)} onChange={event => { const nextRoles = event.target.checked ? [...roles, role] : roles.filter(value => value !== role); setRoles(nextRoles); const nextOrg = followingOrganization(data, nextRoles, supervisor); if (nextOrg) setOrg(nextOrg) }} />{roleLabels[role]}</label>)}</div>{canHaveSupervisor(roles) && <label>直属上级<Select label="调整直属上级" popupMinWidth={380} value={supervisor} options={[{ value: '', label: '未设置' }, ...(supervisor && !candidates.some(p => p.id === supervisor) ? [{ value: supervisor, label: '原上级（请重新选择）' }] : []), ...candidates.map(p => ({ value: p.id, label: supervisorOptionLabel(data, p) }))]} onChange={value => { setSupervisor(value); const next = followingOrganization(data, roles, value); if (next) setOrg(next) }} /></label>}</fieldset>}
+        {action === 'replacement' && <fieldset disabled={busy || blocked}><label>接任负责人<Select label="接任负责人" popupMinWidth={420} value={successorId} options={[{ value: '', label: '请选择' }, ...successors.map(p => ({ value: p.id, label: supervisorOptionLabel(data, p) }))]} onChange={setSuccessorId} required /></label>{!formerOrgIsTeam && <label>原负责人所属团队<Select label="原负责人所属团队" required value={replacementTeam ?? ''} options={teams} onChange={setFormerTeam} /></label>}<dl className="info-list"><div><dt>负责组织</dt><dd>{data.units.find(unit => unit.id === person.orgUnitId)?.name ?? '未分配'}</dd></div><div><dt>接任角色</dt><dd>{roleLabels[managerRole(person) ?? 'EMPLOYEE']}</dd></div><div><dt>原负责人角色</dt><dd>{person.roles.includes('ADMIN') ? '系统管理员、普通员工' : '普通员工'}</dd></div><div><dt>调整直属下属</dt><dd>{reports.filter(p => p.id !== successorId).map(p => p.displayName).join('、') || '无'}</dd></div></dl></fieldset>}
+        {action === 'job' && <fieldset disabled={busy || blocked}><label>所属组织<Select label="调整所属组织" value={org} options={organizations.filter(option => organizationAllowsRole(jobRole, data.units.find(unit => unit.id === option.value)?.kind))} onChange={setOrg} /></label><div className="lifecycle-roles" role="radiogroup" aria-label="岗位角色">{businessRoles.map(role => <label key={role}><input type="radio" name="job-role" checked={jobRole === role} onChange={() => setJobRole(role)} /><span>{roleLabels[role]}</span></label>)}</div>{canHaveSupervisor(roles) && <label>直属上级<input readOnly value={supervisor ? supervisorOptionLabel(data, supervisor) : '未设置'} /></label>}</fieldset>}
         {action === 'history' && <>{!history && !error && <p role="status">正在加载…</p>}{history?.length === 0 && <p className="quiet-empty">暂无变动记录</p>}<ol className="personnel-timeline">{orderedHistory.map((change, index) => <li className="personnel-change" key={change.id}>
           <span className="personnel-event-number">{index + 1}</span>
           <h3>{change.kind === 'DEPARTURE' ? '办理离职' : `第 ${++jobChangeNumber} 次岗位调整`}</h3>

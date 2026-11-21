@@ -246,6 +246,7 @@ dialog, dialog .dialog-body, .bulk-entry-table { overscroll-behavior: contain; }
 .role-card { min-height: auto; }
 .role-card b { margin-top: 12px; }
 .confirm-dialog .dialog-body { padding-block: 26px; }
+.departure-reversal-details { margin-block: 16px 0; padding: 0; border: 0; }
 
 .personnel-groups { padding: 8px 24px 24px; }
 .select-option-label { display: inline-flex; align-items: baseline; gap: 9px; min-width: 0; }
@@ -539,9 +540,22 @@ dialog.editor-dialog.personnel-history-dialog { width: min(1120px, calc(100vw - 
 
 .handoff-status-table { max-height: 240px; }
 .handoff-status-table th, .handoff-status-table td { height: auto; padding: 12px 16px; }
-.lifecycle-roles { display: flex; flex-wrap: wrap; gap: 12px 18px; margin: 20px 0; }
-.lifecycle-roles label { display: flex; align-items: center; gap: 7px; }
-.lifecycle-roles input { width: auto; }
+.lifecycle-roles { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
+.dialog-body .lifecycle-roles label { position: relative; display: inline-flex; margin: 0; }
+.dialog-body .lifecycle-roles input[type='radio'] {
+  position: absolute; inset: 0; width: 100%; height: 100%; min-height: 0;
+  margin: 0; padding: 0; opacity: 0; cursor: pointer;
+}
+.lifecycle-roles span {
+  display: inline-flex; align-items: center; min-height: 32px; padding: 4px 12px;
+  border: 1px solid var(--border); border-radius: 8px; white-space: nowrap;
+  color: var(--text); background: var(--surface); font-size: calc(13px * var(--font-scale)); line-height: 1.25;
+}
+.lifecycle-roles input:enabled:hover + span { background: var(--surface-soft); }
+.lifecycle-roles input:checked + span { color: var(--action-text); background: var(--accent-soft); border-color: var(--action-text); font-weight: 600; }
+.lifecycle-roles input:focus-visible + span { outline: 2px solid var(--action-text); outline-offset: 2px; }
+.lifecycle-roles input:disabled { cursor: default; }
+.lifecycle-roles input:disabled + span { opacity: .65; }
 .personnel-timeline { list-style: none; padding: 0 0 0 36px; margin: 0; }
 .personnel-change { position: relative; border-left: 2px solid var(--border); padding: 0 0 24px 24px; }
 .personnel-change:last-child { padding-bottom: 0; border-left-color: transparent; }

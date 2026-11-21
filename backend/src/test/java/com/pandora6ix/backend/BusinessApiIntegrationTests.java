@@ -45,6 +45,7 @@ class BusinessApiIntegrationTests {
             peer;
     private String adminToken, founderToken, managerToken, leadToken, employeeToken, peerToken;
     private LocalDate today;
+    private int personnelFixtureNumber;
 
     @Test void sharedCompletionNotifiesEveryoneAndAcceptsOrRejectsAsOneTask() throws Exception {
         var task=createTask(managerToken,"DELEGATED",List.of(employee,peer));
@@ -424,7 +425,8 @@ class BusinessApiIntegrationTests {
                                         "jobTitle",
                                         "Developer",
                                         "roles",
-                                        roles, "gender", "MALE", "idNumber", "11010119900101001X", "phoneNumber", "+86 13800000000"),
+                                        roles, "gender", "MALE", "idNumber", String.format(Locale.ROOT, "000000200001010%03d", ++personnelFixtureNumber),
+                                        "phoneNumber", String.format(Locale.ROOT, "+86 13800000%03d", personnelFixtureNumber)),
                                 201)
                         .get("id");
     }
@@ -457,7 +459,8 @@ class BusinessApiIntegrationTests {
         request("POST","/admin/users/"+manager+"/manager-replacement",employeeToken,command,403);
         var result=request("POST","/admin/users/"+manager+"/manager-replacement",adminToken,command,200);
         assertEquals(3,items(result).size());
-        assertEquals(peer,user(manager).get("supervisorUserId")); assertEquals(List.of("EMPLOYEE"),user(manager).get("roles"));
+        assertEquals(lead,user(manager).get("supervisorUserId")); assertEquals(team,user(manager).get("orgUnitId"));
+        assertEquals(List.of("EMPLOYEE"),user(manager).get("roles"));
         assertTrue(((List<?>)user(peer).get("roles")).contains("DEPARTMENT_MANAGER")); assertEquals(department,user(peer).get("orgUnitId"));
         assertEquals(founder,user(peer).get("supervisorUserId")); assertEquals(peer,user(lead).get("supervisorUserId"));
         assertEquals(lead,user(employee).get("supervisorUserId"));
@@ -486,6 +489,7 @@ class BusinessApiIntegrationTests {
     void departureSeparatesEmploymentAndRevokesCredentialsWithoutDeletingHistory() throws Exception {
         var before=user(employee);
         String hash=str(db.entity("app_user",enterprise,employee),"password_hash");
+        request("POST","/admin/users/"+employee+"/job-change",adminToken,fields("expectedVersion",0,"jobTitle","Lead","orgUnitId",team,"supervisorUserId",manager,"roles",List.of("EMPLOYEE","TEAM_LEAD")),422);
         request("POST","/admin/users/"+employee+"/departure",employeeToken,fields("expectedVersion",0,"departureDate",today.toString()),403);
         request("POST","/admin/users/"+employee+"/departure",adminToken,fields("expectedVersion",1,"departureDate",today.toString()),409);
         request("POST","/admin/users/"+employee+"/departure",adminToken,fields("expectedVersion",0,"departureDate",today.plusDays(1).toString()),422);
@@ -520,7 +524,10 @@ class BusinessApiIntegrationTests {
         var before=user(employee);
         String hash=str(db.entity("app_user",enterprise,employee),"password_hash");
         request("POST","/admin/users/"+employee+"/job-change",adminToken,fields("expectedVersion",0,"jobTitle","Lead","orgUnitId",team,"supervisorUserId",lead,"roles",List.of("TEAM_LEAD")),422);
-        var changed=request("POST","/admin/users/"+employee+"/job-change",adminToken,fields("expectedVersion",0,"jobTitle","Team manager","orgUnitId",team,"supervisorUserId",manager,"roles",List.of("TEAM_LEAD")),200);
+        var occupied=request("POST","/admin/users/"+employee+"/job-change",adminToken,fields("expectedVersion",0,"jobTitle","Team manager","orgUnitId",team,"supervisorUserId",manager,"roles",List.of("TEAM_LEAD")),409);
+        assertEquals("LEADERSHIP_ROLE_TAKEN", occupied.get("code"));
+        String vacantTeam = createOrg("Vacant Team", "TEAM", department);
+        var changed=request("POST","/admin/users/"+employee+"/job-change",adminToken,fields("expectedVersion",0,"jobTitle","Team manager","orgUnitId",vacantTeam,"supervisorUserId",manager,"roles",List.of("TEAM_LEAD")),200);
         assertEquals(before.get("loginName"),changed.get("loginName")); assertEquals(before.get("idNumber"),changed.get("idNumber"));
         assertEquals(before.get("phoneNumber"),changed.get("phoneNumber")); assertEquals("IN_SERVICE",changed.get("employmentStatus"));
         assertEquals(hash,str(db.entity("app_user",enterprise,employee),"password_hash"));
@@ -529,7 +536,7 @@ class BusinessApiIntegrationTests {
         var history=request("GET","/admin/users/"+employee+"/personnel-changes",adminToken,null,200);
         assertTrue(json.writeValueAsString(history).contains("JOB_CHANGE"));
         var personnelHistory=items(history).getFirst();
-        assertEquals("Team",((Map<?,?>)personnelHistory.get("afterValues")).get("orgUnitName"));
+        assertEquals("Vacant Team",((Map<?,?>)personnelHistory.get("afterValues")).get("orgUnitName"));
         assertEquals("Administrator",personnelHistory.get("actorName"));
         var operationPage=request("GET","/admin/operation-logs?module=PERSONNEL&action=JOB_CHANGE",adminToken,null,200);
         assertEquals(1,items(operationPage).size());
@@ -545,8 +552,8 @@ class BusinessApiIntegrationTests {
         assertEquals(0,((Number)((Map<?,?>)((List<?>)detail.get("versions")).getFirst()).get("version")).intValue());
         String serializedOperation=json.writeValueAsString(detail);
         assertTrue(serializedOperation.contains("Team manager"));
-        assertFalse(serializedOperation.contains("11010119900101001X"));
-        assertFalse(serializedOperation.contains("+86 13800000000"));
+        assertFalse(serializedOperation.contains(str(before, "idNumber")));
+        assertFalse(serializedOperation.contains(str(before, "phoneNumber")));
         db.update("UPDATE org_unit SET name='Renamed Team' WHERE enterprise_id=? AND id=?",enterprise,team);
         var detailAfterRename=request("GET","/admin/operation-logs/"+operation.get("id"),adminToken,null,200);
         assertTrue(json.writeValueAsString(detailAfterRename).contains("Team"));
@@ -2722,6 +2729,85 @@ class BusinessApiIntegrationTests {
     }
 
     @Test
+    void ordinaryPersonnelRequireTeamsAndLegacyAssignmentsCanBeCorrected() throws Exception {
+        var create = personnelCommand("department-employee");
+        for (String org : new String[]{null, root, department}) {
+            create.put("orgUnitId", org);
+            assertEquals("PERSONNEL_ORGANIZATION_MISMATCH", request("POST", "/admin/users", adminToken, create, 422).get("code"));
+        }
+        create.put("orgUnitId", team);
+        var created = request("POST", "/admin/users", adminToken, create, 201);
+        String id = str(created, "id");
+        var move = personnelPatch(id, 0, List.of("EMPLOYEE"));
+        move.put("orgUnitId", department);
+        assertEquals("PERSONNEL_ORGANIZATION_MISMATCH", request("PATCH", "/admin/users/" + id, adminToken, move, 422).get("code"));
+        assertEquals("PERSONNEL_ORGANIZATION_MISMATCH", request("POST", "/admin/users/" + id + "/job-change", adminToken,
+                fields("expectedVersion", 0, "orgUnitId", department, "roles", List.of("EMPLOYEE")), 422).get("code"));
+        db.update("UPDATE app_user SET org_unit_id=? WHERE enterprise_id=? AND id=?", department, enterprise, id);
+        var legacy = personnelPatch(id, 0, List.of("EMPLOYEE"));
+        legacy.put("displayName", "Legacy staff member");
+        request("PATCH", "/admin/users/" + id, adminToken, legacy, 200);
+        request("POST", "/admin/users/" + id + "/departure", adminToken,
+                fields("expectedVersion", 1, "departureDate", today.toString()), 200);
+        request("POST", "/admin/users/" + id + "/departure-reversal", adminToken, fields("expectedVersion", 2), 422);
+        var restored = request("POST", "/admin/users/" + id + "/departure-reversal", adminToken,
+                fields("expectedVersion", 2, "orgUnitId", team), 200);
+        assertEquals(team, restored.get("orgUnitId"));
+        assertEquals(lead, restored.get("supervisorUserId"));
+    }
+
+    @Test
+    void leadershipSlotsAreScopedAndConcurrentClaimsHaveOneWinner() throws Exception {
+        var secondFounder = personnelCommand("second-founder");
+        secondFounder.putAll(fields("roles", List.of("FOUNDER"), "orgUnitId", root, "supervisorUserId", null));
+        assertEquals("LEADERSHIP_ROLE_TAKEN", request("POST", "/admin/users", adminToken, secondFounder, 409).get("code"));
+        var secondManager = personnelCommand("second-manager");
+        secondManager.putAll(fields("roles", List.of("DEPARTMENT_MANAGER"), "orgUnitId", department, "supervisorUserId", founder));
+        assertEquals("LEADERSHIP_ROLE_TAKEN", request("POST", "/admin/users", adminToken, secondManager, 409).get("code"));
+        String vacantTeam = createOrg("Vacant Team", "TEAM", department);
+        var first = personnelPatch(employee, 0, List.of("TEAM_LEAD"));
+        var second = personnelPatch(peer, 0, List.of("TEAM_LEAD"));
+        first.putAll(fields("orgUnitId", vacantTeam, "supervisorUserId", manager));
+        second.putAll(fields("orgUnitId", vacantTeam, "supervisorUserId", manager));
+        var start = new CountDownLatch(1);
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var a = executor.submit(() -> { start.await(); return raw("PATCH", "/admin/users/" + employee, adminToken, first); });
+            var b = executor.submit(() -> { start.await(); return raw("PATCH", "/admin/users/" + peer, adminToken, second); });
+            start.countDown();
+            var results = List.of(a.get(20, TimeUnit.SECONDS), b.get(20, TimeUnit.SECONDS));
+            assertEquals(List.of(200, 409), results.stream().map(Result::status).sorted().toList());
+            assertTrue(results.stream().anyMatch(result -> result.status() == 409 && result.body().contains("LEADERSHIP_ROLE_TAKEN")));
+        }
+        assertTrue(((List<?>) user(lead).get("roles")).contains("TEAM_LEAD"));
+    }
+
+    @Test
+    void reversingDepartureRestoresEmploymentAndKeepsPriorAccountAvailability() throws Exception {
+        request("POST", "/admin/users/" + employee + "/departure", adminToken,
+                fields("expectedVersion", 0, "departureDate", today.toString()), 200);
+        request("POST", "/admin/users/" + employee + "/departure-reversal", adminToken, fields("expectedVersion", 0), 409);
+        var restored = request("POST", "/admin/users/" + employee + "/departure-reversal", adminToken, fields("expectedVersion", 1), 200);
+        assertEquals("IN_SERVICE", restored.get("employmentStatus"));
+        assertEquals("ACTIVE", restored.get("status"));
+        assertEquals(lead, restored.get("supervisorUserId"));
+        assertNull(restored.get("departureDate"));
+        request("GET", "/me", employeeToken, null, 401);
+        assertNotNull(login("employee"));
+        var history = items(request("GET", "/admin/users/" + employee + "/personnel-changes", adminToken, null, 200));
+        assertEquals(2, history.size());
+        assertEquals(1, items(request("GET", "/admin/operation-logs?module=PERSONNEL&action=DEPARTURE_REVERSAL", adminToken, null, 200)).size());
+
+        var disabled = personnelPatch(peer, 0, List.of("EMPLOYEE"));
+        disabled.put("status", "DISABLED");
+        request("PATCH", "/admin/users/" + peer, adminToken, disabled, 200);
+        request("POST", "/admin/users/" + peer + "/departure", adminToken,
+                fields("expectedVersion", 1, "departureDate", today.toString()), 200);
+        var disabledAgain = request("POST", "/admin/users/" + peer + "/departure-reversal", adminToken, fields("expectedVersion", 2), 200);
+        assertEquals("IN_SERVICE", disabledAgain.get("employmentStatus"));
+        assertEquals("DISABLED", disabledAgain.get("status"));
+    }
+
+    @Test
     void administratorRenamesLoginWithoutChangingIdentityPasswordProfileOrBusinessRelations() throws Exception {
         var task = createTask(employeeToken, "PERSONAL", List.of());
         var journal = journal(employeeToken, today, 1);
@@ -2853,6 +2939,60 @@ class BusinessApiIntegrationTests {
     }
 
     @Test
+    void concurrentPersonnelCreatesRejectDuplicateIdentityNumbers() throws Exception {
+        var first = personnelCommand("identity-first");
+        var second = personnelCommand("identity-second");
+        var start = new CountDownLatch(1);
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var a = executor.submit(() -> { start.await(); return raw("POST", "/admin/users", adminToken, first); });
+            var b = executor.submit(() -> { start.await(); return raw("POST", "/admin/users", adminToken, second); });
+            start.countDown();
+            var results = List.of(a.get(20, TimeUnit.SECONDS), b.get(20, TimeUnit.SECONDS));
+            assertEquals(List.of(201, 409), results.stream().map(Result::status).sorted().toList());
+            var rejected = results.stream().filter(r -> r.status() == 409).findFirst().orElseThrow();
+            assertTrue(rejected.body().contains("ID_NUMBER_TAKEN"));
+            assertFalse(rejected.body().contains((String) first.get("idNumber")));
+        }
+        assertEquals(1, db.rows("SELECT id FROM app_user WHERE enterprise_id=? AND id_number=?", enterprise, first.get("idNumber")).size());
+    }
+
+    @Test
+    void personnelEditsRejectAnotherIdentityNumberAndPreserveHistoricalDuplicates() throws Exception {
+        String peerIdentity = str(db.entity("app_user", enterprise, peer), "id_number");
+        var patch = personnelPatch(employee, 0, List.of("EMPLOYEE"));
+        patch.put("idNumber", peerIdentity);
+        assertEquals("ID_NUMBER_TAKEN", request("PATCH", "/admin/users/" + employee, adminToken, patch, 409).get("code"));
+        assertEquals(0, number(db.entity("app_user", enterprise, employee), "version"));
+
+        db.update("UPDATE app_user SET id_number=? WHERE enterprise_id=? AND id=?", peerIdentity, enterprise, employee);
+        patch.put("displayName", "Updated employee");
+        var updated = request("PATCH", "/admin/users/" + employee, adminToken, patch, 200);
+        assertEquals(peerIdentity, updated.get("idNumber"));
+        assertEquals("Updated employee", updated.get("displayName"));
+    }
+
+    @Test
+    void concurrentPhoneClaimsIgnoreFormattingAndPreventDuplicateEdits() throws Exception {
+        var first = personnelCommand("phone-first");
+        var second = personnelCommand("phone-second");
+        first.put("phoneNumber", "+86 (021) 7777-1234");
+        second.putAll(fields("phoneNumber", "86-021-7777-1234", "idNumber", "000000200001010888"));
+        var start = new CountDownLatch(1);
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var a = executor.submit(() -> { start.await(); return raw("POST", "/admin/users", adminToken, first); });
+            var b = executor.submit(() -> { start.await(); return raw("POST", "/admin/users", adminToken, second); });
+            start.countDown();
+            var results = List.of(a.get(20, TimeUnit.SECONDS), b.get(20, TimeUnit.SECONDS));
+            assertEquals(List.of(201, 409), results.stream().map(Result::status).sorted().toList());
+            assertTrue(results.stream().anyMatch(result -> result.status() == 409 && result.body().contains("PHONE_NUMBER_TAKEN")));
+        }
+        var patch = personnelPatch(employee, 0, List.of("EMPLOYEE"));
+        patch.put("phoneNumber", "8602177771234");
+        assertEquals("PHONE_NUMBER_TAKEN", request("PATCH", "/admin/users/" + employee, adminToken, patch, 409).get("code"));
+        assertEquals(0, number(db.entity("app_user", enterprise, employee), "version"));
+    }
+
+    @Test
     void personnelProfilePersistsLoginAndRoleEditsWithoutBusinessLeakage() throws Exception {
         var created = request("POST", "/admin/users", adminToken, personnelCommand("profile"), 201);
         String id = str(created, "id");
@@ -2954,7 +3094,7 @@ class BusinessApiIntegrationTests {
         assertEquals("ORG_HAS_CHILDREN", request("DELETE", "/admin/org-units/" + department, adminToken, fields("expectedVersion", 0), 409).get("code"));
         assertEquals("ORG_HAS_MEMBERS", request("DELETE", "/admin/org-units/" + team, adminToken, fields("expectedVersion", 0), 409).get("code"));
         String leaf = createOrg("Disabled account department", "DEPARTMENT", root);
-        String disabled = createUser("disabled-delete", leaf, founder, List.of("EMPLOYEE"));
+        String disabled = createUser("disabled-delete", leaf, founder, List.of("DEPARTMENT_MANAGER"));
         db.update("UPDATE app_user SET status='DISABLED' WHERE id=?", disabled);
         assertEquals("ORG_HAS_MEMBERS", request("DELETE", "/admin/org-units/" + leaf, adminToken, fields("expectedVersion", 0), 409).get("code"));
         assertNotNull(db.entity("org_unit", enterprise, leaf));
@@ -3067,7 +3207,8 @@ class BusinessApiIntegrationTests {
     @Test
     void concurrentOrganizationConversionAndManagerPromotionPreserveRoleKindInvariant() throws Exception {
         String leaf = createOrg("Concurrent leaf", "DEPARTMENT", root);
-        String member = createUser("concurrent-member", leaf, founder, List.of("EMPLOYEE"));
+        String member = createUser("concurrent-member", team, founder, List.of("EMPLOYEE"));
+        db.update("UPDATE app_user SET org_unit_id=? WHERE enterprise_id=? AND id=?", leaf, enterprise, member);
         var start = new CountDownLatch(1);
         try (var executor = Executors.newFixedThreadPool(2)) {
             var conversion = executor.submit(() -> { start.await(); return raw("PATCH", "/admin/org-units/"+leaf, adminToken,
@@ -3782,7 +3923,7 @@ class BusinessApiIntegrationTests {
         var detail=request("GET","/admin/operation-logs/"+logId,adminToken,null,200);
         assertEquals("employee",((Map<?,?>)detail.get("actor")).get("displayName"));
         assertTrue(json.writeValueAsString(detail).contains("Historical tag"));
-        assertFalse(json.writeValueAsString(detail).contains("11010119900101001X"));
+        assertFalse(json.writeValueAsString(detail).contains(str(db.entity("app_user", enterprise, employee), "id_number")));
         request("PATCH","/tasks/"+task.get("id"),peerToken,revision(0,"PRIVATE FAILED BODY"),404,"X-Client-Source","WEB");
         var failures=db.rows("SELECT * FROM operation_log WHERE enterprise_id=? AND object_id=? AND result='FAILURE'",enterprise,task.get("id"));
         assertEquals(1,failures.size());assertEquals("WEB",failures.getFirst().get("source"));

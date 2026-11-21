@@ -12,7 +12,12 @@ function reader(url: string) {
   if (url.endsWith('/me')) return { id: 'admin', roles: ['ADMIN'] }
   if (url.endsWith('/admin/enterprise')) return company
   if (url.includes('/admin/users')) return { items: [administrator, employee], nextCursor: null }
-  if (url.includes('/admin/org-units')) return { items: [{ id: 'root', name: '公司', kind: 'COMPANY', parentId: null, version: 0 }], nextCursor: null }
+  if (url.includes('/admin/org-units')) return { items: [
+    { id: 'root', name: '公司', kind: 'COMPANY', parentId: null, version: 0 },
+    { id: 'department', name: '部门', kind: 'DEPARTMENT', parentId: 'root', version: 0 },
+    { id: 'team', name: '团队', kind: 'TEAM', parentId: 'department', version: 0 },
+    { id: 'new-team', name: '新团队', kind: 'TEAM', parentId: 'department', version: 0 },
+  ], nextCursor: null }
   return { items: [], nextCursor: null }
 }
 
@@ -114,7 +119,7 @@ test('clearing identity while a write is pending prevents an old-company snapsho
 })
 
 const personal = { gender: 'FEMALE' as const, idNumber: '00000020000101000X', phoneNumber: '00000000000' }
-const newPerson: PersonInput = { displayName: '测试员工', loginName: 'new-staff', jobTitle: '测试', orgUnitId: 'root', supervisorId: null, roles: ['EMPLOYEE'], ...personal }
+const newPerson: PersonInput = { displayName: '测试员工', loginName: 'new-staff', jobTitle: '测试', orgUnitId: 'team', supervisorId: null, roles: ['EMPLOYEE'], ...personal }
 
 test('employee password reset sends only version and replacement password and preserves profile/status', async () => {
   let submitted: unknown
@@ -272,9 +277,29 @@ test('supported employee creation uses one request including login and personal 
   await repository.getWorkspace()
   const data = await repository.savePerson(newPerson, undefined, undefined, 'valid-password')
   assert.equal(writes.length, 1)
-  assert.deepEqual(writes[0], { loginName: 'new-staff', password: 'valid-password', displayName: '测试员工', jobTitle: '测试', orgUnitId: 'root', supervisorUserId: null, roles: ['EMPLOYEE'], ...personal })
+  assert.deepEqual(writes[0], { loginName: 'new-staff', password: 'valid-password', displayName: '测试员工', jobTitle: '测试', orgUnitId: 'team', supervisorUserId: null, roles: ['EMPLOYEE'], ...personal })
   assert.equal(data.people.find(value => value.id === 'new')?.idNumber, personal.idNumber)
   assert.ok(data.people.every(value => !('password' in value)))
+})
+
+test('personnel writes reject duplicate identity numbers and names with symbols', async () => {
+  const repository = createHttpAdminRepository(createApiClient({ baseUrl: '/api/v1', fetcher: async (url, options) => {
+    assert.ok(options?.method !== 'POST' && options?.method !== 'PATCH', 'invalid entries must not be written')
+    if (String(url).includes('/admin/users')) return Response.json({ data: { items: [
+      { ...administrator, gender: null, idNumber: null, phoneNumber: null },
+      { ...employee, ...personal },
+    ], nextCursor: null } })
+    return Response.json({ data: reader(String(url)) })
+  } }))
+  const data = await repository.getWorkspace()
+  await assert.rejects(repository.savePerson(newPerson, undefined, undefined, 'valid-password'), /身份证号.*其他人员/)
+  await assert.rejects(repository.savePerson({ ...newPerson, displayName: '张三@' }, undefined, undefined, 'valid-password'), /姓名/)
+  await assert.rejects(repository.savePerson({ ...newPerson, displayName: '张 三' }, undefined, undefined, 'valid-password'), /姓名.*空格/)
+  await assert.rejects(repository.savePerson({ ...newPerson, displayName: '大Cheng' }, undefined, undefined, 'valid-password'), /纯中文或纯英文字母/)
+  await assert.rejects(repository.savePerson({ ...newPerson, idNumber: '000000200001010002' }, undefined, undefined, 'valid-password'), /电话号码.*其他人员/)
+  const admin = data.people.find(person => person.id === administrator.id)!
+  await assert.rejects(repository.savePerson({ ...admin, idNumber: personal.idNumber }, admin.id, admin.version), /身份证号.*其他人员/)
+  await assert.rejects(repository.savePerson({ ...admin, phoneNumber: '000-0000-0000' }, admin.id, admin.version), /电话号码.*其他人员/)
 })
 
 test('role-only and ordinary edits preserve supported personal fields and status', async () => {

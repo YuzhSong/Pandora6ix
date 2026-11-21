@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { AdminData, CompanyImportantItem } from '../data/types.ts'
 import { canHaveSupervisor } from '../data/supervisors.ts'
 import { roleLabels } from '../data/types.ts'
+import { displayedPersonnelRoles } from '../data/personnelDisplay.ts'
 import type { DisplayPreferences } from '../data/preferences.ts'
 import type { EditRequest } from './AdminEditor.tsx'
 import { Icon } from './Icon.tsx'
@@ -90,7 +91,7 @@ function ItemDetail({ item, onClose }: { item: CompanyImportantItem; onClose: ()
 
 export function AccountPage({ data, avatarRevision = 0, onChangePassword, onChangeAvatar }: { data: AdminData; avatarRevision?: number; onChangePassword: () => void; onChangeAvatar: () => void }) {
   const person = data.people.find(item => item.id === data.currentUserId)!
-  return <div className="profile-layout"><section className="panel account-card"><div className="panel-heading"><h2>我的账号</h2><Icon name="people" /></div><div className="account-identity"><button type="button" className="avatar avatar-edit-button" aria-label="修改我的头像" title="点击修改头像" onClick={onChangeAvatar}><AvatarImage personId={person.id} name={person.displayName} revision={avatarRevision} /></button><div><h3>{person.displayName}</h3><span>{accountIdentifier({ loginName: person.loginName, enterpriseDomain: data.enterprise.loginDomain })}</span></div></div><dl className="info-list"><div><dt>所属企业</dt><dd>{data.enterprise.name}</dd></div><div><dt>所属组织</dt><dd>{data.units.find(unit => unit.id === person.orgUnitId)?.name || '未分配组织'}</dd></div>{canHaveSupervisor(person.roles) && <div><dt>直属上级</dt><dd>{data.people.find(item => item.id === person.supervisorId)?.displayName || '未设置'}</dd></div>}<div><dt>业务角色</dt><dd>{person.roles.map(role => roleLabels[role]).join('、')}</dd></div></dl><div className="password-section"><h3>账号安全</h3><button className="button secondary" onClick={onChangePassword}>修改密码</button></div></section></div>
+  return <div className="profile-layout"><section className="panel account-card"><div className="panel-heading"><h2>我的账号</h2><Icon name="people" /></div><div className="account-identity"><button type="button" className="avatar avatar-edit-button" aria-label="修改我的头像" title="点击修改头像" onClick={onChangeAvatar}><AvatarImage personId={person.id} name={person.displayName} revision={avatarRevision} /></button><div><h3>{person.displayName}</h3><span>{accountIdentifier({ loginName: person.loginName, enterpriseDomain: data.enterprise.loginDomain })}</span></div></div><dl className="info-list"><div><dt>所属企业</dt><dd>{data.enterprise.name}</dd></div><div><dt>所属组织</dt><dd>{data.units.find(unit => unit.id === person.orgUnitId)?.name || '未分配组织'}</dd></div>{canHaveSupervisor(person.roles) && <div><dt>直属上级</dt><dd>{data.people.find(item => item.id === person.supervisorId)?.displayName || '未设置'}</dd></div>}<div><dt>业务角色</dt><dd>{displayedPersonnelRoles(person).map(role => roleLabels[role]).join('、')}</dd></div></dl><div className="password-section"><h3>账号安全</h3><button className="button secondary" onClick={onChangePassword}>修改密码</button></div></section></div>
 }
 
 export function SettingsPage({ preferences, error, onChange }: { preferences: DisplayPreferences; error: string; onChange: (preferences: DisplayPreferences) => void }) {
