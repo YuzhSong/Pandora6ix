@@ -11,6 +11,7 @@ import { ApiError, createApiClient } from '../src/api/client.ts'
 import { createAuthService } from '../src/api/auth.ts'
 import { createSessionStore } from '../src/api/session.ts'
 import { createHttpAdminRepository } from '../src/data/httpAdminRepository.ts'
+import { displayedPersonnelRoles } from '../src/data/personnelDisplay.ts'
 import { createBackendProxy } from '../dev/backendProxy.ts'
 import { bulkPersonnelTemplate, createBulkPersonnel, previewBulkPersonnel } from '../src/data/bulkPersonnel.ts'
 
@@ -86,12 +87,16 @@ try {
   data = await repository.saveUnit({ name: '研发部', kind: 'DEPARTMENT', parentId: data.units[0].id })
   const department = data.units.find(unit => unit.name === '研发部')!
   data = await repository.saveUnit({ name: 'Web 团队', kind: 'TEAM', parentId: department.id })
+  const homeTeam = data.units.find(unit => unit.name === 'Web 团队')!
   const personnel = { gender: 'MALE' as const, idNumber: '11010119900101001X', phoneNumber: '13800000000' }
-  await client.request('/admin/users', { method: 'POST', body: { displayName: '测试负责人', loginName: 'manager', jobTitle: '负责人', orgUnitId: data.units[0].id, supervisorUserId: null, roles: ['FOUNDER'], password: previewPassword ?? randomUUID(), ...personnel } })
+  await client.request('/admin/users', { method: 'POST', body: { displayName: '测试负责人', loginName: 'manager', jobTitle: '负责人', orgUnitId: data.units[0].id, supervisorUserId: null, roles: ['FOUNDER'], password: previewPassword ?? randomUUID(), ...personnel, idNumber: '000000200001010010', phoneNumber: '13800000010' } })
   data = await repository.load()
   const manager = data.people.find(person => person.loginName === 'manager')!
   const staffPassword = previewPassword ?? randomUUID()
-  data = await repository.savePerson({ displayName: '测试人员', loginName: 'staff', jobTitle: '前端', orgUnitId: department.id, supervisorId: manager.id, roles: ['EMPLOYEE'], ...personnel }, undefined, undefined, staffPassword)
+  data = await repository.savePerson({ displayName: '测试人员', loginName: 'staff', jobTitle: '前端', orgUnitId: homeTeam.id, supervisorId: manager.id, roles: ['EMPLOYEE'], ...personnel }, undefined, undefined, staffPassword)
+  await assert.rejects(client.request('/admin/users', { method: 'POST', body: {
+    displayName: '重复人员', loginName: 'duplicate-staff', password: randomUUID(), roles: ['EMPLOYEE'], ...personnel,
+  } }), (error: unknown) => error instanceof ApiError && error.status === 409 && error.code === 'ID_NUMBER_TAKEN')
   data = await repository.load()
   assert.equal(data.people.find(person => person.loginName === 'staff')?.gender, personnel.gender)
   assert.equal(data.people.find(person => person.loginName === 'staff')?.idNumber, personnel.idNumber)
@@ -124,7 +129,7 @@ try {
   assert.equal(renamed.user.id, staff.id)
   await anonymous.request('/auth/logout', { method: 'POST', authenticated: false, headers: { Authorization: `Bearer ${renamed.accessToken}` } })
   await assert.rejects(repository.savePerson({ ...staff, loginName: 'admin' }, staff.id, staff.version), (error: unknown) => error instanceof ApiError && error.code === 'LOGIN_NAME_TAKEN')
-  data = await repository.saveRoles(staff.id, ['EMPLOYEE', 'DEPARTMENT_MANAGER'], staff.version)
+  data = await repository.savePerson({ ...staff, orgUnitId: department.id, roles: ['DEPARTMENT_MANAGER'] }, staff.id, staff.version)
   assert.equal(data.people.find(person => person.id === staff.id)!.idNumber, personnel.idNumber)
   data = await repository.load()
   assert.equal(data.people.find(person => person.id === staff.id)!.phoneNumber, personnel.phoneNumber)
@@ -166,7 +171,7 @@ try {
   const changedHandoff = (await repository.credentialHandoffs(staff.id))[0]
   assert.equal(changedHandoff.status, 'CHANGED'); assert.equal(changedHandoff.initialPassword, undefined)
   await assert.rejects(changedClient.request('/me'), (reason: unknown) => reason instanceof ApiError && reason.status === 401)
-  const batchPreview = previewBulkPersonnel(bulkPersonnelTemplate() + ['批量甲,batch-one', '批量乙,batch-two'].map(prefix => `${prefix},女,000000200001010001,00000000001,员工,${department.name},manager`).join('\n'), data)
+  const batchPreview = previewBulkPersonnel(bulkPersonnelTemplate() + ['批量甲,batch-one', '批量乙,batch-two'].map((prefix, index) => `${prefix},女,00000020000101000${index + 1},0000000000${index + 1},员工,${homeTeam.name},manager`).join('\n'), data)
   assert.deepEqual(batchPreview.errors, [])
   let batchCreated = 0
   await createBulkPersonnel(batchPreview.rows, repository, { stopped: () => false, onRow: (_, status, message) => { assert.notEqual(status, 'failed', message) }, onCreated: (next, account) => { data = next; batchCreated++; assert.equal(account.initialPassword, batchPreview.rows.find(row => row.input.loginName === account.loginName)!.initialPassword) } })
@@ -195,14 +200,15 @@ try {
   assert.ok(!(await repository.credentialHandoffs()).some(account => account.personId === departed.id && account.initialPassword))
   assert.equal((await repository.personnelChanges(departed.id))[0].kind, 'DEPARTURE')
   const successorPassword = previewPassword ?? randomUUID()
-  data = await repository.savePerson({ displayName: '接任员工', loginName: 'new-manager', jobTitle: '员工', orgUnitId: department.id, supervisorId: staff.id, roles: ['EMPLOYEE'], ...personnel }, undefined, undefined, successorPassword)
+  data = await repository.savePerson({ displayName: '接任员工', loginName: 'new-manager', jobTitle: '员工', orgUnitId: homeTeam.id, supervisorId: promoted.id, roles: ['EMPLOYEE'], ...personnel, idNumber: '000000200001010011', phoneNumber: '13800000011' }, undefined, undefined, successorPassword)
   const successor = data.people.find(person => person.loginName === 'new-manager')!
   const formerManager = data.people.find(person => person.id === staff.id)!
   data = await repository.replaceManager(formerManager.id, successor.id, formerManager.version, successor.version, '部门负责人', '员工')
   assert.deepEqual(data.people.find(p => p.id === formerManager.id)!.roles, ['EMPLOYEE'])
-  assert.ok(data.people.find(p => p.id === successor.id)!.roles.includes('DEPARTMENT_MANAGER'))
+  assert.deepEqual(displayedPersonnelRoles(data.people.find(p => p.id === successor.id)!), ['DEPARTMENT_MANAGER'])
   assert.equal(data.people.find(p => p.id === promotionTarget.id)!.supervisorId, successor.id)
-  assert.equal(data.people.find(p => p.id === formerManager.id)!.supervisorId, successor.id)
+  assert.equal(data.people.find(p => p.id === formerManager.id)!.orgUnitId, homeTeam.id)
+  assert.equal(data.people.find(p => p.id === formerManager.id)!.supervisorId, promoted.id)
   const itemKey = randomUUID(), command = { title: '真实联调事项', content: '<script>纯文本正文</script>', displayOrder: 1 }
   data = await repository.saveCompanyItem(command, undefined, undefined, itemKey)
   data = await repository.saveCompanyItem(command, undefined, undefined, itemKey)

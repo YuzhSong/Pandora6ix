@@ -39,7 +39,9 @@ class CredentialHandoffConfigurationTests {
                 fields("loginDomain", domain, "name", "Key test", "adminLoginName", "admin", "adminPassword", password, "adminDisplayName", "Administrator"), 201);
         String enterprise = str(initialized, "id");
         String token = str(post("/auth/login", null, fields("enterpriseDomain", domain, "loginName", "admin", "password", password), 200), "accessToken");
-        var error = post("/admin/users", token, fields("loginName", "newemployee", "password", password, "displayName", "Employee", "orgUnitId", initialized.get("rootOrgUnitId"), "roles", List.of("EMPLOYEE"), "gender", "MALE", "idNumber", "000000200001010001", "phoneNumber", "00000000001"), 503);
+        var department = post("/admin/org-units", token, fields("name", "Department", "kind", "DEPARTMENT", "parentId", initialized.get("rootOrgUnitId")), 201);
+        var team = post("/admin/org-units", token, fields("name", "Team", "kind", "TEAM", "parentId", department.get("id")), 201);
+        var error = post("/admin/users", token, fields("loginName", "newemployee", "password", password, "displayName", "Employee", "orgUnitId", team.get("id"), "roles", List.of("EMPLOYEE"), "gender", "MALE", "idNumber", "000000200001010001", "phoneNumber", "00000000001"), 503);
         assertEquals("HANDOFF_KEY_NOT_CONFIGURED", error.get("code"));
         assertEquals(1, db.rows("SELECT id FROM app_user WHERE enterprise_id=?", enterprise).size());
         String user = id();

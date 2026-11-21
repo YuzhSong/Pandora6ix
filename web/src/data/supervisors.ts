@@ -1,4 +1,4 @@
-import type { Person, Role } from './types.ts'
+import type { AdminData, Person, Role } from './types.ts'
 
 // ADMIN grants directory maintenance, not a business management level.
 export function businessRank(roles: Role[]): number {
@@ -10,6 +10,24 @@ export function businessRank(roles: Role[]): number {
 
 export function canHaveSupervisor(roles: Role[]): boolean {
   return !roles.includes('ADMIN') && !roles.includes('FOUNDER') && businessRank(roles) >= 0
+}
+
+export function organizationSupervisor(data: Pick<AdminData, 'people' | 'units'>, orgId: string, roles: Role[], personId?: string) {
+  if (!orgId || !canHaveSupervisor(roles)) return undefined
+  const candidates = supervisorCandidates(data.people, personId, roles)
+  const visited = new Set<string>()
+  let unit = data.units.find(candidate => candidate.id === orgId)
+  while (unit && !visited.has(unit.id)) {
+    const unitId = unit.id
+    visited.add(unitId)
+    const requiredRole = unit.kind === 'TEAM' ? 'TEAM_LEAD' : unit.kind === 'DEPARTMENT' ? 'DEPARTMENT_MANAGER' : 'FOUNDER'
+    const supervisor = candidates.find(candidate => candidate.roles.includes(requiredRole) &&
+      (requiredRole === 'FOUNDER' || candidate.orgUnitId === unitId))
+    if (supervisor) return supervisor
+    const parent = unit.parentId
+    unit = data.units.find(candidate => candidate.id === parent)
+  }
+  return undefined
 }
 
 export function supervisorCandidates(people: Person[], subjectId: string | undefined, roles: Role[]): Person[] {

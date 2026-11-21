@@ -117,6 +117,11 @@ public class IdentityController {
         return personnel.depart(identity.current(),id,c);
     }
 
+    @PostMapping("/admin/users/{id}/departure-reversal")
+    public Object reverseDeparture(@PathVariable String id, @Valid @RequestBody Contracts.UserDepartureReversal c) {
+        return personnel.reverseDeparture(identity.current(), id, c);
+    }
+
     @PostMapping("/admin/users/{id}/job-change")
     public Object jobChange(@PathVariable String id, @Valid @RequestBody Contracts.UserJobChange c) {
         return personnel.changeJob(identity.current(),id,c);

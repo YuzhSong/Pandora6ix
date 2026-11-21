@@ -31,8 +31,9 @@ export type CompanyItemInput = Pick<CompanyImportantItem, 'title' | 'content' | 
 
 export interface AdminRepository {
   restoreAccount(personId: string, expectedVersion: number): Promise<AdminData>
-  replaceManager(personId: string, successorId: string, expectedVersion: number, successorExpectedVersion: number, successorJobTitle: string, formerJobTitle: string): Promise<AdminData>
+  replaceManager(personId: string, successorId: string, expectedVersion: number, successorExpectedVersion: number, successorJobTitle: string, formerJobTitle: string, formerOrgUnitId?: string): Promise<AdminData>
   departPerson(personId: string, departureDate: string, expectedVersion: number): Promise<AdminData>
+  reverseDeparture(personId: string, expectedVersion: number, orgUnitId?: string): Promise<AdminData>
   changePersonJob(personId: string, input: JobChangeInput, expectedVersion: number): Promise<AdminData>
   personnelChanges(personId: string): Promise<PersonnelChange[]>
   credentialHandoffs(userId?: string): Promise<CredentialHandoff[]>
