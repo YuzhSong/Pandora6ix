@@ -104,6 +104,27 @@ class CrmIntegrationTests {
     }
 
 
+    @Test
+    void membershipEntitlementsInheritCustomerScope() throws Exception {
+        String customer = customer(employee);
+        var input = fields("customerId", customer, "membershipType", "Fictional annual card",
+                "startDate", "2026-11-01", "endDate", "2027-11-01");
+        String member = request("POST", "/crm/memberships", admin, input, 201).get("id").asString();
+        String benefits = "/crm/memberships/" + member + "/benefits";
+        String benefit = request("POST", benefits, admin, fields("name", "Fictional salon pass"), 201).get("id").asString();
+        String uses = "/crm/benefits/" + benefit + "/uses";
+        var use = fields("serviceDate", "2026-12-01", "status", "SCHEDULED");
+        String usage = request("POST", uses, admin, use, 201).get("id").asString();
+        use.put("status", "COMPLETED");
+        use.put("version", 0);
+        request("PUT", uses + "/" + usage, admin, use, 200);
+        assertEquals("COMPLETED", request("GET", uses, employee, null, 200).get(0).get("status").asString());
+        request("GET", uses, peer, null, 404);
+        request("GET", benefits, outsider, null, 404);
+        request("POST", benefits, employee, fields("name", "Forbidden"), 403);
+        request("POST", uses, outsider, use, 404);
+    }
+
     private String customer(User owner) throws Exception {
         return request("POST", "/crm/customers", admin, customerInput(owner), 201).get("id").asString();
     }

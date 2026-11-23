@@ -10,7 +10,7 @@
 - [ ] 3.2 Implement Android personal queries and isolated build.
 
 ## 4. Membership and labor contracts
-- [ ] 4.1 Implement member, benefit and service records.
+- [x] 4.1 Implement member, benefit and service records.
 - [ ] 4.2 Implement protected contracts, attachment download and expiry indicators.
 - [ ] 4.3 Add Web forms for membership and contracts.
 
