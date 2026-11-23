@@ -1,5 +1,5 @@
-export const logModules = { TASK: '任务', WORK_LOG: '工作日报', ORGANIZATION: '组织', PERSONNEL: '人员', ACCOUNT: '账号与权限', AUTH: '登录' } as const
-export const logActions = { CREATE: '新增', UPDATE: '修改', DELETE: '删除', DISPATCH: '派发', PROGRESS: '更新进度', SUBMIT: '提交完成', APPROVE: '审核通过', REJECT: '驳回', ACCEPT: '验收', ENABLE: '启用', DISABLE: '停用', ROLE_CHANGE: '调整权限', PASSWORD_RESET: '重置密码', LOGIN: '登录', EXPORT: '导出', DEPARTURE: '办理离职', DEPARTURE_REVERSAL: '撤销离职', JOB_CHANGE: '岗位调整', MANAGER_REPLACEMENT: '更换负责人' } as const
+export const logModules = { TASK: '任务', WORK_LOG: '工作日报', ORGANIZATION: '组织', PERSONNEL: '人员', ACCOUNT: '账号与权限', AUTH: '登录', CRM: 'CRM' } as const
+export const logActions = { CREATE: '新增', UPDATE: '修改', DELETE: '删除', DISPATCH: '派发', PROGRESS: '更新进度', SUBMIT: '提交完成', APPROVE: '审核通过', REJECT: '驳回', ACCEPT: '验收', ENABLE: '启用', DISABLE: '停用', ROLE_CHANGE: '调整权限', PASSWORD_RESET: '重置密码', LOGIN: '登录', EXPORT: '导出', DEPARTURE: '办理离职', DEPARTURE_REVERSAL: '撤销离职', JOB_CHANGE: '岗位调整', MANAGER_REPLACEMENT: '更换负责人', UPLOAD_ATTACHMENT: '上传附件' } as const
 export const logSources = { WEB: 'Web', ANDROID: 'Android', SYSTEM: '系统' } as const
 export const logResults = { SUCCESS: '成功', FAILURE: '失败' } as const
 
