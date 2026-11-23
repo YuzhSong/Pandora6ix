@@ -15,5 +15,5 @@
 - [x] 4.3 Add Web forms for membership and contracts.
 
 ## 5. Verification and handoff
-- [ ] 5.1 Verify migrations, audit, cross-enterprise requests and phase-one compatibility.
-- [ ] 5.2 Exercise the Web–Android workflow and document operation and open questions.
+- [x] 5.1 Verify migrations, audit, cross-enterprise requests and phase-one compatibility.
+- [x] 5.2 Exercise the Web–Android workflow and document operation and open questions.
