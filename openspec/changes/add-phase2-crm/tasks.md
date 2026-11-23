@@ -3,7 +3,7 @@
 - [x] 1.2 Implement customer directory API with role and enterprise checks.
 
 ## 2. Business records
-- [ ] 2.1 Implement business creation, editing and personnel participation with scoped queries.
+- [x] 2.1 Implement business creation, editing and personnel participation with scoped queries.
 
 ## 3. Clients
 - [ ] 3.1 Implement Web customer and business management.

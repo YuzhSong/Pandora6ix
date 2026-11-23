@@ -77,6 +77,33 @@ class CrmIntegrationTests {
         assertTrue(request("GET", "/me", admin, null, 200).isObject());
     }
 
+    @Test
+    void assignedEmployeeCanReadBusinessWithoutAccessToCustomerContact() throws Exception {
+        String customer = customer(admin);
+        var input = fields("title", "Fictional salon", "kind", "SALON", "status", "PLANNED",
+                "eventDate", "2026-12-01", "eventTime", "15:00", "customerId", customer,
+                "ownerUserId", admin.id(), "participants",
+                java.util.List.of(fields("userId", employee.id(), "responsibility", "Reception")));
+        String business = request("POST", "/crm/businesses", admin, input, 201).get("id").asString();
+        assertEquals(1, request("GET", "/crm/businesses?mine=true", employee, null, 200).size());
+        assertEquals(1, request("GET", "/crm/businesses?customerId=" + customer, admin, null, 200).size());
+        var detail = request("GET", "/crm/businesses/" + business, employee, null, 200);
+        assertEquals("Reception", detail.get("participants").get(0).get("responsibility").asString());
+        assertFalse(detail.has("contact"));
+        request("GET", "/crm/customers/" + customer, employee, null, 404);
+        request("GET", "/crm/businesses/" + business, peer, null, 404);
+        request("GET", "/crm/businesses/" + business, outsider, null, 404);
+        input.put("version", 0);
+        input.put("participants", java.util.List.of(fields("userId", outsider.id(), "responsibility", "Reception")));
+        request("PUT", "/crm/businesses/" + business, admin, input, 422);
+        request("GET", "/crm/businesses/" + business, employee, null, 200);
+        input.put("participants", java.util.List.of());
+        request("PUT", "/crm/businesses/" + business, admin, input, 200);
+        request("GET", "/crm/businesses/" + business, employee, null, 404);
+        request("PUT", "/crm/businesses/" + business, admin, input, 409);
+    }
+
+
     private String customer(User owner) throws Exception {
         return request("POST", "/crm/customers", admin, customerInput(owner), 201).get("id").asString();
     }
