@@ -11,16 +11,12 @@ import org.springframework.http.server.*;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyAdvice;
 
-@RestControllerAdvice(basePackages = "com.pandora6ix.backend.controller")
+@RestControllerAdvice(basePackages = {"com.pandora6ix.backend.controller", "com.pandora6ix.backend.crm"})
 public class BusinessResponses implements ResponseBodyAdvice<Object> {
     @Override
     public boolean supports(
             MethodParameter method, Class<? extends HttpMessageConverter<?>> converter) {
-        return method.getContainingClass()
-                        .getPackageName()
-                        .equals("com.pandora6ix.backend.controller")
-                && method.getContainingClass()
-                        != com.pandora6ix.backend.controller.HealthController.class;
+        return method.getContainingClass() != com.pandora6ix.backend.controller.HealthController.class;
     }
 
     @Override
