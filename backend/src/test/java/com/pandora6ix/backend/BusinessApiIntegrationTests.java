@@ -3134,18 +3134,18 @@ class BusinessApiIntegrationTests {
 
     @Test
     void concurrentOrganizationDeletionAndPersonnelTransferPreserveMembership() throws Exception {
-        String leaf = createOrg("Concurrent transfer", "DEPARTMENT", root);
+        String targetTeam = createOrg("Concurrent transfer", "TEAM", department);
         var patch = personnelPatch(employee, 0, List.of("EMPLOYEE"));
-        patch.put("orgUnitId", leaf);
+        patch.put("orgUnitId", targetTeam);
         var start = new CountDownLatch(1);
         try (var executor = Executors.newFixedThreadPool(2)) {
-            var deletion = executor.submit(() -> { start.await(); return raw("DELETE", "/admin/org-units/" + leaf, adminToken, fields("expectedVersion", 0)); });
+            var deletion = executor.submit(() -> { start.await(); return raw("DELETE", "/admin/org-units/" + targetTeam, adminToken, fields("expectedVersion", 0)); });
             var transfer = executor.submit(() -> { start.await(); return raw("PATCH", "/admin/users/" + employee, adminToken, patch); });
             start.countDown();
             int removed = deletion.get(20, TimeUnit.SECONDS).status();
             int moved = transfer.get(20, TimeUnit.SECONDS).status();
             assertTrue((removed == 204 && moved == 404) || (removed == 409 && moved == 200), removed + "/" + moved);
-            assertEquals(removed == 204 ? team : leaf, db.entity("app_user", enterprise, employee).get("org_unit_id"));
+            assertEquals(removed == 204 ? team : targetTeam, db.entity("app_user", enterprise, employee).get("org_unit_id"));
         }
     }
 
