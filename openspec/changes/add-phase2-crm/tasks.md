@@ -6,7 +6,7 @@
 - [x] 2.1 Implement business creation, editing and personnel participation with scoped queries.
 
 ## 3. Clients
-- [ ] 3.1 Implement Web customer and business management.
+- [x] 3.1 Implement Web customer and business management.
 - [ ] 3.2 Implement Android personal queries and isolated build.
 
 ## 4. Membership and labor contracts
