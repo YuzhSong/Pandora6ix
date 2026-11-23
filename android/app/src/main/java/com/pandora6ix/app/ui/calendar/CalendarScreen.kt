@@ -356,7 +356,7 @@ private fun MonthScroll(
         onJumpConsumed()
     }
     Column(Modifier.fillMaxSize().padding(horizontal = PandoraCalendarDimens.contentHorizontal)) {
-        Row(Modifier.fillMaxWidth().height(20.dp)) { listOf("一", "二", "三", "四", "五", "六", "日").forEach { Text("周$it", Modifier.weight(1f), style = PandoraTypography.caption, textAlign = TextAlign.Center, color = PandoraTheme.colors.textSecondary) } }
+        MonthWeekdayHeader()
         LazyColumn(state = state, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 96.dp)) {
             items(index.items.size,
                 key = { i -> index.items[i].key },
@@ -366,17 +366,27 @@ private fun MonthScroll(
                 if (item.isTitle) {
                     Text("${item.month.month}月", style = PandoraTypography.titleLarge, color = PandoraTheme.colors.textPrimary, modifier = Modifier.padding(start = PandoraSpacing.space8, top = PandoraSpacing.space16, bottom = PandoraSpacing.space4).semantics { heading() })
                 } else {
-                    MonthScrollRow(item.month, item.week, tasks, today, onCursorChange, onOpen, onOpenDay, businessTimezone)
+                    MonthScrollRow(item.month, item.week, tasks, today, onOpen, onOpenDay, businessTimezone)
                 }
             }
         }
     }
 }
 
-/** 月视图卷轴的一行：week 为 7 列基准（可含邻月补位日），仅渲染本月日期，任务条裁剪到本月列范围；
- *  行高固定：每天最多展示 3 条任务道，第 4 行按日显示灰色“+N”（正对该日列、不与任务重合），点击跳转当天日视图 */
 @Composable
-private fun MonthScrollRow(month: DemoDate, week: List<DemoDate>, tasks: List<TaskItem>, today: DemoDate, onCursorChange: (DemoDate) -> Unit, onOpen: (TaskItem) -> Unit, onOpenDay: (DemoDate) -> Unit, businessTimezone: String?) {
+internal fun MonthWeekdayHeader() {
+    Row(Modifier.fillMaxWidth().height(20.dp)) {
+        listOf("一", "二", "三", "四", "五", "六", "日").forEach { day ->
+            Text("周$day", Modifier.weight(1f), style = PandoraTypography.caption,
+                textAlign = TextAlign.Center, color = PandoraTheme.colors.textSecondary)
+        }
+    }
+}
+
+/** 月视图卷轴的一行：week 为 7 列基准（可含邻月补位日），仅渲染本月日期，任务条裁剪到本月列范围；
+ *  行高固定：每天最多展示 3 条任务道，第 4 行按日显示灰色“+N”。 */
+@Composable
+internal fun MonthScrollRow(month: DemoDate, week: List<DemoDate>, tasks: List<TaskItem>, today: DemoDate, onOpen: (TaskItem) -> Unit, onOpenDay: (DemoDate) -> Unit, businessTimezone: String?) {
     val inMonth = week.map { it.year == month.year && it.month == month.month }
     val firstCol = inMonth.indexOfFirst { it }
     val lastCol = inMonth.lastIndexOf(true)
@@ -398,7 +408,7 @@ private fun MonthScrollRow(month: DemoDate, week: List<DemoDate>, tasks: List<Ta
     val laneGap = PandoraCalendarDimens.monthLaneGap
     val overflowRowHeight = PandoraCalendarDimens.monthOverflowRowHeight
     Column(Modifier.fillMaxWidth().height(PandoraCalendarDimens.monthWeekHeight)) {
-        DayNumberRow(month, week, inMonth, today, onOpenDay)
+        DayNumberRow(week, inMonth, today, onOpenDay)
         shownLanes.forEach { lane ->
             Box(Modifier.fillMaxWidth().height(laneHeight)) {
                 DateLane(lane, week, 17, compact = true, businessTimezone) { task, _ -> onOpen(task) }
@@ -420,7 +430,7 @@ private fun MonthScrollRow(month: DemoDate, week: List<DemoDate>, tasks: List<Ta
 }
 
 @Composable
-private fun DayNumberRow(month: DemoDate, week: List<DemoDate>, inMonth: List<Boolean>, today: DemoDate, onOpenDay: (DemoDate) -> Unit) {
+private fun DayNumberRow(week: List<DemoDate>, inMonth: List<Boolean>, today: DemoDate, onOpenDay: (DemoDate) -> Unit) {
     Row(Modifier.fillMaxWidth().height(PandoraCalendarDimens.monthDayRowHeight)) {
         week.forEachIndexed { col, date ->
             Box(Modifier.weight(1f).fillMaxHeight().clickable(enabled = inMonth[col]) { onOpenDay(date) }, contentAlignment = Alignment.Center) {
