@@ -46,10 +46,16 @@ public class TaskService
     }
 
     public Map<String, Object> candidates(
-            IdentityService.Actor a, String q, String cursor, int limit) {
-        a.business();
-        var managed = scope.activeBusinessUsers(a);
-        managed.remove(a.id());
+            IdentityService.Actor a, String q, String cursor, int limit, String candidateScope) {
+        var eligible = switch (candidateScope) {
+            case "managed" -> scope.managed(a);
+            case "enterprise" -> {
+                a.business();
+                yield scope.activeBusinessUsers(a);
+            }
+            default -> throw BusinessException.invalid("Unsupported recipient candidate scope.");
+        };
+        eligible.remove(a.id());
         String search = q == null ? "" : q.strip().toLowerCase(Locale.ROOT);
         StringBuilder sql =
                 new StringBuilder(
@@ -58,10 +64,10 @@ public class TaskService
                             + " org_unit o ON o.enterprise_id=u.enterprise_id AND"
                             + " o.id=u.org_unit_id LEFT JOIN org_unit d ON d.enterprise_id=u.enterprise_id AND d.kind='DEPARTMENT' AND d.id=CASE WHEN o.kind='DEPARTMENT' THEN o.id WHEN o.kind='TEAM' THEN o.parent_id ELSE NULL END WHERE u.enterprise_id=? AND u.status='ACTIVE'");
         List<Object> args = new ArrayList<>(List.of(a.enterpriseId()));
-        if (managed.isEmpty()) sql.append(" AND 1=0");
+        if (eligible.isEmpty()) sql.append(" AND 1=0");
         else {
-            sql.append(" AND u.id IN (").append(Pages.placeholders(managed)).append(")");
-            args.addAll(managed);
+            sql.append(" AND u.id IN (").append(Pages.placeholders(eligible)).append(")");
+            args.addAll(eligible);
         }
         sql.append(
                 " AND (LOWER(u.display_name) LIKE ? ESCAPE '!' OR LOWER(COALESCE(o.name,'')) LIKE ?"
@@ -74,7 +80,7 @@ public class TaskService
                 args,
                 cursor,
                 limit,
-                a.enterpriseId() + ":" + a.id() + ":recipients:" + search,
+                a.enterpriseId() + ":" + a.id() + ("managed".equals(candidateScope) ? ":recipients:" : ":enterprise-recipients:") + search,
                 List.of("display_name", "id"),
                 false,
                 row -> {

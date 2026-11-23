@@ -9,7 +9,7 @@
 - 派发任务的接收人可选范围放宽为**全企业在职业务用户**（FOUNDER/DEPARTMENT_MANAGER/TEAM_LEAD/EMPLOYEE，status=ACTIVE），不再按职级和组织子树过滤；创建者本人始终可作为接收人（含只派给自己）。
 - 派发资格放宽：任何业务用户（含 EMPLOYEE）都可创建派发任务；`/me` 的 `createDelegatedTasks` 能力位同步放开。
 - 员工创建的派发任务仍走直属上级审批，审批校验不再因创建者是员工而拒绝。
-- `/tasks/recipient-candidates` 候选列表返回全企业在职业务用户（仍排除本人，本人由客户端从 `/me` 资料补全），任何业务用户可访问。
+- `/tasks/recipient-candidates?scope=enterprise` 候选列表返回全企业在职业务用户（仍排除本人，本人由客户端从 `/me` 资料补全），任何业务用户可访问。
 - Android 选人面板将"本人"候选从 `/me` 的 `organization`/`department` 补全组织字段，分组标题显示真实组织名而非「未分配组织」。
 - 日志范围、成员通讯录、审批人与提交人关系等其他使用 `managed` 的授权场景保持不变。
 

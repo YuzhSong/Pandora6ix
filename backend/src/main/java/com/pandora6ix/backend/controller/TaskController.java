@@ -55,8 +55,9 @@ public class TaskController {
     public Object candidates(
             @RequestParam(required = false) String q,
             @RequestParam(required = false) String cursor,
-            @RequestParam(defaultValue = "20") int limit) {
-        return tasks.candidates(identity.current(), q, cursor, limit);
+            @RequestParam(defaultValue = "20") int limit,
+            @RequestParam(defaultValue = "managed") String scope) {
+        return tasks.candidates(identity.current(), q, cursor, limit, scope);
     }
 
     @GetMapping("/tasks")

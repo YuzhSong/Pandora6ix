@@ -1893,12 +1893,17 @@ class BusinessApiIntegrationTests {
                 otherTeam = createOrg("Other team", "TEAM", other);
         String outside = createUser("outside", otherTeam, null, List.of("EMPLOYEE"));
         var candidates =
-                items(request("GET", "/tasks/recipient-candidates", managerToken, null, 200));
+                items(request("GET", "/tasks/recipient-candidates?scope=enterprise", managerToken, null, 200));
         var ids = candidates.stream().map(r -> r.get("id")).toList();
         assertTrue(ids.containsAll(List.of(lead, employee, peer, outside, founder)));
         assertFalse(ids.contains(manager));
         // 任何业务用户都可访问候选列表；纯 ADMIN 之外不区分职级
-        request("GET", "/tasks/recipient-candidates", employeeToken, null, 200);
+        request("GET", "/tasks/recipient-candidates?scope=enterprise", employeeToken, null, 200);
+        request("GET", "/tasks/recipient-candidates", employeeToken, null, 403);
+        var contacts = items(request("GET", "/tasks/recipient-candidates", managerToken, null, 200))
+                .stream().map(r -> r.get("id")).toList();
+        assertTrue(contacts.contains(employee));
+        assertFalse(contacts.contains(outside));
         var task =
                 request(
                         "POST",

@@ -208,9 +208,10 @@ data class CompletionResultDto(
 class TaskRepository(private val api: ApiClient) {
 
     /** Bounded candidate page for team browsing; the server enforces management scope. */
-    suspend fun recipientCandidatePage(q: String? = null, cursor: String? = null, limit: Int = 20): RecipientPageDto {
+    suspend fun recipientCandidatePage(q: String? = null, cursor: String? = null, limit: Int = 20, enterprise: Boolean = false): RecipientPageDto {
         val query = buildString {
             append("/tasks/recipient-candidates?limit=").append(limit.coerceIn(1, 100))
+            if (enterprise) append("&scope=enterprise")
             q?.takeIf { it.isNotBlank() }?.let { append("&q=").append(URLEncoder.encode(it, "UTF-8")) }
             cursor?.let { append("&cursor=").append(URLEncoder.encode(it, "UTF-8")) }
         }
@@ -222,7 +223,7 @@ class TaskRepository(private val api: ApiClient) {
         val seen = mutableSetOf<String>()
         var cursor: String? = null
         do {
-        val page = recipientCandidatePage(q, cursor, limit)
+            val page = recipientCandidatePage(q, cursor, limit, enterprise = true)
         values.addAll(page.items)
         cursor = page.nextCursor
         check(cursor == null || seen.add(cursor)) { "Repeated recipient cursor" }

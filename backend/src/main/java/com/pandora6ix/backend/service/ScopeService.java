@@ -90,7 +90,7 @@ public class ScopeService {
                 db.rows(
                         "SELECT DISTINCT u.id FROM app_user u JOIN user_role r ON"
                             + " r.enterprise_id=u.enterprise_id AND r.user_id=u.id WHERE"
-                            + " u.enterprise_id=? AND u.status='ACTIVE' AND r.role_code IN"
+                            + " u.enterprise_id=? AND u.status='ACTIVE' AND u.employment_status='IN_SERVICE' AND r.role_code IN"
                             + " ('FOUNDER','DEPARTMENT_MANAGER','TEAM_LEAD','EMPLOYEE')",
                         actor.enterpriseId())) users.add(str(row, "id"));
         return users;
