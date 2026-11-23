@@ -7,7 +7,7 @@
 
 ## 3. Clients
 - [x] 3.1 Implement Web customer and business management.
-- [ ] 3.2 Implement Android personal queries and isolated build.
+- [x] 3.2 Implement Android personal queries and isolated build.
 
 ## 4. Membership and labor contracts
 - [x] 4.1 Implement member, benefit and service records.

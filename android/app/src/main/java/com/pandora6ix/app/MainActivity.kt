@@ -1,5 +1,8 @@
 package com.pandora6ix.app
 
+import com.pandora6ix.app.ui.crm.CrmDirectory
+import com.pandora6ix.app.ui.crm.CrmScreen
+
 import com.pandora6ix.app.ui.components.*
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -378,6 +381,7 @@ fun PandoraApp(
         var notificationReadRevision by remember { mutableIntStateOf(0) }
         // 标签管理覆盖层（我的页进入，入口仅对有权限角色显示）
         var showTagManage by rememberSaveable { mutableStateOf(false) }
+        var crmDirectory by rememberSaveable(currentUser?.id) { mutableStateOf<CrmDirectory?>(null) }
         // 进度记录浮层：从任务详情进入，显示当前任务的执行关系
         var progressTaskId by remember { mutableStateOf<String?>(null) }
         var fontScale by rememberSaveable { mutableStateOf(1f) }
@@ -733,7 +737,7 @@ fun PandoraApp(
         val compactSummary = showTaskSummary && (taskSummaryLandscape || taskSummaryCompactWindow())
         Scaffold(containerColor = theme.colors.appBackground,
             contentWindowInsets = if (showTaskSummary) WindowInsets.safeDrawing else ScaffoldDefaults.contentWindowInsets,
-            bottomBar = { if (!compactSummary) { NavigationBar(containerColor = theme.art?.navBand ?: theme.colors.appBackground) { nav.forEach { item -> NavigationBarItem(selected = current == item.route, onClick = { notificationListOpen = false; route = item.route.name; detail = null; homeDetail = null; journalDetailId = null; showSettings = false; showReviews = false; showTagManage = false; progressTaskId = null; showTaskSummary = false; showContacts = false }, icon = { MeNavIcon(item, reviewBadgeCount) }, label = { Text(item.label, style = if (current == item.route && theme.art?.navLabel != null) PandoraTypography.caption.copy(fontWeight = FontWeight.SemiBold) else PandoraTypography.caption) }, colors = NavigationBarItemDefaults.colors(selectedIconColor = theme.colors.primary, selectedTextColor = theme.art?.navLabel ?: theme.colors.primary, indicatorColor = theme.colors.primaryContainer, unselectedIconColor = theme.colors.textSecondary, unselectedTextColor = theme.art?.navLabel ?: theme.colors.textSecondary)) } } } }) { padding ->
+            bottomBar = { if (!compactSummary) { NavigationBar(containerColor = theme.art?.navBand ?: theme.colors.appBackground) { nav.forEach { item -> NavigationBarItem(selected = current == item.route, onClick = { notificationListOpen = false; route = item.route.name; detail = null; homeDetail = null; journalDetailId = null; showSettings = false; showReviews = false; showTagManage = false; crmDirectory = null; progressTaskId = null; showTaskSummary = false; showContacts = false }, icon = { MeNavIcon(item, reviewBadgeCount) }, label = { Text(item.label, style = if (current == item.route && theme.art?.navLabel != null) PandoraTypography.caption.copy(fontWeight = FontWeight.SemiBold) else PandoraTypography.caption) }, colors = NavigationBarItemDefaults.colors(selectedIconColor = theme.colors.primary, selectedTextColor = theme.art?.navLabel ?: theme.colors.primary, indicatorColor = theme.colors.primaryContainer, unselectedIconColor = theme.colors.textSecondary, unselectedTextColor = theme.art?.navLabel ?: theme.colors.textSecondary)) } } } }) { padding ->
             Surface(Modifier.padding(padding).then(if (showTaskSummary) Modifier.consumeWindowInsets(padding) else Modifier).fillMaxSize(), color = theme.colors.appBackground) {
                 when {
                     homeDetail?.kind == "TASK" && homeDetail?.id != null -> FullTaskDetail(
@@ -810,6 +814,8 @@ fun PandoraApp(
                             },
                             onOpenTask = { taskId -> showReviews = false; reviewFocusId = null; focusedReview = null; detail = taskId }) { showReviews = false; reviewFocusId = null; focusedReview = null }
                     }
+                    BuildConfig.BUILD_TYPE == "dev2" && crmDirectory != null ->
+                        CrmScreen(api, crmDirectory!!, onBack = { crmDirectory = null })
                     showTagManage -> TagManageScreen(
                         tagRepo,
                         // 与服务端一致的权限：仅 FOUNDER/DEPARTMENT_MANAGER 可建/改/删；无权限者根本进不了此页
@@ -855,7 +861,7 @@ fun PandoraApp(
                             Route.VIEW -> calendarUiState.SaveableStateProvider("calendar") { CalendarScreen(CalendarMode.valueOf(modeName), date, taskItems, canCreatePersonal, canCreateDelegated, serverTags, taskRepo, { modeName = it.name }, { dateKey = "${it.year}-${it.month}-${it.day}" }, { calRetry++ }, { detail = it.id }, currentUser = currentUser, businessTimezone = currentUser?.businessTimezone, loading = calLoading, error = calError, onRetry = { calRetry++ }, notice = calNotice, onOpenSummary = { showTaskSummary = true }, onOpenContacts = { showContacts = true }) }
                             Route.LOGS -> LogsScreen(journalRepo, serverTags.toList(), currentUser?.businessTimezone, currentUser, userRepo, dailyStore) { journalDetailId = it }
                             Route.AI -> AiExplorerScreen(aiRepo, currentUser!!.id)
-                            Route.ME -> ProfileScreen(currentUser!!, notifyMaster, showReviewCenter, reviewBadgeCount, tagManager, userRepo, scrollState = profileScrollState, onOpenTagManage = { showTagManage = true }, onOpenReviews = { reviewFocusId = null; focusedReview = null; showReviews = true }, onOpenSettings = { showSettings = true })
+                            Route.ME -> ProfileScreen(currentUser!!, notifyMaster, showReviewCenter, reviewBadgeCount, tagManager, userRepo, scrollState = profileScrollState, onOpenTagManage = { showTagManage = true }, onOpenReviews = { reviewFocusId = null; focusedReview = null; showReviews = true }, onOpenSettings = { showSettings = true }, onOpenCrm = { crmDirectory = it })
                         }
                       }
                     }
@@ -2211,7 +2217,7 @@ private fun JournalDetailScreen(repo: JournalRepository, journalId: String, busi
         }
     }
 }
-@Composable private fun ProfileScreen(user: UserDto, notificationsEnabled: Boolean, showReviewCenter: Boolean, pendingReviewCount: Int, canManageTags: Boolean, userRepo: UserRepository, scrollState: ScrollState, onOpenTagManage: () -> Unit, onOpenReviews: () -> Unit, onOpenSettings: () -> Unit) {
+@Composable private fun ProfileScreen(user: UserDto, notificationsEnabled: Boolean, showReviewCenter: Boolean, pendingReviewCount: Int, canManageTags: Boolean, userRepo: UserRepository, scrollState: ScrollState, onOpenTagManage: () -> Unit, onOpenReviews: () -> Unit, onOpenSettings: () -> Unit, onOpenCrm: (CrmDirectory) -> Unit) {
     val context = LocalContext.current
     val avatarScope = rememberCoroutineScope()
     val prefs = remember(user.id) { context.getSharedPreferences("profile_avatar_" + user.id, Context.MODE_PRIVATE) }
@@ -2389,6 +2395,16 @@ private fun JournalDetailScreen(repo: JournalRepository, journalId: String, busi
                             Spacer(Modifier.width(PandoraSpacing.space8))
                         }
                         Icon(Icons.Default.ChevronRight, null, Modifier.size(20.dp), tint = PandoraTheme.colors.textTertiary)
+                    }
+                }
+            }
+            if (BuildConfig.BUILD_TYPE == "dev2") {
+                SettingsCard {
+                    CrmDirectory.entries.forEachIndexed { index, directory ->
+                        if (index > 0) DashedDivider(PandoraTheme.colors.border)
+                        SettingsRow(icon = Icons.Default.People, title = directory.title, onClick = { onOpenCrm(directory) }) {
+                            Icon(Icons.Default.ChevronRight, null, Modifier.size(20.dp), tint = PandoraTheme.colors.textTertiary)
+                        }
                     }
                 }
             }
