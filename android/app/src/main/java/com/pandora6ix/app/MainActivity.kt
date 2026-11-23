@@ -957,7 +957,7 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
     val companyPager = remember { HomePanelPager<CompanyItemDto>() }
     val taskPager = remember(currentUserId) { HomePanelPager<TaskDto>() }
     // 每日事项：会话内列表 + 本地持久化（按账号隔离）
-    val dailyItems = remember { mutableStateListOf<DailyItem>().apply { addAll(dailyStore.load()) } }
+    val dailyItems = remember(dailyStore) { mutableStateListOf<DailyItem>().apply { addAll(dailyStore.load()) } }
     fun mutateDaily(change: MutableList<DailyItem>.() -> Unit) {
         dailyItems.change()
         dailyStore.save(dailyItems)
@@ -1097,13 +1097,20 @@ private fun ApprovalPromptDialog(prompt: ApprovalPrompt, onReview: () -> Unit, o
                 HomePanel(panels[0], Modifier.weight(1f).fillMaxHeight(), loading = dashLoading, error = dashError, onRetry = { loadDashboard() }, onExpand = { expandedPanel = panels[0].title }, onItemClick = { i, t -> openItem(0, i, t) })
                 HomePanel(panels[1], Modifier.weight(1f).fillMaxHeight(), loading = taskBoardLoading, error = taskBoardError, onRetry = { loadTaskBoard() }, onExpand = { expandedPanel = panels[1].title }, onItemClick = { i, t -> openItem(1, i, t) })
             }
-            DailyItemsPanel(
-                Modifier.fillMaxWidth().weight(1f),
-                items = dailyItems,
-                onAdd = { date, content -> mutateDaily { add(DailyItem(UUID.randomUUID().toString(), date.toString(), content)) } },
-                onToggle = { item -> mutateDaily { val i = indexOfFirst { it.id == item.id }; if (i >= 0) this[i] = this[i].copy(done = !this[i].done) } },
-                onDelete = { item -> mutateDaily { removeAll { it.id == item.id } } }
-            )
+            key(currentUserId) {
+                DailyItemsPanel(
+                    Modifier.fillMaxWidth().weight(1f),
+                    items = dailyItems,
+                    onSave = { item ->
+                        mutateDaily {
+                            val index = indexOfFirst { it.id == item.id }
+                            if (index < 0) add(item) else this[index] = item
+                        }
+                    },
+                    onToggle = { item -> mutateDaily { val i = indexOfFirst { it.id == item.id }; if (i >= 0) this[i] = this[i].copy(done = !this[i].done) } },
+                    onDelete = { item -> mutateDaily { removeAll { it.id == item.id } } }
+                )
+            }
                 }
             }
         }

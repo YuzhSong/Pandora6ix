@@ -393,8 +393,7 @@ private fun MonthScrollRow(month: DemoDate, week: List<DemoDate>, tasks: List<Ta
     val capacity = PandoraCalendarDimens.monthVisibleItemCount
     val shownLanes = lanes.take(capacity)
     // 每日未展示任务数：超出容量的分道中覆盖该列的任务条数
-    val hiddenPerDay = IntArray(7)
-    lanes.drop(capacity).forEach { lane -> lane.forEach { seg -> for (c in seg.first..seg.last) hiddenPerDay[c]++ } }
+    val hiddenPerDay = hiddenCalendarCounts(lanes, week.size, capacity)
     val laneHeight = PandoraCalendarDimens.monthBarMinHeight
     val laneGap = PandoraCalendarDimens.monthLaneGap
     val overflowRowHeight = PandoraCalendarDimens.monthOverflowRowHeight

@@ -35,11 +35,16 @@ import com.pandora6ix.app.mock.todayDate
  * - 时间：时(00–23)/分(00–59) 两列
  */
 @Composable
-internal fun DateWheelDialog(initial: DemoDate, onDismiss: () -> Unit, onConfirm: (DemoDate) -> Unit) {
+internal fun DateWheelDialog(
+    initial: DemoDate,
+    onDismiss: () -> Unit,
+    onConfirm: (DemoDate) -> Unit,
+    yearRange: IntRange = 1900..2100
+) {
     var year by remember { mutableStateOf(initial.year) }
     var month by remember { mutableStateOf(initial.month) }
     var day by remember { mutableStateOf(initial.day) }
-    val years = (1900..2100).toList()
+    val years = yearRange.toList()
     fun daysInMonth(y: Int, m: Int): Int =
         java.util.Calendar.getInstance().apply { clear(); set(y, m - 1, 1) }.getActualMaximum(java.util.Calendar.DAY_OF_MONTH)
     // 年月变化时把日收敛到该月真实天数内（如 31 日切到 4 月 → 30 日）
@@ -68,7 +73,7 @@ internal fun DateWheelDialog(initial: DemoDate, onDismiss: () -> Unit, onConfirm
                 }
             }
         },
-        confirmButton = { PandoraDialogConfirm("确定", { onConfirm(DemoDate(year, month, day)) }) },
+        confirmButton = { PandoraDialogConfirm("确定", { onConfirm(DemoDate(year, month, day.coerceAtMost(dayValues.size))) }) },
         dismissButton = { PandoraDialogDismiss("取消", onDismiss) }
     )
 }
