@@ -13,6 +13,8 @@ spring:
       max-file-size: 10MB
       max-request-size: 11MB
 pandora:
+  bootstrap-token: ${PANDORA_CRM_BOOTSTRAP_TOKEN:}
+  handoff-key: ${PANDORA_CRM_HANDOFF_KEY:}
   jpush:
     app-key: ''
     master-secret: ''
