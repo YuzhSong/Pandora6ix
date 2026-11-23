@@ -1,6 +1,8 @@
 package com.pandora6ix.app.ui.summary
 
 import com.pandora6ix.app.data.*
+import com.pandora6ix.app.mock.DemoDate
+import com.pandora6ix.app.ui.calendar.packTaskRows
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
@@ -27,6 +29,24 @@ class SummaryDataTest {
         assertEquals(listOf("assigned"), responsibleTasks(listOf(createdOnly, assigned), "member").map { it.id })
         assertEquals(listOf("member", "second"), executorIds(assigned))
         assertTrue(executorIds(task("empty", "creator")).isEmpty())
+    }
+
+    @Test fun memberMonthPlacesOnlyApprovedAssignedTasksOnTheirCoveredDays() {
+        val spanning = task("spanning", "manager", "member", "peer").copy(
+            reviewStatus = "APPROVED", startDate = "2026-10-30", endDate = "2026-11-02"
+        )
+        val pending = spanning.copy(id = "pending", reviewStatus = "PENDING")
+        val rejected = spanning.copy(id = "rejected", reviewStatus = "REJECTED")
+        val createdOnly = spanning.copy(
+            id = "created", creatorUserId = "member",
+            authorizedAssignments = listOf(AssignmentDto("peer-only", recipientUserId = "peer"))
+        )
+        val tasks = memberCalendarTasks(listOf(pending, spanning, rejected, createdOnly), "member").map { it.toTaskItem() }
+        val dates = (1..3).map { DemoDate(2026, 11, it) }
+        val segment = packTaskRows(tasks, dates).single().single()
+        assertEquals("spanning", segment.item.id)
+        assertEquals(0, segment.first)
+        assertEquals(1, segment.last)
     }
 
     @Test fun journalsAreFilteredByAuthorNotEntryId() {

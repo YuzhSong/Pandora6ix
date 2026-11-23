@@ -39,20 +39,6 @@ import kotlinx.coroutines.CancellationException
 internal const val PreviewLimit = 3
 
 @Composable
-internal fun TaskPreview(
-    pager: SummaryPager<TaskDto>, records: List<TaskDto>, name: (String) -> String, userRepo: UserRepository,
-    onTask: (String) -> Unit, onAll: () -> Unit, onRetry: () -> Unit, filtered: Boolean = false, businessTimezone: String? = null
-) {
-    records.take(PreviewLimit).forEach { task -> SummaryTaskRow(task, name, userRepo, businessTimezone) { onTask(task.id) } }
-    CollectionFooter(pager, records.isEmpty(), "暂无相关任务", filtered, showMore = false,
-        partialEmptyText = "已加载范围暂无相关任务，可查看全部任务", onMore = onRetry)
-    TextButton(onAll, Modifier.fillMaxWidth()) {
-        Text("查看全部任务", style = PandoraTypography.labelLarge, color = PandoraTheme.colors.primary)
-        Icon(Icons.Default.ChevronRight, null, Modifier.size(18.dp), tint = PandoraTheme.colors.primary)
-    }
-}
-
-@Composable
 internal fun Modifier.summaryEntry(onClick: () -> Unit): Modifier {
     val shape = PandoraShapes.medium
     // 任务/日志独立条目：Surface 底 + 1dp 中性边框 + 12 角（规范 8 节 TaskItem/JournalItem）
