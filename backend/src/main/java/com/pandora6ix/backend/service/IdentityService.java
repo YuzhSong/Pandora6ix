@@ -208,7 +208,7 @@ public class IdentityService
                         "createPersonalTasks",
                         actor.businessRank() != 99,
                         "createDelegatedTasks",
-                        actor.businessRank() < 3,
+                        actor.businessRank() != 99,
                         "reviewTasks",
                         actor.businessRank() < 3,
                         "createTags",

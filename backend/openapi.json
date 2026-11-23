@@ -6826,6 +6826,15 @@
               "minimum": 1,
               "maximum": 100
             }
+          },
+          {
+            "name": "scope",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "managed"
+            }
           }
         ],
         "responses": {

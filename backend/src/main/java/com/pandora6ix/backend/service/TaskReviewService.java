@@ -111,7 +111,7 @@ public class TaskReviewService {
         if ("PERSONAL".equals(task.get("task_kind")))
             return assignments.size() == 1
                     && creator.id().equals(assignments.getFirst().get("recipient_user_id"));
-        if (creator.businessRank() >= 3) return false;
+        // 员工也可创建派发任务，接收人授权统一由 taskRecipients 判定（含创建者本人）
         var managed = scope.taskRecipients(creator, assignments.stream()
                 .map(row -> str(row, "recipient_user_id")).toList());
         return assignments.stream().allMatch(x -> managed.contains(str(x, "recipient_user_id")));
