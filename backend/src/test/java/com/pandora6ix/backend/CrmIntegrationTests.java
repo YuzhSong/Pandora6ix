@@ -125,6 +125,59 @@ class CrmIntegrationTests {
         request("POST", uses, outsider, use, 404);
     }
 
+    @Test
+    void contractsAndAttachmentsAreRestrictedToEmployeeAndCompanyAdmin() throws Exception {
+        var today = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Shanghai"));
+        String route = "/crm/contracts";
+        var input = fields("employeeUserId", employee.id(), "title", "Fictional employment",
+                "startDate", today.minusMonths(2), "endDate", today.plusDays(30), "notes", "Private notes");
+        var contract = request("POST", route, admin, input, 201);
+        String path = route + "/" + contract.get("id").asString();
+        assertEquals("EXPIRING", contract.get("expiry").asString());
+        assertEquals(1, request("GET", route + "?expiry=EXPIRING", admin, null, 200).size());
+        request("GET", path, employee, null, 200);
+        request("GET", path, peer, null, 404);
+        request("GET", path, outsider, null, 404);
+        request("POST", route, peer, input, 403);
+        request("POST", route, outsider, input, 404);
+        String attachment = "/api/v1" + path + "/attachment";
+        byte[] pdf = "%PDF-1.4\n%%EOF\n".getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+        var file = new org.springframework.mock.web.MockMultipartFile("file", "fictional.pdf", "application/pdf", pdf);
+        var upload = org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart(HttpMethod.PUT, attachment);
+        mvc.perform(upload.file(file).param("version", "0").header("Authorization", "Bearer " + employee.token()))
+                .andExpect(status().isForbidden());
+        var invalid = new org.springframework.mock.web.MockMultipartFile("file", "invalid.pdf", "application/pdf", new byte[10]);
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart(HttpMethod.PUT, attachment)
+                .file(invalid).param("version", "0").header("Authorization", "Bearer " + admin.token()))
+                .andExpect(status().isUnprocessableContent());
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart(HttpMethod.PUT, attachment)
+                .file(file).param("version", "0").header("Authorization", "Bearer " + admin.token()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.attachmentName").value("fictional.pdf"))
+                .andExpect(jsonPath("$.data.attachmentId").doesNotExist());
+        String first = str(db.entity("crm_employment_contract", enterprise, contract.get("id").asString()), "attachment_id");
+        var testStorage = com.pandora6ix.backend.config.Dev2Isolation.dataRoot().resolve("test-attachments");
+        var get = org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(attachment);
+        mvc.perform(get.header("Authorization", "Bearer " + employee.token())).andExpect(status().isOk())
+                .andExpect(content().bytes(pdf)).andExpect(content().contentType(MediaType.APPLICATION_PDF))
+                .andExpect(header().string("Cache-Control", org.hamcrest.Matchers.containsString("no-store")));
+        for (User unauthorized : java.util.List.of(peer, outsider)) {
+            mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(attachment)
+                    .header("Authorization", "Bearer " + unauthorized.token())).andExpect(status().isNotFound());
+        }
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart(HttpMethod.PUT, attachment)
+                .file(file).param("version", "0").header("Authorization", "Bearer " + admin.token()))
+                .andExpect(status().isConflict());
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart(HttpMethod.PUT, attachment)
+                .file(file).param("version", "1").header("Authorization", "Bearer " + admin.token()))
+                .andExpect(status().isOk());
+        assertFalse(java.nio.file.Files.exists(testStorage.resolve(first + ".pdf")));
+        String latest = str(db.entity("crm_employment_contract", enterprise, contract.get("id").asString()), "attachment_id");
+        java.nio.file.Files.delete(testStorage.resolve(latest + ".pdf"));
+        assertTrue(db.rows("SELECT after_values FROM operation_log WHERE object_id=?",
+                contract.get("id").asString()).stream().noneMatch(row -> str(row, "after_values").contains("Private")));
+    }
+
+
     private String customer(User owner) throws Exception {
         return request("POST", "/crm/customers", admin, customerInput(owner), 201).get("id").asString();
     }

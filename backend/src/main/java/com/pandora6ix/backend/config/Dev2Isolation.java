@@ -35,11 +35,11 @@ public class Dev2Isolation {
             verifyLocalPath(dataRoot());
             verifyLocalPath(dataRoot().resolve("data"));
             verifyLocalPath(dataRoot().resolve("data/crm.mv.db"));
-            verifyLocalPath(dataRoot().resolve("attachments"));
+            verifyLocalPath(dataRoot().resolve(testDb ? "test-attachments" : "attachments"));
         };
     }
 
-    private static void verifyLocalPath(Path path) {
+    public static void verifyLocalPath(Path path) {
         try {
             if (Files.isSymbolicLink(path) || Files.exists(path) && !path.toRealPath()
                     .equals(Path.of(System.getProperty("user.home")).toRealPath()
