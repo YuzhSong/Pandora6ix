@@ -14,6 +14,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.pandora6ix.app.data.CalendarRepository
 import com.pandora6ix.app.data.TaskDto
@@ -65,15 +66,25 @@ internal fun MemberTaskMonth(
         } while (pager.error == null && pager.nextCursor != null)
     }
 
-    PanelHeading("任务月历")
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            "任务月历",
+            Modifier.weight(1f),
+            style = PandoraTypography.titleSmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        if (month != currentMonth) {
+            TextButton(
+                onClick = { selectedMonth = currentMonth.toString() },
+                modifier = Modifier.defaultMinSize(minWidth = 48.dp),
+                contentPadding = PaddingValues(horizontal = 4.dp)
+            ) { Text("本月", maxLines = 1) }
+        }
         IconButton({ selectedMonth = month.minusMonths(1).toString() }) {
             Icon(Icons.Default.KeyboardArrowLeft, "上个月")
         }
-        Text(anchor.monthLabel(), Modifier.weight(1f), style = PandoraTypography.labelLarge)
-        if (month != currentMonth) {
-            TextButton({ selectedMonth = currentMonth.toString() }) { Text("本月") }
-        }
+        Text(anchor.monthLabel(), style = PandoraTypography.labelLarge, maxLines = 1)
         IconButton({ selectedMonth = month.plusMonths(1).toString() }) {
             Icon(Icons.Default.KeyboardArrowRight, "下个月")
         }
