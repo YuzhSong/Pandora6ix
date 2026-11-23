@@ -178,6 +178,26 @@ class CrmIntegrationTests {
     }
 
 
+    @Test
+    void managerCanReadOnlyCustomerOwnersInExistingOrganizationScope() throws Exception {
+        User manager = account(enterprise, "DEPARTMENT_MANAGER");
+        String department = id();
+        String otherDepartment = id();
+        db.update("INSERT INTO org_unit(id,enterprise_id,name,kind) VALUES (?,?,?,'DEPARTMENT')",
+                department, enterprise, "Fictional department");
+        db.update("INSERT INTO org_unit(id,enterprise_id,name,kind) VALUES (?,?,?,'DEPARTMENT')",
+                otherDepartment, enterprise, "Other fictional department");
+        db.update("UPDATE app_user SET org_unit_id=? WHERE id IN (?,?)", department, manager.id(), employee.id());
+        db.update("UPDATE app_user SET org_unit_id=? WHERE id=?", otherDepartment, peer.id());
+        String allowed = customer(employee);
+        String denied = customer(peer);
+        request("GET", "/crm/customers/" + allowed, manager, null, 200);
+        request("GET", "/crm/customers/" + denied, manager, null, 404);
+        assertEquals(1, request("GET", "/crm/customers", manager, null, 200).size());
+        assertEquals(0, request("GET", "/crm/customers?mine=true", manager, null, 200).size());
+    }
+
+
     private String customer(User owner) throws Exception {
         return request("POST", "/crm/customers", admin, customerInput(owner), 201).get("id").asString();
     }
