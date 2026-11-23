@@ -12,7 +12,7 @@
 ## 4. Membership and labor contracts
 - [x] 4.1 Implement member, benefit and service records.
 - [x] 4.2 Implement protected contracts, attachment download and expiry indicators.
-- [ ] 4.3 Add Web forms for membership and contracts.
+- [x] 4.3 Add Web forms for membership and contracts.
 
 ## 5. Verification and handoff
 - [ ] 5.1 Verify migrations, audit, cross-enterprise requests and phase-one compatibility.

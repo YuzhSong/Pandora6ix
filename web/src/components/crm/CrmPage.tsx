@@ -1,7 +1,9 @@
 import { useDeferredValue, useMemo, useState } from 'react'
 import { businessKinds, businessStatuses, crmPath, customerKinds, useCrmQuery } from './api.ts'
-import { CrmDialog, Detail, Options, PersonPicker, RecordForm, RecordTable, RequestState } from './shared.tsx'
+import { CrmDialog, CustomerPicker, Detail, Options, Pagination, PersonPicker, RecordForm, RecordTable, RequestState } from './shared.tsx'
 import type { Labels, Person, Row } from './api.ts'
+import { MembershipPage } from './MembershipPage.tsx'
+import { ContractsPage } from './ContractsPage.tsx'
 import './crm.css'
 
 export type Customer = Row & { name: string; kind: string; category: string | null; contact: string | null; notes: string | null; ownerUserId: string; ownerName: string }
@@ -26,15 +28,19 @@ const businessColumns = [
 ]
 
 export default function CrmPage({ refresh }: { refresh: unknown }) {
-  const [tab, setTab] = useState<'customers' | 'businesses'>('customers')
+  const [tab, setTab] = useState<'customers' | 'businesses' | 'memberships' | 'contracts'>('customers')
+  const tabs = { customers: '客户档案', businesses: '业务记录', memberships: '会员权益', contracts: '劳动合同' } as const
   const people = useCrmQuery<Person[]>(crmPath('people'), refresh)
   return <section className="panel crm-panel">
     <nav className="crm-toolbar" aria-label="CRM 管理">
-      <button className={tab === 'customers' ? 'button primary' : 'button secondary'} aria-pressed={tab === 'customers'} onClick={() => setTab('customers')}>客户档案</button>
-      <button className={tab === 'businesses' ? 'button primary' : 'button secondary'} aria-pressed={tab === 'businesses'} onClick={() => setTab('businesses')}>业务记录</button>
+      {(Object.keys(tabs) as (keyof typeof tabs)[]).map(item => <button key={item}
+        className={tab === item ? 'button primary' : 'button secondary'} aria-pressed={tab === item}
+        onClick={() => setTab(item)}>{tabs[item]}</button>)}
     </nav>
     <RequestState error={people.error} loading={!people.data} />
-    {people.data && <Directory key={tab} tab={tab} people={people.data} refresh={refresh} />}
+    {people.data && (tab === 'memberships' ? <MembershipPage refresh={refresh} />
+      : tab === 'contracts' ? <ContractsPage people={people.data} refresh={refresh} />
+      : <Directory key={tab} tab={tab} people={people.data} refresh={refresh} />)}
   </section>
 }
 
@@ -95,13 +101,6 @@ function Directory({ tab, people, refresh }: { tab: 'customers' | 'businesses'; 
   </>
 }
 
-function Pagination({ offset, onChange, count }: { offset: number; onChange: (offset: number) => void; count?: number }) {
-  if (!offset && count !== 100) return null
-  return <div className="crm-actions"><button className="button secondary" disabled={!offset} onClick={() => onChange(offset - 100)}>上一页</button>
-    <span>第 {offset / 100 + 1} 页</span>
-    <button className="button secondary" disabled={count !== 100} onClick={() => onChange(offset + 100)}>下一页</button></div>
-}
-
 function CustomerDetail({ record }: { record: Customer }) {
   return <Detail values={[
     ['名称', record.name], ['类型', (customerKinds as Labels)[record.kind]], ['分类', record.category],
@@ -129,25 +128,6 @@ function CustomerEditor({ current, people, onClose, onSaved }: EditorProps<Custo
     <label>联系方式<input name="contact" maxLength={255} defaultValue={current?.contact || ''} /></label>
     <label className="crm-wide">备注<textarea name="notes" maxLength={2000} defaultValue={current?.notes || ''} /></label>
   </RecordForm>
-}
-
-function CustomerPicker({ current }: { current?: Pick<Business, 'customerId' | 'customerName'> }) {
-  const [search, setSearch] = useState('')
-  const [selection, setSelection] = useState(current)
-  const options = useCrmQuery<Customer[]>(crmPath('customers', { q: useDeferredValue(search) }))
-  return <div className="crm-picker">
-    <label>搜索客户<input type="search" value={search} onChange={event => setSearch(event.target.value)} /></label>
-    <label>关联客户<select name="customerId" required value={selection?.customerId || ''}
-      onChange={event => {
-        const customerId = event.target.value
-        setSelection(customerId ? { customerId, customerName: event.target.selectedOptions[0].text } : undefined)
-      }}>
-      <option value="">请选择客户</option>
-      {selection && !options.data?.some(row => row.id === selection.customerId) && <option value={selection.customerId}>{selection.customerName}</option>}
-      {options.data?.map(row => <option key={row.id} value={row.id}>{row.name}</option>)}
-    </select></label>
-    <RequestState error={options.error} loading={!options.data} />
-  </div>
 }
 
 function BusinessEditor({ current, people, onClose, onSaved }: EditorProps<Business>) {

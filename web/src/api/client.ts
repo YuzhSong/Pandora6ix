@@ -50,13 +50,14 @@ export function createApiClient({ baseUrl, fetcher = fetch, timeoutMs = 15000, o
       try {
         const headers = new Headers({ Accept: 'application/json', ...options.headers })
         headers.set('X-Client-Source', 'WEB')
-        if (options.body !== undefined) headers.set('Content-Type', 'application/json')
+        const multipart = options.body instanceof FormData
+        if (options.body !== undefined && !multipart) headers.set('Content-Type', 'application/json')
         const token = options.authenticated === false ? null : getAccessToken?.()
         if (token) headers.set('Authorization', `Bearer ${token}`)
         const response = await fetcher(`${base}${path}`, {
           method: options.method ?? 'GET',
           headers,
-          body: options.body === undefined ? undefined : JSON.stringify(options.body),
+          body: multipart ? options.body as FormData : options.body === undefined ? undefined : JSON.stringify(options.body),
           credentials: 'same-origin',
           cache: 'no-store',
           signal,

@@ -24,3 +24,5 @@
   .crm-fields, .crm-picker, .crm-participant, .crm-detail { grid-template-columns: minmax(0, 1fr); }
   .crm-new { margin-inline-start: 0; }
 }
+.crm-subsection { border-top: 1px solid var(--line, #b5bdc7); padding-top: .875rem; }
+.crm-warning { color: var(--danger, #ad4227); }

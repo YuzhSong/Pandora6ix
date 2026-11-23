@@ -1,9 +1,9 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { useDeferredValue, useEffect, useId, useRef, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
 import { apiClient } from '../../api/config.ts'
 import { errorMessage } from '../../api/feedback.ts'
 
-import { crmPath } from './api.ts'
+import { crmPath, useCrmQuery } from './api.ts'
 import type { Labels, Person, Row } from './api.ts'
 
 export function RequestState({ error, loading }: { error?: string; loading: boolean }) {
@@ -94,4 +94,30 @@ export function RecordTable<T extends Row>({ columns, rows, onOpen }: {
       {onOpen && <td><button className="button secondary" onClick={() => onOpen(row.id)}>查看</button></td>}
     </tr>)}</tbody>
   </table></div>
+}
+
+export function Pagination({ offset, onChange, count }: { offset: number; onChange: (offset: number) => void; count?: number }) {
+  if (!offset && count !== 100) return null
+  return <div className="crm-actions"><button className="button secondary" disabled={!offset} onClick={() => onChange(offset - 100)}>上一页</button>
+    <span>第 {offset / 100 + 1} 页</span>
+    <button className="button secondary" disabled={count !== 100} onClick={() => onChange(offset + 100)}>下一页</button></div>
+}
+
+export function CustomerPicker({ current }: { current?: { customerId: string; customerName: string } }) {
+  const [search, setSearch] = useState('')
+  const [selection, setSelection] = useState(current)
+  const options = useCrmQuery<{ id: string; name: string }[]>(crmPath('customers', { q: useDeferredValue(search) }))
+  return <div className="crm-picker">
+    <label>搜索客户<input type="search" value={search} onChange={event => setSearch(event.target.value)} /></label>
+    <label>关联客户<select name="customerId" required value={selection?.customerId || ''}
+      onChange={event => {
+        const customerId = event.target.value
+        setSelection(customerId ? { customerId, customerName: event.target.selectedOptions[0].text } : undefined)
+      }}>
+      <option value="">请选择客户</option>
+      {selection && !options.data?.some(row => row.id === selection.customerId) && <option value={selection.customerId}>{selection.customerName}</option>}
+      {options.data?.map(row => <option key={row.id} value={row.id}>{row.name}</option>)}
+    </select></label>
+    <RequestState error={options.error} loading={!options.data} />
+  </div>
 }
