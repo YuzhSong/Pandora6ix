@@ -151,7 +151,7 @@ function BusinessEditor({ current, people, onClose, onSaved }: EditorProps<Busin
     <label className="crm-wide">备注<textarea name="notes" maxLength={2000} defaultValue={current?.notes || ''} /></label>
     <div className="crm-wide"><h3>参与员工</h3>
       {participants.map(person => <div className="crm-participant" key={person.key}>
-        <label>员工<PersonPicker people={people} value={person.userId ? { id: person.userId, displayName: person.displayName || person.userId } : undefined}
+        <label>员工<PersonPicker name="" people={people} value={person.userId ? { id: person.userId, displayName: person.displayName || person.userId } : undefined}
           onSelect={id => update(person.key, { userId: id, displayName: people.find(item => item.id === id)?.displayName })} /></label>
         <label>职责<input required maxLength={128} value={person.responsibility} onChange={event => update(person.key, { responsibility: event.target.value })} /></label>
         <button type="button" className="button secondary" onClick={() => setParticipants(previous => previous.filter(item => item.key !== person.key))}>移除</button>
