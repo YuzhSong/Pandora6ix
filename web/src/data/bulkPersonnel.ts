@@ -1,13 +1,14 @@
 import { followingOrganization } from './personnelHistory.ts'
-import type { AdminData, AdminRepository, PersonInput } from './types.ts'
+import type { AdminData, AdminRepository, Person, PersonInput } from './types.ts'
 import type { CreatedAccountReceipt } from './accountHandoff.ts'
 import { errorMessage } from '../api/feedback.ts'
-import { validatePersonnelProfile } from './personnelProfile.ts'
+import { duplicateIdentityMessage, duplicatePhoneMessage, normalizePersonnelIdentity, normalizePersonnelPhone, validatePersonnelName, validatePersonnelProfile } from './personnelProfile.ts'
 import { validatePassword } from '../api/auth.ts'
 import { organizationFilterOptions } from './organizationHierarchy.ts'
-import { canHaveSupervisor, reportingError } from './supervisors.ts'
-import { generateLoginName, generateInitialPassword, personnelRole, populatedPersonnelRow, preparePersonnelRow, validateRoleOrganization } from './personnelCreation.ts'
+import { businessRank, canHaveSupervisor, organizationSupervisor } from './supervisors.ts'
+import { defaultPersonnelRole, generateLoginName, generateInitialPassword, personnelRole, populatedPersonnelRow, preparePersonnelRow, validateRoleOrganization } from './personnelCreation.ts'
 import { roleLabels } from './types.ts'
+import { validateLeadershipAssignment } from './personnelResponsibility.ts'
 
 export const bulkPersonnelHeaders = ['姓名', '登录账号', '性别', '身份证号', '电话号码', '业务角色', '所属组织', '直属上级账号']
 const matchesHeader = (header: string[]) => header.map((value, index) => index === 5 && value.trim() === '职位' ? '业务角色' : value.trim()).join(',') === bulkPersonnelHeaders.join(',')
@@ -47,6 +48,11 @@ export function previewBulkPersonnel(text: string, data: AdminData): BulkPersonn
   if (!header || !matchesHeader(header)) return { rows, errors: ['表头不匹配，请下载模板，保留全部 8 列及顺序。'] }
   if (!entries.length || entries.length > 100) return { rows, errors: ['每批需要 1～100 位人员。'] }
   const loginNames = new Set(data.people.map(person => person.loginName.trim().toLowerCase()))
+  const existingIdentities = new Set(data.people.map(person => normalizePersonnelIdentity(person.idNumber)))
+  const batchIdentities = new Set<string>()
+  const existingPhones = new Set(data.people.map(person => normalizePersonnelPhone(person.phoneNumber)))
+  const batchPhones = new Set<string>()
+  const leadershipOccupants: Pick<Person, 'id' | 'orgUnitId' | 'roles' | 'employmentStatus'>[] = [...data.people]
   const organizations = organizationFilterOptions(data.units)
   entries.forEach((entry, index) => {
     const rowNumber = index + 2
@@ -54,26 +60,35 @@ export function previewBulkPersonnel(text: string, data: AdminData): BulkPersonn
       if (entry.length !== header.length) throw new Error('列数不匹配')
       const [rawName, rawLogin, rawGender, rawIdentity, rawPhone, rawJob, rawOrganization, rawSupervisor] = entry
       const initialPassword = generateInitialPassword()
-      const role = personnelRole(rawJob.trim())
-      const displayName = rawName.trim(), loginName = rawLogin.trim() || generateLoginName(displayName, Array.from(loginNames, loginName => ({ loginName }))), jobTitle = roleLabels[role]
-      if (!displayName || displayName.length > 128 || !loginName || loginName.length > 128 || jobTitle.length > 128) throw new Error('姓名/账号必填，姓名、账号和职位最多 128 字符')
+      validatePersonnelName(rawName)
+      const displayName = rawName
+      const loginName = rawLogin.trim() || generateLoginName(displayName, Array.from(loginNames, loginName => ({ loginName })))
+      if (!loginName || loginName.length > 128) throw new Error('登录账号必填，最多 128 字符。')
       if (loginNames.has(loginName.toLowerCase())) throw new Error('登录账号在现有人员或导入文件中重复')
       loginNames.add(loginName.toLowerCase())
       validatePassword(initialPassword)
       const gender: PersonInput['gender'] = rawGender.trim() === '男' || rawGender.trim().toUpperCase() === 'MALE' ? 'MALE' : rawGender.trim() === '女' || rawGender.trim().toUpperCase() === 'FEMALE' ? 'FEMALE' : null
-      const profile = { gender, idNumber: rawIdentity.trim().toUpperCase(), phoneNumber: rawPhone.trim() }
+      const profile = { gender, idNumber: normalizePersonnelIdentity(rawIdentity), phoneNumber: rawPhone.trim() }
       validatePersonnelProfile(profile)
+      if (existingIdentities.has(profile.idNumber)) throw new Error(duplicateIdentityMessage)
+      if (batchIdentities.has(profile.idNumber)) throw new Error('身份证号在本批人员中重复。')
+      const phone = normalizePersonnelPhone(profile.phoneNumber)
+      if (existingPhones.has(phone)) throw new Error(duplicatePhoneMessage)
+      if (batchPhones.has(phone)) throw new Error('电话号码在本批人员中重复。')
       const organization = rawOrganization.trim()
       const matches = organizations.filter(unit => unit.accessibleLabel === organization || unit.value === organization || unit.label === organization)
       if (organization && matches.length !== 1) throw new Error('所属组织不存在或名称重复，请使用完整组织路径')
-      const supervisorLogin = canHaveSupervisor([role]) ? rawSupervisor.trim() : ''
-      const supervisor = data.people.find(person => person.loginName === supervisorLogin)
-      if (supervisorLogin && !supervisor) throw new Error('直属上级账号不存在，请先创建并配置负责人角色')
-      const orgUnitId = matches[0]?.value ?? followingOrganization(data, [role], supervisor?.id ?? '') ?? ''
+      const role = rawJob.trim() ? personnelRole(rawJob.trim()) : defaultPersonnelRole(data.units, leadershipOccupants, matches[0]?.value ?? '')
+      const jobTitle = roleLabels[role]
+      const legacySupervisor = canHaveSupervisor([role]) ? data.people.find(person => person.loginName === rawSupervisor.trim()) : undefined
+      const orgUnitId = matches[0]?.value ?? followingOrganization(data, [role], legacySupervisor?.id ?? '') ?? ''
       validateRoleOrganization(data, role, orgUnitId)
-      const reporting = reportingError(data.people, undefined, [role], supervisor?.id ?? '')
-      if (reporting) throw new Error(reporting)
+      const supervisor = organizationSupervisor(data, orgUnitId, [role])
+      validateLeadershipAssignment(leadershipOccupants, [role], orgUnitId)
+      batchIdentities.add(profile.idNumber)
+      batchPhones.add(phone)
       rows.push({ rowNumber, initialPassword, input: { displayName, loginName, jobTitle, orgUnitId, supervisorId: supervisor?.id ?? null, roles: [role], ...profile } })
+      leadershipOccupants.push({ id: String(rowNumber), orgUnitId, roles: [role] })
     } catch (error) { errors.push(`第 ${rowNumber} 行：${error instanceof Error ? error.message : '资料不符合要求'}`) }
   })
   return { rows, errors }
@@ -116,13 +131,17 @@ export async function createBulkPersonnel(rows: BulkPersonnelRow[], repository: 
   onRow: (index: number, status: 'creating' | 'success' | 'failed', message?: string) => void
   onCreated: (data: AdminData, receipt: CreatedAccountReceipt) => void
 }) {
-  for (const [index, row] of rows.entries()) {
+  const ordered = Array.from(rows.entries()).sort(([, a], [, b]) => businessRank(b.input.roles) - businessRank(a.input.roles))
+  let workspace: AdminData | undefined
+  for (const [index, row] of ordered) {
     if (callbacks.stopped()) break
     callbacks.onRow(index, 'creating')
     try {
-      const data = await repository.savePerson(row.input, undefined, undefined, row.initialPassword)
+      const input = workspace ? { ...row.input, supervisorId: organizationSupervisor(workspace, row.input.orgUnitId, row.input.roles)?.id ?? null } : row.input
+      const data = await repository.savePerson(input, undefined, undefined, row.initialPassword)
       const created = data.people.find(person => person.loginName === row.input.loginName)
       if (!created || created.displayName !== row.input.displayName) throw new Error('服务器已处理请求，但返回账号无法确认。')
+      workspace = data
       callbacks.onCreated(data, { personId: created.id, loginName: created.loginName, displayName: created.displayName, enterpriseDomain: data.enterprise.loginDomain, initialPassword: row.initialPassword })
       callbacks.onRow(index, 'success')
     } catch (reason) {

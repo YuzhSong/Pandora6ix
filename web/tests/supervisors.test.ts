@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { canHaveSupervisor, businessRank, reportingError, supervisorCandidates } from '../src/data/supervisors.ts'
+import { canHaveSupervisor, businessRank, organizationSupervisor, reportingError, supervisorCandidates } from '../src/data/supervisors.ts'
+import { createSeed } from '../src/data/seed.ts'
 import type { Person, Role } from '../src/data/types.ts'
 
 function person(id: string, roles: Role[], supervisorId: string | null = null): Person {
@@ -8,6 +9,18 @@ function person(id: string, roles: Role[], supervisorId: string | null = null): 
 }
 const people = [person('admin', ['ADMIN']), person('founder', ['FOUNDER']), person('manager', ['DEPARTMENT_MANAGER'], 'founder'), person('lead', ['TEAM_LEAD'], 'manager'), person('staff', ['EMPLOYEE'], 'lead')]
 const ids = (subject: string, roles: Role[]) => supervisorCandidates(people, subject, roles).map(person => person.id)
+
+test('a transfer takes the target team lead and falls back to the nearest eligible ancestor', () => {
+  const data = createSeed()
+  assert.equal(organizationSupervisor(data, 'org-web', ['EMPLOYEE'], 'u-cy')?.id, 'u-web')
+  assert.equal(organizationSupervisor(data, 'org-mobile', ['EMPLOYEE'], 'u-cy')?.id, 'u-mobile')
+  assert.equal(organizationSupervisor(data, 'org-mobile', ['TEAM_LEAD'])?.id, 'u-product')
+  assert.equal(organizationSupervisor(data, 'org-product', ['DEPARTMENT_MANAGER'])?.id, 'u-founder')
+  data.people.find(person => person.id === 'u-mobile')!.status = 'DISABLED'
+  assert.equal(organizationSupervisor(data, 'org-mobile', ['EMPLOYEE'], 'u-cy')?.id, 'u-product')
+  assert.equal(organizationSupervisor(data, 'org-company', ['FOUNDER']), undefined)
+  assert.equal(organizationSupervisor(data, '', ['EMPLOYEE']), undefined)
+})
 
 test('supervisor candidates differ by highest business role, ignoring administrator permission', () => {
   assert.deepEqual(ids('manager', ['DEPARTMENT_MANAGER']), ['founder'])

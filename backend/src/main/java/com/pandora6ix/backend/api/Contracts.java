@@ -57,10 +57,11 @@ public final class Contracts {
             @NotBlank @Size(min = 10, max = 72) String newPassword) {}
 
     public record UserDeparture(@NotNull @Min(0) Long expectedVersion, @NotNull LocalDate departureDate) {}
+    public record UserDepartureReversal(@NotNull @Min(0) Long expectedVersion, String orgUnitId) {}
 
     public record ManagerReplacement(@NotNull @Min(0) Long expectedVersion,
             @NotBlank String successorUserId, @NotNull @Min(0) Long successorExpectedVersion,
-            @NotBlank @Size(max=128) String successorJobTitle, @NotBlank @Size(max=128) String formerJobTitle) {}
+            @NotBlank @Size(max=128) String successorJobTitle, @NotBlank @Size(max=128) String formerJobTitle, String formerOrgUnitId) {}
 
     public record UserJobChange(
             @NotNull @Min(0) Long expectedVersion,

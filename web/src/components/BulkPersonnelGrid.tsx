@@ -1,22 +1,30 @@
 import { followingOrganization } from '../data/personnelHistory.ts'
 import { supervisorOptionLabel } from '../data/personnelDisplay.ts'
 import { Select } from './Select.tsx'
-import type { AdminData } from '../data/types.ts'
+import type { AdminData, Person } from '../data/types.ts'
 import { bulkPersonnelHeaders } from '../data/bulkPersonnel.ts'
 import { organizationFilterOptions } from '../data/organizationHierarchy.ts'
-import { canHaveSupervisor, supervisorCandidates } from '../data/supervisors.ts'
-import { businessRoleOptions, generateLoginName, personnelRole, preparePersonnelRow } from '../data/personnelCreation.ts'
+import { organizationSupervisor } from '../data/supervisors.ts'
+import { businessRoleOptions, defaultPersonnelRole, generateLoginName, organizationAllowsRole, personnelRole, preparePersonnelRow } from '../data/personnelCreation.ts'
 
 export function BulkPersonnelGrid({ rows, data, onChange }: { rows: string[][]; data: AdminData; onChange: (rows: string[][]) => void }) {
   const organizations = organizationFilterOptions(data.units)
+  const occupants: Pick<Person, 'orgUnitId' | 'roles' | 'employmentStatus'>[] = [...data.people]
+  const displayedRoles = rows.map(cells => {
+    const organization = cells[7]
+    try {
+      const role = cells[6] ? personnelRole(cells[6]) : defaultPersonnelRole(data.units, occupants, organization)
+      if (role === 'DEPARTMENT_MANAGER') occupants.push({ orgUnitId: organization, roles: [role] })
+      return role
+    } catch { return 'EMPLOYEE' as const }
+  })
   function update(row: number, column: number, value: string) {
     onChange(rows.map((cells, index) => {
       if (index !== row) return cells
       const next = cells.map((cell, offset) => offset === column ? value : cell)
       const accounts = [...data.people, ...rows.filter((_, i) => i !== row).map(item => ({ loginName: item[1] }))]
       if (column === 0 && (!cells[1] || cells[1] === generateLoginName(cells[0], accounts))) next[1] = generateLoginName(value, accounts)
-      if (column === 8 && businessRoleOptions.some(option => option.value === next[6] || option.label === next[6] || !next[6])) { const org = followingOrganization(data, [personnelRole(next[6])], data.people.find(person => person.loginName === value)?.id ?? ''); if (org) next[7] = org }
-      if (column === 6 && !canHaveSupervisor([personnelRole(value)])) next[8] = ''
+      if (column === 6 || column === 7) next[8] = ''
       return preparePersonnelRow(next)
     }))
   }
@@ -26,17 +34,23 @@ export function BulkPersonnelGrid({ rows, data, onChange }: { rows: string[][]; 
         <tbody>{rows.map((cells, row) => <tr key={row}><td>{row + 1}</td>{cells.map((value, column) => {
           if (column === 2) return null
           const label = `第${row + 1}行${bulkPersonnelHeaders[column > 2 ? column - 1 : column]}`
-          let role = 'EMPLOYEE' as ReturnType<typeof personnelRole>
-          try { role = personnelRole(cells[6]) } catch { /* Keep invalid CSV values visible for correction. */ }
-          if (column === 8 && !canHaveSupervisor([role])) return <td key={column}><span aria-label={label}>—</span></td>
-          const supervisors = supervisorCandidates(data.people, undefined, [role])
-          const options = column === 3 ? [{ value: '', label: '请选择' }, { value: '男', label: '男' }, { value: '女', label: '女' }]
+          const role = displayedRoles[row]
+          if (column === 8) {
+            const legacy = data.people.find(person => person.loginName === value)
+            const organization = cells[7] || followingOrganization(data, [role], legacy?.id ?? '') || ''
+            const supervisor = organizationSupervisor(data, organization, [role])
+            return <td key={column}><span aria-label={label}>{supervisor ? supervisorOptionLabel(data, supervisor) : '未设置'}</span></td>
+          }
+          const options: Parameters<typeof Select>[0]['options'] = column === 3 ? [{ value: '', label: '请选择' }, { value: '男', label: '男' }, { value: '女', label: '女' }]
             : column === 6 ? [...businessRoleOptions]
-            : column === 7 ? [{ value: '', label: '未分配' }, ...organizations]
-              : [{ value: '', label: '未设置' }, ...supervisors.map(person => ({ value: person.loginName, label: supervisorOptionLabel(data, person) }))]
+            : organizations.filter(option => {
+              const unit = data.units.find(candidate => candidate.id === option.value)
+              const eligibleRole = cells[6] ? role : defaultPersonnelRole(data.units, data.people, option.value)
+              return organizationAllowsRole(eligibleRole, unit?.kind)
+            })
           if (value && !options.some(option => option.value === value)) options.push({ value, label: value })
-          return <td key={column}>{[3, 6, 7, 8].includes(column)
-            ? <Select label={label} popupMinWidth={column === 8 ? 380 : 0} value={column === 6 && !value ? 'EMPLOYEE' : value} options={options} onChange={next => update(row, column, next)} />
+          return <td key={column}>{[3, 6, 7].includes(column)
+            ? <Select label={label} value={column === 6 && !value ? role : value} options={options} onChange={next => update(row, column, next)} />
             : <input aria-label={label} value={value} autoComplete="off" spellCheck={false} maxLength={column === 4 ? 18 : column === 5 ? 25 : 128} onChange={event => update(row, column, event.target.value)} />}</td>
         })}<td><button type="button" className="text-button" aria-label={`删除第${row + 1}行`} onClick={() => onChange(rows.length === 1 ? [Array<string>(9).fill('')] : rows.filter((_, index) => index !== row))}>删除</button></td></tr>)}</tbody>
       </table>

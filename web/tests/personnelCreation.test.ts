@@ -19,25 +19,43 @@ test('generated passwords meet policy, differ per person and remain stable durin
   assert.ok(previewPersonnelTable([['', '', passwords[0], '', '', '', 'EMPLOYEE', '', '']], createSeed()).errors.length)
 })
 
-test('batch role choices submit real roles and validate manager organization and reporting', () => {
-  const data = createSeed(), team = data.units.find(unit => unit.kind === 'TEAM')!
-  const manager = data.people.find(person => person.roles.includes('DEPARTMENT_MANAGER'))!
-  const row = ['新人', 'new-role-user', '', '男', '000000200001010001', '00000000001', '团队长', team.id, manager.loginName]
+test('batch leaders require a vacant matching organization and receive its supervisor', () => {
+  const data = createSeed()
+  const row = ['新人', 'new-role-user', '', '男', '000000200001010001', '00000000001', '团队长', 'org-service', 'cheng.yao']
   const valid = previewPersonnelTable([row], data)
   assert.deepEqual(valid.errors, [])
   assert.deepEqual(valid.rows[0].input.roles, ['TEAM_LEAD'])
   assert.equal(valid.rows[0].input.jobTitle, '团队长')
+  assert.equal(valid.rows[0].input.supervisorId, 'u-operations')
   validatePassword(valid.rows[0].initialPassword)
   const wrongOrg = [...row]; wrongOrg[7] = data.units.find(unit => unit.kind === 'COMPANY')!.id
   assert.match(previewPersonnelTable([wrongOrg], data).errors.join(''), /匹配/)
-  const wrongSupervisor = [...row]; wrongSupervisor[8] = data.people.find(person => person.roles.includes('EMPLOYEE'))!.loginName
-  assert.match(previewPersonnelTable([wrongSupervisor], data).errors.join(''), /上级/)
+  const occupied = [...row]; occupied[7] = 'org-web'
+  assert.match(previewPersonnelTable([occupied], data).errors.join(''), /已有团队长/)
+  const duplicate = [...row]; duplicate[1] = 'new-role-user-two'; duplicate[4] = '000000200001010002'
+  duplicate[5] = '00000000002'
+  assert.match(previewPersonnelTable([row, duplicate], data).errors.join(''), /第 2 行.*已有团队长/)
   for (const invalid of ['项目统筹', 'ADMIN', '__proto__']) assert.throws(() => personnelRole(invalid))
+})
+
+test('blank batch role defaults to the first vacant department manager only', () => {
+  const data = createSeed()
+  data.people = data.people.filter(person => person.id !== 'u-product')
+  const rows = [
+    ['小红', 'xiaohong', '', '女', '000000200001010001', '00000000001', '', 'org-product', ''],
+    ['小绿', 'xiaolv', '', '女', '000000200001010002', '00000000002', '', 'org-product', ''],
+  ]
+  const preview = previewPersonnelTable(rows, data)
+  assert.match(preview.errors.join(''), /第 2 行.*具体团队/)
+  assert.deepEqual(preview.rows.map(row => row.input.roles), [['DEPARTMENT_MANAGER']])
+  rows[0][6] = '员工'
+  rows[0][7] = 'org-web'
+  assert.deepEqual(previewPersonnelTable(rows, data).rows.map(row => row.input.roles), [['EMPLOYEE'], ['DEPARTMENT_MANAGER']])
 })
 
 test('CSV has eight visible columns, generates hidden passwords and supports the position header alias', () => {
   const data = createSeed()
-  const row = ['新人', 'new-csv-user', '男', '000000200001010001', '00000000001', '员工', '', '']
+  const row = ['新人', 'new-csv-user', '男', '000000200001010001', '00000000001', '员工', 'org-web', '']
   const header = [...bulkPersonnelHeaders]; header[5] = '职位'
   const imported = importPersonnelTable(header.join(',') + '\n' + row.join(','), data)
   validatePassword(imported[0][2])
@@ -47,6 +65,7 @@ test('CSV has eight visible columns, generates hidden passwords and supports the
 
 test('imported founder rows cannot retain an invisible supervisor', () => {
   const data = createSeed(), root = data.units.find(unit => unit.kind === 'COMPANY')!
+  data.people = data.people.filter(person => !person.roles.includes('FOUNDER'))
   const row = ['新创始人', 'new-founder', '男', '000000200001010001', '00000000001', '创始人', root.id, 'obsolete-supervisor']
   const imported = importPersonnelTable(bulkPersonnelHeaders.join(',') + '\n' + row.join(','), data)
   assert.equal(imported[0][8], '')
@@ -61,7 +80,7 @@ test('batch employee without organization inherits supervisor organization, expl
   const inferred = previewPersonnelTable([row], data)
   assert.deepEqual(inferred.errors, [])
   assert.equal(inferred.rows[0].input.orgUnitId, supervisor.orgUnitId)
-  row[7] = data.units.find(unit => unit.kind === 'COMPANY')!.id
+  row[7] = 'org-mobile'
   const explicit = previewPersonnelTable([row], data)
   assert.deepEqual(explicit.errors, [])
   assert.equal(explicit.rows[0].input.orgUnitId, row[7])
@@ -71,7 +90,10 @@ test('bulk missing accounts use pinyin and avoid existing and earlier rows', () 
   const data = createSeed(), supervisor = data.people.find(p => p.roles.includes('TEAM_LEAD'))!
   data.people[0].loginName = 'XIAOMING'
   const row = ['小明', '', '', '男', '000000200001010001', '00000000001', '员工', '', supervisor.loginName]
-  const checked = previewPersonnelTable([row, [...row]], data)
+  const second = [...row]
+  second[4] = '000000200001010002'
+  second[5] = '00000000002'
+  const checked = previewPersonnelTable([row, second], data)
   assert.deepEqual(checked.errors, [])
   assert.deepEqual(checked.rows.map(item => item.input.loginName), ['xiaoming2', 'xiaoming3'])
   for (const item of checked.rows) assert.match(item.initialPassword, /^[0-9]{12}$/)

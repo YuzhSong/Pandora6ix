@@ -1,9 +1,17 @@
 import { pinyin } from 'pinyin-pro'
-import type { AdminData, Role } from './types.ts'
+import type { AdminData, Person, Role, UnitKind } from './types.ts'
 import { roleLabels } from './types.ts'
+import { managerRole } from './personnelResponsibility.ts'
 
 export const businessRoles: Role[] = ['FOUNDER', 'DEPARTMENT_MANAGER', 'TEAM_LEAD', 'EMPLOYEE']
 export const businessRoleOptions = businessRoles.map(value => ({ value, label: roleLabels[value] }))
+
+export function defaultPersonnelRole(units: AdminData['units'], people: readonly Pick<Person, 'orgUnitId' | 'roles' | 'employmentStatus'>[], organization: string): Role {
+  const vacantDepartment = units.some(unit => unit.id === organization && unit.kind === 'DEPARTMENT') &&
+    !people.some(person => person.orgUnitId === organization && person.employmentStatus !== 'DEPARTED' && person.roles.includes('DEPARTMENT_MANAGER'))
+  return vacantDepartment ? 'DEPARTMENT_MANAGER' : 'EMPLOYEE'
+}
+
 export function generateLoginName(name: string, people: readonly { loginName: string }[]): string {
   const existing = new Set(people.map(person => person.loginName.trim().toLowerCase()))
   const base = pinyin(name.trim(), { toneType: 'none', surname: 'head', v: true }).toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 120)
@@ -19,9 +27,22 @@ export function personnelRole(value: string): Role {
   if (!role) throw new Error('请选择创始人、部门老总、团队长或员工')
   return role
 }
+export function organizationRole(roles: Role[]): Role {
+  return managerRole({ roles }) ?? (roles.includes('EMPLOYEE') ? 'EMPLOYEE' : 'ADMIN')
+}
+
+export function organizationAllowsRole(role: Role, kind?: UnitKind) {
+  if (role === 'EMPLOYEE' || role === 'TEAM_LEAD') return kind === 'TEAM'
+  if (role === 'DEPARTMENT_MANAGER') return kind === 'DEPARTMENT'
+  if (role === 'FOUNDER') return kind === 'COMPANY'
+  return kind !== 'DEPARTMENT'
+}
+
 export function validateRoleOrganization(data: AdminData, role: Role, org: string) {
   const kind = data.units.find(unit => unit.id === org)?.kind
-  if ((role === 'FOUNDER' && kind !== 'COMPANY') || (role === 'DEPARTMENT_MANAGER' && kind !== 'DEPARTMENT') || (role === 'TEAM_LEAD' && kind !== 'TEAM')) throw new Error('请选择与业务角色匹配的公司、部门或团队')
+  if (!organizationAllowsRole(role, kind)) {
+    throw new Error(role === 'EMPLOYEE' ? '普通员工必须归属具体团队，请选择所属团队。' : '请选择与业务角色匹配的公司、部门或团队。')
+  }
 }
 
 export function generateInitialPassword(): string {

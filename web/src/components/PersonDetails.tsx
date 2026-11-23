@@ -6,7 +6,7 @@ import { PersonStatusBadge } from './PersonStatusBadge.tsx'
 import { Icon } from './Icon.tsx'
 import { genderLabels, maskIdentity } from '../data/personnelProfile.ts'
 import { AccountInformation } from './AccountInformation.tsx'
-import { disableReason, canRestoreAccount, organizationPath, supervisorOptionLabel } from '../data/personnelDisplay.ts'
+import { displayedPersonnelRoles, disableReason, canRestoreAccount, organizationPath, supervisorOptionLabel } from '../data/personnelDisplay.ts'
 
 export function PersonDetails({ person, data, onClose, onEdit, onResetPassword, editLabel = '编辑资料' }: {
   person: Person; data: AdminData; onClose: () => void; editLabel?: string; onEdit: () => void; onResetPassword?: () => void
@@ -23,7 +23,7 @@ export function PersonDetails({ person, data, onClose, onEdit, onResetPassword, 
   return <dialog ref={dialog} className="editor-dialog person-details-dialog" aria-labelledby="person-details-title" onCancel={event => { event.preventDefault(); onClose() }}>
     <div className="dialog-head"><h2 id="person-details-title">人员资料</h2><button className="icon-button" aria-label="关闭人员详情" onClick={onClose}><Icon name="close" /></button></div>
     <div className="dialog-body">
-      <div className="person-profile-identity"><span className="avatar">{person.displayName.slice(0, 1)}</span><div><div className="person-name-line"><h3>{person.displayName}</h3><PersonStatusBadge person={person} />{person.employmentStatus !== 'DEPARTED' && <span className="badge neutral">在职</span>}{person.status !== 'DISABLED' && <span className="badge log-success">账号启用</span>}</div><div className="badges">{person.roles.map(role => <RoleBadge key={role} role={role} />)}</div></div></div>
+      <div className="person-profile-identity"><span className="avatar">{person.displayName.slice(0, 1)}</span><div><div className="person-name-line"><h3>{person.displayName}</h3><PersonStatusBadge person={person} />{person.employmentStatus !== 'DEPARTED' && <span className="badge neutral">在职</span>}{person.status !== 'DISABLED' && <span className="badge log-success">账号启用</span>}</div><div className="badges">{displayedPersonnelRoles(person).map(role => <RoleBadge key={role} role={role} />)}</div></div></div>
       {person.status === 'DISABLED' && <div className="person-disabled-summary"><strong>{person.employmentStatus === 'DEPARTED' ? '离职停用' : '在职账号停用'}</strong><span>停用原因：{disableReason(person)}</span><span>{canRestoreAccount(person) ? '可由系统管理员在人员管理中恢复账号。' : person.employmentStatus === 'DEPARTED' ? '已离职账号不支持直接恢复登录。' : '请联系系统管理员核实在职状态。'}</span></div>}
       <section className="person-profile-section" aria-label="组织信息"><h3>组织信息</h3><dl className="person-profile-grid">
         <div className="profile-full-row"><dt>所属组织</dt><dd>{organizationPath(data, person.orgUnitId)}</dd></div>

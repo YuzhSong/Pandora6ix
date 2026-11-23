@@ -2707,6 +2707,128 @@
         }
       }
     },
+    "/admin/users/{id}/departure-reversal": {
+      "post": {
+        "operationId": "IdentityController_reverseDeparture",
+        "tags": [
+          "Identity"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful command/read; 201 task submission remains PENDING.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/User"
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Structured error; unavailable private objects use uniform 404.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserDepartureReversal"
+              }
+            }
+          }
+        }
+      }
+    },
     "/admin/users/{id}/job-change": {
       "post": {
         "operationId": "IdentityController_jobChange",
@@ -9793,6 +9915,30 @@
         ],
         "additionalProperties": false
       },
+      "UserDepartureReversal": {
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "orgUnitId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "expectedVersion"
+        ],
+        "additionalProperties": false
+      },
       "ManagerReplacement": {
         "type": "object",
         "properties": {
@@ -9822,6 +9968,16 @@
             "minLength": 1,
             "pattern": "\\S",
             "maxLength": 128
+          },
+          "formerOrgUnitId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
