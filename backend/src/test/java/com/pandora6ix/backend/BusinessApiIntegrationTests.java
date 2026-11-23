@@ -3438,7 +3438,7 @@ class BusinessApiIntegrationTests {
             var page =
                     request(
                             "GET",
-                            "/tasks/recipient-candidates?limit=1"
+                            "/tasks/recipient-candidates?scope=enterprise&limit=1"
                                     + (cursor == null ? "" : "&cursor=" + cursor),
                             managerToken,
                             null,
