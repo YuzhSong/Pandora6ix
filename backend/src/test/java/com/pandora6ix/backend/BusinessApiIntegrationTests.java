@@ -3375,10 +3375,12 @@ class BusinessApiIntegrationTests {
     @Test
     void memberContactReturnsOnlyRealTelephoneAndReflectsUpdates() throws Exception {
         String path = "/users/" + employee + "/contact";
+        String telephone = "+86 13800000123";
+        db.update("UPDATE app_user SET phone_number=? WHERE enterprise_id=? AND id=?", telephone, enterprise, employee);
         var contact = request("GET", path, managerToken, null, 200);
         assertEquals(Set.of("id", "phoneNumber"), contact.keySet());
         assertEquals(employee, contact.get("id"));
-        assertEquals("+86 13800000000", contact.get("phoneNumber"));
+        assertEquals(telephone, contact.get("phoneNumber"));
         assertEquals(contact, request("GET", path, leadToken, null, 200));
         assertEquals(contact, request("GET", path, founderToken, null, 200));
         var response = mvc.perform(MockMvcRequestBuilders.get("/api/v1" + path)
@@ -3404,7 +3406,8 @@ class BusinessApiIntegrationTests {
         request("GET", "/users/" + manager + "/contact", managerToken, null, 404);
         request("GET", "/users/" + UUID.randomUUID() + "/contact", managerToken, null, 404);
         String otherDepartment = createOrg("Other department", "DEPARTMENT", root);
-        String outsider = createUser("outsider", otherDepartment, founder, List.of("EMPLOYEE"));
+        String otherTeam = createOrg("Other team", "TEAM", otherDepartment);
+        String outsider = createUser("outsider", otherTeam, founder, List.of("EMPLOYEE"));
         request("GET", "/users/" + outsider + "/contact", managerToken, null, 404);
         db.update("UPDATE app_user SET status='DISABLED' WHERE enterprise_id=? AND id=?", enterprise, employee);
         request("GET", path, managerToken, null, 404);
