@@ -1,5 +1,6 @@
 import type { AdminData, Role, UnitKind } from './types.ts'
 import type { EditRequest } from '../components/AdminEditor.tsx'
+import { defaultPersonnelRole } from './personnelCreation.ts'
 
 export interface Draft {
   name: string; loginName: string; jobTitle: string; orgUnitId: string
@@ -15,7 +16,10 @@ export function createEditorDraft(request: EditRequest, data: AdminData): Draft 
     const parent = data.units.find(unit => unit.id === request.parentId)
     if (parent && parent.kind !== 'TEAM') Object.assign(draft, { parentId: parent.id, kind: parent.kind === 'COMPANY' ? 'DEPARTMENT' : 'TEAM' })
   }
-  if (request.kind === 'person' && !request.item && request.orgUnitId && data.units.some(unit => unit.id === request.orgUnitId)) draft.orgUnitId = request.orgUnitId
+  if (request.kind === 'person' && !request.item && request.orgUnitId && data.units.some(unit => unit.id === request.orgUnitId)) {
+    draft.orgUnitId = request.orgUnitId
+    draft.roles = [defaultPersonnelRole(data.units, data.people, draft.orgUnitId)]
+  }
   if (request.kind === 'enterprise' && request.item) draft.name = request.item.name
   if (request.kind === 'unit' && request.item) Object.assign(draft, { name: request.item.name, kind: request.item.kind, parentId: request.item.parentId ?? '' })
   if ((request.kind === 'person' || request.kind === 'roles') && request.item) Object.assign(draft, { name: request.item.displayName, loginName: request.item.loginName, jobTitle: request.item.jobTitle, orgUnitId: request.item.orgUnitId, supervisorId: request.item.supervisorId ?? '', roles: [...request.item.roles] })

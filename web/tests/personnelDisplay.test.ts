@@ -1,7 +1,15 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { organizationCounts, organizationPath, canRestoreAccount, disableReason } from '../src/data/personnelDisplay.ts'
+import { organizationCounts, organizationPath, canRestoreAccount, disableReason, displayedPersonnelRoles } from '../src/data/personnelDisplay.ts'
+import type { Role } from '../src/data/types.ts'
 import { createSeed } from '../src/data/seed.ts'
+
+test('business leaders omit the employee label without changing assigned roles', () => {
+  const roles: Role[] = ['EMPLOYEE', 'TEAM_LEAD', 'ADMIN']
+  assert.deepEqual(displayedPersonnelRoles({ roles }), ['TEAM_LEAD', 'ADMIN'])
+  assert.deepEqual(roles, ['EMPLOYEE', 'TEAM_LEAD', 'ADMIN'])
+  assert.deepEqual(displayedPersonnelRoles({ roles: ['EMPLOYEE', 'ADMIN'] }), ['EMPLOYEE', 'ADMIN'])
+})
 
 test('counts distinguish direct and descendants, exclude departed, retain in-service disabled and tolerate cycles', () => {
   const data = createSeed(), base = data.people[0]

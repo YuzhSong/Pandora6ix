@@ -756,8 +756,11 @@ fun PandoraApp(
                     showContacts -> key(currentUser!!.id) {
                         ContactsFlow(
                             currentUser!!, calendarRepo, taskRepo, journalRepo, userRepo,
-                            taskDetail = { id, onBack, onChanged ->
-                                FullTaskDetail(id, taskRepo, serverTags, currentUser?.businessTimezone, currentUser, userRepo, onBack) { onChanged(); calRetry++ }
+                            readOnlyTaskDetail = { id, onBack ->
+                                FullTaskDetail(
+                                    id, taskRepo, serverTags, currentUser?.businessTimezone, currentUser, userRepo,
+                                    onBack, readOnly = true, onChanged = {}
+                                )
                             },
                             journalDetail = { id, onBack -> JournalDetailScreen(journalRepo, id, currentUser?.businessTimezone, currentUser, userRepo, onBack) },
                             onClose = { showContacts = false }
@@ -2446,7 +2449,11 @@ private fun roleLabel(role: String): String = when (role.uppercase()) {
 }
 /** 完整详情独立加载，避免日历简略列表刷新覆盖执行记录。 */
 @Composable
-private fun FullTaskDetail(id: String, repo: TaskRepository, tags: List<TagDto>, businessTimezone: String?, currentUser: UserDto?, userRepo: UserRepository, onBack: () -> Unit, onChanged: () -> Unit) {
+private fun FullTaskDetail(
+    id: String, repo: TaskRepository, tags: List<TagDto>, businessTimezone: String?,
+    currentUser: UserDto?, userRepo: UserRepository, onBack: () -> Unit, readOnly: Boolean = false,
+    onChanged: () -> Unit
+) {
     var task by remember(id) { mutableStateOf<TaskDto?>(null) }
     var loading by remember(id) { mutableStateOf(true) }
     var error by remember(id) { mutableStateOf<String?>(null) }
@@ -2477,12 +2484,13 @@ private fun FullTaskDetail(id: String, repo: TaskRepository, tags: List<TagDto>,
                 }
             }
         }
-        else -> DetailScreen(id, task, tags, repo, onBack, onChanged = { revision++; onChanged() }, businessTimezone = businessTimezone, currentUser = currentUser, userRepo = userRepo)
+        else -> DetailScreen(id, task, tags, repo, onBack, onChanged = { revision++; onChanged() },
+            businessTimezone = businessTimezone, currentUser = currentUser, userRepo = userRepo, readOnly = readOnly)
     }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
-@Composable private fun DetailScreen(title: String, dto: TaskDto?, availableTags: List<TagDto>, taskRepo: TaskRepository, onBack: () -> Unit, onChanged: () -> Unit, businessTimezone: String? = null, currentUser: UserDto? = null, userRepo: UserRepository? = null) {
+@Composable private fun DetailScreen(title: String, dto: TaskDto?, availableTags: List<TagDto>, taskRepo: TaskRepository, onBack: () -> Unit, onChanged: () -> Unit, businessTimezone: String? = null, currentUser: UserDto? = null, userRepo: UserRepository? = null, readOnly: Boolean = false) {
     val isLog = title.startsWith("日志 · ")
     val logContent = if (isLog) title.substringAfter("§", "") else null
     val displayTitle = dto?.title ?: if (isLog) title.substringBefore("§") else title
@@ -2515,8 +2523,10 @@ private fun FullTaskDetail(id: String, repo: TaskRepository, tags: List<TagDto>,
         catch (_: Exception) { /* The authorized detail remains usable if legacy name lookup fails. */ }
     }
 
-    val canUpdateTask = detailAssignment?.allowedActions?.any { it == "UPDATE_PROGRESS" || it == "COMPLETE_PERSONAL" || it == "REQUEST_COMPLETION" } == true ||
-        (dto?.seriesId != null && dto.kind == "PERSONAL" && dto.reviewStatus == "APPROVED" && detailAssignment?.executionStatus == "COMPLETED")
+    val canUpdateTask = !readOnly && (
+        detailAssignment?.allowedActions?.any { it == "UPDATE_PROGRESS" || it == "COMPLETE_PERSONAL" || it == "REQUEST_COMPLETION" } == true ||
+            (dto?.seriesId != null && dto.kind == "PERSONAL" && dto.reviewStatus == "APPROVED" && detailAssignment?.executionStatus == "COMPLETED")
+        )
     var repeatStatus by remember { mutableStateOf<String?>(null) }
     var editOpen by remember { mutableStateOf(false) }
     var stageNote by remember { mutableStateOf("") }
@@ -2583,11 +2593,11 @@ private fun FullTaskDetail(id: String, repo: TaskRepository, tags: List<TagDto>,
             }
         }
     }
-    if (editOpen && dto != null && item != null) TaskEntrySheet(
+    if (!readOnly && editOpen && dto != null && item != null) TaskEntrySheet(
         initialDate = item.start, canCreatePersonal = currentUser?.capabilities?.createPersonalTasks == true, canCreateDelegated = currentUser?.capabilities?.createDelegatedTasks == true,
         availableTags = availableTags, taskRepo = taskRepo, businessTimezone = businessTimezone, currentUser = currentUser,
         onDismiss = { editOpen = false }, onCreated = { onChanged() }, editingTask = dto)
-    if (repeatStatus != null && dto != null) com.pandora6ix.app.ui.task.SeriesStatusEditor(
+    if (!readOnly && repeatStatus != null && dto != null) com.pandora6ix.app.ui.task.SeriesStatusEditor(
         dto, taskRepo, repeatStatus!!, businessTimezone, stageNote.trim().ifBlank { null },
         onDismiss = { repeatStatus = null }, onSaved = { repeatStatus = null; stageNote = ""; onChanged() })
     Column(Modifier.fillMaxSize()) {
@@ -2600,7 +2610,7 @@ private fun FullTaskDetail(id: String, repo: TaskRepository, tags: List<TagDto>,
                             Text("任务信息", Modifier.weight(1f), style = PandoraTypography.titleSmall)
                             // 有修改待上级审批（pendingEditReviewId 非空）或任务已完成时锁定编辑
                             val taskCompleted = dto.taskCompletionState() != "NOT_COMPLETED"
-                            if (dto.pendingEditReviewId == null && !taskCompleted && dto.allowedActions.any { it == "EDIT_TASK" || it == "EDIT_PENDING" }) {
+                            if (!readOnly && dto.pendingEditReviewId == null && !taskCompleted && dto.allowedActions.any { it == "EDIT_TASK" || it == "EDIT_PENDING" }) {
                                 TextButton({ editOpen = true }) { Text("编辑", style = PandoraTypography.labelLarge, color = PandoraTheme.colors.primary) }
                             }
                         }
@@ -2650,7 +2660,7 @@ private fun FullTaskDetail(id: String, repo: TaskRepository, tags: List<TagDto>,
                             .minWithOrNull(compareBy<CompletionRequestDto> { it.requestedAt.orEmpty() }.thenBy { it.id })
                         if (dto.authorizedAssignments.any { "DECIDE_COMPLETION" in it.allowedActions } && pending != null) {
                             pending.submittedNote?.takeIf { it.isNotBlank() }?.let { Text(it, style = PandoraTypography.bodyLarge) }
-                            Row(horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space12)) {
+                            if (!readOnly) Row(horizontalArrangement = Arrangement.spacedBy(PandoraSpacing.space12)) {
                                 PandoraButton("验收通过", { decideCompletion(pending, "ACCEPT") }, enabled = !stageBusy)
                                 PandoraButton("不通过", { decideCompletion(pending, "REJECT") }, variant = PandoraButtonVariant.Destructive, enabled = !stageBusy)
                             }

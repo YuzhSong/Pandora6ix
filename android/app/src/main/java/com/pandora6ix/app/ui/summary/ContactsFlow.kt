@@ -39,7 +39,7 @@ fun ContactsFlow(
     taskRepo: TaskRepository,
     journalRepo: JournalRepository,
     userRepo: UserRepository,
-    taskDetail: @Composable (String, () -> Unit, () -> Unit) -> Unit,
+    readOnlyTaskDetail: @Composable (String, () -> Unit) -> Unit,
     journalDetail: @Composable (String, () -> Unit) -> Unit,
     onClose: () -> Unit
 ) {
@@ -47,11 +47,6 @@ fun ContactsFlow(
     val people = remember(user.id) {
         SummaryPager<RecipientDto>({ it.id }) { cursor ->
             taskRepo.recipientCandidatePage(cursor = cursor).let { SummaryPage(it.items, it.nextCursor) }
-        }
-    }
-    val managedTasks = remember(user.id) {
-        SummaryPager<TaskDto>({ it.id }) { cursor ->
-            calendarRepo.tasks(scope = "managed", cursor = cursor, limit = 20).let { SummaryPage(it.items, it.nextCursor) }
         }
     }
     // 成员详情的“最近日志”用不带日期的下属日志；日志列表页按所选日期另建分页器
@@ -78,7 +73,6 @@ fun ContactsFlow(
     LaunchedEffect(canManage) { if (canManage) people.ensureLoaded() }
     LaunchedEffect(page, canManage, filteredJournals) {
         if (!canManage) return@LaunchedEffect
-        if (page == "member" || page == "tasks") managedTasks.ensureLoaded()
         if (page == "member") recentJournals.ensureLoaded()
         if (page == "journals") filteredJournals.ensureLoaded()
     }
@@ -87,7 +81,7 @@ fun ContactsFlow(
         when {
             taskId != null -> taskId = null
             journalId != null -> journalId = null
-            page == "tasks" || page == "journals" -> page = listParent
+            page == "journals" -> page = listParent
             page == "member" -> { page = memberParent; memberId = null }
             page != "contacts" -> page = "contacts"
             else -> onClose()
@@ -98,40 +92,31 @@ fun ContactsFlow(
         memberId = person.id
         page = "member"
     }
-    fun openList(target: String, personId: String?) {
+    fun openJournals(personId: String?) {
         listParent = page
         listMemberId = personId
-        page = target
+        page = "journals"
     }
     BackHandler { back() }
     val stateKey = when (page) {
         "member" -> "member:$memberId"
-        "tasks" -> "tasks:$listMemberId"
         "journals" -> "journals:$listMemberId"
         else -> page
     }
     when {
-        taskId != null -> taskDetail(taskId!!, { taskId = null }, { scope.launch { managedTasks.load(refresh = true) } })
+        taskId != null && canManage -> readOnlyTaskDetail(taskId!!) { taskId = null }
         journalId != null -> journalDetail(journalId!!) { journalId = null }
         else -> uiStates.SaveableStateProvider(stateKey) {
             Column(Modifier.fillMaxSize()) {
                 val title = when (page) {
                     "organization" -> "组织架构"; "member" -> "成员详情"
-                    "tasks" -> "负责的任务"; "journals" -> "下属日志"; else -> "通讯录"
+                    "journals" -> "下属日志"; else -> "通讯录"
                 }
                 PandoraTopBar(title, onBack = { back() })
                 if (!canManage) Box(Modifier.padding(PandoraSpacing.space16)) {
                     SummaryPanel { Note("当前账号没有下属查看权限") }
                 } else when (page) {
                     "organization" -> OrganizationContent(people, canManage, userRepo, { openMember(it) }, { scope.launch { people.load() } })
-                    "tasks" -> SummaryPanel(Modifier.weight(1f).padding(PandoraSpacing.space16)) {
-                        val records = listMemberId?.let { responsibleTasks(managedTasks.items, it) } ?: managedTasks.items
-                        PanelHeading(listMemberId?.let { "${name(it)} · 负责的任务" } ?: "下属任务")
-                        LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(PandoraSpacing.space12)) {
-                            items(records, key = { it.id }) { task -> SummaryTaskRow(task, name, userRepo, user.businessTimezone) { taskId = task.id } }
-                            item { CollectionFooter(managedTasks, records.isEmpty(), "暂无相关任务", filtered = listMemberId != null) { scope.launch { managedTasks.load() } } }
-                        }
-                    }
                     "journals" -> SummaryPanel(Modifier.weight(1f).padding(PandoraSpacing.space16)) {
                         val records = listMemberId?.let { memberJournals(filteredJournals.items, it) } ?: filteredJournals.items
                         PanelHeading(listMemberId?.let { "${name(it)} · 日志" } ?: "下属日志")
@@ -165,14 +150,12 @@ fun ContactsFlow(
                             }
                             item {
                                 SummaryPanel {
-                                    PanelHeading("负责的任务")
-                                    TaskPreview(managedTasks, responsibleTasks(managedTasks.items, member.id), name, userRepo,
-                                        { taskId = it }, { openList("tasks", member.id) }, { scope.launch { managedTasks.load() } }, filtered = true, businessTimezone = user.businessTimezone)
+                                    MemberTaskMonth(member.id, calendarRepo, user.businessTimezone, name, userRepo) { taskId = it }
                                 }
                             }
                             item {
                                 SummaryPanel {
-                                    PanelHeading("最近日志", { openList("journals", member.id) })
+                                    PanelHeading("最近日志", { openJournals(member.id) })
                                     val records = memberJournals(recentJournals.items, member.id)
                                     records.take(PreviewLimit).forEach { journal ->
                                         JournalRow(journal, name(journal.authorUserId), user.businessTimezone, userRepo) { journalId = journal.id }
@@ -187,7 +170,7 @@ fun ContactsFlow(
                         item {
                             SummaryPanel {
                                 EntryRow(Icons.Default.AccountTree, "组织架构", "按部门查看全部可见成员") { page = "organization" }
-                                EntryRow(Icons.Default.Description, "下属日志", "按日期筛选下属提交的日志") { openList("journals", null) }
+                                EntryRow(Icons.Default.Description, "下属日志", "按日期筛选下属提交的日志") { openJournals(null) }
                             }
                         }
                         item {

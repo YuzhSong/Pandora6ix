@@ -130,6 +130,9 @@ public class DirectoryService {
             if (!db.rows("SELECT u.id FROM app_user u JOIN user_role r ON r.enterprise_id=u.enterprise_id AND r.user_id=u.id WHERE u.enterprise_id=? AND u.org_unit_id=? AND r.role_code=?",
                     a.enterpriseId(), id, incompatible).isEmpty())
                 throw BusinessException.invalid("Manager roles do not match the new organization kind.");
+            for (var member : db.rows("SELECT id FROM app_user WHERE enterprise_id=? AND org_unit_id=? AND employment_status='IN_SERVICE'", a.enterpriseId(), id)) {
+                responsibility.assertOrganization(identity.actor(str(member, "id"), a.enterpriseId(), id, null).roles(), c.kind());
+            }
         }
         orgParent(a, id, c.kind(), c.parentId());
         checkVersion(
@@ -233,17 +236,19 @@ public class DirectoryService {
     }
 
     private void userRefs(
-            IdentityService.Actor a, String id, String org, String supervisor, List<String> roles) {
+            IdentityService.Actor a, String id, String org, String supervisor, List<String> roles, boolean changingAssignment) {
         if (!ROLES.containsAll(roles)) throw BusinessException.invalid("Unknown role code.");
+        String kind = null;
         if (org != null) {
             var unit = db.entity("org_unit", a.enterpriseId(), org);
-            String kind = str(unit, "kind");
+            kind = str(unit, "kind");
             if (roles.contains("DEPARTMENT_MANAGER") && !kind.equals("DEPARTMENT")
                     || roles.contains("TEAM_LEAD") && !kind.equals("TEAM"))
                 throw BusinessException.invalid(
                         "Manager roles require the corresponding department or team node.");
         } else if (roles.contains("DEPARTMENT_MANAGER") || roles.contains("TEAM_LEAD"))
             throw BusinessException.invalid("Managers require an organization node.");
+        if (changingAssignment) responsibility.assertOrganization(roles, kind);
         Set<String> seen = new HashSet<>();
         String next = supervisor;
         while (next != null) {
@@ -289,7 +294,10 @@ public class DirectoryService {
         lockEnterprise(a);
         String id = id();
         validatePhone(c.phoneNumber());
-        userRefs(a, id, c.orgUnitId(), c.supervisorUserId(), c.roles());
+        assertIdentityNumberAvailable(a, id, c.idNumber());
+        assertPhoneNumberAvailable(a, id, phoneDigits(c.phoneNumber()));
+        userRefs(a, id, c.orgUnitId(), c.supervisorUserId(), c.roles(), true);
+        responsibility.assertAvailable(a, c.orgUnitId(), c.roles(), Set.of());
         db.update(
                 "INSERT INTO"
                     + " app_user(id,enterprise_id,login_name,password_hash,display_name,org_unit_id,supervisor_user_id,job_title,gender,id_number,phone_number)"
@@ -340,11 +348,25 @@ public class DirectoryService {
                         409, "LOGIN_NAME_TAKEN", "This login name is already used in the company.");
         }
         validatePhone(c.phoneNumber());
+        if (c.idNumber() != null && !c.idNumber().equalsIgnoreCase(str(old, "id_number"))) {
+            assertIdentityNumberAvailable(a, id, c.idNumber());
+        }
+        String phone = phoneDigits(c.phoneNumber());
+        if (!phone.isEmpty() && !phone.equals(phoneDigits(str(old, "phone_number")))) {
+            assertPhoneNumberAvailable(a, id, phone);
+        }
         if (!Set.of("ACTIVE", "DISABLED").contains(c.status()))
             throw BusinessException.invalid("Unknown account status.");
         responsibility.assertRelease(a,old,c.orgUnitId(),c.roles(),c.status());
-        userRefs(a, id, c.orgUnitId(), c.supervisorUserId(), c.roles());
-        if (identity.actor(id, a.enterpriseId(), str(old, "org_unit_id"), null).has("ADMIN")
+        String previousOrganization = str(old, "org_unit_id");
+        var previousActor = identity.actor(id, a.enterpriseId(), previousOrganization, null);
+        boolean changingAssignment = !Objects.equals(previousOrganization, c.orgUnitId()) ||
+                !responsibility.organizationalRole(previousActor.roles()).equals(responsibility.organizationalRole(c.roles()));
+        var claimedRoles = c.roles().stream()
+                .filter(role -> !previousActor.has(role) || (!role.equals("FOUNDER") && !Objects.equals(previousOrganization, c.orgUnitId())))
+                .toList();
+        responsibility.assertAvailable(a, c.orgUnitId(), claimedRoles, Set.of(id));
+        if (previousActor.has("ADMIN")
                 && (!c.roles().contains("ADMIN") || !c.status().equals("ACTIVE"))) {
             if (db.rows(
                             "SELECT u.id FROM app_user u JOIN user_role r ON"
@@ -357,6 +379,7 @@ public class DirectoryService {
                 throw new BusinessException(
                         409, "LAST_ADMIN_REQUIRED", "Keep at least one active administrator.");
         }
+        userRefs(a, id, c.orgUnitId(), c.supervisorUserId(), c.roles(), changingAssignment);
         checkVersion(
                 db.update(
                         "UPDATE app_user SET"
@@ -405,8 +428,28 @@ public class DirectoryService {
         return result;
     }
 
+    private void assertIdentityNumberAvailable(IdentityService.Actor actor, String userId, String identityNumber) {
+        if (!db.rows(
+                "SELECT id FROM app_user WHERE enterprise_id=? AND UPPER(id_number)=? AND id<>?",
+                actor.enterpriseId(), identityNumber, userId).isEmpty()) {
+            throw new BusinessException(409, "ID_NUMBER_TAKEN", "This identity number is already used in the company.");
+        }
+    }
+
+    private void assertPhoneNumberAvailable(IdentityService.Actor actor, String userId, String digits) {
+        if (!db.rows(
+                "SELECT id FROM app_user WHERE enterprise_id=? AND REGEXP_REPLACE(phone_number,'[^0-9]','')=? AND id<>?",
+                actor.enterpriseId(), digits, userId).isEmpty()) {
+            throw new BusinessException(409, "PHONE_NUMBER_TAKEN", "This phone number is already used in the company.");
+        }
+    }
+
+    private String phoneDigits(String phone) {
+        return phone == null ? "" : phone.replaceAll("[^0-9]", "");
+    }
+
     private void validatePhone(String phone) {
-        if (phone != null && phone.replaceAll("[^0-9]", "").length() < 6)
+        if (phone != null && phoneDigits(phone).length() < 6)
             throw BusinessException.invalid("phoneNumber must contain at least six digits.");
     }
 }

@@ -17,15 +17,20 @@ public class PersonnelLifecycleService {
     private final IdentityService identity;
     private final JsonMapper json;
     private final OperationLogService operationLogs;
-    public PersonnelLifecycleService(BusinessDb db, DirectoryService directory, IdentityService identity, JsonMapper json, OperationLogService operationLogs) {
-        this.db=db; this.directory=directory; this.identity=identity; this.json=json; this.operationLogs=operationLogs;
+    private final PersonnelResponsibilityPolicy responsibility;
+    public PersonnelLifecycleService(BusinessDb db, DirectoryService directory, IdentityService identity, JsonMapper json, OperationLogService operationLogs, PersonnelResponsibilityPolicy responsibility) {
+        this.db=db; this.directory=directory; this.identity=identity; this.json=json; this.operationLogs=operationLogs; this.responsibility=responsibility;
     }
     private Map<String,Object> lock(IdentityService.Actor a, String id, long version) {
+        var user = lockVersion(a, id, version);
+        if ("DEPARTED".equals(user.get("employment_status"))) throw new BusinessException(409, "EMPLOYEE_DEPARTED", "Employee has departed.");
+        return user;
+    }
+    private Map<String,Object> lockVersion(IdentityService.Actor a, String id, long version) {
         a.admin();
         db.one("SELECT id FROM enterprise WHERE id=? FOR UPDATE",a.enterpriseId());
         var old=db.entity("app_user",a.enterpriseId(),id);
         if(number(old,"version")!=version) BusinessException.checkVersion(0);
-        if("DEPARTED".equals(old.get("employment_status"))) throw new BusinessException(409,"EMPLOYEE_DEPARTED","Employee has departed.");
         return old;
     }
     private List<String> roles(IdentityService.Actor a, Map<String,Object> user) {
@@ -67,10 +72,49 @@ public class PersonnelLifecycleService {
         updated.put("employmentStatus","DEPARTED"); updated.put("departureDate",c.departureDate().toString());
         return updated;
     }
+
+    @Transactional
+    public Map<String, Object> reverseDeparture(IdentityService.Actor a, String id, Contracts.UserDepartureReversal c) {
+        var old = lockVersion(a, id, c.expectedVersion());
+        if (!"DEPARTED".equals(old.get("employment_status"))) {
+            throw new BusinessException(409, "EMPLOYEE_NOT_DEPARTED", "Employee is already in service.");
+        }
+        var before = snapshot(a, old);
+        var departure = db.rows("SELECT before_values FROM personnel_change WHERE enterprise_id=? AND user_id=? AND kind='DEPARTURE' ORDER BY recorded_at DESC,id DESC", a.enterpriseId(), id);
+        var prior = departure.isEmpty() ? Map.of() : json.readValue(str(departure.getFirst(), "before_values"), Map.class);
+        String status = "ACTIVE".equals(prior.get("status")) ? "ACTIVE" : "DISABLED";
+        String org = str(old, "org_unit_id");
+        var roles = new LinkedHashSet<>(roles(a, old));
+        String title = str(old, "job_title");
+        boolean lostPosition = roles.removeAll(responsibility.occupiedRoles(a, org, roles, Set.of(id)));
+        if (lostPosition) {
+            roles.add("EMPLOYEE");
+            title = "员工";
+        }
+        if (c.orgUnitId() != null && responsibility.organizationalRole(roles).equals("EMPLOYEE")) org = c.orgUnitId();
+        responsibility.assertOrganization(roles, organizationKind(a, org));
+        if (lostPosition) replaceRoles(a, id, roles);
+        String supervisor = responsibility.organizationSupervisor(a, org, roles, Set.of(id));
+        BusinessException.checkVersion(db.update(
+                "UPDATE app_user SET employment_status='IN_SERVICE',departure_date=NULL,status=?,org_unit_id=?,supervisor_user_id=?,job_title=?,version=version+1 WHERE enterprise_id=? AND id=? AND version=?",
+                status, org, supervisor, title, a.enterpriseId(), id, c.expectedVersion()));
+        record(a, id, "JOB_CHANGE", today(a), before);
+        operationLogs.record(a, id, "USER", "PERSONNEL", "DEPARTURE_REVERSAL", "WEB", "撤销离职", before,
+                snapshot(a, db.entity("app_user", a.enterpriseId(), id)));
+        return directory.user(a, id);
+    }
+
+    private String organizationKind(IdentityService.Actor actor, String id) {
+        return id == null ? null : str(db.entity("org_unit", actor.enterpriseId(), id), "kind");
+    }
     @Transactional
     public Map<String,Object> changeJob(IdentityService.Actor a,String id,Contracts.UserJobChange c) {
         var old=lock(a,id,c.expectedVersion());
         if(id.equals(a.id())) throw new BusinessException(409,"SELF_JOB_CHANGE_FORBIDDEN","Ask another administrator to adjust this account.");
+        if (roles(a, old).contains("ADMIN")) throw BusinessException.invalid("The administrator role is managed separately.");
+        if (c.roles().size() != 1 || !Set.of("FOUNDER", "DEPARTMENT_MANAGER", "TEAM_LEAD", "EMPLOYEE").contains(c.roles().getFirst())) {
+            throw BusinessException.invalid("Select one business position.");
+        }
         var before=snapshot(a,old);
         validateHierarchy(a,id,c.supervisorUserId(),c.roles());
         var updated=directory.patchUserForLifecycle(a,id,new Contracts.UserPatch(c.expectedVersion(),str(old,"display_name"),c.orgUnitId(),c.supervisorUserId(),c.jobTitle(),str(old,"status"),c.roles(),null,null,null,null));
@@ -100,13 +144,11 @@ public class PersonnelLifecycleService {
         var successorRoles=roles(a,successor);
         if(!((rank(successorRoles)==oldRank && Objects.equals(org,str(successor,"org_unit_id"))) || (rank(successorRoles)==3 && db.rows("SELECT id FROM app_user WHERE enterprise_id=? AND supervisor_user_id=? AND employment_status='IN_SERVICE'",a.enterpriseId(),c.successorUserId()).isEmpty())))
             throw new BusinessException(409,"INVALID_MANAGER_SUCCESSOR","Choose an employee without other manager responsibilities.");
-        String parent=oldRank==0?null:str(old,"supervisor_user_id");
-        if(Objects.equals(parent,c.successorUserId())) throw new BusinessException(409,"INVALID_MANAGER_SUCCESSOR","Successor cannot be the current manager's supervisor.");
-        if(parent!=null) {
-            var superior=db.entity("app_user",a.enterpriseId(),parent);
-            if(!"ACTIVE".equals(superior.get("status")) || rank(roles(a,superior))>=oldRank)
-                throw BusinessException.invalid("Correct the current manager's supervisor first.");
-        }
+        String formerOrg = c.formerOrgUnitId();
+        if (formerOrg == null) formerOrg = kind.equals("TEAM") ? org : str(successor, "org_unit_id");
+        responsibility.assertOrganization(List.of("EMPLOYEE"), organizationKind(a, formerOrg));
+        responsibility.assertAvailable(a, org, List.of(role), Set.of(id, c.successorUserId()));
+        String parent=responsibility.organizationSupervisor(a, org, List.of(role), Set.of(id, c.successorUserId()));
         var affected=new LinkedHashMap<String,Map<String,Object>>();
         affected.put(id,snapshot(a,old)); affected.put(c.successorUserId(),snapshot(a,successor));
         var reports=db.rows("SELECT * FROM app_user WHERE enterprise_id=? AND supervisor_user_id=? AND employment_status='IN_SERVICE'",a.enterpriseId(),id);
@@ -120,8 +162,9 @@ public class PersonnelLifecycleService {
         replaceRoles(a,c.successorUserId(),nextRoles);
         BusinessException.checkVersion(db.update("UPDATE app_user SET org_unit_id=?,supervisor_user_id=?,job_title=?,version=version+1 WHERE enterprise_id=? AND id=? AND version=?",org,parent,c.successorJobTitle(),a.enterpriseId(),c.successorUserId(),c.successorExpectedVersion()));
         var formerRoles=new LinkedHashSet<>(oldRoles); formerRoles.removeAll(Set.of("FOUNDER","DEPARTMENT_MANAGER","TEAM_LEAD")); formerRoles.add("EMPLOYEE");
+        String formerSupervisor = responsibility.organizationSupervisor(a, formerOrg, formerRoles, Set.of(id));
         replaceRoles(a,id,formerRoles);
-        BusinessException.checkVersion(db.update("UPDATE app_user SET supervisor_user_id=?,job_title=?,version=version+1 WHERE enterprise_id=? AND id=? AND version=?",c.successorUserId(),c.formerJobTitle(),a.enterpriseId(),id,c.expectedVersion()));
+        BusinessException.checkVersion(db.update("UPDATE app_user SET org_unit_id=?,supervisor_user_id=?,job_title=?,version=version+1 WHERE enterprise_id=? AND id=? AND version=?",formerOrg,formerSupervisor,c.formerJobTitle(),a.enterpriseId(),id,c.expectedVersion()));
         for(String userId:affected.keySet()) {
             if(!userId.equals(id) && !userId.equals(c.successorUserId()))
                 db.update("UPDATE app_user SET supervisor_user_id=?,version=version+1 WHERE enterprise_id=? AND id=?",c.successorUserId(),a.enterpriseId(),userId);

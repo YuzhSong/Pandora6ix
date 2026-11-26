@@ -1,4 +1,9 @@
 import type { AdminData, Person } from './types.ts'
+import { managerRole } from './personnelResponsibility.ts'
+
+export function displayedPersonnelRoles(person: Pick<Person, 'roles'>) {
+  return managerRole(person) ? person.roles.filter(role => role !== 'EMPLOYEE') : person.roles
+}
 
 export function supervisorOptionLabel(data: Pick<AdminData, 'units'>, person: Person): string {
   const unit = data.units.find(value => value.id === person.orgUnitId)

@@ -60,6 +60,9 @@ internal fun responsibleTasks(tasks: List<TaskDto>, userId: String) = tasks.filt
     task.authorizedAssignments.any { it.recipientUserId == userId }
 }
 
+internal fun memberCalendarTasks(tasks: List<TaskDto>, memberId: String) =
+    responsibleTasks(tasks, memberId).filter { it.reviewStatus == "APPROVED" }
+
 internal fun executorIds(task: TaskDto) = task.authorizedAssignments.map { it.recipientUserId }.filter { it.isNotBlank() }.distinct()
 
 /**
