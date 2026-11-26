@@ -19,3 +19,10 @@
 
 - [x] 4.1 验证旧数据读取、起止校验、日期覆盖、拖动前后时段一致、保存重启和日志草稿行为，补充针对跨日范围及布局的回归测试。
 - [ ] 4.2 运行 Android 调试构建与单元测试，在设备或模拟器验证新增、编辑和拖动手势，并运行 `openspec validate support-scheduled-home-todos --strict`。
+
+## 5. 追加：日志预填覆盖跨日事项每一天
+
+- [x] 5.1 规范与设计更新：新建日志草稿 SHALL 预填覆盖期内每一天的待办（含 00:00 结束定时事项的边界规则）。
+- [x] 5.2 `JournalDefaults.initialJournalEntries` 按事项日期覆盖范围过滤，解析失败回退按开始日期匹配。
+- [x] 5.3 更新单元测试：覆盖期内每天预填、午夜结束定时事项不占结束日、覆盖期外不预填。
+- [ ] 5.4 运行 `JournalDefaultsTest` 单元测试与 `openspec validate support-scheduled-home-todos --strict`。
