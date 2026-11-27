@@ -13,12 +13,18 @@ internal data class RecipientOrganizationGroup(
 }
 
 /** Reconstruct only relationships supplied by the candidate API; names never identify a node. */
-internal fun recipientOrganizationTree(candidates: List<RecipientDto>): List<RecipientOrganizationGroup> {
+internal fun recipientOrganizationTree(
+    candidates: List<RecipientDto>,
+    sortMembersByRole: Boolean = false
+): List<RecipientOrganizationGroup> {
     class Node(val key: String, val name: String) {
         val members = mutableListOf<RecipientDto>()
         val children = linkedMapOf<String, Node>()
         fun freeze(): RecipientOrganizationGroup = RecipientOrganizationGroup(
-            key, name, members.toList(), children.values.map { it.freeze() }
+            key,
+            name,
+            if (sortMembersByRole) members.sortedBy { it.businessRank ?: Int.MAX_VALUE } else members.toList(),
+            children.values.map { it.freeze() }
         )
     }
     val roots = linkedMapOf<String, Node>()

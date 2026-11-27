@@ -11,6 +11,10 @@ import java.util.*;
 
 @Service
 public class ScopeService {
+    static final String BUSINESS_RANK_SQL =
+            "MIN(CASE r.role_code WHEN 'FOUNDER' THEN 0 WHEN 'DEPARTMENT_MANAGER' THEN 1"
+                + " WHEN 'TEAM_LEAD' THEN 2 WHEN 'EMPLOYEE' THEN 3 ELSE 99 END)";
+
     private final BusinessDb db;
 
     public ScopeService(BusinessDb db) {
@@ -38,9 +42,8 @@ public class ScopeService {
         Set<String> orgs = descendants(actor), users = new HashSet<>();
         for (var row :
                 db.rows(
-                        "SELECT u.id,u.org_unit_id,MIN(CASE r.role_code WHEN 'FOUNDER' THEN 0 WHEN"
-                            + " 'DEPARTMENT_MANAGER' THEN 1 WHEN 'TEAM_LEAD' THEN 2 WHEN 'EMPLOYEE'"
-                            + " THEN 3 ELSE 99 END) AS business_rank FROM app_user u JOIN user_role"
+                        "SELECT u.id,u.org_unit_id," + BUSINESS_RANK_SQL
+                            + " AS business_rank FROM app_user u JOIN user_role"
                             + " r ON r.enterprise_id=u.enterprise_id AND r.user_id=u.id WHERE"
                             + " u.enterprise_id=? GROUP BY u.id,u.org_unit_id",
                         actor.enterpriseId())) {

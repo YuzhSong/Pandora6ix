@@ -60,7 +60,10 @@ public class TaskService
         StringBuilder sql =
                 new StringBuilder(
                         "SELECT u.id,u.display_name,u.org_unit_id,u.job_title,o.name AS"
-                            + " organization_name,d.id AS department_id,d.name AS department_name,u.supervisor_user_id FROM app_user u LEFT JOIN"
+                            + " organization_name,d.id AS department_id,d.name AS department_name,u.supervisor_user_id,"
+                            + " (SELECT NULLIF(" + ScopeService.BUSINESS_RANK_SQL + ", 99) FROM user_role r"
+                            + " WHERE r.enterprise_id=u.enterprise_id AND r.user_id=u.id) AS business_rank"
+                            + " FROM app_user u LEFT JOIN"
                             + " org_unit o ON o.enterprise_id=u.enterprise_id AND"
                             + " o.id=u.org_unit_id LEFT JOIN org_unit d ON d.enterprise_id=u.enterprise_id AND d.kind='DEPARTMENT' AND d.id=CASE WHEN o.kind='DEPARTMENT' THEN o.id WHEN o.kind='TEAM' THEN o.parent_id ELSE NULL END WHERE u.enterprise_id=? AND u.status='ACTIVE'");
         List<Object> args = new ArrayList<>(List.of(a.enterpriseId()));

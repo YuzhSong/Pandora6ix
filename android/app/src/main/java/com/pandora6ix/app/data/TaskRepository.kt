@@ -53,7 +53,8 @@ data class RecipientDto(
     val organizationName: String? = null,
     val departmentId: String? = null,
     val departmentName: String? = null,
-    val relationship: String = ""
+    val relationship: String = "",
+    val businessRank: Int? = null
 )
 
 @Serializable
