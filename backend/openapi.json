@@ -12785,6 +12785,23 @@
           },
           "relationship": {
             "type": "string"
+          },
+          "businessRank": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "enum": [
+                  0,
+                  1,
+                  2,
+                  3
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Highest business role: founder, department manager, team lead, or employee, respectively."
           }
         }
       },

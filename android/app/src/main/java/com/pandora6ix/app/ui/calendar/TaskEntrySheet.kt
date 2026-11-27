@@ -118,7 +118,10 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
                     "TEAM" -> org.parentId?.takeIf { it.isNotBlank() }
                     else -> null
                 },
-                departmentName = u.department?.takeIf { it.isNotBlank() }
+                departmentName = u.department?.takeIf { it.isNotBlank() },
+                businessRank = listOf("FOUNDER", "DEPARTMENT_MANAGER", "TEAM_LEAD", "EMPLOYEE")
+                    .indexOfFirst { it in u.roles }
+                    .takeIf { it >= 0 }
             )
         }
     }
@@ -162,7 +165,7 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
     selfRecipient?.takeIf { it.displayName.isNotBlank() }?.let { candidateNames.putIfAbsent(it.id, it.displayName) }
     var recipientQuery by remember { mutableStateOf("") }
     var candidateOpen by remember { mutableStateOf(false) }
-    val candidateGroups = remember(candidates) { recipientOrganizationTree(candidates) }
+    val candidateGroups = remember(candidates) { recipientOrganizationTree(candidates, sortMembersByRole = true) }
     var collapsedGroups by remember { mutableStateOf<Set<String>>(emptySet()) }
     var candidateLoading by remember { mutableStateOf(false) }
     var candidateError by remember { mutableStateOf(false) }
@@ -186,7 +189,7 @@ fun TaskEntrySheet(initialDate: DemoDate, canCreatePersonal: Boolean, canCreateD
             candidateError = false
             try {
                 val result = taskRepo.recipientCandidates(keyword.ifBlank { null })
-                // 候选人固定包含本人（排最前），其余为后端按管理范围授权的成员
+                // 补入本人，组内展示顺序由业务角色等级决定。
                 val merged = if (selfRecipient != null && result.items.none { it.id == selfRecipient.id }) listOf(selfRecipient) + result.items else result.items
                 candidates = merged
                 candidateNames.putAll(merged.associate { it.id to it.displayName })

@@ -23,6 +23,25 @@ class RecipientOrganizationTreeTest {
         assertEquals(setOf("department:d1", "team:t1", "team:t2"), department.groupKeys)
     }
 
+    @Test fun pickerPlacesLeadsFirstWithinTheirOwnGroups() {
+        val candidates = listOf(
+            person("direct-employee", "d1", "d1").copy(businessRank = 3),
+            person("team-employee-b", "d1", "t1").copy(businessRank = 3),
+            person("legacy-member", "d1", "t1"),
+            person("team-employee-a", "d1", "t1").copy(businessRank = 3),
+            person("team-lead", "d1", "t1").copy(businessRank = 2),
+            person("department-lead", "d1", "d1").copy(businessRank = 1)
+        )
+
+        val department = recipientOrganizationTree(candidates, sortMembersByRole = true).single()
+
+        assertEquals(listOf("department-lead", "direct-employee"), department.members.map { it.id })
+        assertEquals(
+            listOf("team-lead", "team-employee-b", "team-employee-a", "legacy-member"),
+            department.children.single().members.map { it.id }
+        )
+    }
+
     @Test fun identicalDepartmentNamesDoNotMergePeopleOrExpansionKeys() {
         val roots = recipientOrganizationTree(listOf(person("one", "d1", "d1"), person("two", "d2", "d2")))
         assertEquals(listOf("研发部", "研发部"), roots.map { it.name })
