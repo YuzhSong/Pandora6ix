@@ -29,10 +29,16 @@ class JournalDefaultsTest {
         assertEquals(listOf(JournalDraftEntryDto(null, "")), initialJournalEntries("2026-11-07", todos))
     }
 
-    @Test fun multiDayTodoOnlyPrefillsTheJournalOnItsStartDate() {
-        val items = listOf(DailyItem("span", date, "跨日事项", endDate = "2026-11-08"))
-        assertEquals("- 跨日事项\n\n", initialJournalEntries(date, items).single().content)
-        assertEquals("", initialJournalEntries("2026-11-07", items).single().content)
+    @Test fun multiDayTodoPrefillsEveryCoveredDay() {
+        val items = listOf(
+            DailyItem("span", date, "跨日事项", endDate = "2026-11-08"),
+            // 恰在次日 00:00 结束的定时事项不占结束日
+            DailyItem("midnight", date, "午夜结束", endDate = "2026-11-07", startMinute = 540, endMinute = 0)
+        )
+        assertEquals("- 跨日事项\n- 午夜结束\n\n", initialJournalEntries(date, items).single().content)
+        assertEquals("- 跨日事项\n\n", initialJournalEntries("2026-11-07", items).single().content)
+        assertEquals("- 跨日事项\n\n", initialJournalEntries("2026-11-08", items).single().content)
+        assertEquals("", initialJournalEntries("2026-11-09", items).single().content)
     }
 
     @Test fun multilineTodoKeepsMarkdownContinuationInsideItsBullet() {
