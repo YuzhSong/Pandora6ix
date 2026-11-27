@@ -74,6 +74,8 @@ cd backend
 - [UI 改造路线](docs/UI_REFACTOR_ROADMAP.md)：分批统一的优先级与验收方式。
 - [OpenSpec 主规范](openspec/specs/)与[变更记录](openspec/changes/)：业务约定及演进过程。
 
+二期 CRM 的本机启动、API、迁移及验收步骤见 [CRM V0.1 演示指南](docs/CRM_V0.1.md)。
+
 ## 开发协作
 
 `main` 为稳定分支，`dev` 为日常集成分支，`LoFi` 用于 Android 低保真原型。开发分支通过 PR 汇入 `dev`，稳定版本再集成到 `main`。

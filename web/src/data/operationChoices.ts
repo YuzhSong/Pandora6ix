@@ -9,10 +9,10 @@ const actions: Record<string, string[]> = {
   WORK_LOG: ['CREATE', 'UPDATE', 'DELETE'],
   ORGANIZATION: ['CREATE', 'UPDATE', 'DELETE', 'MANAGER_REPLACEMENT'],
   PERSONNEL: ['CREATE', 'UPDATE', 'DELETE', 'DEPARTURE', 'DEPARTURE_REVERSAL', 'JOB_CHANGE', 'MANAGER_REPLACEMENT'],
-  ACCOUNT: ['CREATE', 'UPDATE', 'ENABLE', 'DISABLE', 'ROLE_CHANGE', 'PASSWORD_RESET', 'EXPORT'], AUTH: ['LOGIN'],
+  ACCOUNT: ['CREATE', 'UPDATE', 'ENABLE', 'DISABLE', 'ROLE_CHANGE', 'PASSWORD_RESET', 'EXPORT'], AUTH: ['LOGIN'], CRM: ['CREATE', 'UPDATE', 'UPLOAD_ATTACHMENT'],
 }
 const objects: Record<string, string> = { TASK: '任务', WORK_LOG: '工作日报', ORGANIZATION: '部门或团队', PERSONNEL: '人员资料', ACCOUNT: '账号' }
 export function operationChoices(module: string): { value: string; label: string }[] {
   const choices = actions[module] ?? Object.keys(labels)
-  return [{ value: '', label: '全部操作' }, ...choices.map(value => ({ value, label: objects[module] && ['CREATE', 'UPDATE', 'DELETE'].includes(value) ? `${value === 'CREATE' ? '新增' : value === 'UPDATE' ? '修改' : '删除'}${objects[module]}` : labels[value] }))]
+  return [{ value: '', label: '全部操作' }, ...choices.map(value => ({ value, label: objects[module] && ['CREATE', 'UPDATE', 'DELETE'].includes(value) ? `${value === 'CREATE' ? '新增' : value === 'UPDATE' ? '修改' : '删除'}${objects[module]}` : labels[value] ?? (value === 'UPLOAD_ATTACHMENT' ? '上传合同附件' : value) }))]
 }

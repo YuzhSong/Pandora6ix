@@ -1,0 +1,22 @@
+server:
+  address: 127.0.0.1
+  port: 19082
+spring:
+  datasource:
+    url: jdbc:h2:file:${user.home}/.pandora6ix-dev2/data/crm;DB_CLOSE_ON_EXIT=FALSE;WRITE_DELAY=0
+    username: sa
+    password: ''
+  flyway:
+    locations: classpath:db/migration,classpath:db/crm
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 11MB
+pandora:
+  bootstrap-token: ${PANDORA_CRM_BOOTSTRAP_TOKEN:}
+  handoff-key: ${PANDORA_CRM_HANDOFF_KEY:}
+  jpush:
+    app-key: ''
+    master-secret: ''
+  deepseek:
+    api-key: ''

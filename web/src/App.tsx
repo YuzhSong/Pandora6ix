@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { adminRepository } from './data/repository.ts'
 import { authService } from './api/config.ts'
 import { ApiError } from './api/client.ts'
@@ -24,11 +24,14 @@ import type { DisplayPreferences } from './data/preferences.ts'
 import './App.css'
 import './theme.css'
 
+const CrmPage = lazy(() => import('./components/crm/CrmPage.tsx'))
+
 const navigation: { id: string; label: string; icon: IconName }[] = [
   { id: 'organizations', label: '组织管理', icon: 'organization' },
   { id: 'people', label: '人员与角色', icon: 'people' },
   { id: 'company-items', label: '公司重要事项', icon: 'layers' },
   { id: 'system-logs', label: '系统日志', icon: 'journal' },
+  ...(import.meta.env.MODE === 'dev2' ? [{ id: 'crm', label: 'CRM 管理', icon: 'people' as const }] : []),
 ]
 const auxiliaryPages = [{ id: 'account', label: '我的账号' }, { id: 'settings', label: '设置' }]
 function route() { const hash = location.hash.slice(1); return hash === 'enterprise' ? 'organizations' : hash === 'roles' ? 'people' : [...navigation, ...auxiliaryPages].some(item => item.id === hash) ? hash : 'organizations' }
@@ -154,6 +157,7 @@ export default function App() {
     <div className="main-area"><main className="page-content"><div className="page-heading"><h1>{page.label}</h1><button className="button secondary" onClick={() => void load()} disabled={loading || !!editor || passwordDialog || avatarDialog || itemsPending || !!deleteTarget || !!accountReceipt || !!credentialTool || !!resetPerson}><Icon name="refresh" size={16} />刷新数据</button></div>
       {error && <div className="error-message" role="alert">刷新失败：{error} 当前显示上次加载的资料，恢复后才能编辑。</div>}
       <fieldset className="workspace-content" disabled={loading || !!error}>
+        {import.meta.env.MODE === 'dev2' && active === 'crm' && <Suspense fallback={<p role="status">正在加载…</p>}><CrmPage key={data.currentUserId} refresh={data} /></Suspense>}
         {active === 'system-logs' && <SystemLogsPage key={`${data.enterprise.id}:${data.currentUserId}`} refreshKey={data} data={data} />}
         {active === 'people' && <PeoplePage key={data.enterprise.id} onUpdated={setData} data={data} onEdit={setEditor} onCredentialTool={setCredentialTool} onResetPassword={setResetPerson} />}{active === 'organizations' && <OrganizationPage key={data.enterprise.id} data={data} onEdit={setEditor} selectedId={selectedOrganizationId} onSelect={setSelectedOrganizationId} onDelete={setDeleteTarget} />}{active === 'company-items' && <CompanyItemsPage key={data.enterprise.id} data={data} onEdit={setEditor} onUpdated={setData} onPendingChange={setItemsPending} />}{active === 'account' && <AccountPage data={data} avatarRevision={avatarRevision} onChangePassword={() => setPasswordDialog(true)} onChangeAvatar={() => setAvatarDialog(true)} />}{active === 'settings' && <SettingsPage preferences={preferences} error={preferenceError} onChange={changePreferences} />}
       </fieldset><footer className="page-footer"><span>Pandora 管理端</span></footer></main></div>
