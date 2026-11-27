@@ -2431,7 +2431,7 @@ private fun JournalDetailScreen(repo: JournalRepository, journalId: String, busi
                     ProfileInfoRow("所属部门", user.department ?: user.organization?.name ?: "未分配")
                     DashedDivider(PandoraTheme.colors.border)
                     // 角色显示中文；未分配直属上级时明确说明（数据来源 /me.supervisorUserId）
-                    ProfileInfoRow("当前角色", user.roles.joinToString("、") { roleLabel(it) }.ifBlank { "未分配" })
+                    ProfileInfoRow("当前角色", currentProfileRoleLabel(user.roles))
                     ProfileInfoRow("直属上级", user.supervisorName?.takeIf { it.isNotBlank() } ?: "未配置（请联系管理员设置）")
                 }
             }
@@ -2445,6 +2445,15 @@ private fun JournalDetailScreen(repo: JournalRepository, journalId: String, busi
         Text(label, Modifier.widthIn(min = 72.dp), color = PandoraTheme.colors.textSecondary, style = PandoraTypography.bodyMedium)
         Text(value, Modifier.weight(1f), style = PandoraTypography.bodyLarge)
     }
+}
+
+private fun currentProfileRoleLabel(roles: List<String>): String {
+    val normalizedRoles = roles.map { it.uppercase() }.toSet()
+    // 与后端组织角色顺序一致，兼容交接后仍带员工角色的旧资料。
+    val currentRole = listOf("FOUNDER", "DEPARTMENT_MANAGER", "TEAM_LEAD", "EMPLOYEE", "ADMIN")
+        .firstOrNull { it in normalizedRoles }
+        ?: roles.firstOrNull { it.isNotBlank() }
+    return currentRole?.let(::roleLabel) ?: "未分配"
 }
 
 /** 角色枚举中文化：与后端角色枚举一一对应（ADMIN/FOUNDER/DEPARTMENT_MANAGER/TEAM_LEAD/EMPLOYEE） */

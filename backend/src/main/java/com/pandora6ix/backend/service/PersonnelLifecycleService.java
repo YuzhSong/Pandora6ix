@@ -158,7 +158,9 @@ public class PersonnelLifecycleService {
             if(rank(roles(a,report))<=oldRank) throw BusinessException.invalid("A direct report has an incompatible rank.");
             affected.put(reportId,snapshot(a,report));
         }
-        var nextRoles=new LinkedHashSet<>(successorRoles); nextRoles.removeAll(Set.of("FOUNDER","DEPARTMENT_MANAGER","TEAM_LEAD")); nextRoles.add(role);
+        var nextRoles = new LinkedHashSet<>(successorRoles);
+        nextRoles.removeAll(Set.of("FOUNDER", "DEPARTMENT_MANAGER", "TEAM_LEAD", "EMPLOYEE"));
+        nextRoles.add(role);
         replaceRoles(a,c.successorUserId(),nextRoles);
         BusinessException.checkVersion(db.update("UPDATE app_user SET org_unit_id=?,supervisor_user_id=?,job_title=?,version=version+1 WHERE enterprise_id=? AND id=? AND version=?",org,parent,c.successorJobTitle(),a.enterpriseId(),c.successorUserId(),c.successorExpectedVersion()));
         var formerRoles=new LinkedHashSet<>(oldRoles); formerRoles.removeAll(Set.of("FOUNDER","DEPARTMENT_MANAGER","TEAM_LEAD")); formerRoles.add("EMPLOYEE");
