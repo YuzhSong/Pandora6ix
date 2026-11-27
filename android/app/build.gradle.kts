@@ -35,6 +35,15 @@ android {
 
     // Instrumentation owns a disposable app, never the user's installed debug app.
     buildTypes {
+        create("dev2") {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".dev2"
+            versionNameSuffix = "-crm"
+            matchingFallbacks += "debug"
+            buildConfigField("String", "API_BASE_URL", "\"http://10.0.2.2:19082/api/v1\"")
+            buildConfigField("String", "JPUSH_APP_KEY", "\"\"")
+            manifestPlaceholders["JPUSH_APP_KEY"] = ""
+        }
         create("avatarQa") {
             initWith(getByName("debug"))
             applicationIdSuffix = ".avatarqa"

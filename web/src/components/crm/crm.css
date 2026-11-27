@@ -1,0 +1,28 @@
+.crm-panel { display: grid; gap: 1rem; padding: 1rem; }
+.crm-toolbar, .crm-actions { display: flex; flex-wrap: wrap; gap: .75rem; align-items: end; }
+.crm-actions { justify-content: flex-end; align-items: center; margin-top: 1rem; }
+.crm-new { margin-inline-start: auto; }
+.crm-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .875rem; border: 0; margin: 0; padding: 0; }
+.crm-fields label, .crm-toolbar label { display: grid; gap: .35rem; }
+.crm-fields input:not([type="checkbox"]), .crm-fields select, .crm-fields textarea, .crm-toolbar input, .crm-toolbar select {
+  width: 100%; min-width: 0; min-height: 2.5rem; padding: .5rem .625rem; border: 1px solid var(--line, #b5bdc7);
+  border-radius: .5rem; background: transparent; color: inherit; font: inherit;
+}
+.crm-fields textarea { min-height: 5rem; resize: vertical; }
+.crm-wide, .crm-picker { grid-column: 1 / -1; }
+.crm-picker, .crm-participant { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: .75rem; }
+.crm-participant { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; align-items: end; margin-block: .6rem; }
+.crm-dialog { width: min(48rem, calc(100% - 2rem)); max-height: calc(100dvh - 2rem); }
+.crm-detail { margin: .75rem 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
+.crm-detail dd { margin: .25rem 0 0; font-weight: 500; white-space: pre-wrap; overflow-wrap: anywhere; }
+.crm-detail dt { font-size: .875rem; opacity: .8; }
+.crm-table { overflow-x: auto; }
+.crm-table table { width: 100%; border-collapse: collapse; text-align: start; }
+.crm-table th, .crm-table td { text-align: start; padding: .65rem; border-bottom: 1px solid var(--line, #b5bdc7); }
+.crm-empty { margin: .5rem 0; }
+@media (max-width: 560px) {
+  .crm-fields, .crm-picker, .crm-participant, .crm-detail { grid-template-columns: minmax(0, 1fr); }
+  .crm-new { margin-inline-start: 0; }
+}
+.crm-subsection { border-top: 1px solid var(--line, #b5bdc7); padding-top: .875rem; }
+.crm-warning { color: var(--danger, #ad4227); }
